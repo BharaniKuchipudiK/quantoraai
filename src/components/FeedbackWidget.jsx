@@ -1,32 +1,50 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CheckCircle2,
-  Lightbulb,
-  MessageSquareText,
-  Send,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { CheckCircle2, Plus, X } from 'lucide-react';
+import { composeFeedbackMessage, deriveFeedbackType } from '../lib/feedback-compose.js';
 import '../styles/feedback-widget.css';
 
-const MAX_CHARS = 500;
+/*
+ * Share feedback, ChatGPT-style: tap chips, optionally add details, submit.
+ *
+ * The old form demanded a typed paragraph before Submit would enable, which is
+ * the single biggest reason feedback never gets sent. Chips lower the cost of
+ * saying *something* to one click, and the composed message still travels
+ * through the existing /api/pipeline feedback contract — chips are folded into
+ * the message text, so no schema change and the admin panel reads it as-is.
+ */
+const MAX_DETAIL_CHARS = 400;
 const DEFAULT_SURFACE = 'studio-sidebar';
+
+const CHIPS = [
+  'Solved my task',
+  'Great output quality',
+  'Fast and efficient',
+  'Easy to use',
+  'Something broke',
+  'Confusing to use',
+  'Missing a capability',
+  'Feature idea',
+  'Other',
+];
 
 export default function FeedbackWidget() {
   const [open, setOpen] = useState(false);
-  const [feedbackType, setFeedbackType] = useState('feedback');
-  const [message, setMessage] = useState('');
+  const [selectedChips, setSelectedChips] = useState([]);
+  const [detail, setDetail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [phase, setPhase] = useState('form'); // form | success
   const [error, setError] = useState('');
   const [surface, setSurface] = useState(DEFAULT_SURFACE);
   const textareaRef = useRef(null);
 
-  const characterCount = useMemo(() => message.length, [message.length]);
+  const canSubmit = useMemo(
+    () => selectedChips.length > 0 || detail.trim().length > 0,
+    [selectedChips.length, detail],
+  );
 
   const reset = () => {
-    setFeedbackType('feedback');
-    setMessage('');
+    setSelectedChips([]);
+    setDetail('');
     setSubmitting(false);
     setPhase('form');
     setError('');
@@ -73,9 +91,14 @@ export default function FeedbackWidget() {
     };
   }, [open, submitting]);
 
+  const toggleChip = (chip) => {
+    setSelectedChips((prev) => (
+      prev.includes(chip) ? prev.filter((item) => item !== chip) : [...prev, chip]
+    ));
+  };
+
   const submit = async () => {
-    const trimmed = message.trim();
-    if (!trimmed || submitting) return;
+    if (!canSubmit || submitting) return;
 
     setSubmitting(true);
     setError('');
@@ -86,8 +109,8 @@ export default function FeedbackWidget() {
         credentials: 'include',
         body: JSON.stringify({
           targetStage: 'feedback',
-          feedbackType,
-          message: trimmed,
+          feedbackType: deriveFeedbackType(selectedChips),
+          message: composeFeedbackMessage(selectedChips, detail),
           pagePath: `${window.location.pathname}${window.location.search}`.slice(0, 240),
           surface,
         }),
@@ -96,7 +119,8 @@ export default function FeedbackWidget() {
       if (!response.ok) throw new Error(data.error || 'Could not send feedback.');
 
       setPhase('success');
-      setMessage('');
+      setSelectedChips([]);
+      setDetail('');
       window.setTimeout(() => {
         setOpen(false);
         window.setTimeout(reset, 180);
@@ -123,93 +147,67 @@ export default function FeedbackWidget() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="q-feedback-title"
-        aria-describedby="q-feedback-description"
       >
         {phase === 'success' ? (
           <div className="q-feedback-success" role="status" aria-live="polite">
             <div className="q-feedback-success__icon"><CheckCircle2 size={28} /></div>
             <div>
-              <span className="q-feedback-eyebrow">Feedback received</span>
-              <h2>Thank you for helping shape Quantora.</h2>
-              <p>Your note is now in the product feedback queue for review.</p>
+              <h2>Thank you.</h2>
+              <p>Your feedback is with the Quantora team.</p>
             </div>
           </div>
         ) : (
           <>
             <header className="q-feedback-modal__header">
-              <div>
-                <span className="q-feedback-eyebrow">Help improve Quantora</span>
-                <h2 id="q-feedback-title">Tell us what would make the product better.</h2>
-                <p id="q-feedback-description">
-                  Share something that is not working well, or an idea you would like us to consider.
-                </p>
-              </div>
+              <h2 id="q-feedback-title">Share feedback</h2>
               <button type="button" className="q-feedback-close" aria-label="Close feedback" onClick={close}>
                 <X size={18} />
               </button>
             </header>
 
-            <div className="q-feedback-type" role="group" aria-label="Feedback type">
-              <button
-                type="button"
-                className={feedbackType === 'feedback' ? 'is-active' : ''}
-                aria-pressed={feedbackType === 'feedback'}
-                onClick={() => setFeedbackType('feedback')}
-              >
-                <MessageSquareText size={17} />
-                <span>
-                  <strong>Feedback</strong>
-                  <small>Something we should improve</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={feedbackType === 'suggestion' ? 'is-active' : ''}
-                aria-pressed={feedbackType === 'suggestion'}
-                onClick={() => setFeedbackType('suggestion')}
-              >
-                <Lightbulb size={17} />
-                <span>
-                  <strong>Suggestion</strong>
-                  <small>An idea for what comes next</small>
-                </span>
-              </button>
+            <div className="q-feedback-chips" role="group" aria-label="What describes your experience?">
+              {CHIPS.map((chip) => {
+                const selected = selectedChips.includes(chip);
+                return (
+                  <button
+                    key={chip}
+                    type="button"
+                    className={`q-feedback-chip${selected ? ' is-selected' : ''}`}
+                    aria-pressed={selected}
+                    onClick={() => toggleChip(chip)}
+                  >
+                    <Plus size={14} className="q-feedback-chip__icon" />
+                    <span>{chip}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            <label className="q-feedback-field">
-              <span>Your message</span>
-              <textarea
-                ref={textareaRef}
-                value={message}
-                maxLength={MAX_CHARS}
-                rows={7}
-                placeholder={feedbackType === 'suggestion'
-                  ? 'What would you like Quantora to do that it cannot do today?'
-                  : 'What happened, and what would a better experience look like?'}
-                onChange={(event) => setMessage(event.target.value)}
-              />
-              <div className="q-feedback-field__meta">
-                <span><ShieldCheck size={13} /> Current product area is included automatically.</span>
-                <strong>{characterCount} / {MAX_CHARS}</strong>
-              </div>
-            </label>
+            <textarea
+              ref={textareaRef}
+              className="q-feedback-detail"
+              value={detail}
+              maxLength={MAX_DETAIL_CHARS}
+              rows={5}
+              placeholder="Share details (optional)"
+              aria-label="Share details (optional)"
+              onChange={(event) => setDetail(event.target.value)}
+            />
+
+            <p className="q-feedback-note">
+              Your feedback helps improve Quantora. The current product area is included automatically.
+            </p>
 
             {error && <div className="q-feedback-error" role="alert">{error}</div>}
 
-            <footer className="q-feedback-modal__footer">
-              <button type="button" className="q-feedback-secondary" onClick={close} disabled={submitting}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="q-feedback-primary"
-                disabled={!message.trim() || submitting}
-                onClick={submit}
-              >
-                <Send size={15} />
-                {submitting ? 'Sending…' : 'Send feedback'}
-              </button>
-            </footer>
+            <button
+              type="button"
+              className="q-feedback-submit"
+              disabled={!canSubmit || submitting}
+              onClick={submit}
+            >
+              {submitting ? 'Sending…' : 'Submit'}
+            </button>
           </>
         )}
       </section>
