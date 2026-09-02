@@ -2920,6 +2920,33 @@ Paused — ${autoPauseRef.current}.`
       studioDomain,
     )?.items?.[0]?.label || '')
     : '';
+  /*
+   * The chips the user can see and tap right now — not the chips that would
+   * exist if none were dismissed. partnerContinueLabel above deliberately skips
+   * dismissedContinueId (the mission card must keep a step the user hid the
+   * chips for), so the visible set has to be computed separately or the mission
+   * card would go on reprinting chip #1 forever. That reprint was the whole
+   * complaint: three stacked cards above the composer, the third repeating the
+   * first line of the first.
+   */
+  const visibleContinueLabels = useMemo(() => {
+    if (!lastAiMessage?.text || !lastUserMessage?.text) return [];
+    if (dismissedContinueId === lastAiMessage.id) return [];
+    const set = studySyllabusSet || filterContinuesForAdvisor(
+      filterContinuesForOffice(
+        injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
+          officeKind: detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+          studioDomain,
+          deskChecks: deskPacket?.checks || [],
+          deskFacts: deskPacket?.facts || null,
+        })),
+        detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind,
+      ),
+      studioDomain,
+    );
+    return (set?.items || []).map((item) => item?.label).filter(Boolean);
+  }, [lastAiMessage, lastUserMessage, dismissedContinueId, studySyllabusSet, messages, studioDomain, deskPacket]);
+
   const officeKindNow = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind || null;
   /* Filters the rendered list only; stored sessions are never touched. */
   const visibleChatSessions = useMemo(
@@ -4029,6 +4056,11 @@ Paused — ${autoPauseRef.current}.`
                 ? studioMission
                 : (isGenerating ? studioMission : null)
           }
+          /*
+           * What is already on screen, so this card can stop repeating it.
+           * planMissionCard decides; the card renders what survives.
+           */
+          chipLabels={visibleContinueLabels}
           // Study shows the topic in its own focus card; repeating it here is noise.
           hideGoal={studioDomain === 'education'}
           onDismiss={() => setMissionDismissedFor(activeSessionId)}
