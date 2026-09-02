@@ -22,12 +22,18 @@ create index if not exists study_learner_snapshots_owner_updated_idx
 
 alter table public.study_learner_snapshots enable row level security;
 revoke all on public.study_learner_snapshots from public, anon, authenticated, service_role;
-grant select, insert, update, delete on public.study_learner_snapshots to service_role;
+grant select, insert, update on public.study_learner_snapshots to service_role;
 
--- Save only when this projection is at least as recent as the stored ledger
--- cursor. This prevents a concurrent older replay from overwriting a newer
--- snapshot. Equal cursors are allowed so estimator/schema upgrades and
--- time-sensitive learner-model changes may refresh derived state safely.
+-- One round trip classifies and synchronizes the derived snapshot.
+--
+-- - snapshot_ahead: an older replay must never regress a newer ledger cursor.
+-- - current: the semantic projection is unchanged; projectedAt alone does not
+--   create a write.
+-- - saved: missing, version-changed, ledger-advanced, or time-sensitive derived
+--   state was refreshed.
+--
+-- The ON CONFLICT predicate is still monotonic even after the FOR UPDATE read,
+-- protecting the no-existing-row race where two transactions insert together.
 create or replace function public.save_study_learner_snapshot(
   p_user_sub text,
   p_concept_id uuid,
@@ -38,13 +44,39 @@ create or replace function public.save_study_learner_snapshot(
   p_projected_at timestamptz,
   p_projection jsonb
 )
-returns boolean
+returns text
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
+  v_existing public.study_learner_snapshots%rowtype;
   v_rows integer := 0;
 begin
+  select *
+  into v_existing
+  from public.study_learner_snapshots
+  where user_sub = p_user_sub
+    and concept_id = p_concept_id
+  for update;
+
+  if found then
+    if v_existing.observed_through is not null
+      and (
+        p_observed_through is null
+        or v_existing.observed_through > p_observed_through
+      ) then
+      return 'snapshot_ahead';
+    end if;
+
+    if v_existing.schema_version = p_schema_version
+      and v_existing.learner_model_version = p_learner_model_version
+      and v_existing.estimator_version = p_estimator_version
+      and v_existing.observed_through is not distinct from p_observed_through
+      and (v_existing.projection - 'projectedAt') = (p_projection - 'projectedAt') then
+      return 'current';
+    end if;
+  end if;
+
   insert into public.study_learner_snapshots (
     user_sub,
     concept_id,
@@ -83,7 +115,10 @@ begin
     );
 
   get diagnostics v_rows = row_count;
-  return v_rows > 0;
+  if v_rows = 0 then
+    return 'snapshot_ahead';
+  end if;
+  return 'saved';
 end;
 $$;
 
