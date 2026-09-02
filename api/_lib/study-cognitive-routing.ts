@@ -115,7 +115,7 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
     ? 'none'
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
   const rendererInstruction = interpretation.representation.rendererRequired
-    ? `yes — use the supported ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see; do not silently replace it with prose`
+    ? `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
     : 'no';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
     ? `YES — ask at most ${interpretation.lessonLoop.maxLearnerQuestions} learner question, end on that question, and do not reveal the next beat or its answer in the same response`
