@@ -2,7 +2,7 @@ import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan }
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.7';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.8';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -38,7 +38,7 @@ const ADVANCED_RE = /\b(?:derive|proof|prove|theorem|rigorous|formalism|asymptot
 const FOUNDATIONAL_RE = /\b(?:basics?|beginner|simple terms?|eli5|fundamentals?|introduction|what is|define|meaning of|from scratch)\b/i;
 const STUDY_FAST_WORKHORSE_ID = 'deepseek/deepseek-v4-flash-0731';
 const REPRESENTATION_CONTROL_ONLY_RE = /^\s*(?:(?:can|could|would|will|please)\s+)?(?:you\s+)?(?:show|draw|sketch|teach|tell|explain)\s+(?:me\s+)?(?:it\s+)?(?:(?:using|with|as|in)\s+)?(?:(?:a|an)\s+)?(?:images?|pictures?|diagrams?|visual(?:ly)?|graphs?|story|analogy|example|step[- ]by[- ]step)(?:\s+instead)?[?.!]*\s*$/i;
-const STRUGGLE_CONTROL_ONLY_RE = /^\s*(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|i\s+don'?t\s+know|(?:i\s+am\s+)?confused|(?:i\s+am\s+)?lost|not getting it|too hard|still difficult to understand|doesn['’]?t make sense|make it easy(?:er)?(?: for me)?|simplify(?: it)?|explain again|another way)\W*$/i;
+const STRUGGLE_CONTROL_ONLY_RE = /^\s*(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|i\s+don'?t\s+know|(?:i\s+am\s+)?confused|(?:i\s+am\s+)?lost|not getting it|too hard|still difficult to understand|doesn['’]?t make sense|make it (?:easy|easier)(?: for me)?|simplify(?: it)?|explain again|another way)\W*$/i;
 
 function textOf(item: HistoryItem): string { return String(item?.text || item?.content || '').trim(); }
 function isAssistant(item: HistoryItem): boolean { return item?.sender === 'ai' || item?.role === 'assistant' || item?.role === 'model'; }
