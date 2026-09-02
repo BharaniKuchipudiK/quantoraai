@@ -130,6 +130,14 @@ async function startServer() {
     req.query = { ...(req.query || {}), route: "github-callback" };
     return auth(req, res);
   });
+  route("all", "/api/auth/github/connect", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github-connect" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/github/connect/callback", (req, res) => {
+    req.query = { ...(req.query || {}), route: "github-connect-callback" };
+    return auth(req, res);
+  });
   route("all", "/api/chat", async (req, res) => {
     if (await handleAffordabilityDecision(req, res)) return;
 
@@ -210,14 +218,14 @@ async function startServer() {
     req.body = { ...(req.body || {}), targetStage: "repository-preview" };
     return pipeline(req, res);
   });
-  route("post", "/api/github/create-pr", (req, res) => {
-    req.body = { ...(req.body || {}), targetStage: "github-create-pr" };
-    return pipeline(req, res);
-  });
-  route("post", "/api/github/merge-pr", (req, res) => {
-    req.body = { ...(req.body || {}), targetStage: "github-merge-pr" };
-    return pipeline(req, res);
-  });
+  // Every principal-bound GitHub stage, mirroring the vercel.json rewrites so
+  // dev and production disagree about nothing here.
+  for (const alias of ["connection", "disconnect", "list-prs", "read-pr", "list-issues", "comment", "create-pr", "merge-pr"]) {
+    route("post", `/api/github/${alias}`, (req, res) => {
+      req.body = { ...(req.body || {}), targetStage: `github-${alias}` };
+      return pipeline(req, res);
+    });
+  }
   route("post", "/api/outcomes", (req, res) => {
     req.body = { ...(req.body || {}), targetStage: "outcome-state" };
     return pipeline(req, res);

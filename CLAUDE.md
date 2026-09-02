@@ -180,6 +180,7 @@ becomes safely more autonomous.
 | `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
 | `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
+| `npm run test:github-writes` | a GitHub mutation that runs on a session alone, without asking GitHub whether this user may make it |
 
 ### A tool description is a promise, and the model passes it on
 

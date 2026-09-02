@@ -7,6 +7,8 @@ import passwordResetRequest from "./_lib/handlers/auth-password-reset-request.js
 import passwordResetConfirm from "./_lib/handlers/auth-password-reset-confirm.js";
 import githubStart from "./_lib/handlers/auth-github-start.js";
 import githubCallback from "./_lib/handlers/auth-github-callback.js";
+import githubConnect from "./_lib/handlers/auth-github-connect.js";
+import githubConnectCallback from "./_lib/handlers/auth-github-connect-callback.js";
 import providers from "./_lib/handlers/auth-providers.js";
 
 /**
@@ -24,6 +26,8 @@ export default async function handler(req: any, res: any) {
   if (route === "password-reset-confirm") return passwordResetConfirm(req, res);
   if (route === "github") return githubStart(req, res);
   if (route === "github-callback") return githubCallback(req, res);
+  if (route === "github-connect") return githubConnect(req, res);
+  if (route === "github-connect-callback") return githubConnectCallback(req, res);
   if (route === "providers") return providers(req, res);
   return res.status(404).json({ error: "Unknown auth route." });
 }
