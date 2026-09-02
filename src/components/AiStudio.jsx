@@ -350,13 +350,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const domainPolicy = studioDomainPolicy(studioDomain);
 
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
-  /*
-   * Advisor desks hide the engine picker — except Research, where the analyst
-   * asked for the choice back (2026-09-02): Auto had routed a research turn to
-   * an engine that ignored the desk's contracts, and the person watching the
-   * board deserves to steer which engine answers. Auto remains the default.
-   */
-  const showEngineControls = !isAdvisorWorkspace || studioDomain === 'research';
+  // Per-desk decision, so it lives in the policy table with the others —
+  // research is the advisor desk that shows the picker (see the table's note).
+  const showEngineControls = domainPolicy.showModelControls === true;
 
   /*
    * Tell the ambient background to step back once there is work on screen.
