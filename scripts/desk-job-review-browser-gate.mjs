@@ -294,8 +294,10 @@ try {
     throw new Error(`Partner status claimed missing product photos on a non-shop desk: ${partner}`);
   }
 
-  // Fresh chat for the to-do review phases (title avoids matching a session named New Chat).
-  await page.locator('button[title="New Chat"]').first().click();
+  // Fresh chat for the to-do review phases. Anchored on the durable hook, not
+  // the button's tooltip prose (which now says where the chat lands) — and
+  // unlike role+name, the hook cannot match a session row named "New Chat".
+  await page.locator('[data-quantora-new-chat="true"]').first().click();
   await page.waitForTimeout(600);
   await visible(prompt, 'Studio prompt missing after New Chat.');
   await prompt.fill('build me a to-do list app for my week');
