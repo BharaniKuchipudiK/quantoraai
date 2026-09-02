@@ -21,7 +21,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -77,13 +77,81 @@ test('every model-context construction reads boundedHistory, never raw history',
   }
 });
 
-test('the source block is emitted by the shared builder, so the marker cannot be forgotten', () => {
-  // Two append sites existed and were byte-identical by hand. One builder means
-  // a change to the block shape cannot land in one and miss the other.
-  assert.ok(
-    !/\*\*Sources\*\*\\n`?;/.test(source.replace(/buildGroundedSourceBlock/g, '')),
-    'a hand-rolled Sources block is back in chat-handler; use buildGroundedSourceBlock',
-  );
+test('chat-handler emits the block through the shared builder', () => {
   const emitted = [...source.matchAll(/buildGroundedSourceBlock\(/g)];
   assert.ok(emitted.length >= 2, `expected both append sites to use the builder, found ${emitted.length}`);
+});
+
+/**
+ * THE CLASS, not the instance.
+ *
+ * The first version of this test policed chat-handler alone, because that was
+ * where the two append sites lived. api/_lib/research-deep-dive.ts also emitted
+ * a Sources block — hand-rolled, and its own comment described it as
+ * "byte-identical in shape to chat-handler's", which is drift with a docstring.
+ *
+ * When the server started marking blocks it stands behind, chat-handler was
+ * updated and the deep dive was not. Every deep-dive answer silently stopped
+ * counting as grounded on the board: no crash, no failing gate here, just a
+ * feature quietly losing its evidence. A gate scoped to one file could not see
+ * it, and the only reason it surfaced at all is that main's own deep-dive tests
+ * happened to assert the brief afterwards.
+ *
+ * So the rule is now about the format, wherever it is written: any shipped
+ * source file that writes a `**Sources**` heading into a string must be the
+ * shared builder itself, or must call it.
+ */
+const ROOTS = ['api', 'src', 'shared'];
+const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
+
+function collectSources(dir, out) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIP_DIRS.has(entry.name)) collectSources(full, out);
+    } else if (/\.(ts|js|jsx|mjs)$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+      out.push(full);
+    }
+  }
+}
+
+test('EVERY emitter of a Sources block goes through the shared builder', () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const files = [];
+  for (const root of ROOTS) collectSources(join(repo, root), files);
+  assert.ok(files.length > 100, `expected to scan the repo, found ${files.length} files — the scan broke`);
+
+  const offenders = [];
+  for (const file of files) {
+    /*
+     * Comments are stripped first. Without that this fired on
+     * src/lib/research-brief.js — the PARSER, whose JSDoc writes `**Sources**`
+     * as a markdown code span to describe the format it reads. A gate that
+     * fails on correct code is the same defect as one that cannot fail (§4),
+     * and reading its output rather than its exit status is what told them
+     * apart (§8).
+     */
+    const text = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '');
+    // A string literal that WRITES the heading, now that prose is gone.
+    if (!/`[^`]*\*\*Sources\*\*[^`]*`|'[^']*\*\*Sources\*\*[^']*'|"[^"]*\*\*Sources\*\*[^"]*"/.test(text)) continue;
+    const rel = file.slice(repo.length + 1);
+    // The builder itself is allowed to write the format; everyone else calls it.
+    if (rel === join('shared', 'research', 'grounding-marker.js')) continue;
+    if (/buildGroundedSourceBlock/.test(text)) continue;
+    offenders.push(rel);
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these files write a **Sources** block without the shared builder, so the server's marker will be missing and the board will not count their sources:\n  ${offenders.join('\n  ')}\nUse buildGroundedSourceBlock from shared/research/grounding-marker.js.`,
+  );
 });

@@ -69,7 +69,16 @@ export function buildGroundedSourceBlock(sources = [], limit = 5) {
   if (!rows.length) return '';
   let block = `\n\n---\n\n${GROUNDING_MARKER}\n\n**Sources**\n`;
   rows.forEach((source, index) => {
-    block += `${index + 1}. [${source?.title ?? ''}](${source?.uri ?? ''})\n`;
+    /*
+     * A bracket in a title closes the markdown link early, so the rest of the
+     * title becomes prose and the URL never renders as a link — and the board's
+     * SOURCE_LINE regex stops matching the row, silently dropping a real source
+     * from the ledger. research-deep-dive stripped these; chat-handler did not.
+     * Consolidating the two emitters is what surfaced the difference, so the
+     * safer half now applies to both.
+     */
+    const title = String(source?.title || source?.uri || '').replace(/[[\]]/g, '');
+    block += `${index + 1}. [${title}](${source?.uri ?? ''})\n`;
   });
   return block;
 }
