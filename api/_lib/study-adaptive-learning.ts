@@ -1,12 +1,13 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
+import { withStudyTelemetryScope } from './study-observability.js';
 import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.7';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.8';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -53,20 +54,23 @@ export async function loadStudyLearnerModel(input: {
   studyContext: StudyRequestContext | null;
 }): Promise<StudyLearnerModel | null> {
   if (input.studioDomain !== 'education' || !input.userSub || input.memoryConsented !== true || !input.studyContext) return null;
-  const concept = await resolveActiveStudyConcept(input.studyContext);
-  if (!concept || concept === 'unavailable') return null;
-  const loaded = await loadVerifiedStudyLearnerProjection({
-    userSub: input.userSub,
-    conceptId: concept.id,
-    conceptKey: concept.canonicalKey,
-    asOf: new Date().toISOString(),
-  });
-  if (!loaded) return null;
 
-  return applyStudyPrerequisiteNextBestAction({
-    userSub: input.userSub,
-    activeConcept: concept,
-    learnerModel: loaded.projection.learnerModel,
+  return withStudyTelemetryScope('adaptive_learner_model', async () => {
+    const concept = await resolveActiveStudyConcept(input.studyContext!);
+    if (!concept || concept === 'unavailable') return null;
+    const loaded = await loadVerifiedStudyLearnerProjection({
+      userSub: input.userSub!,
+      conceptId: concept.id,
+      conceptKey: concept.canonicalKey,
+      asOf: new Date().toISOString(),
+    });
+    if (!loaded) return null;
+
+    return applyStudyPrerequisiteNextBestAction({
+      userSub: input.userSub!,
+      activeConcept: concept,
+      learnerModel: loaded.projection.learnerModel,
+    });
   });
 }
 
