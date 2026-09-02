@@ -2,7 +2,7 @@ import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan }
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-02.4';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-02.5';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -37,6 +37,7 @@ const CONTINUE_RE = /^(?:continue|go on|next|keep going|do it|try again|more)\W*
 const ADVANCED_RE = /\b(?:derive|proof|prove|theorem|rigorous|formalism|asymptotic|eigenvalue|tensor|quantum|lagrangian|hamiltonian|differential equation|organic mechanism|graduate|postgraduate|research level|olympiad)\b/i;
 const FOUNDATIONAL_RE = /\b(?:basics?|beginner|simple terms?|eli5|fundamentals?|introduction|what is|define|meaning of|from scratch)\b/i;
 const STUDY_FAST_WORKHORSE_ID = 'deepseek/deepseek-v4-flash-0731';
+const REPRESENTATION_CONTEXT_TURNS = 12;
 
 function textOf(item: HistoryItem): string { return String(item?.text || item?.content || '').trim(); }
 function isAssistant(item: HistoryItem): boolean { return item?.sender === 'ai' || item?.role === 'assistant' || item?.role === 'model'; }
@@ -90,7 +91,10 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
     : intent === 'diagnose' ? 'diagnostic'
       : intent === 'practice' || intent === 'continue' ? 'guided'
         : intent === 'plan' ? 'sequenced' : 'direct';
-  const contextText = history.slice(-6).map(textOf).filter(Boolean).join('\n');
+  // Keep the concept anchor through a realistic simplify/story/example struggle
+  // sequence. This remains deliberately bounded; it is teaching context, not a
+  // second learner-memory store.
+  const contextText = history.slice(-REPRESENTATION_CONTEXT_TURNS).map(textOf).filter(Boolean).join('\n');
   const intervention = evaluateStudyLearningIntervention({ message, history });
   const representation = planStudyTeachingRepresentation({ message, contextText, history, intervention });
   const lessonLoop = planStudyAdaptiveLessonLoop({ intent, representation, intervention });
@@ -156,10 +160,8 @@ function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpre
   if (/reason|deepseek|nemotron|gpt-oss|qwen/.test(haystack)) score += 30;
   if (/gemini|flash/.test(haystack)) score += interpretation.difficulty === 'foundational' ? 22 : 8;
   if (/coder/.test(haystack)) score -= 10;
-
   if (/gemini/.test(haystack)) score += 18;
   if (isUnmeteredFreeEndpoint(model) && !hasStrongObservedQuality(model)) score -= 28;
-
   if (model.quality?.sampleSize && model.quality.sampleSize >= 5 && Number.isFinite(model.quality.score)) {
     score += Math.max(0, Math.min(15, Number(model.quality.score) / 7));
   }
