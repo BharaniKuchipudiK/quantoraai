@@ -26,6 +26,59 @@ const MAX_PDF_BYTES = 15_000_000;
 const TEXTUAL_CONTENT = /^(?:text\/(?:html|plain)|application\/xhtml\+xml)\s*(?:;|$)/i;
 const PDF_CONTENT = /^application\/pdf\s*(?:;|$)/i;
 
+/**
+ * Read a binary body without ever holding more than `maxBytes` of it.
+ * `response.arrayBuffer()` materializes the WHOLE untrusted body before any
+ * size check can run, so a chunked response that omits or understates
+ * Content-Length could exhaust the function's memory inside the cap's blind
+ * spot. Streaming closes it: the read aborts the moment the running total
+ * passes the cap. A response with no readable stream (older fetch shims,
+ * test fakes) falls back to arrayBuffer plus the same post-check — the cap
+ * holds either way; only the failure mode's memory profile differs.
+ */
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<{ ok: boolean; bytes?: Uint8Array; reason?: "too_large" | "read_failed" }> {
+  const stream = (response as any).body;
+  if (stream && typeof stream.getReader === "function") {
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          try { await reader.cancel(); } catch { /* the refusal stands regardless */ }
+          return { ok: false, reason: "too_large" };
+        }
+        chunks.push(chunk);
+      }
+    } catch {
+      return { ok: false, reason: "read_failed" };
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { ok: true, bytes };
+  }
+
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await response.arrayBuffer();
+  } catch {
+    return { ok: false, reason: "read_failed" };
+  }
+  if (buffer.byteLength > maxBytes) return { ok: false, reason: "too_large" };
+  return { ok: true, bytes: new Uint8Array(buffer) };
+}
+
 export type ResearchSourceFetchResult = {
   ok: boolean;
   url: string;
@@ -73,7 +126,7 @@ export async function fetchResearchSourceText(
     try {
       response = await fetchImpl(currentUrl, {
         redirect: "manual",
-        headers: { Accept: "text/html,application/xhtml+xml,text/plain" },
+        headers: { Accept: "text/html,application/xhtml+xml,application/pdf,text/plain" },
       });
     } catch {
       return { ok: false, url: admittedUrl, reason: "source_fetch_failed" };
@@ -108,16 +161,15 @@ export async function fetchResearchSourceText(
       if (declaredPdfLength > MAX_PDF_BYTES) {
         return { ok: false, url: admittedUrl, reason: "source_pdf_too_large" };
       }
-      let bytes: Uint8Array;
-      try {
-        bytes = new Uint8Array(await response.arrayBuffer());
-      } catch {
-        return { ok: false, url: admittedUrl, reason: "source_read_failed" };
+      const read = await readBodyCapped(response, MAX_PDF_BYTES);
+      if (!read.ok || !read.bytes) {
+        return {
+          ok: false,
+          url: admittedUrl,
+          reason: read.reason === "too_large" ? "source_pdf_too_large" : "source_read_failed",
+        };
       }
-      if (bytes.byteLength > MAX_PDF_BYTES) {
-        return { ok: false, url: admittedUrl, reason: "source_pdf_too_large" };
-      }
-      const extracted = await extractResearchPdfText(bytes);
+      const extracted = await extractResearchPdfText(read.bytes);
       if (!extracted.ok || !extracted.text) {
         return { ok: false, url: admittedUrl, reason: extracted.reason || "source_pdf_unreadable" };
       }

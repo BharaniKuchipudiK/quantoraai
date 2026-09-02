@@ -67,6 +67,24 @@ test("LISTED IS NOT SERVABLE: a retired top candidate is advanced past, not surf
   assert.equal(result, "answered by gemini-2.5-flash");
 });
 
+test("a whole retired tier is walked past — beyond three candidates — to reach a servable id", async () => {
+  // A family ships several same-version flash variants, so one retirement
+  // wave can cover the top of the ranking; an unversioned maintained alias
+  // ranks last. Capping the attempts would report "no servable model" with
+  // a servable one still untried.
+  const attempted: string[] = [];
+  const result = await withNewestGeminiFlash(
+    ["gemini-flash-latest", "gemini-3.6-flash-preview", "gemini-3.6-flash", "gemini-3.6-flash-lite"],
+    async (model) => {
+      attempted.push(model);
+      if (model !== "gemini-flash-latest") throw retiredError();
+      return `answered by ${model}`;
+    },
+  );
+  assert.equal(result, "answered by gemini-flash-latest");
+  assert.equal(attempted.length, 4);
+});
+
 test("a real error (quota/auth) propagates immediately instead of burning candidates", async () => {
   const attempted: string[] = [];
   const quota = new Error("Resource exhausted");

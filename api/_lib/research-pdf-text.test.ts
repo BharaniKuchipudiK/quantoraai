@@ -92,6 +92,40 @@ test("oversized PDFs are rejected by bytes, before and after reading", async () 
   assert.equal(declared.reason, "source_pdf_too_large");
 });
 
+test("a chunked PDF with no declared length is aborted AT the byte cap, never materialized", async () => {
+  // Content-Length is attacker-controlled and optional: the pre-check can't
+  // see a chunked body, so the cap must hold while READING. This response
+  // streams 1 MB chunks forever and throws if anything tries to buffer it
+  // whole — the fetcher has to stop on its own, at the cap.
+  let chunksServed = 0;
+  const chunk = new Uint8Array(1_000_000);
+  const endless = {
+    status: 200,
+    ok: true,
+    headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? "application/pdf" : null) },
+    body: {
+      getReader: () => ({
+        read: async () => {
+          chunksServed += 1;
+          return { done: false, value: chunk };
+        },
+        cancel: async () => {},
+      }),
+    },
+    arrayBuffer: async () => {
+      throw new Error("the body must be streamed, never materialized whole");
+    },
+  } as unknown as Response;
+
+  const result = await fetchResearchSourceText(
+    "https://www.example.com/endless.pdf",
+    (async () => endless) as unknown as typeof fetch,
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "source_pdf_too_large");
+  assert.ok(chunksServed <= 16, `read ${chunksServed} chunks; the cap must stop the stream at ~15 MB`);
+});
+
 test("a broken PDF fetched from the web keeps its named reason on the ledger", async () => {
   const result = await fetchResearchSourceText(
     "https://www.example.com/broken.pdf",

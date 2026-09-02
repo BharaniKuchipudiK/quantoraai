@@ -17,9 +17,7 @@
  *   error (quota, auth, network) propagates.
  */
 
-export const GEMINI_FLASH_PICK_VERSION = "gemini-flash-2026-09-02.1";
-
-const MAX_CANDIDATES = 3;
+export const GEMINI_FLASH_PICK_VERSION = "gemini-flash-2026-09-02.2";
 
 /**
  * An error whose message was WRITTEN FOR THE USER — a plain sentence, never
@@ -64,14 +62,19 @@ export async function listGeminiModelIds(client: {
 /**
  * Run `call(modelId)` against the newest servable flash: try ranked
  * candidates in order, advancing past retired ids, rethrowing the first
- * real error. Fails with a plain sentence — never a provider body — when
- * every candidate is retired.
+ * real error. The ranked list is EXHAUSTED, not capped — a whole version
+ * tier can retire at once (a family ships several same-version flash
+ * variants), and an unversioned maintained alias ranks last, so a cap
+ * could give up with a servable model still untried. Retired rejections
+ * only cost anything in the failure mode; the happy path stops at the
+ * first candidate. Fails with a plain sentence — never a provider body —
+ * when every candidate is retired.
  */
 export async function withNewestGeminiFlash<T>(
   ids: string[],
   call: (modelId: string) => Promise<T>,
 ): Promise<T> {
-  const candidates = rankGeminiFlashIds(ids).slice(0, MAX_CANDIDATES);
+  const candidates = rankGeminiFlashIds(ids);
   if (candidates.length === 0) throw new UserFacingError("No Gemini flash model available.");
   let lastRetired: unknown = null;
   for (const modelId of candidates) {
