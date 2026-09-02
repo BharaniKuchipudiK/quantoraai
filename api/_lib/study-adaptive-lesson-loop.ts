@@ -1,7 +1,7 @@
 import type { StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import type { StudyLearningIntervention } from './study-learning-intervention.js';
 
-export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-02.1';
+export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-03.2';
 
 export type StudyTeachingBeat = 'HOOK' | 'PREDICT' | 'SEE' | 'EXPLAIN' | 'TRY' | 'VERIFY' | 'EXAM_READY';
 
@@ -16,6 +16,7 @@ export type StudyAdaptiveLessonLoopPlan = {
     | 'first_struggle'
     | 'practice'
     | 'verification'
+    | 'continuation_policy'
     | 'explicit_representation'
     | 'direct_explanation';
 };
@@ -57,13 +58,26 @@ export function planStudyAdaptiveLessonLoop(input: {
     };
   }
 
-  if (intent === 'practice' || intent === 'continue') {
+  if (intent === 'practice') {
     return {
       version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
       beats: ['TRY'],
       mustWaitForLearner: true,
       maxLearnerQuestions: 1,
       reason: 'practice',
+    };
+  }
+
+  if (intent === 'continue') {
+    // Generic continuation is already governed by study-teaching-policy.ts,
+    // which may advance to SEE, EXPLAIN, TRY, or VERIFY. Do not create a
+    // second turn planner here by forcing every "continue" into TRY + wait.
+    return {
+      version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
+      beats: [],
+      mustWaitForLearner: false,
+      maxLearnerQuestions: 0,
+      reason: 'continuation_policy',
     };
   }
 
