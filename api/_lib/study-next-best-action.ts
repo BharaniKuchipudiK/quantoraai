@@ -1,10 +1,9 @@
 import { planStudyDiagnosticBreadth } from './study-diagnostic-breadth.js';
-import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
-import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
-import { estimateStudyMastery } from './study-mastery-estimator.js';
+import type { StudyLearnerModel } from './study-learner-model.js';
+import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
 import { readStudySupabaseRows } from './study-supabase.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-09-02.8';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-09-02.9';
 
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
 const MAX_PREREQUISITE_DEPTH = 4;
@@ -118,14 +117,14 @@ async function prerequisitesFor(context: StudyScanContext, targetConceptId: stri
 async function learnerModelFor(context: StudyScanContext, concept: StudyConceptRef): Promise<StudyLearnerModel | null> {
   const cached = context.modelByConceptId.get(concept.id);
   if (cached) return cached;
-  const evidence = await readVerifiedStudyMasteryEvidence(context.userSub, concept.id, concept.canonicalKey);
-  if (!evidence) return null;
-  const model = buildStudyLearnerModel({
+  const loaded = await loadVerifiedStudyLearnerProjection({
+    userSub: context.userSub,
     conceptId: concept.id,
     conceptKey: concept.canonicalKey,
-    evidence,
-    estimate: estimateStudyMastery(evidence),
+    asOf: new Date().toISOString(),
   });
+  if (!loaded) return null;
+  const model = loaded.projection.learnerModel;
   context.modelByConceptId.set(concept.id, model);
   return model;
 }

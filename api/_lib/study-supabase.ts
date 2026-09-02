@@ -1,3 +1,5 @@
+import { noteStudyDbCall } from './study-observability.js';
+
 const STUDY_SUPABASE_TIMEOUT_MS = 4_000;
 const STUDY_SUPABASE_PAGE_SIZE = 500;
 const STUDY_SUPABASE_MAX_REPLAY_ROWS = 5_000;
@@ -35,6 +37,7 @@ export async function studySupabaseRequest(
   const cfg = studySupabaseConfig();
   if (!cfg) return null;
 
+  noteStudyDbCall();
   try {
     return await fetch(`${cfg.url}/rest/v1/${path}`, {
       ...init,

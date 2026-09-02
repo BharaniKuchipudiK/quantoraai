@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { admitResearchSourceUrl } from "./research-claim-verifier.js";
+import { buildGroundedSourceBlock } from "../../shared/research/grounding-marker.js";
 import { listGeminiModelIds, withNewestGeminiFlash, UserFacingError } from "./gemini-flash.js";
 
 /**
@@ -72,18 +73,21 @@ function cleanSubQuestions(raw: unknown): string[] {
   return out;
 }
 
-/** The canonical Sources block, byte-identical in shape to chat-handler's. */
+/**
+ * The canonical Sources block — from the ONE builder, not a second copy of it.
+ *
+ * This used to hand-roll the block and describe itself as "byte-identical in
+ * shape to chat-handler's", which is the definition of drift waiting to happen:
+ * two emitters, one format, nothing tying them together. When the server began
+ * marking blocks it stands behind, chat-handler was updated and this was not, so
+ * every deep-dive answer silently stopped counting as grounded on the board.
+ *
+ * Admission and the per-answer cap stay here, because they are this feature's
+ * policy. The block's SHAPE is not.
+ */
 function sourcesBlock(sources: Array<{ uri: string; title: string }>): string {
-  const admitted = sources
-    .filter((source) => admitResearchSourceUrl(source?.uri).ok)
-    .slice(0, MAX_SOURCES_PER_ANSWER);
-  if (admitted.length === 0) return "";
-  let block = `\n\n---\n**Sources**\n`;
-  admitted.forEach((source, index) => {
-    const title = String(source.title || source.uri).replace(/[\[\]]/g, "");
-    block += `${index + 1}. [${title}](${source.uri})\n`;
-  });
-  return block;
+  const admitted = sources.filter((source) => admitResearchSourceUrl(source?.uri).ok);
+  return buildGroundedSourceBlock(admitted, MAX_SOURCES_PER_ANSWER);
 }
 
 /**
