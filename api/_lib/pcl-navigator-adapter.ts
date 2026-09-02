@@ -8,6 +8,7 @@ import {
 } from "./pcl-cognitive-kernel.js";
 import { evaluateProofOfDone, formatOutcomeContractForPrompt } from "./outcome-contract.js";
 import { buildPclAgentExecutionPlan, publicAgentPlanSummary } from "./agent-execution-fabric.js";
+import { publicQirCompatibilitySummary } from "./qir-contracts.js";
 
 /**
  * Thin integration seam between the existing Outcome Navigator and PCL.
@@ -74,5 +75,6 @@ export function publicPclNavigatorMetadata(
     activeRejections: activeLedger.filter((entry) => entry.type === "rejection").length,
     activeCorrections: activeLedger.filter((entry) => entry.type === "correction").length,
     agentExecution: publicAgentPlanSummary(agentPlan),
+    qir: publicQirCompatibilitySummary(agentPlan, proof.status),
   };
 }
