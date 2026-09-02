@@ -22,6 +22,7 @@ import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
 import { UserFacingError } from './gemini-flash.js';
+import { extractOpenRouterAnnotationSources } from './openrouter-citations.js';
 import {
   acknowledgeResearchWatch,
   createResearchWatch,
@@ -1397,6 +1398,16 @@ export default async function handler(req: any, res: any) {
                     attemptReply += token;
                     emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);
+                  }
+                  // The web plugin's citations arrive as url_citation
+                  // ANNOTATIONS, not content — dropping them left grounded
+                  // replies with inline links the board could not credit
+                  // (see openrouter-citations.ts).
+                  for (const source of extractOpenRouterAnnotationSources(parsed)) {
+                    if (!seenSources.has(source.uri)) {
+                      seenSources.add(source.uri);
+                      sources.push(source);
+                    }
                   }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
                 // Thrown outside the try: the catch above deliberately swallows

@@ -350,6 +350,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const domainPolicy = studioDomainPolicy(studioDomain);
 
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
+  /*
+   * Advisor desks hide the engine picker — except Research, where the analyst
+   * asked for the choice back (2026-09-02): Auto had routed a research turn to
+   * an engine that ignored the desk's contracts, and the person watching the
+   * board deserves to steer which engine answers. Auto remains the default.
+   */
+  const showEngineControls = !isAdvisorWorkspace || studioDomain === 'research';
 
   /*
    * Tell the ambient background to step back once there is work on screen.
@@ -4552,7 +4559,7 @@ Paused — ${autoPauseRef.current}.`
                   onClick={() => setShowInBarModelDropdown(!showInBarModelDropdown)}
                   title="Select AI Engine"
                   style={{
-                    display: isAdvisorWorkspace ? 'none' : 'flex',
+                    display: showEngineControls ? 'flex' : 'none',
                     alignItems: 'center',
                     gap: '6px',
                     background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
