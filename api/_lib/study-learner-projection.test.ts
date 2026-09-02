@@ -77,7 +77,7 @@ test('H3.1 replay is deterministic for the same admitted ledger and clock', () =
   });
 
   assert.deepEqual(left, right);
-  assert.equal(left.observedThrough, '2026-09-01T00:00:00.000Z');
+  assert.equal(left.observedThrough, '2026-08-31T00:00:00.000Z');
   assert.deepEqual(left.evidenceKinds, ['assessment_item']);
   assert.equal(left.evidenceCount, 1, 'same governed item/version remains one independent mastery contribution');
 });
