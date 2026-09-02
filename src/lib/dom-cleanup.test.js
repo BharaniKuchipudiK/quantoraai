@@ -37,8 +37,18 @@ test('shared shell owns Profile and Canvas/Journey while Studio owns workspace c
   assert.match(studio, /data-quantora-code-workspace/);
   assert.match(studio, /data-quantora-sidebar-history/);
   assert.match(studio, /data-quantora-sidebar-history-list/);
+  /*
+   * The nav stays quiet. The history header is one section label; which
+   * project the chats belong to is tooltip detail (history title on the label,
+   * membership copy on New Chat), and search folds away behind the magnifier
+   * in the sidebar header. The three-line explainer block these assertions
+   * used to allow was the busiest thing in the sidebar — it must not return.
+   */
   assert.match(studio, /studioSidebarHistoryTitle/);
   assert.match(studio, /studioSidebarMembershipCopy/);
+  assert.match(studio, /data-quantora-sidebar-search-toggle/);
+  assert.doesNotMatch(studio, /data-quantora-sidebar-history-hint/);
+  assert.doesNotMatch(studio, /data-quantora-sidebar-history-membership/);
   assert.match(studio, /studioSidebarHistoryPaneStyle/);
   assert.match(studio, /studioSidebarFrameStyle/);
   assert.match(studio, /studioSidebarYieldingSectionStyle/);

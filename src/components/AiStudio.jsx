@@ -618,6 +618,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [previewChrome, setPreviewChrome] = useState(null);
   // Sidebar chat search. Filters what is rendered — never the stored sessions.
   const [chatQuery, setChatQuery] = useState('');
+  // Chat search folds away behind the magnifier in the sidebar header, the way
+  // Claude and ChatGPT keep it: no permanent input eating a row of the nav.
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [showMentionsList, setShowMentionsList] = useState(false);
   const [lastProcessedMessageId, setLastProcessedMessageId] = useState(null);
   const [thinkingTime, setThinkingTime] = useState(0);
@@ -3129,11 +3132,12 @@ Paused — ${autoPauseRef.current}.`
         padding: sidebarOpen && !deskFullscreen ? '14px 12px' : '0px',
         flexShrink: 0
       }}>
-        {/* Sidebar Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0 }}>
+        {/* Sidebar Header — New Chat, then search + collapse as quiet icons.
+            Where a new chat lands is tooltip detail, not a paragraph in the nav. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px', marginBottom: '10px', flexShrink: 0 }}>
           <button
             onClick={startNewChat}
-            title="New Chat"
+            title={studioSidebarMembershipCopy(activeProject?.name)}
             style={{
               flex: 1,
               display: 'flex',
@@ -3143,16 +3147,43 @@ Paused — ${autoPauseRef.current}.`
               background: isLight ? '#0a0a0a' : '#ffffff',
               color: isLight ? '#ffffff' : '#0a0a0a',
               border: 'none',
-              padding: '10px 14px',
-              borderRadius: '12px',
+              padding: '9px 14px',
+              borderRadius: '10px',
               fontWeight: '700',
-              fontSize: '0.88rem',
+              fontSize: '0.85rem',
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
           >
-            <Plus size={16} />
+            <Plus size={15} />
             <span>New Chat</span>
+          </button>
+
+          <button
+            data-quantora-sidebar-search-toggle="true"
+            onClick={() => {
+              setChatSearchOpen((open) => {
+                if (open) setChatQuery('');
+                return !open;
+              });
+            }}
+            title="Search chats"
+            aria-label="Search chats"
+            aria-expanded={chatSearchOpen}
+            style={{
+              background: chatSearchOpen ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+              border: 'none',
+              color: chatSearchOpen ? textColor : subtextColor,
+              padding: '8px',
+              cursor: 'pointer',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: '4px'
+            }}
+          >
+            <Search size={17} />
           </button>
 
           <button
@@ -3167,29 +3198,62 @@ Paused — ${autoPauseRef.current}.`
               borderRadius: '8px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              marginLeft: '6px'
+              justifyContent: 'center'
             }}
           >
             <PanelLeftClose size={18} />
           </button>
         </div>
 
-        {/* Projects — picker stays; one-line goal/description. Resume lives on the chat row. */}
+        {/* Search folds out under the header only while it is wanted. */}
+        {chatSearchOpen && (
+          <div style={{ position: 'relative', marginBottom: '10px', flexShrink: 0 }}>
+            <Search
+              size={13}
+              color={subtextColor}
+              style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+            />
+            <input
+              data-quantora-sidebar-chat-search="true"
+              autoFocus
+              value={chatQuery}
+              onChange={(event) => setChatQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setChatQuery('');
+                  setChatSearchOpen(false);
+                }
+              }}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '7px 8px 7px 27px',
+                borderRadius: '9px',
+                border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
+                background: isLight ? '#ffffff' : '#0a0a0a',
+                color: textColor,
+                fontSize: '0.78rem',
+                fontFamily: 'inherit',
+                outline: 'none',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Projects — a flat section, not a boxed card: picker plus a quiet
+            label. The goal/description shows only when the section is expanded;
+            an always-on teaser line was nav noise. */}
         <div
           data-quantora-sidebar-projects="true"
-          style={{
-          ...studioSidebarYieldingSectionStyle({
-            padding: '10px',
-            marginBottom: '10px',
+          style={studioSidebarYieldingSectionStyle({
+            padding: '0 4px',
+            marginBottom: '14px',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-          }),
-          borderRadius: '12px',
-          background: isLight ? '#ffffff' : '#171717',
-          border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
-        }}>
+          })}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
             <button
               type="button"
@@ -3213,7 +3277,7 @@ Paused — ${autoPauseRef.current}.`
                 letterSpacing: '0.08em',
               }}
             >
-              <span>Projects</span>
+              <span>Project</span>
               {sidebarSections.projectDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
             <button
@@ -3223,22 +3287,21 @@ Paused — ${autoPauseRef.current}.`
                 if (name && name.trim()) handleCreateProject({ name: name.trim() });
               }}
               title="New Project"
+              aria-label="New Project"
               style={{
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
+                justifyContent: 'center',
                 background: 'transparent',
-                color: textColor,
-                border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
+                color: subtextColor,
+                border: 'none',
                 borderRadius: '7px',
-                padding: '4px 7px',
-                fontSize: '0.68rem',
-                fontWeight: '700',
+                padding: '3px',
                 cursor: 'pointer',
               }}
             >
-              <Plus size={12} /> New
+              <Plus size={14} />
             </button>
           </div>
           <select
@@ -3249,15 +3312,11 @@ Paused — ${autoPauseRef.current}.`
           >
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: 0, maxHeight: sidebarSections.projectDetails ? '28vh' : undefined, overflow: sidebarSections.projectDetails ? 'auto' : 'hidden', flexShrink: 1 }}>
-            <div style={{
-              whiteSpace: sidebarSections.projectDetails ? 'normal' : 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
+          {sidebarSections.projectDetails && (
+            <div data-quantora-project-resume="true" style={{ color: subtextColor, fontSize: '0.73rem', lineHeight: 1.35, marginTop: '8px', minHeight: 0, maxHeight: '28vh', overflow: 'auto', flexShrink: 1 }}>
               {activeProject?.goal || activeProject?.description || 'Keep related chats and deliverables together.'}
             </div>
-          </div>
+          )}
           {sidebarSections.projectDetails && projectArtifacts.length > 0 && (
             <div style={{ color: subtextColor, fontSize: '0.7rem', marginTop: '8px', textAlign: 'center' }}>
               {projectArtifacts.length} linked artifact{projectArtifacts.length === 1 ? '' : 's'}
@@ -3290,7 +3349,7 @@ Paused — ${autoPauseRef.current}.`
               flexShrink: 0,
             }}
           >
-            <span>Specialized Agents</span>
+            <span>Agents</span>
             {sidebarSections.agents ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {sidebarSections.agents ? (
@@ -3374,63 +3433,20 @@ Paused — ${autoPauseRef.current}.`
           data-quantora-sidebar-history="true"
           style={studioSidebarHistoryPaneStyle()}
         >
-          <div style={{ flexShrink: 0, paddingLeft: '4px', marginBottom: '8px' }}>
+          {/*
+            One quiet section label, the way Claude and ChatGPT head their
+            history. Which project's chats these are lives in the tooltip; the
+            three-line explainer this replaced was the busiest thing in the nav.
+            Search lives behind the magnifier in the sidebar header — it still
+            scans what was said, not just titles.
+          */}
+          <div style={{ flexShrink: 0, paddingLeft: '4px', marginBottom: '6px' }}>
             <div
               data-quantora-sidebar-history-title="true"
-              style={{ fontSize: '0.78rem', fontWeight: '750', color: textColor, letterSpacing: '0.01em' }}
+              title={studioSidebarHistoryTitle(activeProject?.name)}
+              style={{ fontSize: '0.68rem', fontWeight: '700', color: subtextColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}
             >
-              {studioSidebarHistoryTitle(activeProject?.name)}
-            </div>
-            <div
-              data-quantora-sidebar-history-hint="true"
-              style={{ fontSize: '0.68rem', fontWeight: '500', color: subtextColor, marginTop: '3px' }}
-            >
-              {studioSidebarHistoryHint(chatSessions.length, activeProject?.name)}
-            </div>
-            {/*
-              Which project new chats land in is worth saying — but not while
-              someone is searching, when it is two lines of noise above the
-              results they are looking at.
-            */}
-            {chatQuery.trim() ? null : (
-              <div
-                data-quantora-sidebar-history-membership="true"
-                style={{ fontSize: '0.66rem', fontWeight: '500', color: subtextColor, marginTop: '3px', lineHeight: 1.35 }}
-              >
-                {studioSidebarMembershipCopy(activeProject?.name)}
-              </div>
-            )}
-            {/*
-              Search the chats, not just their titles. A title is generated from
-              the opening line, so it cannot find the chat where the thing was
-              discussed halfway through — which is the search people need.
-            */}
-            <div style={{ position: 'relative', marginTop: '8px', marginRight: '4px' }}>
-              <Search
-                size={13}
-                color={subtextColor}
-                style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
-              />
-              <input
-                data-quantora-sidebar-chat-search="true"
-                value={chatQuery}
-                onChange={(event) => setChatQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Escape') setChatQuery(''); }}
-                placeholder="Search chats"
-                aria-label="Search chats"
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  padding: '6px 8px 6px 27px',
-                  borderRadius: '9px',
-                  border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)',
-                  background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)',
-                  color: textColor,
-                  fontSize: '0.74rem',
-                  fontFamily: 'inherit',
-                  outline: 'none',
-                }}
-              />
+              Chats
             </div>
           </div>
 
