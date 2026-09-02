@@ -138,8 +138,8 @@ export default function TravelTripBoard({
         background: 'var(--q-paper)',
         color: 'var(--q-ink)',
         borderRadius: '999px',
-        padding: '6px 11px',
-        fontSize: '0.76rem',
+        padding: '4px 10px',
+        fontSize: '0.74rem',
         fontWeight: 700,
         cursor: enabled && !busy ? 'pointer' : 'default',
         opacity: enabled ? 1 : 0.4,
@@ -189,31 +189,38 @@ export default function TravelTripBoard({
       data-quantora-travel-board="true"
       data-quantora-workspace-capabilities="travel"
       style={{
-        marginTop: '10px',
+        /*
+         * Tightened, and the internal divider row removed. The board is one of
+         * three blocks competing for the space between the last reply and the
+         * composer; a rule plus 10px above it plus 10px below it spent 21px to
+         * separate two things already separated by a gap.
+         */
+        marginTop: '8px',
         border: '1px solid var(--q-border)',
-        borderRadius: '14px',
-        padding: '12px 14px',
+        borderRadius: '12px',
+        padding: '8px 12px',
         textAlign: 'left',
         background: 'var(--q-paper)',
         color: 'var(--q-ink)',
       }}
     >
-      <div style={{ fontSize: '0.86rem', fontWeight: 800, letterSpacing: '0.01em' }}>
-        {heading}
+      {/*
+        Facts and the open question share a line and wrap together. They were a
+        heading row and a subline row, which on a fully-specified trip meant two
+        rows to say what fits comfortably in one.
+      */}
+      <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: '8px', rowGap: '2px' }}>
+        <span style={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.01em' }}>{heading}</span>
+        {subline ? (
+          <span style={{ fontSize: '0.72rem', fontWeight: 400, lineHeight: 1.35, opacity: 0.85 }}>{subline}</span>
+        ) : null}
       </div>
-      {subline ? (
-        <div style={{ fontSize: '0.74rem', fontWeight: 400, marginTop: '3px', lineHeight: 1.5 }}>
-          {subline}
-        </div>
-      ) : null}
       <div
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '7px',
-          borderTop: '1px solid var(--q-border)',
-          marginTop: '10px',
-          paddingTop: '10px',
+          gap: '6px',
+          marginTop: '7px',
         }}
       >
         {chip('Flights', () => runSearch('flights'), { enabled: canFlights, busyKey: 'flights' })}
@@ -233,13 +240,13 @@ export default function TravelTripBoard({
           : null}
       </div>
       {providerBlocked ? (
-        <div style={{ marginTop: '9px', fontSize: '0.74rem' }}>{providerBlocked}</div>
+        <div style={{ marginTop: '6px', fontSize: '0.72rem' }}>{providerBlocked}</div>
       ) : null}
       {error ? (
-        <div style={{ marginTop: '9px', fontSize: '0.76rem', fontWeight: 700 }}>{error}</div>
+        <div style={{ marginTop: '6px', fontSize: '0.74rem', fontWeight: 700 }}>{error}</div>
       ) : null}
       {note ? (
-        <div style={{ marginTop: '8px', fontSize: '0.72rem' }}>{note}</div>
+        <div style={{ marginTop: '5px', fontSize: '0.71rem' }}>{note}</div>
       ) : null}
       {results ? (
         <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
