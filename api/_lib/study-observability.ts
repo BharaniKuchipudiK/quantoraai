@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { evaluateStudyProjectionSlo, STUDY_SLO_VERSION } from './study-slos.js';
 
-export const STUDY_OBSERVABILITY_VERSION = 'study-observability-2026-09-02.1';
+export const STUDY_OBSERVABILITY_VERSION = 'study-observability-2026-09-02.2';
 
 export type StudyReplaySource = 'checkpoint_delta' | 'full_replay';
 export type StudyReplayFallbackReason =
@@ -121,17 +122,24 @@ type StudyTelemetryEvent =
  */
 export function emitStudyTelemetry(event: StudyTelemetryEvent): void {
   const traceId = currentStudyTraceId();
+  const durationMs = Math.max(0, Math.min(120_000, Math.round(event.durationMs)));
+  const dbCalls = Math.max(0, Math.min(10_000, Math.floor(event.dbCalls)));
+  const sloStatus = event.event === 'projection_load' && event.status === 'success' && event.source
+    ? evaluateStudyProjectionSlo({ source: event.source, durationMs, dbCalls })
+    : undefined;
   console.info('Study telemetry', {
     version: STUDY_OBSERVABILITY_VERSION,
+    sloVersion: STUDY_SLO_VERSION,
     traceId,
     event: event.event,
     operation: event.operation,
     status: event.status,
     ...(event.event === 'projection_load' && event.source ? { source: event.source } : {}),
     ...(event.event === 'projection_load' && event.fallbackReason ? { fallbackReason: event.fallbackReason } : {}),
+    ...(sloStatus ? { sloStatus } : {}),
     ...(event.event === 'scope_complete' && event.errorClass ? { errorClass: event.errorClass.slice(0, 80) } : {}),
-    durationMs: Math.max(0, Math.min(120_000, Math.round(event.durationMs))),
-    dbCalls: Math.max(0, Math.min(10_000, Math.floor(event.dbCalls))),
+    durationMs,
+    dbCalls,
   });
 }
 
