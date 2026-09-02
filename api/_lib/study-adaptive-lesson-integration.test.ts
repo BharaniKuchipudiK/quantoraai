@@ -82,6 +82,47 @@ test('unsupported Electricity visual remains honest even when the learner is blo
   assert.match(formatStudyCognitiveDirective(interpretation), /do not claim that an unsupported visual/i);
 });
 
+test('an old mechanics topic cannot leak a physics visual into the current Electricity lesson', () => {
+  const interpretation = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Can you show me visually?',
+    history: [
+      { role: 'user', text: 'Explain Newton second law and friction.' },
+      { role: 'assistant', text: 'A net force changes velocity.' },
+      { role: 'user', text: 'Now switch topics. Explain EMF and terminal potential difference in a battery circuit.' },
+      { role: 'assistant', text: 'EMF is energy supplied per coulomb by the source.' },
+      { role: 'user', text: "I don't understand." },
+      { role: 'assistant', text: 'I will make the energy accounting shorter.' },
+      { role: 'user', text: 'Make it easier for me.' },
+    ],
+  });
+
+  assert.ok(interpretation);
+  assert.equal(interpretation.representation.primaryRepresentation, 'concise_text');
+  assert.equal(interpretation.representation.rendererRequired, false);
+  assert.equal(interpretation.representation.rendererKind, null);
+  assert.equal(interpretation.representation.fallback, 'renderer_unavailable');
+});
+
+test('generic continuation stays inside the authoritative Study teaching-turn policy', () => {
+  const interpretation = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Continue',
+    history: [
+      { role: 'user', text: 'Explain Newton second law and friction.' },
+      { role: 'assistant', text: 'A net force changes velocity.' },
+    ],
+  });
+
+  assert.ok(interpretation);
+  assert.equal(interpretation.lessonLoop.reason, 'continuation_policy');
+  assert.deepEqual(interpretation.lessonLoop.beats, []);
+  assert.equal(interpretation.lessonLoop.mustWaitForLearner, false);
+  const directive = formatStudyCognitiveDirective(interpretation);
+  assert.match(directive, /choose the next useful SEE, EXPLAIN, TRY, or VERIFY beat/i);
+  assert.match(directive, /Wait boundary: no forced wait/i);
+});
+
 test('a visual preference by itself does not label the learner as struggling', () => {
   const interpretation = interpretStudyTurn({
     studioDomain: 'education',
