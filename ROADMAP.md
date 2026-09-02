@@ -124,6 +124,10 @@ policy** so it's proactive, not noisy.
 - ⏳ **4.1 Tauri/Electron shell** — the body the cognitive layer needs:
   background presence, local notifications, optional file access. **Gated on
   Phase 0.1** (don't distribute a binary over an unfixed sandbox).
+  → **Designed** (2026-09-02): `docs/architecture/desktop-client-v1.md` —
+  Electron shell, bundled renderer on `quantora://app`, bearer carrier for the
+  existing HMAC session, a `DeskRuntime` seam so the Coding Desk gets a real
+  shell/git/folder, and the gate extensions each phase must ship with.
 
 ## Phase 5 — Architecture hygiene (continuous)
 
