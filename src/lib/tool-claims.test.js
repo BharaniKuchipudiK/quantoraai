@@ -119,17 +119,38 @@ test('LIVE: the real tool definitions parse and are currently honest', () => {
 test('THE REGRESSION: removing withPhotos from the call site is caught', () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const source = fs.readFileSync(path.join(repoRoot, 'api/_lib/agent-tools-core.ts'), 'utf8');
-  // Exactly the edit that restores the production incident. An earlier version
-  // of this gate returned no findings for it, because it unioned masks across
-  // the file instead of reading the call site.
-  const broken = source.replace(/\n\s*\/\/ Only this tool advertises photos[^\n]*\n\s*withPhotos: true,/, '');
-  assert.notEqual(broken, source, 'the withPhotos call site must still be findable');
+  /*
+   * Exactly the edit that restores the production incident. An earlier version
+   * of this gate returned no findings for it, because it unioned masks across
+   * the file instead of reading the call site.
+   *
+   * The mutation is anchored on the CASE BLOCK, not on the comment above the
+   * line. It used to match `// Only this tool advertises photos…` and broke the
+   * moment that sentence stopped being true — a second tool started requesting
+   * photos, the comment was corrected, and this test failed on its own
+   * precondition while the gate it checks was working perfectly. CLAUDE.md §6:
+   * anchor on durable structure, never on prose.
+   */
+  const cut = (text, toolName) => {
+    const start = text.indexOf(`case '${toolName}':`);
+    assert.notEqual(start, -1, `${toolName} case block must still be findable`);
+    const after = text.slice(start);
+    const end = after.indexOf("\n    case '");
+    const block = end === -1 ? after : after.slice(0, end);
+    assert.match(block, /withPhotos:\s*true/, `${toolName} must still request photos`);
+    return text.slice(0, start) + block.replace(/\n\s*withPhotos:\s*true,/, '') + (end === -1 ? '' : after.slice(end));
+  };
 
-  const parsed = extractPlacesToolClaims(broken);
-  const findings = parsed.places.flatMap((tool) => findUnbackedToolClaims([tool], tool.fieldMask));
-  assert.equal(findings.length, 1, 'the gate must catch the incident it exists for');
-  assert.equal(findings[0].tool, 'search_hotels');
-  assert.equal(findings[0].requiredField, 'places.photos');
+  for (const tool of ['search_hotels', 'search_attractions']) {
+    const broken = cut(source, tool);
+    assert.notEqual(broken, source, `${tool}'s withPhotos call site must still be findable`);
+
+    const parsed = extractPlacesToolClaims(broken);
+    const findings = parsed.places.flatMap((entry) => findUnbackedToolClaims([entry], entry.fieldMask));
+    assert.equal(findings.length, 1, `the gate must catch the incident for ${tool}`);
+    assert.equal(findings[0].tool, tool);
+    assert.equal(findings[0].requiredField, 'places.photos');
+  }
 });
 
 test('a tool the parser cannot read fails loudly rather than passing quietly', () => {

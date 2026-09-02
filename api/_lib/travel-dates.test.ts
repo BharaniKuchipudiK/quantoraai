@@ -210,3 +210,38 @@ test('the travel directive forbids answering from memory, not just inventing pri
     'the rule has to generalise, or the next unnamed field is the next hole',
   );
 });
+
+/*
+ * THE INCIDENT (photos)
+ *
+ * A traveller asked "Can you include some pics of the restaurants". The desk
+ * returned Google Maps links — fine — and then described each gallery:
+ * "What you'll see in the gallery: Tandoor ovens, royal dining interiors,
+ * fresh paneer platters, and authentic Indian spreads." and "Signature
+ * pastel-pink cafe decor, custom smoothie bowls, plant-based pizzas, and waffle
+ * platters."
+ *
+ * No photo was ever fetched. search_attractions serves restaurants and did not
+ * request photos, so the desk had seen nothing at all — and wrote a confident
+ * first-hand account of the contents of images it did not have.
+ *
+ * The rule beside it permitted the link and said nothing about describing what
+ * the link contains, which is the same one-field-wide shape as
+ * "I will not invent fares."
+ */
+test('the travel directive forbids describing images it has not seen', () => {
+  const directive = buildDomainDirective('travel');
+
+  assert.match(
+    directive,
+    /Never describe what a photo or gallery CONTAINS unless the provider returned that image to you this turn/i,
+  );
+  assert.match(
+    directive,
+    /Give the link and say nothing about its contents/i,
+    'the remedy has to be stated, or the rule is only a scolding',
+  );
+  // The generalisation from the flight incident must still be present: this is
+  // one more provider-backed field, not a special case that replaces the rule.
+  assert.match(directive, /If a provider did not return it this turn, it does not go in the reply/i);
+});
