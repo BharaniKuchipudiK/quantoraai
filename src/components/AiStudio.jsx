@@ -238,7 +238,7 @@ function TechBadge({ tech, isLight, textColor, onSelect }) {
         cursor: 'pointer',
         border: hovered
           ? '1px solid #f97316'
-          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
+          : (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.12)'),
         whiteSpace: 'nowrap',
         transition: 'background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
         display: 'inline-flex',
@@ -268,7 +268,7 @@ function QuickPromptChip({ chip, isLight, onSelect }) {
           : (isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.08)'),
         border: hovered
           ? '1px solid #f97316'
-          : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)'),
+          : (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.12)'),
         color: hovered ? '#f97316' : (isLight ? '#475569' : '#94a3b8'),
         padding: '6px 14px',
         borderRadius: '20px',
@@ -352,21 +352,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const isAdvisorWorkspace = Boolean(domainPolicy.domain);
 
-  /*
-   * Tell the ambient background to step back once there is work on screen.
-   *
-   * A warm gradient is the right welcome on an empty canvas and the wrong
-   * thing behind a long, code-heavy conversation — colour under dense text is
-   * exactly the readability problem the old particle field had, just prettier.
-   * The greeting message is not content, so it does not count.
-   */
-  const hasConversation = messages.length > 1;
-  React.useEffect(() => {
-    const root = document.documentElement;
-    if (hasConversation) root.setAttribute('data-workspace', 'active');
-    else root.removeAttribute('data-workspace');
-    return () => root.removeAttribute('data-workspace');
-  }, [hasConversation]);
 
 
 
@@ -1204,12 +1189,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     };
   }, []);
 
-  const textColor = isLight ? '#0f172a' : '#ffffff';
-  const subtextColor = isLight ? '#475569' : '#94a3b8';
+  // Flat homepage palette: near-black ink and neutral gray, no blue tint.
+  const textColor = isLight ? '#0a0a0a' : '#ffffff';
+  const subtextColor = isLight ? '#737373' : '#a3a3a3';
   const bubbleUserBg = isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)';
   const bubbleUserBorder = isLight ? '#ffedd5' : 'rgba(249, 115, 22, 0.3)';
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
-  const bubbleAiBorder = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+  const bubbleAiBorder = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.08)';
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1895,8 +1881,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', width: '100%' }}>
                       {/* Model A Card */}
                       <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.35)',
+                        background: isLight ? '#ffffff' : '#111111',
+                        border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(249, 115, 22, 0.35)',
                         borderRadius: '24px',
                         padding: '16px',
                         display: 'flex',
@@ -1905,7 +1891,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
                       }}>
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f5f5f5' : '1px solid rgba(255, 255, 255, 0.08)' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <Cpu size={14} /> {formatModelName(msg.modelA.modelName)}
                             </span>
@@ -1936,10 +1922,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </ReactMarkdown>
                           </div>
                         </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f5f5f5' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelA.provider}</span>
                           
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <button 
                                   onClick={() => {
@@ -1969,8 +1955,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                       {/* Model B Card */}
                       <div style={{
-                        background: isLight ? '#ffffff' : '#0d1127',
-                        border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(59, 130, 246, 0.35)',
+                        background: isLight ? '#ffffff' : '#111111',
+                        border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(59, 130, 246, 0.35)',
                         borderRadius: '16px',
                         padding: '16px',
                         display: 'flex',
@@ -1979,7 +1965,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.05)' : '0 8px 24px rgba(0,0,0,0.3)'
                       }}>
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.08)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', paddingBottom: '8px', borderBottom: isLight ? '1px solid #f5f5f5' : '1px solid rgba(255, 255, 255, 0.08)' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <Cpu size={14} /> {formatModelName(msg.modelB.modelName)}
                             </span>
@@ -2010,10 +1996,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             </ReactMarkdown>
                           </div>
                         </div>
-                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f1f5f9' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: isLight ? '1px solid #f5f5f5' : '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: subtextColor }}>Engine: {msg.modelB.provider}</span>
                           
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', paddingTop: '12px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <button 
                                   onClick={() => {
@@ -2066,7 +2052,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
                       {/* Render Ollama Style "Thought for a moment" Header */}
                       {msg.thoughtProcess && (
-                        <div style={{ fontSize: '0.8rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '12px 16px', background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
+                        <div style={{ fontSize: '0.8rem', color: subtextColor, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '12px 16px', background: isLight ? '#fafafa' : 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
                           <Lightbulb size={16} color="#f97316" />
                           <span style={{ fontWeight: 500 }}>Thought for a moment ({msg.thoughtProcess})</span>
                         </div>
@@ -2139,7 +2125,7 @@ Paused — ${autoPauseRef.current}.`
                           marginTop: '20px',
                           padding: '24px',
                           background: isLight ? '#ffffff' : '#0f172a',
-                          border: isLight ? '1px solid #e2e8f0' : '1px solid #1e293b',
+                          border: isLight ? '1px solid #e5e5e5' : '1px solid #1e293b',
                           borderRadius: '16px',
                           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                           display: 'flex',
@@ -2260,7 +2246,7 @@ Paused — ${autoPauseRef.current}.`
                           {actions.preview && runnableCode && canExplicitlyPreviewCode(studioDomain) && (
                             <button
                               onClick={() => feedOpenCanvasWithCode(msg.text)}
-                              style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}
+                              style={{ background: '#ea580c', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700' }}
                               onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
                               onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
                               title="Preview"
@@ -2308,7 +2294,7 @@ Paused — ${autoPauseRef.current}.`
                               {openActionMenuId === msg.id && (
                                 <>
                                   <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpenActionMenuId(null)} />
-                                  <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px', zIndex: 50, minWidth: '160px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column' }}>
+                                  <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: '6px', zIndex: 50, minWidth: '160px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column' }}>
                                     {actions.overflow.includes('read-aloud') && (
                                       <button
                                         onClick={() => { try { window.speechSynthesis?.cancel(); window.speechSynthesis?.speak(new SpeechSynthesisUtterance(cleanText)); } catch { /* unsupported */ } setOpenActionMenuId(null); }}
@@ -2435,7 +2421,7 @@ Paused — ${autoPauseRef.current}.`
                                 style={{
                                   padding: '6px 12px',
                                   borderRadius: '999px',
-                                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.15)',
+                                  border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.15)',
                                   background: 'transparent',
                                   color: subtextColor,
                                   fontSize: '0.76rem',
@@ -2600,7 +2586,7 @@ Paused — ${autoPauseRef.current}.`
                     <div style={{
                       marginTop: '14px',
                       padding: '16px',
-                      background: isLight ? '#f8fafc' : 'rgba(15, 23, 42, 0.85)',
+                      background: isLight ? '#fafafa' : 'rgba(10, 10, 10, 0.85)',
                       borderRadius: '12px',
                       border: '1px solid #0ea5e9',
                       display: 'flex',
@@ -2634,7 +2620,7 @@ Paused — ${autoPauseRef.current}.`
 
                   {/* Source Code Toggle Button — developer-only, never shown for Office artifacts */}
                   {msg.codeSnippet && !msg.officeAttachment && canExplicitlyPreviewCode(studioDomain) && (
-                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <button
                         onClick={() => setShowCodeMap({ ...showCodeMap, [msg.id]: !showCodeMap[msg.id] })}
                         style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -2653,7 +2639,7 @@ Paused — ${autoPauseRef.current}.`
 
                   {/* Optional Source Code Panel */}
                   {showCodeMap[msg.id] && msg.codeSnippet && !msg.officeAttachment && canExplicitlyPreviewCode(studioDomain) && (
-                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#070913', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <div style={{ marginTop: '10px', padding: '12px 16px', background: isLight ? '#0f172a' : '#0a0a0a', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                       <pre style={{ margin: 0, fontSize: '0.82rem', color: '#38bdf8', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
                         {msg.codeSnippet}
                       </pre>
@@ -3134,7 +3120,7 @@ Paused — ${autoPauseRef.current}.`
         pointerEvents: sidebarOpen && !deskFullscreen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         ...studioSidebarFrameStyle(),
-        background: isLight ? '#f0f4f9' : 'var(--bg-secondary)',
+        background: isLight ? '#f5f5f5' : '#111111',
         border: 'none',
         borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
         padding: sidebarOpen && !deskFullscreen ? '14px 12px' : '0px',
@@ -3151,15 +3137,14 @@ Paused — ${autoPauseRef.current}.`
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
-              background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-              color: '#ffffff',
+              background: isLight ? '#0a0a0a' : '#ffffff',
+              color: isLight ? '#ffffff' : '#0a0a0a',
               border: 'none',
               padding: '10px 14px',
               borderRadius: '12px',
               fontWeight: '700',
               fontSize: '0.88rem',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(249, 115, 22, 0.25)',
               transition: 'all 0.2s ease'
             }}
           >
@@ -3199,8 +3184,8 @@ Paused — ${autoPauseRef.current}.`
             overflow: 'hidden',
           }),
           borderRadius: '12px',
-          background: isLight ? '#ffffff' : 'rgba(15, 23, 42, 0.72)',
-          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.16)',
+          background: isLight ? '#ffffff' : '#171717',
+          border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
             <button
@@ -3241,8 +3226,8 @@ Paused — ${autoPauseRef.current}.`
                 alignItems: 'center',
                 gap: '4px',
                 background: 'transparent',
-                color: isLight ? '#2563eb' : '#60a5fa',
-                border: isLight ? '1px solid #bfdbfe' : '1px solid rgba(96, 165, 250, 0.35)',
+                color: textColor,
+                border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
                 borderRadius: '7px',
                 padding: '4px 7px',
                 fontSize: '0.68rem',
@@ -3257,7 +3242,7 @@ Paused — ${autoPauseRef.current}.`
             aria-label="Active project"
             value={activeProjectId}
             onChange={(event) => setActiveProjectId(event.target.value)}
-            style={{ width: '100%', background: isLight ? '#f8fafc' : '#111827', color: textColor, border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(148, 163, 184, 0.28)', borderRadius: '8px', padding: '7px 8px', fontSize: '0.82rem', fontWeight: '650', outline: 'none' }}
+            style={{ width: '100%', background: isLight ? '#fafafa' : '#0a0a0a', color: textColor, border: isLight ? '1px solid #e5e5e5' : '1px solid #262626', borderRadius: '8px', padding: '7px 8px', fontSize: '0.82rem', fontWeight: '650', outline: 'none' }}
           >
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
@@ -3319,20 +3304,21 @@ Paused — ${autoPauseRef.current}.`
               cursor: 'pointer',
               fontSize: '0.82rem',
               fontWeight: '500',
-              color: isCodingDesk ? '#f97316' : textColor,
-              background: isCodingDesk ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
-              border: isCodingDesk ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
+              color: textColor,
+              fontWeight: isCodingDesk ? '700' : '500',
+              background: isCodingDesk ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+              border: isCodingDesk ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
               transition: 'all 0.15s ease',
             }}
           >
-            <div style={{ flexShrink: 0 }}><Code2 size={15} color="#f97316" /></div>
+            <div style={{ flexShrink: 0 }}><Code2 size={15} /></div>
             <span>Coding desk</span>
           </div>
           {[
-            { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} color="#3b82f6" /> },
-            { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} color="#10b981" /> },
-            { domain: 'education', title: 'Study Tutor', icon: <Lightbulb size={15} color="#64748b" /> },
-            { domain: 'research', title: 'Research Analyst', icon: <Layers size={15} color="#8b5cf6" /> }
+            { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} /> },
+            { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} /> },
+            { domain: 'education', title: 'Study Tutor', icon: <Lightbulb size={15} /> },
+            { domain: 'research', title: 'Research Analyst', icon: <Layers size={15} /> }
           ].map((card) => {
             const selected = studioDomain === card.domain;
             return (
@@ -3353,15 +3339,16 @@ Paused — ${autoPauseRef.current}.`
                 cursor: 'pointer',
                 fontSize: '0.82rem',
                 fontWeight: '500',
-                color: selected ? '#f97316' : textColor,
-                background: selected ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)') : 'transparent',
-                border: selected ? '1px solid rgba(249, 115, 22, 0.28)' : '1px solid transparent',
+                color: textColor,
+                fontWeight: selected ? '700' : '500',
+                background: selected ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+                border: selected ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
                 transition: 'all 0.15s ease'
               }}
               onMouseEnter={(e) => {
                 if (selected) return;
-                e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)';
               }}
               onMouseLeave={(e) => {
                 if (selected) return;
@@ -3433,7 +3420,7 @@ Paused — ${autoPauseRef.current}.`
                   boxSizing: 'border-box',
                   padding: '6px 8px 6px 27px',
                   borderRadius: '9px',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                  border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)',
                   background: isLight ? '#ffffff' : 'rgba(255,255,255,0.05)',
                   color: textColor,
                   fontSize: '0.74rem',
@@ -3472,22 +3459,22 @@ Paused — ${autoPauseRef.current}.`
                   borderRadius: '10px',
                   cursor: 'pointer',
                   flexShrink: 0,
-                  background: isActive ? (isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.15)') : 'transparent',
-                  border: isActive ? (isLight ? '1px solid #ffedd5' : '1px solid rgba(249, 115, 22, 0.3)') : '1px solid transparent',
-                  color: isActive ? '#f97316' : textColor,
+                  background: isActive ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+                  border: isActive ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
+                  color: textColor,
                   fontSize: '0.85rem',
                   fontWeight: isActive ? '700' : '500',
                   transition: 'all 0.15s ease'
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                  if (!isActive) e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive) e.currentTarget.style.background = 'transparent';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: '1 1 120px', minWidth: 0 }}>
-                  <MessageSquare size={15} color={isActive ? '#f97316' : subtextColor} style={{ flexShrink: 0 }} />
+                  <MessageSquare size={15} color={isActive ? textColor : subtextColor} style={{ flexShrink: 0 }} />
                   <div style={{ minWidth: 0, overflow: 'hidden', flex: 1 }}>
                     <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
@@ -3542,9 +3529,9 @@ Paused — ${autoPauseRef.current}.`
                         fontSize: '0.62rem',
                         fontWeight: 700,
                         letterSpacing: '0.02em',
-                        color: isLight ? '#c2410c' : '#fdba74',
-                        background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.16)',
-                        border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249, 115, 22, 0.35)',
+                        color: subtextColor,
+                        background: 'transparent',
+                        border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.24)',
                       }}
                     >
                       Resume
@@ -3561,9 +3548,9 @@ Paused — ${autoPauseRef.current}.`
                       }}
                       style={{
                         maxWidth: '92px',
-                        background: isLight ? '#f8fafc' : '#111827',
+                        background: isLight ? '#fafafa' : '#0a0a0a',
                         color: subtextColor,
-                        border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148, 163, 184, 0.28)',
+                        border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
                         borderRadius: '6px',
                         padding: '2px 4px',
                         fontSize: '0.62rem',
@@ -3608,7 +3595,7 @@ Paused — ${autoPauseRef.current}.`
         </div>
 
         {/* Product feedback — explicit signed-in Studio entry point. */}
-        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0 }}>
+        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0 }}>
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-feedback'))}
@@ -3628,15 +3615,15 @@ Paused — ${autoPauseRef.current}.`
               textAlign: 'left'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
-              e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
+              e.currentTarget.style.borderColor = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
               e.currentTarget.style.borderColor = 'transparent';
             }}
           >
-            <MessageSquare size={15} color="#f97316" />
+            <MessageSquare size={15} />
             <span>Feedback & Suggestions</span>
           </button>
         </div>
@@ -3665,7 +3652,7 @@ Paused — ${autoPauseRef.current}.`
           marginBottom: hasUserTurn ? '10px' : '0',
           paddingBottom: hasUserTurn ? '10px' : '0',
           borderBottom: hasUserTurn
-            ? (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)')
+            ? (isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)')
             : 'none'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -3674,8 +3661,8 @@ Paused — ${autoPauseRef.current}.`
                 onClick={() => setSidebarOpen(true)}
                 title="Open Chat History Sidebar"
                 style={{
-                  background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.12)',
+                  background: isLight ? '#f5f5f5' : 'rgba(255, 255, 255, 0.08)',
+                  border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.12)',
                   color: textColor,
                   padding: '8px',
                   borderRadius: '10px',
@@ -3694,8 +3681,8 @@ Paused — ${autoPauseRef.current}.`
 
             {hasUserTurn && (
               <>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Sparkles size={16} color="#f97316" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: isLight ? '#f5f5f5' : '#171717', border: isLight ? '1px solid #e5e5e5' : '1px solid #262626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={16} color={textColor} />
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
               <h2 style={{ fontSize: '1.05rem', margin: 0, fontWeight: '700', color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -3715,8 +3702,8 @@ Paused — ${autoPauseRef.current}.`
             onClick={() => setArenaMode(!arenaMode)}
             title="Compare two AI models side-by-side in real time"
             style={{
-              background: arenaMode ? 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)' : (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)'),
-              border: arenaMode ? 'none' : (isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)'),
+              background: arenaMode ? '#ea580c' : (isLight ? '#f5f5f5' : 'rgba(255, 255, 255, 0.05)'),
+              border: arenaMode ? 'none' : (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.1)'),
               color: arenaMode ? '#ffffff' : textColor,
               padding: '6px 14px',
               borderRadius: '20px',
@@ -3726,7 +3713,7 @@ Paused — ${autoPauseRef.current}.`
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              boxShadow: arenaMode ? '0 4px 12px rgba(249, 115, 22, 0.3)' : 'none',
+              boxShadow: 'none',
               transition: 'all 0.2s ease'
             }}
           >
@@ -3740,7 +3727,7 @@ Paused — ${autoPauseRef.current}.`
               <button
                 onClick={() => setShowSecondModelDropdown(!showSecondModelDropdown)}
                 style={{
-                  background: isLight ? '#ffffff' : '#0d1127',
+                  background: isLight ? '#ffffff' : '#111111',
                   border: '1px solid #f97316',
                   color: '#f97316',
                   padding: '6px 12px',
@@ -3763,8 +3750,8 @@ Paused — ${autoPauseRef.current}.`
                   top: '120%',
                   right: 0,
                   width: '240px',
-                  background: isLight ? '#ffffff' : '#0d1127',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
+                  background: isLight ? '#ffffff' : '#111111',
+                  border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(249, 115, 22, 0.4)',
                   borderRadius: '14px',
                   padding: '8px',
                   boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
@@ -3814,26 +3801,22 @@ Paused — ${autoPauseRef.current}.`
             maxWidth: '640px', 
             margin: '0 auto', 
             width: '100%',
-            background: isLight ? 'linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.85))' : 'rgba(255, 255, 255, 0.05)',
-            backdropFilter: 'blur(24px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-            border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '20px',
-            boxShadow: isLight ? '0 32px 64px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.6) inset' : '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2)'
+            background: isLight ? '#ffffff' : '#111111',
+            border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
+            borderRadius: '20px'
           }}>
             <div style={{
               width: '40px',
               height: '40px',
               borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%)',
-              border: '1px solid rgba(249, 115, 22, 0.3)',
+              background: isLight ? '#f5f5f5' : '#171717',
+              border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 14px auto',
-              boxShadow: '0 8px 24px rgba(249, 115, 22, 0.15)'
+              margin: '0 auto 14px auto'
             }}>
-              <Sparkles size={20} color="#f97316" />
+              <Sparkles size={20} color={textColor} />
             </div>
 
             <h1 style={{ fontSize: '1.85rem', fontWeight: '700', margin: '0 0 6px 0', color: textColor, letterSpacing: '-0.03em' }}>
@@ -3848,7 +3831,7 @@ Paused — ${autoPauseRef.current}.`
                 <p style={{ margin: '0 0 18px 0', color: subtextColor, fontSize: '0.95rem', lineHeight: 1.6 }}>{domainPolicy.supporting}</p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '9px', flexWrap: 'wrap' }}>
                   {domainPolicy.capabilities.map((capability) => (
-                    <span key={capability} style={{ padding: '7px 12px', borderRadius: '999px', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(148,163,184,0.22)', background: isLight ? '#ffffff' : 'rgba(15,23,42,0.48)', color: textColor, fontSize: '0.8rem', fontWeight: 700 }}>{capability}</span>
+                    <span key={capability} style={{ padding: '7px 12px', borderRadius: '999px', border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(148,163,184,0.22)', background: isLight ? '#ffffff' : 'rgba(15,23,42,0.48)', color: textColor, fontSize: '0.8rem', fontWeight: 700 }}>{capability}</span>
                   ))}
                 </div>
                 {studioDomain === 'education' && studySyllabusSet ? (
@@ -3914,7 +3897,7 @@ Paused — ${autoPauseRef.current}.`
                     onMouseLeave={(e) => { 
                       e.currentTarget.style.transform = 'none'; 
                       e.currentTarget.style.boxShadow = isLight ? '0 4px 12px rgba(0,0,0,0.03)' : '0 8px 32px rgba(0,0,0,0.2)'; 
-                      e.currentTarget.style.borderColor = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.borderColor = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.08)';
                     }}
                     onClick={() => {
                       if (setSelectedModel) setSelectedModel(model);
@@ -4003,7 +3986,7 @@ Paused — ${autoPauseRef.current}.`
                   </button>
                   <button
                     onClick={() => handlePclDecision(false)}
-                    style={{ background: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
+                    style={{ background: isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', flex: 1 }}
                   >
                     Stay on {pclIntercept.targetModel.name}
                   </button>
@@ -4090,8 +4073,8 @@ Paused — ${autoPauseRef.current}.`
               margin: '0 8px 8px',
               padding: '8px 12px',
               borderRadius: '10px',
-              background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)',
-              border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
+              background: isLight ? '#fafafa' : 'rgba(255,255,255,0.04)',
+              border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.08)',
             }}
           >
             <div style={{ fontSize: '0.78rem', fontWeight: 650, color: textColor, lineHeight: 1.4 }}>{partnerStatus.now}</div>
@@ -4149,9 +4132,8 @@ Paused — ${autoPauseRef.current}.`
               position: 'absolute',
               top: '-35px',
               left: '12px',
-              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 27, 75, 0.95) 100%)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(249, 115, 22, 0.4)',
+              background: '#171717',
+              border: '1px solid #262626',
               borderRadius: '20px',
               padding: '6px 12px',
               display: 'flex',
@@ -4160,7 +4142,7 @@ Paused — ${autoPauseRef.current}.`
               boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
               zIndex: 10
             }}>
-              <span style={{ fontSize: '0.75rem', color: '#e2e8f0', fontWeight: '500' }}>
+              <span style={{ fontSize: '0.75rem', color: '#e5e5e5', fontWeight: '500' }}>
                 🧠 Looks like you're {suggestedModel.name.includes('Qwen') ? 'coding' : 'researching'}. Recommend: <strong style={{color: '#f97316'}}>{suggestedModel.name}</strong>
               </span>
               <button 
@@ -4177,8 +4159,8 @@ Paused — ${autoPauseRef.current}.`
               position: 'absolute',
               bottom: 'calc(100% + 10px)',
               left: '12px',
-              background: isLight ? '#ffffff' : '#0d1127',
-              border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(139, 92, 246, 0.4)',
+              background: isLight ? '#ffffff' : '#111111',
+              border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(139, 92, 246, 0.4)',
               borderRadius: '16px',
               padding: '8px',
               boxShadow: isLight ? '0 -10px 30px rgba(0,0,0,0.15)' : '0 -15px 40px rgba(0,0,0,0.6)',
@@ -4201,7 +4183,7 @@ Paused — ${autoPauseRef.current}.`
                   color: textColor,
                   transition: 'background 0.2s ease'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(139, 92, 246, 0.2)'}
+                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(139, 92, 246, 0.2)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <Code2 size={16} color="#8b5cf6" />
@@ -4224,7 +4206,7 @@ Paused — ${autoPauseRef.current}.`
                   color: textColor,
                   transition: 'background 0.2s ease'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(139, 92, 246, 0.2)'}
+                onMouseEnter={(e) => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(139, 92, 246, 0.2)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <MessageSquare size={16} color="#8b5cf6" />
@@ -4312,7 +4294,7 @@ Paused — ${autoPauseRef.current}.`
                   transition: 'all 0.2s ease'
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                  e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.08)';
                   e.currentTarget.style.color = textColor;
                 }}
                 onMouseLeave={e => {
@@ -4338,7 +4320,7 @@ Paused — ${autoPauseRef.current}.`
                   }}
                   title={studioDomain === 'travel' ? 'This trip' : studioDomain === 'education' ? 'This topic' : 'Tools'}
                   style={{
-                    background: showToolsMenu ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
+                    background: showToolsMenu ? (isLight ? '#f5f5f5' : 'rgba(255,255,255,0.1)') : 'transparent',
                     border: 'none',
                     color: showToolsMenu ? textColor : subtextColor,
                     padding: '6px',
@@ -4351,7 +4333,7 @@ Paused — ${autoPauseRef.current}.`
                   }}
                   onMouseEnter={e => {
                     if (!showToolsMenu) {
-                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                      e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.08)';
                       e.currentTarget.style.color = textColor;
                     }
                   }}
@@ -4436,7 +4418,7 @@ Paused — ${autoPauseRef.current}.`
                   onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
                   title="Attach file, image, or GitHub"
                   style={{
-                    background: isAttachmentMenuOpen ? (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.1)') : 'transparent',
+                    background: isAttachmentMenuOpen ? (isLight ? '#f5f5f5' : 'rgba(255,255,255,0.1)') : 'transparent',
                     border: 'none',
                     color: isAttachmentMenuOpen ? textColor : subtextColor,
                     padding: '6px',
@@ -4449,7 +4431,7 @@ Paused — ${autoPauseRef.current}.`
                   }}
                   onMouseEnter={e => {
                     if (!isAttachmentMenuOpen) {
-                      e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.08)';
+                      e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.08)';
                       e.currentTarget.style.color = textColor;
                     }
                   }}
@@ -4478,7 +4460,7 @@ Paused — ${autoPauseRef.current}.`
                       left: '0',
                       marginBottom: '8px',
                       background: isLight ? '#ffffff' : '#1e293b',
-                      border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.1)',
+                      border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.1)',
                       borderRadius: '12px',
                       boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
                       padding: '8px',
@@ -4491,7 +4473,7 @@ Paused — ${autoPauseRef.current}.`
                       <button 
                         onClick={() => { fileInputRef.current?.click(); setIsAttachmentMenuOpen(false); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
-                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
                         <FileText size={16} color="#3b82f6" /> Add a File
@@ -4507,21 +4489,21 @@ Paused — ${autoPauseRef.current}.`
                           setIsAttachmentMenuOpen(false); 
                         }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
-                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
                         <ImageIcon size={16} color="#10b981" /> Image
                       </button>
 
-                      <div style={{ height: '1px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
+                      <div style={{ height: '1px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
                       <button 
                         onClick={() => { setIsGithubModalOpen(true); setIsAttachmentMenuOpen(false); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
-                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)'}
+                        onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
-                        <Github size={16} color={isLight ? "#334155" : "#e2e8f0"} /> Connect to Github
+                        <Github size={16} color={isLight ? "#334155" : "#e5e5e5"} /> Connect to Github
                       </button>
                     </div>
                   </>
@@ -4568,7 +4550,7 @@ Paused — ${autoPauseRef.current}.`
                     display: isAdvisorWorkspace ? 'none' : 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    background: showInBarModelDropdown ? (isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
+                    background: showInBarModelDropdown ? (isLight ? '#f5f5f5' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
                     border: 'none',
                     color: showInBarModelDropdown ? '#f97316' : subtextColor,
                     padding: '4px 10px',
@@ -4590,8 +4572,8 @@ Paused — ${autoPauseRef.current}.`
                     width: '300px',
                     maxHeight: '400px',
                     overflowY: 'auto',
-                    background: isLight ? '#ffffff' : '#0d1127',
-                    border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.4)',
+                    background: isLight ? '#ffffff' : '#111111',
+                    border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(249, 115, 22, 0.4)',
                     borderRadius: '16px',
                     padding: '12px',
                     boxShadow: isLight ? '0 -10px 30px rgba(0,0,0,0.15)' : '0 -15px 40px rgba(0,0,0,0.6)',
@@ -4605,7 +4587,7 @@ Paused — ${autoPauseRef.current}.`
                       <div style={{ fontSize: '0.7rem', color: subtextColor, marginBottom: '8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Cognitive Effort
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', padding: '4px', border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f5f5f5' : 'rgba(255, 255, 255, 0.05)', borderRadius: '12px', padding: '4px', border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.1)' }}>
                         {['Lightning', 'Balanced', 'Deep Think'].map(level => (
                           <button
                             key={level}
@@ -4662,7 +4644,7 @@ Paused — ${autoPauseRef.current}.`
                             }}
                             onMouseEnter={(e) => {
                               if (!isActive) {
-                                e.currentTarget.style.background = isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)';
+                                e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
                               }
                             }}
                             onMouseLeave={(e) => {
@@ -4733,7 +4715,7 @@ Paused — ${autoPauseRef.current}.`
                   onClick={() => cancelStream()}
                   title="Stop generating"
                   style={{
-                    background: isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)',
+                    background: isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     color: isLight ? '#64748b' : '#94a3b8',
                     width: '38px',
@@ -4752,7 +4734,7 @@ Paused — ${autoPauseRef.current}.`
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.color = isLight ? '#64748b' : '#94a3b8';
-                    e.currentTarget.style.background = isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)';
+                    e.currentTarget.style.background = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)';
                   }}
                 >
                   <Square size={14} fill="currentColor" />
@@ -4762,7 +4744,7 @@ Paused — ${autoPauseRef.current}.`
                   onClick={() => handleSendMessage()}
                   disabled={!inputText.trim() && !attachments.length}
                   style={{
-                    background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e2e8f0' : 'rgba(255, 255, 255, 0.1)'),
+                    background: (inputText.trim() || attachments.length) ? '#f97316' : (isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)'),
                     border: 'none',
                     color: (inputText.trim() || attachments.length)
                       ? '#ffffff'
@@ -4809,9 +4791,9 @@ Paused — ${autoPauseRef.current}.`
             width: '100%',
             maxWidth: '1200px',
             height: '90vh',
-            background: isLight ? '#f8fafc' : '#0d1127',
+            background: isLight ? '#fafafa' : '#111111',
             borderRadius: '20px',
-            border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(249, 115, 22, 0.5)',
+            border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(249, 115, 22, 0.5)',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             display: 'flex',
             flexDirection: 'column',
@@ -4819,7 +4801,7 @@ Paused — ${autoPauseRef.current}.`
           }}>
           <div style={{
             flex: 1, 
-            background: isLight ? '#f8fafc' : '#0f172a',
+            background: isLight ? '#fafafa' : '#0f172a',
             overflow: 'hidden',
             position: 'relative'
           }}>
@@ -4858,7 +4840,7 @@ Paused — ${autoPauseRef.current}.`
           aria-orientation="vertical"
           aria-label="Resize chat and Coding desk"
           onMouseDown={beginChatDeskResize}
-          style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', alignSelf: 'stretch', margin: '0 2px', borderLeft: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)' }}
+          style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', alignSelf: 'stretch', margin: '0 2px', borderLeft: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.06)' }}
         />
       ) : null}
       {isCodingDesk && (
@@ -4886,8 +4868,8 @@ Paused — ${autoPauseRef.current}.`
           flex: 1,
           position: 'relative',
           borderRadius: deskFullscreen ? '12px' : '16px',
-          border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
-          background: isLight ? '#ffffff' : '#0d1127',
+          border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)',
+          background: isLight ? '#ffffff' : '#111111',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -4898,8 +4880,8 @@ Paused — ${autoPauseRef.current}.`
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: isLight ? '#f8fafc' : '#0a0d1e',
-            borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.08)',
+            background: isLight ? '#fafafa' : '#0a0d1e',
+            borderBottom: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)',
             padding: '0 16px',
             height: '48px',
             flexShrink: 0
@@ -4971,7 +4953,7 @@ Paused — ${autoPauseRef.current}.`
                 compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
               />
               </Suspense>
-              <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.12)' }} />
+              <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.12)' }} />
               {canOfferVercelPublish({
                 messages,
                 vfs,
@@ -4984,12 +4966,12 @@ Paused — ${autoPauseRef.current}.`
                     data-quantora-publish="true"
                     data-quantora-desk-publish="true"
                     onClick={() => setDeskPublishMenuOpen((open) => !open)}
-                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    style={{ background: '#ea580c', border: 'none', color: '#fff', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                   >
                     <Link2 size={12} /> Publish <ChevronDown size={12} />
                   </button>
                   {deskPublishMenuOpen ? (
-                    <div data-quantora-desk-publish-menu="true" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, minWidth: '180px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div data-quantora-desk-publish-menu="true" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, minWidth: '180px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <button type="button" onClick={() => { setDeskPublishMenuOpen(false); setWorkspaceActiveTab('preview'); previewCanvasRef.current?.openShare?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: textColor, padding: '8px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, textAlign: 'left' }}>
                         <Link2 size={13} color="#0284c7" /> Share link
                       </button>
@@ -5054,7 +5036,7 @@ Paused — ${autoPauseRef.current}.`
                   alignItems: 'center',
                   gap: '5px',
                   background: deskFullscreen ? (isLight ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.16)') : 'transparent',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.12)',
+                  border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)',
                   color: deskFullscreen ? '#f97316' : subtextColor,
                   padding: '4px 9px',
                   borderRadius: '6px',
@@ -5077,7 +5059,7 @@ Paused — ${autoPauseRef.current}.`
             </div>
           </div>
 
-          <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f1f5f9' : '#070913', borderBottom: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
+          <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f5f5f5' : '#0a0a0a', borderBottom: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.08)' }} />}>
           <StudioTabBar
             tabs={openTabs}
             activeTab={workspaceActiveTab}
@@ -5092,7 +5074,7 @@ Paused — ${autoPauseRef.current}.`
 
           <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
             {deskFilesOpen ? (
-            <Suspense fallback={<div aria-hidden="true" style={{ width: `${splitMobile ? 212 : filesWidthPx}px`, flexShrink: 0, height: '100%', background: isLight ? '#f8fafc' : '#070913', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
+            <Suspense fallback={<div aria-hidden="true" style={{ width: `${splitMobile ? 212 : filesWidthPx}px`, flexShrink: 0, height: '100%', background: isLight ? '#fafafa' : '#0a0a0a', borderRight: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.08)' }} />}>
             <StudioFileTree
               vfs={vfs}
               activePath={workspaceActiveTab}
@@ -5116,21 +5098,21 @@ Paused — ${autoPauseRef.current}.`
                 aria-orientation="vertical"
                 aria-label="Resize Files and Preview"
                 onMouseDown={beginFilesPreviewResize}
-                style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', background: isLight ? '#f1f5f9' : '#0a0d1e', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)' }}
+                style={{ width: '5px', flexShrink: 0, cursor: 'col-resize', background: isLight ? '#f5f5f5' : '#0a0d1e', borderRight: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.06)' }}
               />
             ) : null}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#f8fafc' : '#0f172a') : '#0d1127', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: workspaceActiveTab === 'preview' ? (isLight ? '#fafafa' : '#0f172a') : '#111111', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
              {workspaceActiveTab === 'preview' ? (
                   <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                     {!previewRunCode ? (
                       isGenerating ? (
-                      <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a' }}>
+                      <div data-quantora-preview-waiting="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#fafafa' : '#0f172a' }}>
                         <Clock size={26} color="#f97316" />
                         <div style={{ fontWeight: 800, color: textColor }}>Preview is starting…</div>
                         <div style={{ fontSize: '0.82rem' }}>Your app will appear here as soon as it is ready to run.</div>
                       </div>
                       ) : (
-                      <div data-quantora-ide-empty="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#f8fafc' : '#0f172a', padding: '24px', textAlign: 'center' }}>
+                      <div data-quantora-ide-empty="true" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: subtextColor, background: isLight ? '#fafafa' : '#0f172a', padding: '24px', textAlign: 'center' }}>
                         <Code2 size={26} color="#f97316" />
                         <div style={{ fontWeight: 800, color: textColor }}>Ask me to build something</div>
                         <div style={{ fontSize: '0.82rem', maxWidth: '280px' }}>Files will show up here. This is the coding desk — not Travel, not Study.</div>
@@ -5201,7 +5183,7 @@ Paused — ${autoPauseRef.current}.`
                     )}
                   </div>
              ) : workspaceActiveTab === 'terminal' ? (
-               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#fafafa' : '#111111' }} />}>
                <StudioTerminal
                  vfs={shellVfs}
                  isLight={isLight}
@@ -5210,7 +5192,7 @@ Paused — ${autoPauseRef.current}.`
                />
                </Suspense>
              ) : workspaceActiveTab === 'git' ? (
-               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#f8fafc' : '#0d1127' }} />}>
+               <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#fafafa' : '#111111' }} />}>
                <StudioGit
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
@@ -5262,7 +5244,7 @@ Paused — ${autoPauseRef.current}.`
         }}>
           <div style={{
             background: isLight ? '#ffffff' : '#0f172a',
-            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.1)',
+            border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: '24px',
             width: '90%',
             maxWidth: '480px',
@@ -5308,8 +5290,8 @@ Paused — ${autoPauseRef.current}.`
                   width: '100%',
                   padding: '14px 16px',
                   borderRadius: '12px',
-                  border: isLight ? '1px solid #cbd5e1' : '1px solid rgba(255, 255, 255, 0.2)',
-                  background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.05)',
+                  border: isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.2)',
+                  background: isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)',
                   color: textColor,
                   fontSize: '1rem',
                   outline: 'none',
@@ -5317,7 +5299,7 @@ Paused — ${autoPauseRef.current}.`
                   boxSizing: 'border-box'
                 }}
                 onFocus={(e) => e.target.style.borderColor = '#f97316'}
-                onBlur={(e) => e.target.style.borderColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.2)'}
+                onBlur={(e) => e.target.style.borderColor = isLight ? '#d4d4d4' : 'rgba(255, 255, 255, 0.2)'}
               />
               {githubError && <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
             </div>
@@ -5329,7 +5311,7 @@ Paused — ${autoPauseRef.current}.`
                 width: '100%',
                 padding: '14px',
                 borderRadius: '12px',
-                background: isFetchingGithub ? '#94a3b8' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                background: isFetchingGithub ? '#a3a3a3' : '#ea580c',
                 color: '#fff',
                 border: 'none',
                 fontWeight: '700',
@@ -5365,7 +5347,7 @@ Paused — ${autoPauseRef.current}.`
           animation: 'fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
         }}>
           <div style={{
-            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15, 23, 42, 0.9)',
+            background: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(10, 10, 10, 0.9)',
             border: isLight ? '1px solid rgba(226,232,240,1)' : '1px solid rgba(255,255,255,0.1)',
             padding: '48px 64px',
             borderRadius: '24px',

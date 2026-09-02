@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import Header from './components/Header';
-import AuroraBackground from './components/AuroraBackground';
 import Footer from './components/Footer';
 import { createJourneyNode } from './lib/build-journey';
 import {
@@ -95,7 +94,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: '40px', color: '#ef4444', background: '#070913', minHeight: '100vh', fontFamily: 'monospace' }}>
+        <div style={{ padding: '40px', color: '#ef4444', background: '#0a0a0a', minHeight: '100vh', fontFamily: 'monospace' }}>
           <h2>React Crash (ErrorBoundary)</h2>
           <pre>{this.state.error?.toString()}</pre>
           <pre>{this.state.error?.stack}</pre>
@@ -152,7 +151,7 @@ export default function App() {
     try {
       document.documentElement.setAttribute('data-theme', effectiveTheme);
       document.documentElement.style.colorScheme = effectiveTheme;
-      document.body.style.background = isLight ? '#ffffff' : '#070913';
+      document.body.style.background = isLight ? '#ffffff' : '#0a0a0a';
       document.body.style.color = isLight ? '#0f172a' : '#ffffff';
     } catch (e) {
       console.error(e);
@@ -547,12 +546,13 @@ export default function App() {
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
-      background: activeTab === 'landing' ? (isLight ? '#ffffff' : '#0a0a0a') : 'transparent',
+      // Flat surfaces everywhere, matching the marketing homepage: white or
+      // near-black, no ambient gradient behind the app.
+      background: isLight ? '#ffffff' : '#0a0a0a',
       color: isLight ? '#0f172a' : '#ffffff',
       transition: 'background 0.3s ease, color 0.3s ease'
     }}>
-      {/* Aurora only inside the app — landing is flat black/white */}
-      {activeTab !== 'landing' && <AuroraBackground theme={effectiveTheme} />}
+
 
       {/* Main View Router */}
       {activeTab === 'landing' ? (
@@ -616,7 +616,6 @@ export default function App() {
               <WelcomeHub
                 user={user}
                 onNavigate={handleTabChange}
-                isLight={isLight}
               />
             )}
 

@@ -84,14 +84,17 @@ body {
   padding-bottom: 4px !important;
 }
 
-/* Welcome hub — compact module picker that fits above the global footer. */
+/* Welcome hub — the signed-in landing.
+   Matches the marketing homepage: flat surfaces, hairline borders, no
+   gradients, no glow. Centered in the viewport so the page reads as one
+   composed screen rather than content pinned to the top. */
 .welcome-hub {
   max-width: 1120px;
-  margin: 0 auto;
+  margin: auto;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: clamp(16px, 2.5vh, 28px);
+  gap: clamp(20px, 3.5vh, 36px);
   min-height: 0;
 }
 
@@ -104,27 +107,27 @@ body {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: #737373;
   margin-bottom: 6px;
 }
 
 .welcome-hub__title {
   font-family: var(--font-heading);
-  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-size: clamp(1.6rem, 3.2vw, 2.1rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.2;
-  color: var(--text-primary);
+  color: #0a0a0a;
   margin: 0 0 6px;
 }
 
-.welcome-hub__name {
-  color: #ea580c;
+[data-theme="dark"] .welcome-hub__title {
+  color: #ffffff;
 }
 
 .welcome-hub__subtitle {
   font-size: clamp(0.9rem, 1.1vw, 1rem);
-  color: var(--text-secondary);
+  color: #737373;
   line-height: 1.5;
   margin: 0;
   max-width: 520px;
@@ -133,45 +136,63 @@ body {
 .welcome-hub__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(12px, 1.8vw, 18px);
+  gap: clamp(14px, 1.8vw, 20px);
   align-items: stretch;
 }
 
 .welcome-hub__card {
   appearance: none;
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  background: var(--bg-card);
-  padding: clamp(16px, 2.2vw, 22px);
+  border: 1px solid #e5e5e5;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0a0a0a;
+  padding: clamp(18px, 2.2vw, 24px);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-  box-shadow: var(--card-shadow);
+  transition: border-color 0.2s ease, transform 0.2s ease;
   min-height: 0;
+}
+
+[data-theme="dark"] .welcome-hub__card {
+  background: #0a0a0a;
+  color: #ffffff;
+  border-color: #262626;
 }
 
 .welcome-hub__card:hover {
   transform: translateY(-2px);
-  border-color: rgba(249, 115, 22, 0.35);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  border-color: #0a0a0a;
 }
 
-.welcome-hub__card.is-light:hover {
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+[data-theme="dark"] .welcome-hub__card:hover {
+  border-color: #737373;
+}
+
+.welcome-hub__card:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
 .welcome-hub__card-icon {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: #f5f5f5;
+  border: 1px solid #e5e5e5;
+  color: inherit;
+}
+
+[data-theme="dark"] .welcome-hub__card-icon {
+  background: #171717;
+  border-color: #262626;
 }
 
 .welcome-hub__card-body {
@@ -182,7 +203,7 @@ body {
 .welcome-hub__card-body h2 {
   font-size: clamp(1rem, 1.4vw, 1.15rem);
   font-weight: 600;
-  color: var(--text-primary);
+  color: inherit;
   margin: 0 0 6px;
   letter-spacing: -0.01em;
 }
@@ -190,7 +211,7 @@ body {
 .welcome-hub__card-body p {
   font-size: clamp(0.8rem, 1vw, 0.88rem);
   line-height: 1.55;
-  color: var(--text-secondary);
+  color: #737373;
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -204,6 +225,7 @@ body {
   gap: 6px;
   font-size: 0.82rem;
   font-weight: 600;
+  color: inherit;
   margin-top: auto;
   flex-shrink: 0;
 }
@@ -217,7 +239,7 @@ body {
 
 @media (max-height: 780px) {
   .welcome-hub {
-    gap: 12px;
+    gap: 14px;
   }
 
   .welcome-hub__card-body p {
@@ -1150,7 +1172,7 @@ body {
 }
 
 .studio-chrome__pill.is-active {
-  background: linear-gradient(135deg, #f97316, #ec4899);
+  background: #ea580c;
   color: #fff;
 }
 
@@ -2022,13 +2044,6 @@ body {
   text-align: right;
 }
 
-/* Gradients used sparingly for emphasis */
-.gradient-text-subtle {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -2072,100 +2087,16 @@ body {
   border: 1px solid var(--border-color);
 }
 
-/* ============================================================
-   Ambient aurora background
-   Replaces the particle canvas. Transform-only animation so the
-   compositor runs it on the GPU: no per-frame JavaScript, no
-   layout, no repaint.
-   ============================================================ */
-
-.aurora-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.aurora-bg.is-light { background: #ffffff; }
-.aurora-bg.is-dark  { background: #070913; }
-
-.aurora-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  will-change: transform;
-}
-
-/* Pushed toward the edges so the middle of the screen stays readable. */
-.aurora-1 { width: 46vw; height: 46vw; min-width: 380px; min-height: 380px; left: -12vw; top: -14vh; animation: aurora-drift-1 34s ease-in-out infinite alternate; }
-.aurora-2 { width: 40vw; height: 40vw; min-width: 340px; min-height: 340px; right: -10vw; top: 4vh;  animation: aurora-drift-2 42s ease-in-out infinite alternate; }
-.aurora-3 { width: 44vw; height: 44vw; min-width: 360px; min-height: 360px; left: 34vw; bottom: -22vh; animation: aurora-drift-3 38s ease-in-out infinite alternate; }
-
-.is-light .aurora-1 { background: radial-gradient(circle, rgba(249, 115, 22, 0.30), transparent 66%); }
-.is-light .aurora-2 { background: radial-gradient(circle, rgba(236, 72, 153, 0.22), transparent 66%); }
-.is-light .aurora-3 { background: radial-gradient(circle, rgba(139, 92, 246, 0.20), transparent 66%); }
-
-.is-dark .aurora-1 { background: radial-gradient(circle, rgba(249, 115, 22, 0.42), transparent 66%); }
-.is-dark .aurora-2 { background: radial-gradient(circle, rgba(236, 72, 153, 0.32), transparent 66%); }
-.is-dark .aurora-3 { background: radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 66%); }
-
-@keyframes aurora-drift-1 { from { transform: translate3d(0,0,0) scale(1);    } to { transform: translate3d(6vw, 5vh, 0)  scale(1.16); } }
-@keyframes aurora-drift-2 { from { transform: translate3d(0,0,0) scale(1.08); } to { transform: translate3d(-5vw, 6vh, 0) scale(1);    } }
-@keyframes aurora-drift-3 { from { transform: translate3d(0,0,0) scale(1);    } to { transform: translate3d(4vw, -5vh, 0) scale(1.20); } }
-
 /*
- * A whisper of grain. Large flat gradients band on cheaper displays; a little
- * noise breaks the banding up and gives the surface some texture rather than
- * looking like a plastic gradient.
+ * Page-title classes. These were rainbow text gradients; the platform now
+ * matches the flat homepage (plain black/white, no gradients), so the class
+ * names stay for their call sites but render as plain heading ink.
  */
-.aurora-grain {
-  position: absolute;
-  inset: -50%;
-  opacity: 0.16;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-.is-dark .aurora-grain { opacity: 0.09; }
-
-/* Motion is decorative here, so it goes away entirely when the OS asks. */
-@media (prefers-reduced-motion: reduce) {
-  .aurora-blob { animation: none !important; }
-}
-
-/* Phones: fewer, calmer layers — saves fill-rate on weaker GPUs. */
-@media (max-width: 640px) {
-  .aurora-blob { filter: blur(64px); }
-  .aurora-3 { display: none; }
-}
-
-/*
- * The background recedes once there is a conversation on screen.
- * Full warmth to welcome an empty canvas; quiet while someone is reading code.
- * Driven by a data attribute on <html> so the background component needs no
- * knowledge of chat state, and no props thread through the tree to reach it.
- */
-.aurora-bg { transition: opacity 700ms cubic-bezier(.16, 1, .3, 1); }
-[data-workspace="active"] .aurora-blob { opacity: 0.30; }
-[data-workspace="active"] .aurora-grain { opacity: 0.06; }
-.aurora-blob, .aurora-grain { transition: opacity 700ms cubic-bezier(.16, 1, .3, 1); }
-
-/* Dynamic Text Gradients */
-.gradient-text {
-  background: linear-gradient(135deg, #f97316 0%, #ec4899 50%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.gradient-text-quantum {
-  background: linear-gradient(135deg, #38bdf8 0%, #34d399 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
+.gradient-text,
+.gradient-text-subtle,
+.gradient-text-quantum,
 .gradient-text-pink {
-  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
 }
 
 .preview-overlay {
