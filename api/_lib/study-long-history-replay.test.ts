@@ -147,3 +147,10 @@ test('H3.3 verified loader no longer contains a silent 500-row replay limit', as
   assert.match(source, /readStudySupabaseRowsPaged/);
   assert.match(source, /status === 'overflow'/);
 });
+
+test('H3.3 migration indexes append-ordered evidence and both submitted receipt branches', async () => {
+  const sql = await readFile('supabase/migrations/20260902113000_study_long_history_replay_indexes.sql', 'utf8');
+  assert.match(sql, /study_mastery_events_owner_concept_append_idx[\s\S]*\(user_sub, concept_id, created_at, id\)/i);
+  assert.match(sql, /study_assessment_attempts_owner_concept_issued_submitted_idx[\s\S]*\(user_sub, concept_id, issued_at, id\)[\s\S]*where submitted_at is not null/i);
+  assert.match(sql, /study_assessment_attempts_owner_evidence_concept_issued_submitted_idx[\s\S]*\(user_sub, evidence_concept_id, issued_at, id\)[\s\S]*where submitted_at is not null and evidence_concept_id is not null/i);
+});
