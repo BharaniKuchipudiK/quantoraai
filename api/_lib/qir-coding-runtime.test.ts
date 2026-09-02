@@ -92,7 +92,7 @@ test("was-red Coding proof: broken Preview survives interruption, rejects stale 
   const failed = reduceQirObservation({
     run: initial,
     observation: previewFailure,
-    proofOfDoneStatus: "unverified",
+    proofOfDoneStatus: "not_ready",
   });
   assert.equal(failed.accepted, true);
   assert.equal(failed.run.status, "REPAIRING");
@@ -141,7 +141,7 @@ test("was-red Coding proof: broken Preview survives interruption, rejects stale 
   const stale = reduceQirObservation({
     run: recovering,
     observation: lateOldSuccess,
-    proofOfDoneStatus: "unverified",
+    proofOfDoneStatus: "not_ready",
   });
   assert.equal(stale.accepted, false);
   assert.equal(stale.stale, true);
@@ -168,7 +168,7 @@ test("was-red Coding proof: broken Preview survives interruption, rejects stale 
   const observed = reduceQirObservation({
     run: recovering,
     observation: repairedPreview,
-    proofOfDoneStatus: "unverified",
+    proofOfDoneStatus: "not_ready",
   });
   assert.equal(observed.run.status, "VERIFYING");
   assert.notEqual(observed.run.status, "COMPLETE", "tool/runtime success is not mission completion");
