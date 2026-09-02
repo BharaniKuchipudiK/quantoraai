@@ -12,11 +12,18 @@ import {
   syncStudyLearnerSnapshot,
 } from './study-learner-snapshot-store.js';
 import {
+  currentStudyDbCalls,
+  emitStudyTelemetry,
+  studyTelemetryElapsedMs,
+  studyTelemetryStartedAt,
+  type StudyReplayFallbackReason,
+} from './study-observability.js';
+import {
   buildStudyReplayCheckpoint,
   replayStudyLearnerProjectionFromCheckpoint,
 } from './study-replay-checkpoint.js';
 
-export const STUDY_PROJECTION_LOADER_VERSION = 'study-projection-loader-2026-09-02.1';
+export const STUDY_PROJECTION_LOADER_VERSION = 'study-projection-loader-2026-09-02.2';
 
 export type StudyLearnerProjectionLoadResult = {
   projection: StudyLearnerProjection;
@@ -28,13 +35,27 @@ async function fullReplay(input: {
   conceptId: string;
   conceptKey: string;
   asOf: string;
+}, telemetry: {
+  startedAtMs: number;
+  startingDbCalls: number;
+  fallbackReason?: StudyReplayFallbackReason;
 }): Promise<StudyLearnerProjectionLoadResult | null> {
   const full = await readVerifiedStudyMasteryEvidenceWithCursor(
     input.userSub,
     input.conceptId,
     input.conceptKey,
   );
-  if (!full) return null;
+  if (!full) {
+    emitStudyTelemetry({
+      event: 'projection_load',
+      operation: 'learner_projection_load',
+      status: 'unavailable',
+      fallbackReason: telemetry.fallbackReason || 'full_replay_unavailable',
+      durationMs: studyTelemetryElapsedMs(telemetry.startedAtMs),
+      dbCalls: currentStudyDbCalls() - telemetry.startingDbCalls,
+    });
+    return null;
+  }
   const projection = replayStudyLearnerProjection({
     conceptId: input.conceptId,
     conceptKey: input.conceptKey,
@@ -55,6 +76,15 @@ async function fullReplay(input: {
     // but do not treat it as delta-replay eligible until a real ledger cursor exists.
     await syncStudyLearnerSnapshot({ userSub: input.userSub, projection });
   }
+  emitStudyTelemetry({
+    event: 'projection_load',
+    operation: 'learner_projection_load',
+    status: 'success',
+    source: 'full_replay',
+    fallbackReason: telemetry.fallbackReason,
+    durationMs: studyTelemetryElapsedMs(telemetry.startedAtMs),
+    dbCalls: currentStudyDbCalls() - telemetry.startingDbCalls,
+  });
   return { projection, source: 'full_replay' };
 }
 
@@ -72,6 +102,10 @@ export async function loadVerifiedStudyLearnerProjection(input: {
   conceptKey: string;
   asOf: string;
 }): Promise<StudyLearnerProjectionLoadResult | null> {
+  const startedAtMs = studyTelemetryStartedAt();
+  const startingDbCalls = currentStudyDbCalls();
+  let fallbackReason: StudyReplayFallbackReason | undefined;
+
   const checkpointRead = await readStudyLearnerCheckpoint(input.userSub, input.conceptId);
   if (checkpointRead.status === 'hit' && checkpointRead.checkpoint.cursor) {
     const delta = await readVerifiedStudyMasteryEvidenceDelta(
@@ -95,10 +129,27 @@ export async function loadVerifiedStudyLearnerProjection(input: {
           projection: replayed.projection,
           checkpoint: replayed.nextCheckpoint,
         });
+        emitStudyTelemetry({
+          event: 'projection_load',
+          operation: 'learner_projection_load',
+          status: 'success',
+          source: 'checkpoint_delta',
+          durationMs: studyTelemetryElapsedMs(startedAtMs),
+          dbCalls: currentStudyDbCalls() - startingDbCalls,
+        });
         return { projection: replayed.projection, source: 'checkpoint_delta' };
       }
+      fallbackReason = 'checkpoint_replay_rejected';
+    } else if (delta.status === 'requires_full_replay') {
+      fallbackReason = 'delta_overflow';
+    } else {
+      fallbackReason = 'delta_unavailable';
     }
+  } else {
+    fallbackReason = checkpointRead.status === 'unavailable'
+      ? 'checkpoint_unavailable'
+      : 'checkpoint_miss';
   }
 
-  return fullReplay(input);
+  return fullReplay(input, { startedAtMs, startingDbCalls, fallbackReason });
 }
