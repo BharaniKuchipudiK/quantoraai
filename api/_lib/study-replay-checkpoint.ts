@@ -187,11 +187,3 @@ export function replayStudyLearnerProjectionFromCheckpoint(input: {
     },
   };
 }
-
-/** projectedAt is a replay clock, not learner truth. */
-export function studyLearnerProjectionSemanticallyEqual(
-  left: StudyLearnerProjection,
-  right: StudyLearnerProjection,
-): boolean {
-  return JSON.stringify({ ...left, projectedAt: '' }) === JSON.stringify({ ...right, projectedAt: '' });
-}
