@@ -1,11 +1,21 @@
 import { requireActiveSession } from "./_lib/authz.js";
 import {
+  commitQirRunEvent,
   createQirRun,
   isQirRunStoreConfigured,
   isValidQirRunSnapshot,
+  persistQirObservation,
+  readQirRun,
   resumeQirRun,
 } from "./_lib/qir-run-store.js";
-import type { QirAgentRun } from "./_lib/qir-contracts.js";
+import {
+  beginQirCodingRecovery,
+  promoteQirCodingCheckpoint,
+  resumeQirCodingFromSnapshot,
+} from "./_lib/qir-coding-runtime.js";
+import type { QirAgentRun, QirObservation, QirVerificationResult } from "./_lib/qir-contracts.js";
+import { createHash, randomUUID } from "node:crypto";
+import { verifyBuild } from "./_lib/verify-build.js";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -18,6 +28,198 @@ function safeInitialRun(run: QirAgentRun): boolean {
     && run.observations.length === 0
     && run.verifications.length === 0
     && run.checkpoints.length === 0;
+}
+
+function safeText(value: unknown, max = 512): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text && text.length <= max ? text : null;
+}
+
+function artifactRefWithDigest(ref: string, code: string): string {
+  return `${ref}#sha256=${createHash("sha256").update(code).digest("hex")}`;
+}
+
+function artifactMatchesCode(ref: string, code: string): boolean {
+  const expected = /#sha256=([a-f0-9]{64})$/i.exec(ref)?.[1]?.toLowerCase();
+  if (!expected) return false;
+  return expected === createHash("sha256").update(code).digest("hex");
+}
+
+function sendCommit(res: any, result: Awaited<ReturnType<typeof commitQirRunEvent>>) {
+  if (result.status === "conflict") return res.status(409).json({ error: "Run changed; resume the durable snapshot and retry.", conflict: true });
+  if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
+  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the durable Run transition." });
+  return res.status(200).json({
+    run: result.record.run,
+    storageVersion: result.record.storageVersion,
+    durability: "persisted",
+  });
+}
+
+async function readOwnedRun(userSub: string, runId: unknown) {
+  const id = safeText(runId, 128);
+  if (!id || !SAFE_ID.test(id)) return null;
+  return readQirRun(userSub, id);
+}
+
+async function handleCodingAction(req: any, res: any, userSub: string) {
+  const action = String(req.body?.action || "");
+  const record = await readOwnedRun(userSub, req.body?.runId);
+  if (!record) return res.status(404).json({ error: "Run not found." });
+  const now = new Date().toISOString();
+
+  if (action === "coding.start") {
+    if (record.run.status !== "QUEUED") return res.status(409).json({ error: `Run cannot start from ${record.run.status}.` });
+    const artifactRef = safeText(req.body?.artifactRef, 1024);
+    const code = safeText(req.body?.code, 1_500_000);
+    if (!artifactRef || !code) return res.status(400).json({ error: "A durable Coding artifact is required." });
+    const stepId = `coding-render-${randomUUID()}`;
+    const actionId = `coding-action-${randomUUID()}`;
+    const artifactId = "coding-desk-vfs";
+    const run: QirAgentRun = {
+      ...record.run,
+      status: "EXECUTING",
+      steps: [{
+        stepId,
+        taskId: "coding.render",
+        objective: record.run.goal.statement || "Produce and verify the Coding Desk artifact",
+        dependsOn: [],
+        status: "active",
+        requiresVerification: true,
+        actionId,
+      }],
+      cursor: { ...record.run.cursor, stepId, actionId },
+      artifacts: [{
+        artifactId,
+        generation: 1,
+        ref: artifactRefWithDigest(artifactRef, code),
+        state: "candidate",
+        createdByActionId: actionId,
+        verifiedByActionId: null,
+      }],
+      updatedAt: now,
+    };
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-start-${randomUUID()}`,
+      eventType: "coding.started",
+      run,
+      payload: { stepId, actionId, artifactId, artifactGeneration: 1 },
+    }));
+  }
+
+  if (action === "coding.observe") {
+    const observation = req.body?.observation as QirObservation;
+    if (!observation || observation.runId !== record.run.runId) {
+      return res.status(400).json({ error: "A current Run observation is required." });
+    }
+    const result = await persistQirObservation({
+      userSub,
+      record,
+      observation,
+      proofOfDoneStatus: "not_ready",
+    });
+    if (result.status === "stale") {
+      return res.status(202).json({
+        run: result.record.run,
+        storageVersion: result.record.storageVersion,
+        stale: true,
+        durability: "persisted",
+      });
+    }
+    return sendCommit(res, result);
+  }
+
+  if (action === "coding.recover") {
+    // A replacement browser/worker proves it can continue from the journal
+    // before it is allowed to allocate a new recovery action/generation.
+    const continuation = resumeQirCodingFromSnapshot(record.run);
+    const artifact = record.run.artifacts.find((candidate) => candidate.artifactId === "coding-desk-vfs");
+    const artifactRef = safeText(req.body?.artifactRef, 1024);
+    const code = safeText(req.body?.code, 1_500_000);
+    if (!artifact || !artifactRef || !code) return res.status(400).json({ error: "A current Coding artifact is required for recovery." });
+    const actionId = `coding-recovery-${randomUUID()}`;
+    const run = beginQirCodingRecovery({
+      run: record.run,
+      actionId,
+      artifactId: artifact.artifactId,
+      artifactGeneration: artifact.generation + 1,
+      artifactRef: artifactRefWithDigest(artifactRef, code),
+      now,
+    });
+    const result = await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-recover-${randomUUID()}`,
+      eventType: "coding.recovery_started",
+      run,
+      payload: { continuation, actionId, artifactId: artifact.artifactId, artifactGeneration: artifact.generation + 1 },
+    });
+    return sendCommit(res, result);
+  }
+
+  if (action === "coding.promote") {
+    const artifact = record.run.artifacts.find((candidate) => candidate.artifactId === "coding-desk-vfs");
+    const evidenceRefs = Array.isArray(req.body?.evidenceRefs)
+      ? req.body.evidenceRefs.map((value: unknown) => safeText(value, 512)).filter(Boolean) as string[]
+      : [];
+    if (!artifact || artifact.state !== "candidate") {
+      return res.status(409).json({ error: "The current candidate is not ready for verification." });
+    }
+    const code = safeText(req.body?.code, 1_500_000);
+    if (!code) return res.status(400).json({ error: "The current Coding artifact is required for independent verification." });
+    if (!artifactMatchesCode(artifact.ref, code)) {
+      return res.status(409).json({ error: "Verification bytes do not match the current candidate artifact generation." });
+    }
+    const report = await verifyBuild({
+      code,
+      vfs: req.body?.vfs && typeof req.body.vfs === "object" ? req.body.vfs : {},
+      brief: safeText(req.body?.brief, 8_000) || "",
+      job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
+    });
+    if (!report.passed) {
+      return res.status(422).json({
+        error: "Independent Coding verification did not pass.",
+        run: record.run,
+        storageVersion: record.storageVersion,
+        verification: report,
+        durability: "persisted",
+      });
+    }
+    const verification: QirVerificationResult = {
+      verificationId: `coding-verification-${randomUUID()}`,
+      runId: record.run.runId,
+      actionId: `coding-independent-verifier-${randomUUID()}`,
+      passed: true,
+      proofOfDoneStatus: "verified",
+      evidenceRefs: [...evidenceRefs, `build-verifier:score:${report.score}`],
+      verifiedAt: now,
+    };
+    const run = promoteQirCodingCheckpoint({
+      run: record.run,
+      verification,
+      proofOfDoneStatus: verification.proofOfDoneStatus,
+      artifactId: artifact.artifactId,
+      artifactGeneration: artifact.generation,
+      checkpointId: `coding-checkpoint-${randomUUID()}`,
+      now,
+    });
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: verification.verificationId,
+      eventType: "coding.checkpoint_promoted",
+      run,
+      payload: { verificationId: verification.verificationId, evidenceRefs: verification.evidenceRefs, score: report.score },
+    }));
+  }
+
+  return res.status(400).json({ error: "Unsupported Coding Run action." });
 }
 
 export default async function handler(req: any, res: any) {
@@ -39,13 +241,21 @@ export default async function handler(req: any, res: any) {
     if (!SAFE_ID.test(runId)) return res.status(400).json({ error: "A valid runId is required." });
     const resumed = await resumeQirRun(userSub, runId);
     if (!resumed) return res.status(404).json({ error: "Run not found." });
+    let codingContinuation = null;
+    try {
+      codingContinuation = resumeQirCodingFromSnapshot(resumed.record.run);
+    } catch {
+      // COMPLETE/terminal/empty Runs correctly have no Coding continuation.
+    }
     return res.status(200).json({
       run: resumed.record.run,
       storageVersion: resumed.record.storageVersion,
-      continuation: resumed.continuation,
+      continuation: codingContinuation || resumed.continuation,
       durability: "persisted",
     });
   }
+
+  if (req.body?.action) return handleCodingAction(req, res, userSub);
 
   const candidate = req.body?.run;
   if (!isValidQirRunSnapshot(candidate) || !safeInitialRun(candidate)) {

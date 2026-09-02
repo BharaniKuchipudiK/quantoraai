@@ -57,6 +57,7 @@ import {
 import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
+import { useQirCodingRun } from '../hooks/useQirCodingRun.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -764,10 +765,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
   const handleHealedPreview = useCallback((healedHtml) => {
     const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob);
-    if (!next.wrote) return;
+    if (!next.wrote) return false;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
     setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
+    return true;
   }, [vfs, deskJob]);
 
   /*
@@ -1786,6 +1788,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   );
   const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
   const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
+  const qirCoding = useQirCodingRun({
+    enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
+    sessionId: activeSessionId,
+    goal: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+    artifactRef: activeSessionId && previewAssemblyKey
+      ? `coding-desk://${activeSessionId}/assembly/${previewAssemblyKey}`
+      : '',
+    code: previewRunCode,
+    vfs,
+    job: deskJob,
+  });
   const shellVfs = useMemo(() => deskShellVfs(vfs, previewRunCode), [vfs, previewRunCode]);
   const deskPacket = useMemo(() => mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
@@ -4853,6 +4866,8 @@ Paused — ${autoPauseRef.current}.`
           ref={deskShellRef}
           data-quantora-code-workspace="true"
           data-quantora-studio-ide="true"
+          data-quantora-qir-run-id={qirCoding.run?.runId || undefined}
+          data-quantora-qir-run-status={qirCoding.run?.status || undefined}
           data-quantora-desk-fullscreen={deskFullscreen ? 'true' : 'false'}
           style={{
           /*
@@ -4928,6 +4943,15 @@ Paused — ${autoPauseRef.current}.`
                   style={{ fontSize: '0.68rem', fontWeight: 600, color: subtextColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
                   {previewRunLabel}
+                </span>
+              ) : null}
+              {qirCoding.run ? (
+                <span
+                  data-quantora-qir-run="true"
+                  title={`Durable Run ${qirCoding.run.runId}`}
+                  style={{ fontSize: '0.66rem', fontWeight: 700, color: subtextColor, whiteSpace: 'nowrap' }}
+                >
+                  Run · {qirCoding.run.status}
                 </span>
               ) : null}
             </div>
@@ -5124,10 +5148,19 @@ Paused — ${autoPauseRef.current}.`
                       onRequireAuth={onOpenAuth}
                       vfs={vfs}
                       turnBusy={isGenerating}
-                      onVerificationStatusChange={setPreviewRunStatus}
+                      onVerificationStatusChange={(status) => {
+                        setPreviewRunStatus(status);
+                        void qirCoding.reportPreviewStatus(status);
+                      }}
                       onChromeChange={setPreviewChrome}
                       jobCard={deskJob}
-                      onHealedPreview={handleHealedPreview}
+                      onHealedPreview={(healedHtml) => {
+                        if (!handleHealedPreview(healedHtml)) return;
+                        void qirCoding.reportHealedArtifact(
+                          `coding-desk://${activeSessionId}/recovery/${Date.now()}`,
+                          healedHtml,
+                        );
+                      }}
                       onLiveDeskProbe={setLiveDeskProbe}
                       suggestedProjectName={messages.length > 0 ? messages[0].text.substring(0, 30).toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'quantora-app'}
                       isPresentationIntent={detectSlideDeck(messages)}
