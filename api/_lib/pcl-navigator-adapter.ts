@@ -9,6 +9,7 @@ import {
 import { evaluateProofOfDone, formatOutcomeContractForPrompt } from "./outcome-contract.js";
 import { buildPclAgentExecutionPlan, publicAgentPlanSummary } from "./agent-execution-fabric.js";
 import { publicQirCompatibilitySummary } from "./qir-contracts.js";
+import { evaluateQirResourceGovernor } from "./qir-resource-governor.js";
 
 /**
  * Thin integration seam between the existing Outcome Navigator and PCL.
@@ -55,6 +56,16 @@ export function publicPclNavigatorMetadata(
     cognition,
     action,
   });
+  const qirResourceGovernor = evaluateQirResourceGovernor({
+    budget: {
+      runUnitsRemaining: null,
+      stepUnitsRemaining: null,
+      recoveryReserveRemaining: null,
+      premiumEscalationRemaining: null,
+    },
+    request: { lane: "ordinary", units: 1 },
+    capacityAvailable: true,
+  });
   return {
     kernelVersion: cognition.kernelVersion,
     outcomeAlignment: cognition.outcomeAlignment,
@@ -76,5 +87,10 @@ export function publicPclNavigatorMetadata(
     activeCorrections: activeLedger.filter((entry) => entry.type === "correction").length,
     agentExecution: publicAgentPlanSummary(agentPlan),
     qir: publicQirCompatibilitySummary(agentPlan, proof.status),
+    qirResourceGovernor: {
+      version: qirResourceGovernor.version,
+      disposition: qirResourceGovernor.disposition,
+      metering: "compatibility_unmetered" as const,
+    },
   };
 }
