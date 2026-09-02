@@ -1,13 +1,14 @@
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { replayStudyLearnerProjection } from './study-learner-projection.js';
+import { syncStudyLearnerSnapshot } from './study-learner-snapshot-store.js';
 import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.5';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.6';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -64,6 +65,12 @@ export async function loadStudyLearnerModel(input: {
     evidence,
     asOf: new Date().toISOString(),
   });
+
+  // H3.2 is write-through only. The freshly replayed ledger projection remains
+  // authoritative for this request; snapshot state cannot override it. H3.3
+  // may consume snapshots only after bounded delta replay is implemented.
+  await syncStudyLearnerSnapshot({ userSub: input.userSub, projection });
+
   return applyStudyPrerequisiteNextBestAction({
     userSub: input.userSub,
     activeConcept: concept,
