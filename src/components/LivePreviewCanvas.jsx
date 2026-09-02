@@ -461,9 +461,13 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           { score: data.score, passed: data.passed, issues: Array.isArray(data.issues) ? data.issues : [] },
         ];
         const plan = planRefinementRound(refinementHistoryRef.current);
-        if (!verifyOnly && plan.proceed && jobCardRef.current) {
+        if (!verifyOnly && plan.proceed) {
           // A failing shop desk is repaired by the MODEL, honestly — never by
           // injecting fabricated stock photos over the user's real page.
+          // The verifier's concrete issues are sufficient recovery input even
+          // when the job-card state lands one render after Preview mounts. The
+          // old jobCard guard stranded exactly that race: broken product images
+          // were diagnosed, but no recovery action ever became reachable.
           const instruction = `Improve this page for the JOB. Fix ONLY these issues, preserving the product:\n- ${data.issues.join('\n- ')}`;
           setStatus('healing');
           try {
@@ -475,6 +479,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
             if (fixed && !repaired.unchanged && fixed.trim() !== original.trim() && (!hadStyle || keepsStyle) && fixed.length >= original.length * 0.55) {
               verifiedCodeRef.current = null;
               setQualityReport(null);
+              healingRef.current = false;
               onHealedPreviewRef.current?.(fixed);
               setCurrentCode(fixed);
               return;
@@ -562,6 +567,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       }
       if (isIgnorableRuntimeError(message)) return;
       errorSeenRef.current = true;
+      onVerificationStatusChangeRef.current?.({ kind: 'runtime', status: 'failure', message });
       setLastError(message);
       setStatus('failed');
       return;
@@ -577,6 +583,10 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     if (isIgnorableRuntimeError(message)) return;
 
     errorSeenRef.current = true;
+    // Publish the failed generation before auto-repair starts. React may batch
+    // the visible `failed -> healing` states, but QIR must durably observe the
+    // failure so a browser/worker interruption can resume the same Run.
+    onVerificationStatusChangeRef.current?.({ kind: 'runtime', status: 'failure', message });
     setLastError(message);
 
     if (attemptRef.current >= MAX_HEAL_ATTEMPTS) {
@@ -605,6 +615,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         return;
       }
       setAttempt((a) => a + 1);
+      healingRef.current = false;
       onHealedPreviewRef.current?.(data.code);
       setCurrentCode(data.code);
     } catch (err) {

@@ -313,6 +313,13 @@ jobs:
         continue-on-error: true
         run: node scripts/preview-shell-must-start-gate.mjs
 
+      - name: Execute QIR Coding durable resume journey
+        id: qir_coding_resume_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/qir-coding-resume-browser-gate.mjs
+
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -347,9 +354,10 @@ jobs:
           DESK_RAIL_SMOKE_OUTCOME: ${{ steps.desk_rail_smoke_gate.outcome }}
           PREVIEW_READY_OUTCOME: ${{ steps.preview_ready_gate.outcome }}
           PREVIEW_SHELL_MUST_START_OUTCOME: ${{ steps.preview_shell_must_start_gate.outcome }}
+          QIR_CODING_RESUME_OUTCOME: ${{ steps.qir_coding_resume_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_NOTEBOOK_OUTCOME STUDY_H14_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_NOTEBOOK_OUTCOME STUDY_H14_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME QIR_CODING_RESUME_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then
