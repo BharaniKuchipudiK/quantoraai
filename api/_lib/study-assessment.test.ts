@@ -194,7 +194,7 @@ test("grade requires authoritative submitted-attempt validation before evidence 
     assert.equal(state.body.learnerModel.nextLearningMove.type, "vary_evidence");
     assert.equal(savedEstimate.evidence_count, 1);
     assert.match(evidenceRequestUrl, /order=created_at\.asc,id\.asc/);
-    assert.match(evidenceRequestUrl, /limit=250&offset=0/);
+    assert.match(evidenceRequestUrl, /limit=500&offset=0/);
   } finally { global.fetch = originalFetch; }
 });
 
