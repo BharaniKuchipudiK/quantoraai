@@ -148,12 +148,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Reports to the JOB SUMMARY, not just the log. `continue-on-error` above
+      # keeps this step's failure out of the check run, the run conclusion AND
+      # the step conclusion in the API — so before this reporter existed, the
+      # only trace of a red golden was a warning inside the log. On 2026-09-02
+      # the golden was failing on production and on every PR preview and no
+      # dashboard said so. Separation was right (CLAUDE.md §5); the reporting
+      # was not. Reports a pass as loudly as a failure, so silence never reads
+      # as green, and never changes the job's result.
       - name: Report deployed golden chat outcome (non-blocking)
         if: always()
         env:
           GOLDEN_CHAT_OUTCOME: ${{ steps.golden_chat.outcome }}
-        run: |
-          echo "deployed calculator/website golden outcome=$GOLDEN_CHAT_OUTCOME"
-          if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
-            echo "::warning::Deployed calculator/website golden failed. This is NOT 'just flaky' — read the log before dismissing it. Deployment executability is proven separately by the blocking readiness gate above."
-          fi
+        run: node scripts/report-golden-outcome.mjs
