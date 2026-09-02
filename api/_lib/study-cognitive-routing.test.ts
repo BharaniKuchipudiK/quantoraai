@@ -46,6 +46,30 @@ test('adds visual interpretation without replacing the learning capability', () 
   assert.ok(interpretation?.capabilities.includes('visual_interpretation'));
 });
 
+test('carries a deterministic teaching representation plan into the production Study directive', () => {
+  const visual = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Teach me using images',
+    history: [{ role: 'user', text: 'We are studying Newtonian motion and friction.' }],
+  });
+  assert.ok(visual);
+  assert.equal(visual.representation.primaryRepresentation, 'annotated_diagram');
+  assert.equal(visual.representation.rendererRequired, true);
+  assert.equal(visual.representation.fallback, 'none');
+  assert.match(formatStudyCognitiveDirective(visual), /Teaching representation: annotated_diagram/);
+  assert.match(formatStudyCognitiveDirective(visual), /response must use the supported representation rather than silently falling back to prose/i);
+
+  const electricity = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Teach me using images',
+    history: [{ role: 'user', text: 'Explain EMF versus terminal potential difference in a battery circuit.' }],
+  });
+  assert.ok(electricity);
+  assert.equal(electricity.representation.primaryRepresentation, 'concise_text');
+  assert.equal(electricity.representation.fallback, 'renderer_unavailable');
+  assert.match(formatStudyCognitiveDirective(electricity), /do not claim that an unsupported visual/i);
+});
+
 test('keeps unproven free reasoning endpoints behind the reliable Study verification rung', () => {
   const interpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Verify my proof and identify the first invalid assumption.' });
   const decision = applyStudyCapabilityRouting({ interpretation, baseDecision, models: [
