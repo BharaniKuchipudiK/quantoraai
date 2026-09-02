@@ -11,9 +11,9 @@ import { evaluateStudyProjectionSlo, STUDY_PROJECTION_SLO } from './study-slos.j
 test('H3.4 Study telemetry correlates nested work and exposes only bounded safe fields', async () => {
   const captured: unknown[][] = [];
   const originalInfo = console.info;
+  let outerTrace = '';
   console.info = (...args: unknown[]) => captured.push(args);
   try {
-    let outerTrace = '';
     await withStudyTelemetryScope('adaptive_learner_model', async () => {
       outerTrace = currentStudyTraceId() || '';
       assert.match(outerTrace, /^[0-9a-f-]{36}$/i);
