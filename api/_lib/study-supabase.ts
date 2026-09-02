@@ -1,5 +1,5 @@
 const STUDY_SUPABASE_TIMEOUT_MS = 4_000;
-const STUDY_SUPABASE_PAGE_SIZE = 250;
+const STUDY_SUPABASE_PAGE_SIZE = 500;
 const STUDY_SUPABASE_MAX_REPLAY_ROWS = 5_000;
 
 type StudySupabaseRequestInit = RequestInit & {
@@ -95,8 +95,14 @@ export async function readStudySupabaseRowsPaged(
   },
 ): Promise<StudySupabasePagedRowsResult | null> {
   if (/[?&](?:limit|offset)=/i.test(basePath)) return null;
-  const pageSize = Math.max(1, Math.min(500, Math.floor(options.pageSize ?? STUDY_SUPABASE_PAGE_SIZE)));
-  const maxRows = Math.max(pageSize, Math.min(20_000, Math.floor(options.maxRows ?? STUDY_SUPABASE_MAX_REPLAY_ROWS)));
+  const requestedPageSize = typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)
+    ? Math.floor(options.pageSize)
+    : STUDY_SUPABASE_PAGE_SIZE;
+  const pageSize = Math.max(1, Math.min(500, requestedPageSize));
+  const requestedMaxRows = typeof options.maxRows === 'number' && Number.isFinite(options.maxRows)
+    ? Math.floor(options.maxRows)
+    : STUDY_SUPABASE_MAX_REPLAY_ROWS;
+  const maxRows = Math.max(pageSize, Math.min(20_000, requestedMaxRows));
   const rows: any[] = [];
   let pages = 0;
 
