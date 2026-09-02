@@ -63,51 +63,138 @@ async function readOwnedRun(userSub: string, runId: unknown) {
   return readQirRun(userSub, id);
 }
 
+function startModelAttempt(run: QirAgentRun, now: string): {
+  run: QirAgentRun;
+  stepId: string;
+  actionId: string;
+} {
+  const existingStep = run.cursor.stepId
+    ? run.steps.find((step) => step.stepId === run.cursor.stepId) || null
+    : null;
+  const stepId = existingStep?.stepId || `coding-model-${randomUUID()}`;
+  const actionId = `coding-model-action-${randomUUID()}`;
+  const step = existingStep
+    ? {
+      ...existingStep,
+      status: "active" as const,
+      actionId,
+    }
+    : {
+      stepId,
+      taskId: "coding.model",
+      objective: run.goal.statement || "Produce and verify the Coding Desk artifact",
+      dependsOn: [],
+      status: "active" as const,
+      requiresVerification: true,
+      actionId,
+    };
+  const steps = existingStep
+    ? run.steps.map((candidate) => candidate.stepId === stepId ? step : candidate)
+    : [...run.steps, step];
+
+  return {
+    stepId,
+    actionId,
+    run: {
+      ...run,
+      status: "EXECUTING",
+      steps,
+      cursor: { ...run.cursor, stepId, actionId },
+      updatedAt: now,
+    },
+  };
+}
+
+function attachFirstArtifact(run: QirAgentRun, artifactRef: string, code: string, now: string): QirAgentRun {
+  if (run.artifacts.length > 0) return run;
+  const actionId = run.cursor.actionId || `coding-action-${randomUUID()}`;
+  const stepId = run.cursor.stepId || `coding-render-${randomUUID()}`;
+  const hasStep = run.steps.some((step) => step.stepId === stepId);
+  const steps = hasStep
+    ? run.steps.map((step) => step.stepId === stepId ? { ...step, status: "active" as const, actionId } : step)
+    : [{
+      stepId,
+      taskId: "coding.render",
+      objective: run.goal.statement || "Produce and verify the Coding Desk artifact",
+      dependsOn: [],
+      status: "active" as const,
+      requiresVerification: true,
+      actionId,
+    }];
+
+  return {
+    ...run,
+    status: "EXECUTING",
+    steps,
+    cursor: { ...run.cursor, stepId, actionId },
+    artifacts: [{
+      artifactId: "coding-desk-vfs",
+      generation: 1,
+      ref: artifactRefWithDigest(artifactRef, code),
+      state: "candidate",
+      createdByActionId: actionId,
+      verifiedByActionId: null,
+    }],
+    updatedAt: now,
+  };
+}
+
 async function handleCodingAction(req: any, res: any, userSub: string) {
   const action = String(req.body?.action || "");
   const record = await readOwnedRun(userSub, req.body?.runId);
   if (!record) return res.status(404).json({ error: "Run not found." });
   const now = new Date().toISOString();
 
+  if (action === "coding.attempt") {
+    if (!["QUEUED", "REPLANNING"].includes(record.run.status)) {
+      return res.status(409).json({ error: `A Coding model attempt cannot start from ${record.run.status}.` });
+    }
+    if (record.run.artifacts.some((artifact) => artifact.state === "candidate")) {
+      return res.status(409).json({ error: "A candidate artifact already exists; recover or verify that generation instead." });
+    }
+    const started = startModelAttempt(record.run, now);
+    const strategy = safeText(req.body?.strategy, 240);
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: started.run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-attempt-${randomUUID()}`,
+      eventType: "coding.model_attempt_started",
+      run: started.run,
+      payload: {
+        stepId: started.stepId,
+        actionId: started.actionId,
+        attempt: started.run.cursor.attempt + 1,
+        ...(strategy ? { strategy } : {}),
+      },
+    }));
+  }
+
   if (action === "coding.start") {
-    if (record.run.status !== "QUEUED") return res.status(409).json({ error: `Run cannot start from ${record.run.status}.` });
+    const preArtifactExecution = record.run.status === "EXECUTING"
+      && record.run.artifacts.length === 0
+      && Boolean(record.run.cursor.actionId);
+    if (record.run.status !== "QUEUED" && !preArtifactExecution) {
+      return res.status(409).json({ error: `Run cannot attach its first artifact from ${record.run.status}.` });
+    }
     const artifactRef = safeText(req.body?.artifactRef, 1024);
     const code = safeText(req.body?.code, 1_500_000);
     if (!artifactRef || !code) return res.status(400).json({ error: "A durable Coding artifact is required." });
-    const stepId = `coding-render-${randomUUID()}`;
-    const actionId = `coding-action-${randomUUID()}`;
-    const artifactId = "coding-desk-vfs";
-    const run: QirAgentRun = {
-      ...record.run,
-      status: "EXECUTING",
-      steps: [{
-        stepId,
-        taskId: "coding.render",
-        objective: record.run.goal.statement || "Produce and verify the Coding Desk artifact",
-        dependsOn: [],
-        status: "active",
-        requiresVerification: true,
-        actionId,
-      }],
-      cursor: { ...record.run.cursor, stepId, actionId },
-      artifacts: [{
-        artifactId,
-        generation: 1,
-        ref: artifactRefWithDigest(artifactRef, code),
-        state: "candidate",
-        createdByActionId: actionId,
-        verifiedByActionId: null,
-      }],
-      updatedAt: now,
-    };
+    const run = attachFirstArtifact(record.run, artifactRef, code, now);
+    const artifact = run.artifacts[0];
     return sendCommit(res, await commitQirRunEvent({
       userSub,
       runId: run.runId,
       expectedVersion: record.storageVersion,
       eventId: `coding-start-${randomUUID()}`,
-      eventType: "coding.started",
+      eventType: preArtifactExecution ? "coding.artifact_produced" : "coding.started",
       run,
-      payload: { stepId, actionId, artifactId, artifactGeneration: 1 },
+      payload: {
+        stepId: run.cursor.stepId,
+        actionId: run.cursor.actionId,
+        artifactId: artifact.artifactId,
+        artifactGeneration: artifact.generation,
+      },
     }));
   }
 
