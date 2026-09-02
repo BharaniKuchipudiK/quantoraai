@@ -1,11 +1,12 @@
 import { verifyStudyAssessmentRelease } from './study-assessment-governance.js';
 import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
 import type { StudyAssessmentItem } from './study-assessment-items.js';
+import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
 import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-09-01.1';
+export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-09-02.2';
 
 function coversMisconception(item: StudyAssessmentItem, code: StudyMisconceptionCode): boolean {
   return Object.values(item.misconceptionByOptionId).includes(code);
@@ -49,7 +50,10 @@ export function selectStudyAssessmentItem(input: {
   usedItemRefs?: ReadonlySet<string> | null;
 }): StudyAssessmentItem | null {
   const releasedItems = (Array.isArray(input.items) ? input.items : []).filter(isReleased);
-  if (!releasedItems.length) return null;
+  if (!releasedItems.length) {
+    emitStudyLearningFlowMetric({ metric: 'assessment_availability', outcome: 'assessment_unavailable' });
+    return null;
+  }
 
   const admitted = admittedStudyMasteryEvidence(input.evidence || []);
   const usedItemRefs = new Set<string>(input.usedItemRefs || []);
@@ -60,11 +64,21 @@ export function selectStudyAssessmentItem(input: {
   const activeCode = input.learnerModel?.misconception.code || null;
 
   if (activeCode) {
-    return releasedItems.find((item) => isFresh(item) && coversMisconception(item, activeCode)) || null;
+    const confirmation = releasedItems.find((item) => isFresh(item) && coversMisconception(item, activeCode)) || null;
+    if (!confirmation) {
+      emitStudyLearningFlowMetric({
+        metric: 'assessment_availability',
+        outcome: 'misconception_confirmation_unavailable',
+      });
+    }
+    return confirmation;
   }
 
   const fresh = releasedItems.filter(isFresh);
-  if (!fresh.length) return null;
+  if (!fresh.length) {
+    emitStudyLearningFlowMetric({ metric: 'assessment_availability', outcome: 'assessment_bank_exhausted' });
+    return null;
+  }
 
   if (input.learnerModel?.nextLearningMove.type === 'vary_evidence') {
     const existingKinds = new Set(input.learnerModel.understanding.evidenceKinds);
