@@ -140,8 +140,17 @@ export function replayStudyLearnerProjectionFromCheckpoint(input: {
   const projectedAt = validIso(input.asOf);
   if (!projectedAt) return { status: 'incompatible', reasonCode: 'projection_clock_invalid' };
 
+  const admittedDelta = admittedStudyMasteryEvidence(input.deltaEvidence);
+  const checkpointObserved = input.checkpoint.learnerState.observedThrough
+    ? Date.parse(input.checkpoint.learnerState.observedThrough)
+    : Number.NaN;
+  if (Number.isFinite(checkpointObserved)
+    && admittedDelta.some((event) => Date.parse(event.observedAt) <= checkpointObserved)) {
+    return { status: 'incompatible', reasonCode: 'backdated_delta_requires_full_replay' };
+  }
+
   const folded = foldAdmitted(
-    input.deltaEvidence,
+    admittedDelta,
     input.checkpoint.masteryState,
     input.checkpoint.learnerState,
     input.checkpoint.seenAssessmentItemRefs,
