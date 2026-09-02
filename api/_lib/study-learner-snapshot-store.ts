@@ -4,6 +4,12 @@ import { readStudySupabaseRows, studySupabaseRequest } from './study-supabase.js
 
 const SNAPSHOT_TIMEOUT_MS = 1_000;
 
+type SnapshotRequestInit = {
+  method?: string;
+  body?: BodyInit | null;
+  headers?: Record<string, string>;
+};
+
 export type StudyLearnerSnapshotSyncResult =
   | { status: 'current' }
   | { status: 'saved' }
@@ -15,7 +21,7 @@ export type StudyLearnerCheckpointReadResult =
   | { status: 'miss' }
   | { status: 'unavailable' };
 
-async function legacySnapshotRequest(init: RequestInit): Promise<Response | null> {
+async function legacySnapshotRequest(init: SnapshotRequestInit): Promise<Response | null> {
   return studySupabaseRequest(
     'rpc/save_study_learner_snapshot',
     init,
