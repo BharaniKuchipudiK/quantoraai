@@ -65,9 +65,12 @@ test('carries a deterministic teaching representation plan into the production S
     history: [{ role: 'user', text: 'Explain EMF versus terminal potential difference in a battery circuit.' }],
   });
   assert.ok(electricity);
-  assert.equal(electricity.representation.primaryRepresentation, 'concise_text');
-  assert.equal(electricity.representation.fallback, 'renderer_unavailable');
-  assert.match(formatStudyCognitiveDirective(electricity), /do not claim that an unsupported visual/i);
+  assert.equal(electricity.representation.primaryRepresentation, 'annotated_diagram');
+  assert.equal(electricity.representation.rendererRequired, true);
+  assert.equal(electricity.representation.rendererKind, 'electricity-circuit');
+  assert.equal(electricity.representation.fallback, 'none');
+  assert.match(formatStudyCognitiveDirective(electricity), /Teaching representation: annotated_diagram/);
+  assert.match(formatStudyCognitiveDirective(electricity), /response must use the supported representation rather than silently falling back to prose/i);
 });
 
 test('keeps unproven free reasoning endpoints behind the reliable Study verification rung', () => {
@@ -173,7 +176,6 @@ test('a rerouted decision describes one model, not two', () => {
     ],
   });
 
-  // Whether or not this particular turn reorders, the two fields must agree.
   assert.equal(
     routed.hasVisionSupport,
     routed.primaryModelId.startsWith('gemini'),
