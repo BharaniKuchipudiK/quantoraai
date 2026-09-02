@@ -77,8 +77,19 @@ export function buildGroundedSourceBlock(sources = [], limit = 5) {
      * Consolidating the two emitters is what surfaced the difference, so the
      * safer half now applies to both.
      */
-    const title = String(source?.title || source?.uri || '').replace(/[[\]]/g, '');
-    block += `${index + 1}. [${title}](${source?.uri ?? ''})\n`;
+    const title = String(source?.title || source?.uri || '')
+      .replace(/[[\]]/g, '')
+      .replace(/\s+/g, ' ') // an interior newline would split the row the parser matches line-by-line
+      .trim();
+    /*
+     * A ')' inside the URL closes the markdown link early — Gemini's
+     * vertexaisearch redirect URLs never carry one, but OpenRouter's web
+     * plugin returns raw web URLs (think wikipedia.org/wiki/Mercury_(planet)),
+     * and the board's SOURCE_LINE regex would silently drop the row.
+     * Percent-encoding the parens keeps the URL equivalent and the row whole.
+     */
+    const uri = String(source?.uri ?? '').replace(/\(/g, '%28').replace(/\)/g, '%29');
+    block += `${index + 1}. [${title}](${uri})\n`;
   });
   return block;
 }

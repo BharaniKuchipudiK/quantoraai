@@ -27,7 +27,8 @@ import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
-import { isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
+import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
+import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
@@ -327,8 +328,15 @@ export function useChatStream({
       hasDeskFiles: Boolean(canvasCode || (vfs && Object.keys(vfs).length)),
       studioDomain: studioDomainEarly,
     });
+    /*
+     * A pinned engine is honored only on desks that SHOW the picker
+     * (policy: showModelControls). A pin chosen on the Research desk or in
+     * the build studio must not silently steer an advisor desk that gives
+     * the person no way to see or undo it — those desks always route Auto.
+     */
+    const deskHonorsPinnedEngine = studioDomainPolicy(studioDomainEarly).showModelControls === true;
     const pinnedEarly = targetModelOverride
-      || selectedModel
+      || (deskHonorsPinnedEngine ? selectedModel : CODING_DESK_AUTO_MODEL)
       || (availableModels || []).find((model) => model?.available !== false)
       || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
     const autoModeEarly = !targetModelOverride && isCodingDeskAutoSelection(pinnedEarly);
@@ -497,7 +505,7 @@ export function useChatStream({
     }
 
     const pinnedOrOverride = targetModelOverride
-      || selectedModel
+      || (deskHonorsPinnedEngine ? selectedModel : CODING_DESK_AUTO_MODEL) // see the pin policy note above
       || (availableModels || []).find((model) => model?.available !== false)
       || { id: 'gemini-flash-latest', name: 'Gemini Flash' };
     const autoMode = !targetModelOverride && isCodingDeskAutoSelection(pinnedOrOverride);

@@ -74,7 +74,15 @@ const POLICIES = Object.freeze({
     supporting: 'Structure the question, compare evidence, test claims and move toward a defensible conclusion.',
     capabilities: ['Research', 'Compare', 'Evidence', 'Decide'],
     placeholder: 'What should I investigate, compare, or validate?',
-    showModelControls: false,
+    /*
+     * The one advisor desk with the engine picker (2026-09-02): Auto routed a
+     * research turn to an engine that ignored the desk's contracts, and the
+     * analyst watching the board asked to steer which engine answers. Auto
+     * stays the default. A desk with showModelControls false also IGNORES a
+     * pinned engine (useChatStream) — a pin set where the picker is visible
+     * must not silently steer desks that give no way to see or undo it.
+     */
+    showModelControls: true,
     showArena: true,
     showGenericCanvasNavigation: false,
     autoOpenCodeWorkspace: false,
