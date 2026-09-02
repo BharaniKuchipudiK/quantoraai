@@ -1,7 +1,8 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-02.1';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-03.1';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
+  | 'electricity-circuit'
   | 'algebra-balance'
   | 'biology-cell'
   | 'chemistry-bond'
@@ -14,10 +15,11 @@ export type StudyRepresentationCapability = {
   version: typeof STUDY_REPRESENTATION_CAPABILITY_VERSION;
   representation: 'annotated_diagram' | 'graph' | 'process_flow' | 'timeline' | 'number_line';
   rendererKind: StudyRepresentationRendererKind;
-  reason: 'mechanics' | 'algebra' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line';
+  reason: 'mechanics' | 'electricity' | 'algebra' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line';
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
+const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|current|ampere|voltage|volt|ohm(?:'s)? law)\b/i;
 const ALGEBRA = /\b(?:algebra|equation|variable|unknown|polynomial|quadratic|factoris(?:e|ation)|factoriz(?:e|ation))\b|\bx\b/i;
 const BIOLOGY = /\b(?:biology|cell|nucleus|membrane|organelle|mitosis|meiosis|photosynthesis|respiration|genetics?|dna|chromosome)\b/i;
 const CHEMISTRY = /\b(?:chemistry|chemical|atom|molecule|bond|electron|reaction|reactant|product|acid|base|salt|periodic)\b/i;
@@ -31,8 +33,8 @@ const NUMBER_LINE = /\bnumber line\b/i;
  * subject-native visual family that can honestly represent the concept.
  *
  * Null is deliberate: unsupported concepts must not be converted into a
- * generic decorative diagram. Adding a new family (for example circuits) is a
- * renderer capability change, not a prompt trick.
+ * generic decorative diagram. Adding a new family is a renderer capability
+ * change, not a prompt trick.
  */
 export function resolveStudyRepresentationCapability(contextText?: string | null): StudyRepresentationCapability | null {
   const context = String(contextText || '').trim();
@@ -46,6 +48,9 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
   }
   if (MECHANICS.test(context)) {
     return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'physics-motion', reason: 'mechanics' };
+  }
+  if (ELECTRICITY.test(context)) {
+    return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'electricity-circuit', reason: 'electricity' };
   }
   if (ALGEBRA.test(context)) {
     return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'algebra-balance', reason: 'algebra' };
