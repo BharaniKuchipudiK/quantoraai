@@ -1,14 +1,12 @@
-import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
-import { replayStudyLearnerProjection } from './study-learner-projection.js';
-import { syncStudyLearnerSnapshot } from './study-learner-snapshot-store.js';
+import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
 import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.6';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.7';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -57,24 +55,18 @@ export async function loadStudyLearnerModel(input: {
   if (input.studioDomain !== 'education' || !input.userSub || input.memoryConsented !== true || !input.studyContext) return null;
   const concept = await resolveActiveStudyConcept(input.studyContext);
   if (!concept || concept === 'unavailable') return null;
-  const evidence = await readVerifiedStudyMasteryEvidence(input.userSub, concept.id, concept.canonicalKey);
-  if (!evidence) return null;
-  const projection = replayStudyLearnerProjection({
+  const loaded = await loadVerifiedStudyLearnerProjection({
+    userSub: input.userSub,
     conceptId: concept.id,
     conceptKey: concept.canonicalKey,
-    evidence,
     asOf: new Date().toISOString(),
   });
-
-  // H3.2 is write-through only. The freshly replayed ledger projection remains
-  // authoritative for this request; snapshot state cannot override it. H3.3
-  // may consume snapshots only after bounded delta replay is implemented.
-  await syncStudyLearnerSnapshot({ userSub: input.userSub, projection });
+  if (!loaded) return null;
 
   return applyStudyPrerequisiteNextBestAction({
     userSub: input.userSub,
     activeConcept: concept,
-    learnerModel: projection.learnerModel,
+    learnerModel: loaded.projection.learnerModel,
   });
 }
 

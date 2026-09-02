@@ -2,12 +2,14 @@ import { admittedStudyMasteryEvidence } from './study-evidence-admission.js';
 import {
   assessmentConfirmsMisconceptionRepair,
   diagnoseStudyMisconception,
+  type StudyMisconceptionDiagnosis,
 } from './study-misconception-intelligence.js';
 import type {
   StudyMisconceptionCode,
   StudyMisconceptionRemediation,
 } from './study-misconception-taxonomy.js';
 import type { StudyMasteryEstimate } from './study-mastery-estimator.js';
+import { studyMasteryEventScore } from './study-mastery-estimator.js';
 import type { StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
 export const STUDY_LEARNER_MODEL_VERSION = 'study-learner-model-2026-08-31.4';
@@ -45,7 +47,6 @@ export type StudyLearnerModel = {
   retention: {
     state: 'untested' | 'needs_support' | 'supported';
     evidenceCount: number;
-    /** V7 schedule fields are optional for compatibility with older fixtures. */
     anchorAt?: string | null;
     targetDelayDays?: number | null;
     dueAt?: string | null;
@@ -64,11 +65,47 @@ export type StudyLearnerModel = {
   };
 };
 
-function eventScore(event: StudyMasteryEvidenceEvent): number | null {
-  if (typeof event.score === 'number' && Number.isFinite(event.score)) return Math.max(0, Math.min(1, event.score));
-  if (typeof event.correct === 'boolean') return event.correct ? 1 : 0;
-  return null;
-}
+type ReplayRow = {
+  score: number;
+  kind: string;
+  observedAt: string;
+  misconceptionSignal: boolean;
+};
+
+type RetentionReplay = {
+  score: number;
+  observedAt: string;
+  delayDays: number | null;
+};
+
+type TransferReplay = {
+  score: number;
+  observedAt: string;
+};
+
+export type StudyLearnerModelAccumulator = {
+  evidenceCount: number;
+  evidenceKinds: string[];
+  observedThrough: string | null;
+  latestRow: ReplayRow | null;
+  misconception: {
+    signalCount: number;
+    latestDiagnosis: StudyMisconceptionDiagnosis | null;
+    targetedCorrection: boolean;
+    laterSuccess: boolean;
+  };
+  retention: {
+    evidenceCount: number;
+    latest: RetentionReplay | null;
+    laterSuccessfulLearning: boolean;
+    latestSuccessfulAt: string | null;
+  };
+  transfer: {
+    evidenceCount: number;
+    latest: TransferReplay | null;
+    laterRepair: boolean;
+  };
+};
 
 function validDate(value: unknown): string | null {
   const text = typeof value === 'string' ? value : '';
@@ -76,17 +113,111 @@ function validDate(value: unknown): string | null {
   return Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 }
 
-function verifiedRows(events: StudyMasteryEvidenceEvent[]) {
-  return admittedStudyMasteryEvidence(events)
-    .map((event) => ({ event, score: eventScore(event), observedAt: validDate(event.observedAt) }))
-    .filter((row): row is { event: StudyMasteryEvidenceEvent; score: number; observedAt: string } => row.score !== null && row.observedAt !== null);
+export function createStudyLearnerModelAccumulator(): StudyLearnerModelAccumulator {
+  return {
+    evidenceCount: 0,
+    evidenceKinds: [],
+    observedThrough: null,
+    latestRow: null,
+    misconception: {
+      signalCount: 0,
+      latestDiagnosis: null,
+      targetedCorrection: false,
+      laterSuccess: false,
+    },
+    retention: {
+      evidenceCount: 0,
+      latest: null,
+      laterSuccessfulLearning: false,
+      latestSuccessfulAt: null,
+    },
+    transfer: {
+      evidenceCount: 0,
+      latest: null,
+      laterRepair: false,
+    },
+  };
 }
 
-function misconceptionProjection(rows: ReturnType<typeof verifiedRows>): StudyLearnerModel['misconception'] {
-  const diagnosed = rows
-    .map((row) => ({ row, diagnosis: diagnoseStudyMisconception(row.event) }))
-    .filter((entry): entry is { row: (typeof rows)[number]; diagnosis: NonNullable<ReturnType<typeof diagnoseStudyMisconception>> } => entry.diagnosis !== null);
-  const latest = diagnosed[diagnosed.length - 1] || null;
+/** Append one already-admitted event in chronological observation order. */
+export function appendStudyLearnerModelAccumulator(
+  current: StudyLearnerModelAccumulator,
+  event: StudyMasteryEvidenceEvent,
+): StudyLearnerModelAccumulator {
+  const observedAt = validDate(event.observedAt);
+  const score = studyMasteryEventScore(event);
+  if (!observedAt || score === null) return current;
+
+  const kinds = new Set(current.evidenceKinds);
+  kinds.add(event.kind);
+  const next: StudyLearnerModelAccumulator = {
+    evidenceCount: current.evidenceCount + 1,
+    evidenceKinds: [...kinds].sort(),
+    observedThrough: observedAt,
+    latestRow: {
+      score,
+      kind: event.kind,
+      observedAt,
+      misconceptionSignal: event.misconceptionSignal === true,
+    },
+    misconception: { ...current.misconception },
+    retention: { ...current.retention },
+    transfer: { ...current.transfer },
+  };
+
+  const diagnosis = diagnoseStudyMisconception(event);
+  if (diagnosis) {
+    next.misconception = {
+      signalCount: current.misconception.signalCount + 1,
+      latestDiagnosis: diagnosis,
+      targetedCorrection: false,
+      laterSuccess: false,
+    };
+  } else if (current.misconception.latestDiagnosis
+    && Date.parse(observedAt) > Date.parse(current.misconception.latestDiagnosis.observedAt)) {
+    const code = current.misconception.latestDiagnosis.code;
+    next.misconception.targetedCorrection = current.misconception.targetedCorrection
+      || (score >= 0.75 && assessmentConfirmsMisconceptionRepair(event, code));
+    next.misconception.laterSuccess = current.misconception.laterSuccess
+      || (score >= 0.75 && !event.misconceptionSignal);
+  }
+
+  if (event.kind === 'retention_probe') {
+    next.retention = {
+      evidenceCount: current.retention.evidenceCount + 1,
+      latest: {
+        score,
+        observedAt,
+        delayDays: typeof event.delayDays === 'number' ? event.delayDays : null,
+      },
+      laterSuccessfulLearning: false,
+      latestSuccessfulAt: score >= 0.75 ? observedAt : current.retention.latestSuccessfulAt,
+    };
+  } else {
+    next.retention.laterSuccessfulLearning = current.retention.laterSuccessfulLearning
+      || Boolean(current.retention.latest && score >= 0.75
+        && Date.parse(observedAt) > Date.parse(current.retention.latest.observedAt));
+    if (score >= 0.75) next.retention.latestSuccessfulAt = observedAt;
+  }
+
+  if (event.kind === 'transfer') {
+    next.transfer = {
+      evidenceCount: current.transfer.evidenceCount + 1,
+      latest: { score, observedAt },
+      laterRepair: false,
+    };
+  } else if (current.transfer.latest
+    && current.transfer.latest.score < 0.75
+    && score >= 0.75
+    && Date.parse(observedAt) > Date.parse(current.transfer.latest.observedAt)) {
+    next.transfer.laterRepair = true;
+  }
+
+  return next;
+}
+
+function misconceptionProjection(state: StudyLearnerModelAccumulator): StudyLearnerModel['misconception'] {
+  const latest = state.misconception.latestDiagnosis;
   if (!latest) {
     return {
       state: 'none_observed',
@@ -99,33 +230,29 @@ function misconceptionProjection(rows: ReturnType<typeof verifiedRows>): StudyLe
       lastResolvedCode: null,
     };
   }
-
-  const laterRows = rows.filter((row) => Date.parse(row.observedAt) > Date.parse(latest.row.observedAt));
-  const targetedCorrection = laterRows.some((row) =>
-    row.score >= 0.75 && assessmentConfirmsMisconceptionRepair(row.event, latest.diagnosis.code));
-  if (targetedCorrection) {
+  if (state.misconception.targetedCorrection) {
     return {
       state: 'none_observed',
-      signalCount: diagnosed.length,
-      latestSignalAt: latest.row.observedAt,
+      signalCount: state.misconception.signalCount,
+      latestSignalAt: latest.observedAt,
       code: null,
       confidence: null,
       reasonCodes: ['targeted_independent_correction'],
       remediation: null,
-      lastResolvedCode: latest.diagnosis.code,
+      lastResolvedCode: latest.code,
     };
   }
-
-  const laterSuccess = laterRows.some((row) => row.score >= 0.75 && !row.event.misconceptionSignal);
-  const state: StudyMisconceptionState = laterSuccess ? 'needs_confirmation' : 'signal_observed';
+  const status: StudyMisconceptionState = state.misconception.laterSuccess
+    ? 'needs_confirmation'
+    : 'signal_observed';
   return {
-    state,
-    signalCount: diagnosed.length,
-    latestSignalAt: latest.row.observedAt,
-    code: latest.diagnosis.code,
-    confidence: latest.diagnosis.confidence,
-    reasonCodes: latest.diagnosis.reasonCodes,
-    remediation: latest.diagnosis.remediation,
+    state: status,
+    signalCount: state.misconception.signalCount,
+    latestSignalAt: latest.observedAt,
+    code: latest.code,
+    confidence: latest.confidence,
+    reasonCodes: latest.reasonCodes,
+    remediation: latest.remediation,
     lastResolvedCode: null,
   };
 }
@@ -137,32 +264,21 @@ function addDays(iso: string | null, days: number | null): string | null {
   return new Date(millis + days * 86_400_000).toISOString();
 }
 
-function retentionProjection(rows: ReturnType<typeof verifiedRows>, asOf: string) {
-  const retentionRows = rows.filter((row) => row.event.kind === 'retention_probe');
-  const latestRetention = retentionRows[retentionRows.length - 1] || null;
-  const laterSuccessfulLearning = latestRetention
-    ? rows.some((row) => row.event.kind !== 'retention_probe'
-      && row.score >= 0.75
-      && Date.parse(row.observedAt) > Date.parse(latestRetention.observedAt))
-    : false;
-  const effectiveRetention = laterSuccessfulLearning ? null : latestRetention;
-  const successfulRows = rows.filter((row) => row.score >= 0.75);
-  const latestSuccessful = successfulRows[successfulRows.length - 1] || null;
-
-  let state: 'untested' | 'needs_support' | 'supported' = 'untested';
+function retentionProjection(state: StudyLearnerModelAccumulator, asOf: string) {
+  const latestRetention = state.retention.latest;
+  const effectiveRetention = state.retention.laterSuccessfulLearning ? null : latestRetention;
+  let retentionState: 'untested' | 'needs_support' | 'supported' = 'untested';
   let targetDelayDays: number | null = 1;
-  let anchorAt = latestSuccessful?.observedAt || null;
+  let anchorAt = state.retention.latestSuccessfulAt;
 
   if (effectiveRetention) {
     if (effectiveRetention.score >= 0.75) {
-      state = 'supported';
-      const observedDelay = typeof effectiveRetention.event.delayDays === 'number'
-        ? effectiveRetention.event.delayDays
-        : 1;
+      retentionState = 'supported';
+      const observedDelay = effectiveRetention.delayDays ?? 1;
       targetDelayDays = observedDelay >= 30 ? null : observedDelay >= 7 ? 30 : 7;
       anchorAt = effectiveRetention.observedAt;
     } else {
-      state = 'needs_support';
+      retentionState = 'needs_support';
       targetDelayDays = 1;
     }
   }
@@ -176,8 +292,8 @@ function retentionProjection(rows: ReturnType<typeof verifiedRows>, asOf: string
     && asOfMillis >= dueAtMillis;
 
   return {
-    state,
-    evidenceCount: retentionRows.length,
+    state: retentionState,
+    evidenceCount: state.retention.evidenceCount,
     anchorAt,
     targetDelayDays,
     dueAt,
@@ -185,22 +301,21 @@ function retentionProjection(rows: ReturnType<typeof verifiedRows>, asOf: string
   };
 }
 
-function transferProjection(rows: ReturnType<typeof verifiedRows>) {
-  const transferRows = rows.filter((row) => row.event.kind === 'transfer');
-  const latest = transferRows[transferRows.length - 1] || null;
+function transferProjection(state: StudyLearnerModelAccumulator) {
+  const latest = state.transfer.latest;
   if (!latest) {
     return { state: 'untested' as const, evidenceCount: 0, latestObservedAt: null };
   }
-  const laterRepair = latest.score < 0.75 && rows.some((row) =>
-    row.event.kind !== 'transfer'
-    && row.score >= 0.75
-    && Date.parse(row.observedAt) > Date.parse(latest.observedAt));
-  if (laterRepair) {
-    return { state: 'untested' as const, evidenceCount: transferRows.length, latestObservedAt: latest.observedAt };
+  if (state.transfer.laterRepair) {
+    return {
+      state: 'untested' as const,
+      evidenceCount: state.transfer.evidenceCount,
+      latestObservedAt: latest.observedAt,
+    };
   }
   return {
     state: latest.score >= 0.75 ? 'supported' as const : 'needs_support' as const,
-    evidenceCount: transferRows.length,
+    evidenceCount: state.transfer.evidenceCount,
     latestObservedAt: latest.observedAt,
   };
 }
@@ -226,14 +341,14 @@ function retentionInstruction(retention: ReturnType<typeof retentionProjection>)
 }
 
 function chooseNextMove(input: {
-  rows: ReturnType<typeof verifiedRows>;
+  state: StudyLearnerModelAccumulator;
   estimate: StudyMasteryEstimate;
   misconception: StudyLearnerModel['misconception'];
   retention: ReturnType<typeof retentionProjection>;
   transfer: ReturnType<typeof transferProjection>;
 }): StudyLearnerModel['nextLearningMove'] {
-  const { rows, estimate, misconception, retention, transfer } = input;
-  if (!rows.length) {
+  const { state, estimate, misconception, retention, transfer } = input;
+  if (!state.evidenceCount) {
     return { type: 'independent_retrieval', reasonCode: 'no_verified_evidence', instruction: 'Ask for one independent answer without hints before adapting the lesson.', learnerFacingText: 'Next: try one independent answer without hints.' };
   }
   if (misconception.state === 'signal_observed' && misconception.code && misconception.remediation) {
@@ -252,18 +367,13 @@ function chooseNextMove(input: {
       learnerFacingText: 'Next: try one fresh check that targets the same earlier mistake.',
     };
   }
-  const latest = rows[rows.length - 1];
-  if (latest.score < 0.75) {
+  const latest = state.latestRow;
+  if (latest && latest.score < 0.75) {
     return { type: 'guided_repair', reasonCode: 'latest_verified_attempt_incorrect', instruction: 'Repair the first material error with the smallest prerequisite step, then retry with a new item.', learnerFacingText: 'Next: repair the first error, then try a changed example.' };
   }
-  const kinds = new Set(rows.map((row) => row.event.kind));
-  if (estimate.status !== 'established' || rows.length < 4 || kinds.size < 2) {
+  if (estimate.status !== 'established' || state.evidenceCount < 4 || state.evidenceKinds.length < 2) {
     return { type: 'vary_evidence', reasonCode: 'diverse_evidence_incomplete', instruction: 'Collect a different independent governed evidence kind, preferably retrieval or application, instead of repeating the same item.', learnerFacingText: 'Next: show the idea in a different governed way—retrieval or application.' };
   }
-
-  // A retention deadline that is actually due outranks transfer. While waiting
-  // for the clock, transfer can proceed instead of manufacturing immediate
-  // "retention" evidence.
   if (retention.targetDelayDays !== null && retention.due) {
     return retentionInstruction(retention);
   }
@@ -275,14 +385,42 @@ function chooseNextMove(input: {
       learnerFacingText: 'Next: try the idea in a genuinely new context.',
     };
   }
-  if (retention.targetDelayDays !== null) {
-    return retentionInstruction(retention);
-  }
+  if (retention.targetDelayDays !== null) return retentionInstruction(retention);
   return {
     type: 'transfer_task',
     reasonCode: 'retention_and_transfer_supported',
     instruction: 'Durability and one governed transfer are supported. Use another genuinely novel governed transfer only if it adds independent evidence; otherwise advance the learning plan.',
     learnerFacingText: 'Next: stretch the idea only with a genuinely new application.',
+  };
+}
+
+export function buildStudyLearnerModelFromAccumulator(input: {
+  conceptId: string;
+  conceptKey?: string | null;
+  state: StudyLearnerModelAccumulator;
+  estimate: StudyMasteryEstimate;
+  asOf?: string;
+}): StudyLearnerModel {
+  const misconception = misconceptionProjection(input.state);
+  const asOf = validDate(input.asOf) || new Date().toISOString();
+  const retention = retentionProjection(input.state, asOf);
+  const transfer = transferProjection(input.state);
+  const verified = input.estimate.status === 'established' && misconception.state === 'none_observed';
+  const understanding: StudyUnderstandingState = verified ? 'verified' : input.state.evidenceCount ? 'emerging' : 'unverified';
+
+  return {
+    version: STUDY_LEARNER_MODEL_VERSION,
+    concept: { id: String(input.conceptId || ''), key: input.conceptKey || null },
+    understanding: {
+      state: understanding,
+      evidenceCount: input.state.evidenceCount,
+      evidenceKinds: input.state.evidenceKinds,
+      observedThrough: input.state.observedThrough,
+    },
+    misconception,
+    retention,
+    transfer,
+    nextLearningMove: chooseNextMove({ state: input.state, estimate: input.estimate, misconception, retention, transfer }),
   };
 }
 
@@ -292,30 +430,17 @@ export function buildStudyLearnerModel(input: {
   conceptKey?: string | null;
   evidence?: StudyMasteryEvidenceEvent[] | null;
   estimate: StudyMasteryEstimate;
-  /** Injectable clock keeps retention scheduling deterministic in tests/replay. */
   asOf?: string;
 }): StudyLearnerModel {
-  const rows = verifiedRows(input.evidence || []);
-  const misconception = misconceptionProjection(rows);
-  const asOf = validDate(input.asOf) || new Date().toISOString();
-  const retention = retentionProjection(rows, asOf);
-  const transfer = transferProjection(rows);
-  const evidenceKinds = [...new Set(rows.map((row) => row.event.kind))].sort();
-  const verified = input.estimate.status === 'established' && misconception.state === 'none_observed';
-  const understanding: StudyUnderstandingState = verified ? 'verified' : rows.length ? 'emerging' : 'unverified';
-
-  return {
-    version: STUDY_LEARNER_MODEL_VERSION,
-    concept: { id: String(input.conceptId || ''), key: input.conceptKey || null },
-    understanding: {
-      state: understanding,
-      evidenceCount: rows.length,
-      evidenceKinds,
-      observedThrough: rows[rows.length - 1]?.observedAt || null,
-    },
-    misconception,
-    retention,
-    transfer,
-    nextLearningMove: chooseNextMove({ rows, estimate: input.estimate, misconception, retention, transfer }),
-  };
+  let state = createStudyLearnerModelAccumulator();
+  for (const event of admittedStudyMasteryEvidence(input.evidence || [])) {
+    state = appendStudyLearnerModelAccumulator(state, event);
+  }
+  return buildStudyLearnerModelFromAccumulator({
+    conceptId: input.conceptId,
+    conceptKey: input.conceptKey,
+    state,
+    estimate: input.estimate,
+    asOf: input.asOf,
+  });
 }
