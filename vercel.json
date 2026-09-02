@@ -2,8 +2,12 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/generate-office.ts": { "maxDuration": 300 },
-    "api/pipeline.ts": { "maxDuration": 180 },
+    "api/generate-office.ts": {
+      "maxDuration": 300
+    },
+    "api/pipeline.ts": {
+      "maxDuration": 180
+    },
     "api/preview-compile.js": {
       "includeFiles": "node_modules/{react,react-dom,scheduler,lucide-react}/**"
     }
@@ -228,6 +232,14 @@
     {
       "source": "/api/auth/providers",
       "destination": "/api/auth?route=providers"
+    },
+    {
+      "source": "/api/auth/desktop/grant",
+      "destination": "/api/auth?route=desktop-grant"
+    },
+    {
+      "source": "/api/auth/desktop/exchange",
+      "destination": "/api/auth?route=desktop-exchange"
     },
     {
       "source": "/api/admin/feedback",

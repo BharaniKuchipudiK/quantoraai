@@ -130,6 +130,14 @@ async function startServer() {
     req.query = { ...(req.query || {}), route: "github-callback" };
     return auth(req, res);
   });
+  route("all", "/api/auth/desktop/grant", (req, res) => {
+    req.query = { ...(req.query || {}), route: "desktop-grant" };
+    return auth(req, res);
+  });
+  route("all", "/api/auth/desktop/exchange", (req, res) => {
+    req.query = { ...(req.query || {}), route: "desktop-exchange" };
+    return auth(req, res);
+  });
   route("all", "/api/chat", async (req, res) => {
     if (await handleAffordabilityDecision(req, res)) return;
 
