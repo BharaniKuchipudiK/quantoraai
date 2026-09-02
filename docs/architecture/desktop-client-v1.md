@@ -1,8 +1,9 @@
 # Quantora Desktop Client — v1 design
 
-**Status:** proposal (2026-09-02). Answers ROADMAP Phase 4.1 ("Tauri/Electron
-shell — the body the cognitive layer needs"). Nothing here is built yet; every
-claim about the current platform below was read from the code and cites the file.
+**Status:** D0 and D1 built (2026-09-02); D2–D4 designed. Answers ROADMAP
+Phase 4.1 ("Tauri/Electron shell — the body the cognitive layer needs"). Every
+claim about the platform below was read from the code and cites the file; §11
+records what each phase was accepted by.
 
 Read `ARCHITECTURE.md` first. This document only adds what a native client
 changes, and it is deliberately additive: the web app stays the product, the
@@ -32,7 +33,7 @@ local runtime.
 |---|---|---|
 | Shell | **Electron** (Chromium + Node). Tauri is the fallback if binary size ever matters more than engine determinism. See §2. | Only before D2 — the local runtime bridge is shell-specific. |
 | Renderer | **Bundled `dist/`** served on a custom secure scheme `quantora://app`, never `file://`, never a remote page with a local bridge. See §3. | Yes, but the auth story in §4 assumes it. |
-| API | The existing hosted API (`https://quantoraai.app/api/*`), reached through one `apiFetch()` wrapper. No business logic in the desktop. See §5. | — |
+| API | The existing hosted API (`https://quantoraai.app/api/*`). The renderer keeps calling relative `/api/...`; the host's protocol handler proxies those calls and attaches the bearer. No business logic in the desktop. See §5. | — |
 | Identity | Existing HMAC session (`api/_lib/session.ts`) carried as a **bearer header** instead of a cookie, obtained via a system-browser + PKCE flow. See §4. | — |
 | Local runtime | A **`DeskRuntime`** interface with two implementations: `webcontainer` (today's code) and `desktop` (real processes on a real folder). See §6. | — |
 | Model calls | Always through `/api/chat`. The desktop never holds server keys; BYOK stays in the OS keychain. | — |
@@ -98,26 +99,29 @@ Desktop flow (standard native-app OAuth, reusing every existing provider):
 ```
 Desktop                              System browser                     API (api/auth.ts)
   │ generate code_verifier, state      │                                   │
-  │─ open https://quantoraai.app/?desktop_auth=1&challenge=…&state=… ─────►│  (SPA, existing AuthModal)
-  │                                    │ user signs in with Google/GitHub/email — unchanged
-  │                                    │─ POST /api/auth/desktop/grant {challenge,state} (cookie) ─►│
-  │                                    │◄─ 302 quantora://auth/callback?code=…&state=… ────────────│
+  │─ open /api/auth/desktop/grant?challenge=…&state=… ─────────────────────►│
+  │                                    │◄─ no cookie: 302 /?desktop_auth=1&challenge=…&state=… ────│
+  │                                    │ SPA stashes the handoff, user signs in with Google/GitHub/email — unchanged
+  │                                    │─ GET /api/auth/desktop/grant (cookie) ────────────────────►│
+  │                                    │◄─ HTML page linking quantora://auth/callback?code=…&state=…│
   │◄─ deep link ───────────────────────│                                   │
-  │─ POST /api/auth/desktop/exchange {code, code_verifier} ───────────────►│
+  │─ POST /api/auth/desktop/exchange {code, codeVerifier} ────────────────►│
   │◄─ { token, user }   (token = the same HMAC session token) ─────────────│
-  │ store token in safeStorage (OS keychain)                               │
+  │ store token in safeStorage (OS keychain); reload quantora://app/?auth=success
 ```
 
 Server changes (all fold into `api/auth.ts` via two new `vercel.json`
 rewrites — no new function, per `ARCHITECTURE.md` §1):
 
-- `route=desktop-grant` — requires a live cookie session; stores
-  `{ challenge, sub }` for ≤ 60 s (Supabase `rate_limits`-style short row or a
-  signed, expiring code — the code itself can be an HMAC blob like the
-  session, so no table is required); redirects to the deep link.
+- `route=desktop-grant` — with a cookie session, mints a grant code: an
+  HMAC blob under a separate domain prefix carrying the user and the
+  challenge, 60 s TTL, three dot-separated parts so it can never verify as a
+  session token (`api/_lib/desktop-auth.ts`). Returned on an HTML page that
+  links the deep link (browsers prompt on a bare 302 into a custom scheme).
+  Without a cookie it bounces to the SPA with the handoff parameters.
 - `route=desktop-exchange` — verifies `code`, checks
-  `SHA256(code_verifier) == challenge`, single-use, returns
-  `createSessionToken(user)` in the body.
+  `SHA256(codeVerifier) == challenge`, single-use per instance, returns
+  `createSessionToken(user)` in the body. Every rejection is the same 400.
 - `getSessionUser(req)` additionally reads `Authorization: Bearer <token>`
   and runs the identical `readSessionToken` path. One function, one token
   format, two carriers. `authz.ts` `requireActiveSession` needs no change.
@@ -137,24 +141,27 @@ Two one-line facts today:
 - Every client call is a relative `fetch('/api/…')` — 50 sites across
   `src/`, no base-URL indirection anywhere.
 
-Changes:
+**Built (D1): the host proxies `/api/*`.** The first draft of this section
+planned an `apiFetch()` wrapper and a `DESKTOP_ORIGIN` CORS entry. Building
+D1 showed both were unnecessary: `quantora://app` is served by the shell's
+own `protocol.handle()`, so `/api/*` requests from the renderer arrive in
+the main process, which forwards them to the API origin with
+`Authorization: Bearer` attached (`desktop/main/api-proxy.ts`,
+`api-proxy-policy.ts`). Consequences:
 
-1. **`DESKTOP_ORIGIN` env** (`quantora://app`) joins `APP_URL` in `applyCors`.
-   Any other origin stays blocked, as now. Add `Authorization` to the
-   `Access-Control-Allow-Headers` list.
-2. **`src/lib/api-client.js` — `apiFetch(path, init)`.** On the web it is
-   `fetch(path, { credentials: 'include', ...init })`. On desktop it prefixes
-   the configured base URL and attaches the bearer token from the bridge.
-   Callers keep writing the literal `'/api/chat'`, which keeps
-   `scripts/platform-dead-control-gate.mjs` working unchanged: the gate greps
-   for `/api/...` string literals and would silently stop seeing a
-   template-string base URL. Migrating the 50 sites is a mechanical,
-   behaviour-preserving PR that lands on the web first (D0 in §11).
-3. **SSE unchanged.** `/api/chat` streams `data:` lines parsed from
-   `res.body.getReader()` (`src/hooks/useChatStream.js`); `fetch` streaming
-   works identically in Electron's renderer.
-4. **Base URL is a build-time constant** per channel (`stable` →
-   `https://quantoraai.app`, `dev` → `http://localhost:3000`), never a
+1. **Zero call-site changes.** The 50 relative fetches keep working as
+   written, and `scripts/platform-dead-control-gate.mjs` keeps seeing every
+   `/api/...` literal.
+2. **No CORS change.** A main-process fetch is not a browser request; the
+   `APP_URL` rule is untouched and `DESKTOP_ORIGIN` does not exist.
+3. **The token never enters the renderer.** It is read from the keychain
+   store in main and attached there. A page cannot read or forge it, and a
+   page-supplied `Authorization` or `Cookie` header is dropped
+   (`upstreamHeaders` allowlist).
+4. **SSE unchanged.** `/api/chat` bodies stream through the proxy untouched;
+   `res.body.getReader()` in `src/hooks/useChatStream.js` works as on the web.
+5. **Base URL is a build-time constant** per channel (`QUANTORA_API_ORIGIN`
+   env at build/dev time, default `https://quantoraai.app`), never a
    user-editable field — a user-editable base URL is a phishing surface for
    the bearer token.
 
@@ -246,29 +253,35 @@ gates about it in the same PR (`CLAUDE.md` §7: fix the instance, close the
 class):
 
 ```
-desktop/
-  main/           Electron main: window, protocol handler, updater, tray, auth broker
+desktop/                        own package.json + lockfile; Electron never enters the root install
+  main/           Electron main: config, protocol handler, static server, api proxy,
+                  auth broker + auth-flow (pure), session store (keychain), window, ipc
   preload/        contextBridge surface (the only renderer↔host boundary)
-  runtime/        DeskRuntime desktop implementation: fs, pty, git, dev server, watcher
-  build/          electron-builder config, icons, entitlements
+  runtime/        DeskRuntime desktop implementation: fs, pty, git, dev server, watcher (D2)
+  build/          electron-builder config, entitlements
+  build.mjs       esbuild → dist/main.cjs + dist/preload.cjs
 shared/
-  desk-runtime-contract.ts     (types shared by src/ and desktop/)
-  desktop-bridge-contract.ts   (IPC message schema, versioned)
+  desktop-contract.js          scheme, routes, param names, validators (API + web + desktop)
+  desktop-bridge-contract.js   IPC channel names, bridge shape, versioned
+  desk-runtime-contract.ts     (D2)
 src/lib/
-  api-client.js                apiFetch()
-  desk-runtime/{webcontainer,desktop}.js
+  desktop-bridge.js            getDesktopBridge() — null on the website
+  desktop-auth-handoff.js      finishes a desktop sign-in inside the browser
+  desk-runtime/{webcontainer,desktop}.js   (D2)
+scripts/
+  desktop-smoke-gate.mjs       Playwright drives the real shell (CI job: desktop-smoke)
 ```
 
 | Gate | Today | Change |
 |---|---|---|
 | `scripts/runtime-import-gate.mjs` | `ROOTS = ['api','shared']` + `server.ts` | Add `desktop`. The main process is Node ESM in production — the archiver class of bug applies verbatim. |
 | `scripts/wiring-gate.mjs` | `SOURCE_DIRS = ['src','shared','api','scripts']` | Add `desktop`; regenerate `src/lib/wiring-baseline.json` with `--update` once, and read the diff. |
-| `scripts/platform-dead-control-gate.mjs` | greps `src/` for `/api/...` literals | No change needed **because** `apiFetch` keeps literals. Add a contract test asserting `api-client.js` never builds paths from templates. |
+| `scripts/platform-dead-control-gate.mjs` | greps `src/` for `/api/...` literals | No change needed **because** the host proxies relative paths; no call site changed. |
 | `npm run lint` | repo-wide `tsc` | Add `desktop/**` to `tsconfig.json` `include`; keep `--stack_size=8192`. |
 | `eslint 'src/**/*.{js,jsx}'` | | Widen to `desktop/**`. |
 | Browser gates (`scripts/*-browser-gate.mjs`) | drive `vite preview` in Chromium | Unchanged for the web. Add `scripts/desktop-smoke-gate.mjs` (§10). |
 | `src/lib/vercel-headers.test.js` | asserts the header set | Extend: the protocol handler must serve the same header set for `/` and `/desk`. |
-| `src/lib/deployed-gate-contract.test.js` pattern | | New `desktop-bridge-contract.test.js`: renderer and preload agree on every IPC channel name and payload version, so they cannot drift silently. |
+| `src/lib/deployed-gate-contract.test.js` pattern | | `shared/desktop-bridge-contract.test.js`: preload and main both reference every IPC channel in the contract and never name one by string literal, so they cannot drift silently. |
 
 ## 9. Security posture
 
@@ -319,21 +332,27 @@ counts. For each phase the acceptance is a runnable check, not a demo:
 Each phase ships to `main` independently and leaves the web untouched or
 better.
 
-**D0 — Server and seam prep (web-only, no behaviour change).**
-`apiFetch()` and the 50-site migration · bearer carrier in `session.ts` ·
-`DESKTOP_ORIGIN` in `applyCors` · `desktop-grant` / `desktop-exchange` routes
-folded into `api/auth.ts` with rewrites · `DeskRuntime` contract extracted,
-WebContainer as implementation #1 · gate extensions from §8.
-*Accept:* `npm run test:all` green, every browser gate green, `curl` with a
-bearer token returns the same `/api/auth/session` body as the cookie.
+**D0 — Server prep (web-only, no behaviour change). Built.**
+Bearer carrier in `session.ts` · `desktop-grant` / `desktop-exchange` routes
+folded into `api/auth.ts` with rewrites, mirrored in `server.ts` ·
+`shared/desktop-contract.js` · the browser-side handoff
+(`src/lib/desktop-auth-handoff.js`, wired in `App.jsx`). The planned
+`apiFetch()` migration and `DESKTOP_ORIGIN` were dropped (§5).
+*Accepted by:* `api/_lib/session-bearer.test.ts`, `api/_lib/desktop-auth.test.ts`,
+and an end-to-end run against the Express mirror (bounce → grant → exchange →
+bearer restore → tampered bearer → replay).
 
-**D1 — Shell MVP.** Electron main + preload, custom protocol serving `dist/`,
-system-browser auth, tray optional. All desks work exactly as on the web.
-WebContainer is *not* wired on desktop (its origin-bound licence and the
-COEP replay are not worth it when D2 replaces it); the terminal blocker says
-"attach a folder to get a real shell".
-*Accept:* `desktop-smoke-gate` boots and signs in; the platform-experience and
-studio-regression browser gates pass inside Electron.
+**D1 — Shell MVP. Built.** Electron main + sandboxed preload, `quantora://app`
+serving `dist/` under the vercel.json header policy, `/api/*` proxied with the
+bearer, system-browser + PKCE sign-in over the `quantora://` deep link,
+keychain session store, navigation pinned to the app origin. The AuthModal
+shows a single "Continue in browser" action inside the desktop. WebContainer
+is *not* wired on desktop (its origin-bound licence and the COEP replay are
+not worth it when D2 replaces it).
+*Accepted by:* `scripts/desktop-smoke-gate.mjs` (CI job `desktop-smoke`),
+fourteen checks from boot to sign-out, no network. Still open from the
+original acceptance: running the platform-experience and studio-regression
+browser gates inside Electron.
 
 **D2 — Local runtime.** Folder attach, pty terminal, git, dev-server preview,
 external-change watcher, path confinement. Observations flow to repair.
@@ -355,7 +374,6 @@ passes on the updated build.
 
 | Item | Why | Phase |
 |---|---|---|
-| `DESKTOP_ORIGIN=quantora://app` env on Vercel (all environments) | CORS reflection in `applyCors` | D0 |
 | Two `vercel.json` rewrites (`/api/auth/desktop/grant`, `/api/auth/desktop/exchange`) | Stay inside the function budget | D0 |
 | `quantora://` URL scheme registration (macOS `CFBundleURLTypes`, Windows registry via installer, Linux `.desktop`) | Deep-link auth callback | D1 |
 | Apple Developer Program (Developer ID cert + notarisation) | Gatekeeper | D4 |

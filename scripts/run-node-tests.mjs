@@ -32,7 +32,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const ROOTS = ['api', 'src', 'shared', 'scripts'];
+const ROOTS = ['api', 'src', 'shared', 'scripts', 'desktop'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage']);
 const TEST_SUFFIXES = ['.test.js', '.test.mjs'];
 
