@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
+import { withStudyTelemetryScope } from './study-observability.js';
 import { issueStudyAssessmentAttempt } from './store.js';
 import { readStudySupabaseRows, studySupabaseRequest } from './study-supabase.js';
 import type { StudyEvidenceKind } from './study-truth-layer.js';
@@ -33,15 +35,7 @@ function splitItemRef(itemRef: string): { itemKey: string; itemVersion: string }
 /**
  * Return which candidate item/version refs this learner has already submitted
  * through the authoritative assessment-attempt boundary, regardless of which
- * concept ultimately received the evidence. V7's grading RPC enforces
- * independence at this same learner + item/version scope, so issuance must use
- * the same scope or it can present a "fresh" check that the database later
- * (correctly) refuses to count as independent evidence.
- *
- * Freshness remains candidate-scoped rather than scanning a capped learner
- * history, but all candidate refs are checked in one indexed PostgREST read.
- * The exact item/version pairs are reconstructed server-side from the returned
- * rows so an `in` cross-product can never mark an unrelated pair as used.
+ * concept ultimately received the evidence.
  */
 export async function readStudyUsedAssessmentItemRefs(
   userSub: string,
@@ -95,19 +89,7 @@ function isMissingStudyV7Schema(response: Response, detail: string): boolean {
     || (/schema cache/i.test(detail) && /evidence_kind|evidence_concept_id|retention_anchor_at/i.test(detail));
 }
 
-/**
- * Issue one server-owned governed assessment attempt with an immutable evidence
- * purpose. Once the V7 migration is active, a database trigger serializes issue
- * and grade on the same learner + item/version advisory-lock key. A concurrent
- * stale selection is surfaced as a conflict instead of silently creating an
- * attempt that can never contribute new independent evidence.
- *
- * A pre-V7 database may safely downgrade ordinary evidence only when PostgREST
- * positively reports that the V7 columns are not installed yet. Network errors,
- * constraint failures, and other database faults fail closed; retention/transfer
- * always fail closed until V7 schema is present.
- */
-export async function issueStudyEvidenceAttempt(entry: {
+async function issueStudyEvidenceAttemptInsideScope(entry: {
   userSub: string;
   sessionId: string;
   conceptId: string;
@@ -151,6 +133,11 @@ export async function issueStudyEvidenceAttempt(entry: {
     }]),
   }, { operation: 'assessment_attempt_issue' });
   if (response?.ok) {
+    emitStudyLearningFlowMetric({
+      metric: 'assessment_availability',
+      outcome: 'assessment_issued',
+      evidenceKind: entry.evidenceKind,
+    });
     return { status: 'issued', attemptId, evidenceKind: entry.evidenceKind, legacyFallback: false };
   }
   if (!response) return { status: 'unavailable' };
@@ -162,10 +149,11 @@ export async function issueStudyEvidenceAttempt(entry: {
     detail = '';
   }
   const conflict = studyIssueConflict(detail);
-  if (conflict) return { status: 'conflict', reason: conflict };
+  if (conflict) {
+    emitStudyLearningFlowMetric({ metric: 'evidence_guard', outcome: 'freshness_conflict', evidenceKind: entry.evidenceKind });
+    return { status: 'conflict', reason: conflict };
+  }
 
-  // During rollout, a code deploy can briefly precede the Supabase migration.
-  // Only a positive missing-schema signal may use the legacy ordinary path.
   const canUseLegacyFallback = entry.evidenceKind !== 'retention_probe'
     && entry.evidenceKind !== 'transfer'
     && isMissingStudyV7Schema(response, detail);
@@ -186,9 +174,30 @@ export async function issueStudyEvidenceAttempt(entry: {
     difficulty: entry.difficulty,
     expiresAt: entry.expiresAt,
   });
-  return legacy.status === 'issued'
-    ? { status: 'issued', attemptId: legacy.attemptId, evidenceKind: 'assessment_item', legacyFallback: true }
-    : { status: 'unavailable' };
+  if (legacy.status === 'issued') {
+    emitStudyLearningFlowMetric({ metric: 'assessment_availability', outcome: 'assessment_issued', evidenceKind: 'assessment_item' });
+    return { status: 'issued', attemptId: legacy.attemptId, evidenceKind: 'assessment_item', legacyFallback: true };
+  }
+  return { status: 'unavailable' };
+}
+
+/** Issue one server-owned governed assessment attempt under a correlation scope. */
+export async function issueStudyEvidenceAttempt(entry: {
+  userSub: string;
+  sessionId: string;
+  conceptId: string;
+  itemKey: string;
+  itemVersion: string;
+  optionIds: string[];
+  correctOptionId: string;
+  misconceptionOptionIds: string[];
+  difficulty: number;
+  expiresAt: string;
+  evidenceKind: StudyAssessmentEvidenceKind;
+  evidenceConceptId?: string | null;
+  retentionAnchorAt?: string | null;
+}): Promise<StudyEvidenceAttemptIssueResult> {
+  return withStudyTelemetryScope('study_assessment', () => issueStudyEvidenceAttemptInsideScope(entry));
 }
 
 export type StudyEvidenceGradeRecord = {
@@ -204,8 +213,7 @@ export type StudyEvidenceGradeRecord = {
   delayDays: number | null;
 };
 
-/** Grade through the same atomic RPC used by the existing assessment path. */
-export async function completeStudyEvidenceAttempt(entry: {
+async function completeStudyEvidenceAttemptInsideScope(entry: {
   userSub: string;
   attemptId: string;
   optionId: string;
@@ -237,6 +245,11 @@ export async function completeStudyEvidenceAttempt(entry: {
       ? rawKind
       : 'assessment_item';
     const conceptId = typeof row?.result_concept_id === 'string' ? row.result_concept_id : null;
+    if (status === 'graded') {
+      emitStudyLearningFlowMetric({ metric: 'evidence_guard', outcome: 'evidence_graded', evidenceKind });
+    } else if (status === 'already_submitted') {
+      emitStudyLearningFlowMetric({ metric: 'evidence_guard', outcome: 'duplicate_evidence_blocked', evidenceKind });
+    }
     return {
       status,
       correct: typeof row?.result_correct === 'boolean' ? row.result_correct : null,
@@ -256,4 +269,14 @@ export async function completeStudyEvidenceAttempt(entry: {
   } catch {
     return 'unavailable';
   }
+}
+
+/** Grade through the atomic RPC under the same privacy-safe telemetry contract. */
+export async function completeStudyEvidenceAttempt(entry: {
+  userSub: string;
+  attemptId: string;
+  optionId: string;
+  observedAt: string;
+}): Promise<StudyEvidenceGradeRecord | 'unavailable'> {
+  return withStudyTelemetryScope('study_assessment', () => completeStudyEvidenceAttemptInsideScope(entry));
 }
