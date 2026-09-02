@@ -120,7 +120,7 @@ export const travelFunctionDeclarations: any[] = [
   },
   {
     name: 'search_attractions',
-    description: 'Discover real attractions and points of interest through Google Places API (New). Returns provider-backed place data; never invent ticket prices or attraction availability.',
+    description: 'Discover real attractions, restaurants and points of interest through Google Places API (New). REQUIRED for restaurant and attraction photos. Returns provider-backed place data including photos when available; never invent ticket prices or attraction availability.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -477,7 +477,7 @@ export async function executeToolCall(
         includedType: 'lodging',
         strictTypeFiltering: false,
         pageSize: 10,
-        // Only this tool advertises photos, so only this tool pays for them.
+        // Advertised in this tool's description, so the request must ask for it.
         withPhotos: true,
       });
       if (result.status !== 'success') return result;
@@ -532,6 +532,17 @@ export async function executeToolCall(
         includedType: category ? undefined : 'tourist_attraction',
         strictTypeFiltering: !category,
         pageSize: 10,
+        /*
+         * Restaurants come through this tool, and "can you include some pics of
+         * the restaurants" was answered with links plus an INVENTED description
+         * of what each gallery contained — tandoor ovens, pastel-pink decor,
+         * waffle platters — none of which the desk had seen. The renderer
+         * already handled attractions (chat-handler feeds toolResult.attractions
+         * to formatTravelPlaceShortlist); the only missing piece was asking for
+         * the photos. Bounded by PHOTO_LIMIT: at most four extra lookups per
+         * search, never one per result.
+         */
+        withPhotos: true,
       });
       if (result.status !== 'success') return result;
       return {

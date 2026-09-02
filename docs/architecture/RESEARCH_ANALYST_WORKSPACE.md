@@ -140,7 +140,7 @@ they close would violate the desk's own honesty contract.
 
 | Horizon | Theme | Contents |
 |---|---|---|
-| **H1 — Measure & harden** | earn the claims | Evidence benchmark gate *(shipped)* · PDF source ingestion · per-claim citation binding via grounding supports · multi-span verified quoting (closes a recorded loss) · board browser gate |
+| **H1 — Measure & harden** | earn the claims | Evidence benchmark gate *(shipped)* · PDF source ingestion *(shipped — text layer only, never OCR; scanned PDFs report `source_pdf_empty` honestly; `api/_lib/research-pdf-text.ts`)* · per-claim citation binding via grounding supports · multi-span verified quoting (closes a recorded loss) · board browser gate |
 | **H2 — Source intelligence** | better evidence | Primary-data verification via the existing market-data providers (SEC/Finnhub/Stooq/Frankfurter) · scholarly APIs + DOI citations · source-quality tiers on the ledger · a second search path beside Gemini |
 | **H3 — Depth & memory** | bigger questions | Execution-fabric multi-step dives with budgets and stop-on-evidence · cross-device investigation sync · docx/BibTeX brief delivery |
 | **H4 — The proactive analyst** | the moat compounds | Watch changes by email (`mail.ts`) · adversarial counter-evidence critic before export · verification outcomes feeding the quality flywheel |
