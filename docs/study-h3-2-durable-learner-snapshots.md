@@ -12,7 +12,7 @@ The authoritative path remains:
 
 `admitted evidence ledger -> deterministic replay -> learner projection -> adaptive planning`
 
-The snapshot is written only after replay and cannot override the projection used by the current request.
+The snapshot is synchronized only after replay and cannot override the projection used by the current request.
 
 ## Why H3.2 is write-through only
 
@@ -40,11 +40,24 @@ Raw evidence events are never copied into the snapshot payload.
 
 - RLS enabled;
 - no `public`, `anon`, or `authenticated` privileges;
-- service role receives only the table capabilities required for derived-cache maintenance;
+- service role receives only `select`, `insert`, and `update` table capabilities;
+- ordinary Study code has no snapshot-delete capability;
 - the save RPC is executable only by the service role;
 - snapshot transport logs operation/status only, never learner-scoped URLs or payloads.
 
-## Monotonic write rule
+## Single-round-trip synchronization
+
+A consented Study turn pays at most one snapshot database request. The save RPC owns classification and synchronization atomically rather than performing a client-side read followed by a second write.
+
+The RPC returns only:
+
+- `current` — same ledger cursor, versions and semantic projection; no write needed;
+- `saved` — missing or legitimately changed derived state was stored;
+- `snapshot_ahead` — stored ledger cursor is newer than the incoming replay, so the incoming request is not allowed to regress it.
+
+`projectedAt` alone does not force a write. It is excluded from the semantic projection comparison, while time-sensitive learner-model changes still cause `saved` because they change the derived model itself.
+
+## Monotonic concurrency rule
 
 The save RPC refuses to replace a stored snapshot whose ledger cursor is newer than the incoming replay.
 
@@ -55,21 +68,9 @@ This protects against the race:
 3. request A finishes later;
 4. request A must not regress the snapshot back to event N.
 
+The RPC locks an existing row before classification and also keeps a monotonic `ON CONFLICT` predicate to protect the concurrent-first-insert race.
+
 Equal cursors may update because schema/estimator versions or time-sensitive learner-model state can legitimately change without a new evidence event.
-
-## Compatibility states
-
-The runtime classifies stored state as:
-
-- `current`;
-- `missing`;
-- `version_mismatch`;
-- `concept_mismatch`;
-- `ledger_advanced`;
-- `snapshot_ahead`;
-- `projection_changed`.
-
-`snapshot_ahead` is fail-closed: the older replay never overwrites it.
 
 ## Runtime behavior
 
@@ -78,7 +79,7 @@ For a consented Study request:
 1. resolve the active canonical concept;
 2. load and admit governed evidence;
 3. replay the H3.1 projection using the current clock;
-4. synchronize the derived snapshot;
+4. synchronize the derived snapshot in one bounded RPC;
 5. continue prerequisite/diagnostic planning from the freshly replayed learner model.
 
 If snapshot storage is unavailable, learner reconstruction continues from the ledger. Snapshot availability must never determine mastery truth.
@@ -88,7 +89,9 @@ If snapshot storage is unavailable, learner reconstruction continues from the le
 - durable server-owned snapshot table exists;
 - snapshot contains no raw evidence ledger;
 - schema/model/estimator provenance is persisted;
-- read and write contracts fail soft on storage outage;
+- synchronization fails soft on storage outage;
+- snapshot maintenance adds no client-side read-before-write round trip;
+- unchanged semantic projections avoid redundant writes;
 - older concurrent replay cannot overwrite a newer ledger cursor;
 - browser roles cannot read or mutate snapshots;
 - production Study path writes only after deterministic replay;
@@ -97,4 +100,4 @@ If snapshot storage is unavailable, learner reconstruction continues from the le
 
 ## Next
 
-**H3.3 — Long-history / bounded delta replay** will define when a compatible snapshot can be trusted as a replay checkpoint, apply only newer admitted ledger events, and continuously prove parity against deterministic full replay.
+**H3.3 — Long-history / bounded delta replay** will introduce the snapshot read contract, define when a compatible snapshot can be trusted as a replay checkpoint, apply only newer admitted ledger events, and continuously prove parity against deterministic full replay.
