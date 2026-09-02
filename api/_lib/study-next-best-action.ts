@@ -1,9 +1,10 @@
+import { planStudyDiagnosticBreadth } from './study-diagnostic-breadth.js';
 import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import { buildStudyLearnerModel, type StudyLearnerModel } from './study-learner-model.js';
 import { estimateStudyMastery } from './study-mastery-estimator.js';
 import { readStudySupabaseRows } from './study-supabase.js';
 
-export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-09-01.7';
+export const STUDY_NEXT_BEST_ACTION_VERSION = 'study-next-best-action-2026-09-02.8';
 
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
 const MAX_PREREQUISITE_DEPTH = 4;
@@ -72,10 +73,6 @@ async function readImmediatePrerequisites(
     .filter((row) => row.sourceConceptId && row.confidence >= MIN_PREREQUISITE_CONFIDENCE);
   if (!edges.length) return [];
 
-  // The graph frontier is hard-capped before concept resolution. Multi-source
-  // frontiers are resolved in one bounded PostgREST request; a one-source
-  // frontier keeps the simpler exact lookup. Cache both hits and misses across
-  // converging branches so the planner avoids per-sibling N+1 reads.
   const sourceIds = [...new Set(edges.map((edge) => edge.sourceConceptId))];
   const unresolvedSourceIds = sourceIds.filter((sourceId) => !conceptById.has(sourceId));
   if (unresolvedSourceIds.length) {
@@ -133,22 +130,17 @@ async function learnerModelFor(context: StudyScanContext, concept: StudyConceptR
   return model;
 }
 
-function recoveryPriority(candidate: StudyPrerequisiteCandidate): number {
-  if (candidate.kind === 'diagnostic') return 1;
-  switch (candidate.model.nextLearningMove.type) {
-    case 'diagnose_misconception': return 5;
-    case 'confirm_misconception': return 4;
-    case 'guided_repair': return 3;
-    default: return 0;
-  }
-}
-
 function chooseCandidate(candidates: StudyPrerequisiteCandidate[]): StudyPrerequisiteCandidate | null {
-  return [...candidates].sort((left, right) =>
-    recoveryPriority(right) - recoveryPriority(left)
-    || right.depth - left.depth
-    || right.concept.edgeConfidence - left.concept.edgeConfidence
-    || left.concept.canonicalKey.localeCompare(right.concept.canonicalKey))[0] || null;
+  const plan = planStudyDiagnosticBreadth({
+    candidates: candidates.map((candidate) => ({
+      concept: candidate.concept,
+      model: candidate.model,
+      depth: candidate.depth,
+      edgeConfidence: candidate.concept.edgeConfidence,
+    })),
+  });
+  if (plan.action !== 'check') return null;
+  return candidates.find((candidate) => candidate.concept.id === plan.concept.id) || null;
 }
 
 function isSpecificMisconceptionMove(model: StudyLearnerModel): boolean {
@@ -170,8 +162,6 @@ async function scanPrerequisites(input: {
 
   const candidates: StudyPrerequisiteCandidate[] = [];
   for (const concept of prerequisites) {
-    // `path` is branch-local. A shared mutable visited set makes a converging
-    // prerequisite DAG depend on which sibling happens to be scanned first.
     if (input.path.has(concept.id)) continue;
 
     if (!input.context.inspectedPrerequisiteIds.has(concept.id)) {
@@ -187,8 +177,6 @@ async function scanPrerequisites(input: {
       continue;
     }
 
-    // A specific, evidence-backed misconception is already a smaller and more
-    // defensible intervention than speculating about an even deeper cause.
     if (isSpecificMisconceptionMove(model)) {
       candidates.push({ kind: 'recovery', concept, model, depth: input.depth + 1 });
       continue;
@@ -211,11 +199,10 @@ async function scanPrerequisites(input: {
 }
 
 /**
- * V6 only overrides the generic guided-repair move. Specific misconception,
- * confirmation, evidence-variation, retention and transfer decisions stay with
- * the existing one-concept learner model. That keeps one learner truth and uses
- * the prerequisite graph only when the current evidence says a foundational
- * repair is actually needed.
+ * H2.4 keeps the existing evidence-backed prerequisite traversal, but routes
+ * multi-concept frontier choice through the bounded diagnostic breadth planner.
+ * Specific misconception, retention and transfer truth remains owned by the
+ * learner model; no conversational inference can promote understanding.
  */
 export async function applyStudyPrerequisiteNextBestAction(input: {
   userSub: string;
