@@ -26,8 +26,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "desktop/node_modules",
-    "desktop/dist",
-    "desktop/release"
+    "desktop"
   ]
 }

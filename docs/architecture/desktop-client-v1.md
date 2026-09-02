@@ -290,7 +290,7 @@ scripts/
 | `scripts/runtime-import-gate.mjs` | `ROOTS = ['api','shared']` + `server.ts` | Add `desktop`. The main process is Node ESM in production — the archiver class of bug applies verbatim. |
 | `scripts/wiring-gate.mjs` | `SOURCE_DIRS = ['src','shared','api','scripts']` | Add `desktop`; regenerate `src/lib/wiring-baseline.json` with `--update` once, and read the diff. |
 | `scripts/platform-dead-control-gate.mjs` | greps `src/` for `/api/...` literals | No change needed **because** the host proxies relative paths; no call site changed. |
-| `npm run lint` | repo-wide `tsc` | Add `desktop/**` to `tsconfig.json` `include`; keep `--stack_size=8192`. |
+| `npm run lint` | repo-wide `tsc` | `desktop/` is **excluded** from the root pass and typechecked by its own `tsconfig.json` in the `desktop-smoke` job: the root job installs only the root package, so Electron's types are absent there and the first CI run went red exactly as `CLAUDE.md` §10 predicts. Pure modules that both sides share stay under `shared/`, which the root pass still covers. |
 | `eslint 'src/**/*.{js,jsx}'` | | Widen to `desktop/**`. |
 | Browser gates (`scripts/*-browser-gate.mjs`) | drive `vite preview` in Chromium | Unchanged for the web. Add `scripts/desktop-smoke-gate.mjs` (§10). |
 | `src/lib/vercel-headers.test.js` | asserts the header set | Extend: the protocol handler must serve the same header set for `/` and `/desk`. |
