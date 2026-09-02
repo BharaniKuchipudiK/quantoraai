@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { admitResearchSourceUrl } from "./research-claim-verifier.js";
+import { buildGroundedSourceBlock } from "../../shared/research/grounding-marker.js";
+import { listGeminiModelIds, withNewestGeminiFlash, UserFacingError } from "./gemini-flash.js";
 
 /**
  * The Research desk's deep dive: decompose → search → synthesize, folded
@@ -71,18 +73,21 @@ function cleanSubQuestions(raw: unknown): string[] {
   return out;
 }
 
-/** The canonical Sources block, byte-identical in shape to chat-handler's. */
+/**
+ * The canonical Sources block — from the ONE builder, not a second copy of it.
+ *
+ * This used to hand-roll the block and describe itself as "byte-identical in
+ * shape to chat-handler's", which is the definition of drift waiting to happen:
+ * two emitters, one format, nothing tying them together. When the server began
+ * marking blocks it stands behind, chat-handler was updated and this was not, so
+ * every deep-dive answer silently stopped counting as grounded on the board.
+ *
+ * Admission and the per-answer cap stay here, because they are this feature's
+ * policy. The block's SHAPE is not.
+ */
 function sourcesBlock(sources: Array<{ uri: string; title: string }>): string {
-  const admitted = sources
-    .filter((source) => admitResearchSourceUrl(source?.uri).ok)
-    .slice(0, MAX_SOURCES_PER_ANSWER);
-  if (admitted.length === 0) return "";
-  let block = `\n\n---\n**Sources**\n`;
-  admitted.forEach((source, index) => {
-    const title = String(source.title || source.uri).replace(/[\[\]]/g, "");
-    block += `${index + 1}. [${title}](${source.uri})\n`;
-  });
-  return block;
+  const admitted = sources.filter((source) => admitResearchSourceUrl(source?.uri).ok);
+  return buildGroundedSourceBlock(admitted, MAX_SOURCES_PER_ANSWER);
 }
 
 /**
@@ -122,29 +127,20 @@ export function composeDeepDiveMessages(
   return messages;
 }
 
-async function pickGeminiFlash(client: GoogleGenAI): Promise<string> {
-  // Never pin a Gemini version id (no-retired-gemini-ids invariant).
-  const models: string[] = [];
-  const list = await client.models.list();
-  for await (const model of list) {
-    if (model?.name) models.push(model.name.replace(/^models\//, ""));
-  }
-  const pick = models.filter((id) => id.includes("gemini") && id.includes("flash"))[0] || models[0];
-  if (!pick) throw new Error("No Gemini model available.");
-  return pick;
-}
-
 async function decomposeWithGemini(question: string, geminiKey: string): Promise<string[]> {
   const client = new GoogleGenAI({ apiKey: geminiKey });
-  const model = await pickGeminiFlash(client);
-  const result = await client.models.generateContent({
+  const ids = await listGeminiModelIds(client);
+  // Never pin a Gemini version id (no-retired-gemini-ids invariant), and
+  // never trust the list either — a listed id can be retired for serving
+  // (gemini-flash.ts has the incident); advance to the next candidate.
+  const result = await withNewestGeminiFlash(ids, (model) => client.models.generateContent({
     model,
     contents: [{ role: "user", parts: [{ text: `RESEARCH QUESTION: ${question}` }] }],
     config: {
       systemInstruction: `Decompose the research question into the ${MAX_SUB_QUESTIONS} most decision-relevant sub-questions. Each must be a complete standalone question ending in "?", answerable from current public sources. Reply with ONLY compact JSON: {"subQuestions":["...?","...?"]}.`,
       temperature: 0,
     },
-  });
+  }));
   const raw = String((result as any)?.text || "").replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
   try {
     return cleanSubQuestions(JSON.parse(raw)?.subQuestions);
@@ -156,8 +152,8 @@ async function decomposeWithGemini(question: string, geminiKey: string): Promise
 /** One grounded lookup. Shared with the watch sweep, which re-checks standing questions. */
 export async function groundedAnswerWithGemini(subQuestion: string, geminiKey: string): Promise<DeepDiveGroundedAnswer> {
   const client = new GoogleGenAI({ apiKey: geminiKey });
-  const model = await pickGeminiFlash(client);
-  const result = await client.models.generateContent({
+  const ids = await listGeminiModelIds(client);
+  const result = await withNewestGeminiFlash(ids, (model) => client.models.generateContent({
     model,
     contents: [{ role: "user", parts: [{ text: subQuestion }] }],
     config: {
@@ -165,7 +161,7 @@ export async function groundedAnswerWithGemini(subQuestion: string, geminiKey: s
       temperature: 0.2,
       tools: [{ googleSearch: {} }],
     },
-  });
+  }));
   const sources: Array<{ uri: string; title: string }> = [];
   const seen = new Set<string>();
   const chunks = (result as any)?.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -189,12 +185,12 @@ export async function runResearchDeepDive(input: {
 }): Promise<ResearchDeepDiveResult> {
   const decompose = input.decompose
     ?? ((question: string) => {
-      if (!input.geminiKey) throw new Error("Deep dive currently requires the Gemini path.");
+      if (!input.geminiKey) throw new UserFacingError("Deep dive currently requires the Gemini path.");
       return decomposeWithGemini(question, input.geminiKey);
     });
   const groundedAnswer = input.groundedAnswer
     ?? ((subQuestion: string) => {
-      if (!input.geminiKey) throw new Error("Deep dive currently requires the Gemini path.");
+      if (!input.geminiKey) throw new UserFacingError("Deep dive currently requires the Gemini path.");
       return groundedAnswerWithGemini(subQuestion, input.geminiKey);
     });
 
@@ -202,7 +198,12 @@ export async function runResearchDeepDive(input: {
   try {
     subQuestions = cleanSubQuestions(await decompose(input.question));
   } catch (err: any) {
-    return { ok: false, error: err?.message || "The question could not be decomposed." };
+    // Only sentences we wrote may reach the user. The Gemini SDK's
+    // err.message is the raw JSON response body, and on 2026-09-02 it was
+    // rendered verbatim on the Research board through this very line.
+    if (err instanceof UserFacingError) return { ok: false, error: err.message };
+    console.warn("Deep dive decomposition failed:", err?.message || err);
+    return { ok: false, error: "The question could not be decomposed right now. Try again in a moment." };
   }
   if (subQuestions.length === 0) {
     return { ok: false, error: "The question could not be decomposed into researchable sub-questions." };

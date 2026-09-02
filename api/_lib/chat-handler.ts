@@ -21,6 +21,7 @@ import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } 
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
 import { normalizeResearchDeepDiveRequest, runResearchDeepDive } from './research-deep-dive.js';
+import { UserFacingError } from './gemini-flash.js';
 import {
   acknowledgeResearchWatch,
   createResearchWatch,
@@ -30,6 +31,7 @@ import {
   normalizeWatchQuestion,
 } from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
 import { describeCredentialFailure, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
@@ -596,7 +598,20 @@ export default async function handler(req: any, res: any) {
         });
       }
     }
-    const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS) : history;
+    /*
+     * Strip the grounding marker before ANY of this history reaches a model.
+     *
+     * The marker is what lets the Research board tell the server's source block
+     * from one the model wrote. A model that can see the marker can reproduce
+     * it, and it would see it: assistant turns go back into context verbatim,
+     * so the block format is already something it imitates. One choke point,
+     * because every inference path below reads boundedHistory — Gemini via
+     * buildGeminiContents, OpenRouter via formattedHistory — and a path that
+     * missed the strip would silently hand the marker back.
+     */
+    const boundedHistory = Array.isArray(history)
+      ? history.slice(-MAX_HISTORY_ITEMS).map(stripGroundingMarkerFromMessage)
+      : history;
 
     const auth = sessionUser ? await requireActiveSession(req, res) : null;
     if (auth && !auth.ok) return;
@@ -645,7 +660,9 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat repair task:", err);
-        return res.status(500).json({ error: err?.message || "Auto-repair failed." });
+        // Provider SDK errors carry the raw JSON response body as .message
+        // (the 2026-09-02 Research-board leak). Echo only sentences we wrote.
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Auto-repair failed. Please try again." });
       }
     }
 
@@ -664,7 +681,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat verify-build task:", err);
-        return res.status(500).json({ error: err?.message || "Verification failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Verification failed. Please try again." });
       }
     }
 
@@ -690,7 +707,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat research-verify task:", err);
-        return res.status(500).json({ error: err?.message || "Evidence verification failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Evidence verification failed. Please try again." });
       }
     }
 
@@ -736,7 +753,7 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat research-deep-dive task:", err);
-        return res.status(500).json({ error: err?.message || "Deep dive failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Deep dive failed. Please try again." });
       }
     }
 
@@ -783,7 +800,7 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: "Unknown watch operation." });
       } catch (err: any) {
         console.error("Error in /api/chat research-watch task:", err);
-        return res.status(500).json({ error: err?.message || "The watch operation failed." });
+        return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "The watch operation failed. Please try again." });
       }
     }
 
@@ -1502,8 +1519,7 @@ export default async function handler(req: any, res: any) {
 
       if (!usedRoute) throw lastRouteError || new Error('No inference route completed the turn.');
       if (grounding && sources.length) {
-        let sourceBlock = '\n\n---\n**Sources**\n';
-        sources.slice(0, 5).forEach((source, index) => { sourceBlock += `${index + 1}. [${source.title}](${source.uri})\n`; });
+        const sourceBlock = buildGroundedSourceBlock(sources);
         fullReply += sourceBlock;
         sse.text(sourceBlock);
       }
@@ -1745,8 +1761,7 @@ export default async function handler(req: any, res: any) {
       }
 
       if (grounding && sources.length) {
-        let block = `\n\n---\n**Sources**\n`;
-        sources.slice(0, 5).forEach((source, index) => { block += `${index + 1}. [${source.title}](${source.uri})\n`; });
+        const block = buildGroundedSourceBlock(sources);
         fullReply += block;
         sse.text(block);
       }

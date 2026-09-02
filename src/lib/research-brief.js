@@ -8,7 +8,13 @@
  * the transcript already carries the evidence trail. This module turns that
  * trail into a ledger without inventing precision it does not have:
  *
- * - A source row exists only because a grounded reply actually listed it.
+ * - A source row exists only because a grounded reply actually listed it, and
+ *   "grounded" now means the SERVER said so. The block carries a marker the
+ *   server writes and the model never sees (shared/research/grounding-marker.js);
+ *   a block without it is the model's own prose, however well formed, and earns
+ *   nothing. Before that marker existed, a model that typed six lines of
+ *   markdown promoted its own unverified turn to "backed by live sources" and
+ *   put two invented URLs on the board as evidence.
  * - A finding row exists only when it came out of a reply that carried live
  *   sources, and it is attributed at TURN level ("backed by this reply's
  *   sources"), never per-sentence — per-claim excerpt binding is the
@@ -19,6 +25,7 @@
  */
 
 import { RESEARCH_BOARD_STEERING } from './research-board-actions.js';
+import { GROUNDING_MARKER_LINE } from '../../shared/research/grounding-marker.js';
 
 const SOURCE_LINE = /^\s*\d+\.\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/;
 const SOURCES_HEADING = /^\s*(?:-{3,}\s*)?\*\*Sources\*\*\s*$/;
@@ -65,7 +72,7 @@ function hostFor(uri, title) {
 export function parseSourcesBlock(text) {
   const lines = String(text || '').split('\n');
   const headingAt = lines.findIndex((line) => SOURCES_HEADING.test(line));
-  if (headingAt === -1) return { body: String(text || ''), sources: [] };
+  if (headingAt === -1) return { body: String(text || ''), sources: [], grounded: false };
 
   const sources = [];
   let end = headingAt + 1;
@@ -79,13 +86,25 @@ export function parseSourcesBlock(text) {
     if (lines[index].trim() === '') { end = index + 1; continue; }
     break;
   }
-  if (sources.length === 0) return { body: String(text || ''), sources: [] };
+  if (sources.length === 0) return { body: String(text || ''), sources: [], grounded: false };
 
-  // The heading's preceding `---` rule belongs to the block, not the prose.
+  /*
+   * Walk back over what belongs to the block rather than the prose: the
+   * heading's preceding `---` rule, blank lines, and the server's grounding
+   * marker. The marker must sit in THIS run — immediately above the heading,
+   * separated only by rule and whitespace — so its presence anywhere else in a
+   * reply proves nothing.
+   */
   let start = headingAt;
-  while (start > 0 && /^\s*(-{3,})?\s*$/.test(lines[start - 1])) start -= 1;
+  let grounded = false;
+  while (start > 0) {
+    const above = lines[start - 1];
+    if (GROUNDING_MARKER_LINE.test(above)) { grounded = true; start -= 1; continue; }
+    if (/^\s*(-{3,})?\s*$/.test(above)) { start -= 1; continue; }
+    break;
+  }
   const body = [...lines.slice(0, start), ...lines.slice(end)].join('\n');
-  return { body, sources };
+  return { body, sources, grounded };
 }
 
 /**
@@ -119,8 +138,20 @@ function stripPlanBlock(text) {
   const lines = String(text || '').split('\n');
   const headingAt = lines.findIndex((line) => PLAN_HEADING.test(line));
   if (headingAt === -1) return String(text || '');
+  /*
+   * Consume the plan's own bullets and stop. The blank-line clause that used to
+   * be here kept walking THROUGH the blank line that ends a markdown list, so a
+   * finding stated as a bullet after the plan was swallowed with it. The turn
+   * then looked like pure bookkeeping and was not counted as unverified — the
+   * board reporting a cleaner standing than it had earned, which is the same
+   * over-claiming this file's marker exists to stop.
+   *
+   * Leading blank lines between the heading and the first bullet are still
+   * skipped; a blank line AFTER a bullet ends the list, as markdown says.
+   */
   let end = headingAt + 1;
-  while (end < lines.length && (/^\s*(?:[-*+]|\d+\.)\s+/.test(lines[end]) || lines[end].trim() === '')) end += 1;
+  while (end < lines.length && lines[end].trim() === '') end += 1;
+  while (end < lines.length && /^\s*(?:[-*+]|\d+\.)\s+/.test(lines[end])) end += 1;
   return [...lines.slice(0, headingAt), ...lines.slice(end)].join('\n');
 }
 
@@ -210,14 +241,28 @@ export function deriveResearchBrief({ messages } = {}) {
       planAdoptedHere = plan.length > 0;
     }
 
-    const { body, sources } = parseSourcesBlock(text);
-    if (sources.length === 0) {
+    const { body, sources, grounded } = parseSourcesBlock(text);
+    /*
+     * Two independent reasons a turn is not evidence, and both must hold for it
+     * to count:
+     *
+     * - it cited nothing, or
+     * - it cited a block the SERVER did not mark. An unmarked block is the
+     *   model's own writing, and the turn is exactly as unverified as one that
+     *   cited nothing — saying otherwise is the whole defect this marker exists
+     *   for.
+     */
+    if (sources.length === 0 || !grounded) {
       /*
        * A reply that introduces the plan and states no findings outside it
        * is bookkeeping, not an answer — counting it as "unverified" would
        * ding the standing line for a message that claimed nothing. The test
        * is structural (does anything finding-shaped survive removing the
        * plan block?), never a length heuristic that a long question defeats.
+       *
+       * This exemption is about whether the turn CLAIMED anything, which is
+       * independent of why its sources do not count: a plan-only reply that
+       * also carried a forged block still claimed nothing.
        */
       const bookkeeping = planAdoptedHere
         && extractFindings(stripPlanBlock(body)).length === 0;

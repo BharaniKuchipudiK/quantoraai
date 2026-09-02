@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { earliestSearchableIso, latestSearchableIso, todayIso, validateTravelToolArgs } from './ai-contracts.js';
-import { buildTodayDirective } from './studio-domains.js';
+import { buildDomainDirective, buildTodayDirective } from './studio-domains.js';
 import { flightInvalidArgsAsk, resolveFlightToolRecovery } from '../../shared/travel/flight-resilience.js';
 
 /**
@@ -68,7 +68,17 @@ test('the refusal names the past date and today, not the passenger count', () =>
   assert.match(ask, /in the past/i);
   assert.match(ask, /2026-08-31/, 'and says what today actually is');
   assert.doesNotMatch(ask, /passengers/i);
-  assert.match(ask, /not invent/i, 'the no-fabrication guarantee survives');
+  /*
+   * The no-fabrication guarantee survives, and is now wider than when this
+   * assertion was written. It used to read /not invent/, which the refusal
+   * satisfied with "I will not invent fares." — a promise about one field, in
+   * the exact moment a model is most tempted to be helpful with recalled
+   * schedules instead. It must cover the answer.
+   */
+  assert.match(ask, /will not fill the gap with flight details from memory/i);
+  for (const field of ['fares', 'carriers', 'schedules', 'durations']) {
+    assert.ok(ask.includes(field), `the past-date refusal must name ${field}`);
+  }
 });
 
 /* The Retry chip must not be offered for something a retry cannot change. */
@@ -173,4 +183,65 @@ test('an ordinary round trip still runs', () => {
     origin: 'SIN', destination: 'DPS', departureDate: out, returnDate: back,
   });
   assert.equal(result.status, 'ok');
+});
+
+/*
+ * The directive half of the provider-substitution rule. The copy half lives in
+ * shared/travel/provider-refusal.test.js; this side asserts the instruction the
+ * model actually receives, because the incident was the model obeying a promise
+ * that named only one forbidden field.
+ */
+
+test('the travel directive forbids answering from memory, not just inventing prices', () => {
+  const directive = buildDomainDirective('travel');
+
+  // The hotel rule already said "never list hotels from memory". Flights had no
+  // equivalent, and that asymmetry is what let a provider outage turn into a
+  // recalled list of carriers, departure patterns and durations.
+  assert.match(directive, /Never list flights, carriers, routes, schedules or durations from memory/i);
+  assert.match(
+    directive,
+    /provider outage is not permission to answer from recall/i,
+    'the outage case is the one that actually happened',
+  );
+  assert.match(
+    directive,
+    /If a provider did not return it this turn, it does not go in the reply/i,
+    'the rule has to generalise, or the next unnamed field is the next hole',
+  );
+});
+
+/*
+ * THE INCIDENT (photos)
+ *
+ * A traveller asked "Can you include some pics of the restaurants". The desk
+ * returned Google Maps links — fine — and then described each gallery:
+ * "What you'll see in the gallery: Tandoor ovens, royal dining interiors,
+ * fresh paneer platters, and authentic Indian spreads." and "Signature
+ * pastel-pink cafe decor, custom smoothie bowls, plant-based pizzas, and waffle
+ * platters."
+ *
+ * No photo was ever fetched. search_attractions serves restaurants and did not
+ * request photos, so the desk had seen nothing at all — and wrote a confident
+ * first-hand account of the contents of images it did not have.
+ *
+ * The rule beside it permitted the link and said nothing about describing what
+ * the link contains, which is the same one-field-wide shape as
+ * "I will not invent fares."
+ */
+test('the travel directive forbids describing images it has not seen', () => {
+  const directive = buildDomainDirective('travel');
+
+  assert.match(
+    directive,
+    /Never describe what a photo or gallery CONTAINS unless the provider returned that image to you this turn/i,
+  );
+  assert.match(
+    directive,
+    /Give the link and say nothing about its contents/i,
+    'the remedy has to be stated, or the rule is only a scolding',
+  );
+  // The generalisation from the flight incident must still be present: this is
+  // one more provider-backed field, not a special case that replaces the rule.
+  assert.match(directive, /If a provider did not return it this turn, it does not go in the reply/i);
 });

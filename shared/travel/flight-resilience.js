@@ -15,6 +15,34 @@ export function flightArgsComplete(args = {}) {
   return Boolean(origin && destination && /^\d{4}-\d{2}-\d{2}$/.test(departureDate));
 }
 
+/**
+ * What the desk promises not to do whenever it declines to answer from a
+ * provider. Every refusal in this module ends with it, and that is the point.
+ *
+ * "I will not invent fares" was the whole promise, and it was a loophole one
+ * field wide. A traveller retried SIN to DPS, the provider was unreachable, the
+ * desk said it would not invent fares — and then listed carriers, daily
+ * departure patterns and a flight duration of "~2 hours 45 minutes across all
+ * carriers", none of which came from a provider. It kept the letter of the
+ * promise exactly, because the promise named exactly one field.
+ *
+ * Naming a single forbidden field tells the reader — and the model — that
+ * everything adjacent is permitted. The promise now covers the whole answer,
+ * because that is what a traveller would act on: a made-up schedule sends
+ * someone to an airport just as surely as a made-up price.
+ *
+ * ONE CONSTANT, NOT FOUR STRINGS. The first fix changed only the outage
+ * refusal, because that is the one the screenshot showed. Three siblings in
+ * this same file — missing arguments, a past date, invalid arguments — still
+ * carried the one-field version, and they are the refusals a model is MOST
+ * tempted to soften: the desk has just declined to do the thing that was asked,
+ * for a reason the traveller may find pedantic, and recalled detail is the
+ * obvious way to seem useful anyway. Fixing the reported instance and leaving
+ * its siblings is how a closed class reopens, so the wording lives in exactly
+ * one place and every refusal reads from it.
+ */
+const NO_SUBSTITUTE = 'I will not fill the gap with flight details from memory — no fares, carriers, schedules or durations.';
+
 export function flightIncompleteAsk(args = {}) {
   const origin = String(args?.origin || '').trim();
   const destination = String(args?.destination || '').trim();
@@ -25,7 +53,7 @@ export function flightIncompleteAsk(args = {}) {
     departureDate ? `date ${departureDate}` : null,
   ].filter(Boolean);
   const noted = known.length ? ` I already have ${known.join(', ')}.` : '';
-  return `I can look up live flights once I have origin airport, destination airport, and a departure date (YYYY-MM-DD).${noted} I will not invent fares.`;
+  return `I can look up live flights once I have origin airport, destination airport, and a departure date (YYYY-MM-DD).${noted} ${NO_SUBSTITUTE}`;
 }
 
 function routeLabel(args = {}) {
@@ -37,15 +65,16 @@ function routeLabel(args = {}) {
   return '';
 }
 
+
 export function flightProviderFailureAsk(args = {}, { configured = true, includeRetry = true } = {}) {
   if (!configured) {
-    return 'Live flight search is not connected (DUFFEL_API_KEY is missing on the server). I will not invent fares. Connect Duffel, or keep planning with airports and dates without live prices.';
+    return `Live flight search is not connected (DUFFEL_API_KEY is missing on the server). ${NO_SUBSTITUTE} Connect Duffel, or keep planning with airports and dates without live prices.`;
   }
 
   const route = routeLabel(args);
   const prose = includeRetry
-    ? `I could not look up live flights${route} just now. I will not invent fares. Tap Retry to run the same search again.`
-    : `I could not look up live flights${route} just now. I will not invent fares. We can retry when the flight provider answers.`;
+    ? `I could not look up live flights${route} just now. ${NO_SUBSTITUTE} Tap Retry to run the same search again.`
+    : `I could not look up live flights${route} just now. ${NO_SUBSTITUTE} We can retry when the flight provider answers.`;
 
   if (!includeRetry) return prose;
 
@@ -74,13 +103,13 @@ export function flightInvalidArgsAsk(args = {}, issues = [], { now = new Date() 
   const today = todayIso(now);
   const departure = String(args?.departureDate || '');
   if (departure && departure < today) {
-    return `That search was for ${departure}, which is in the past — today is ${today}. I did not run it and I will not invent fares. Tell me the dates you actually want and I will search those.`;
+    return `That search was for ${departure}, which is in the past — today is ${today}. I did not run it. ${NO_SUBSTITUTE} Tell me the dates you actually want and I will search those.`;
   }
 
   const detail = Array.isArray(issues) && issues.length
     ? ` (${issues.slice(0, 3).join(', ')})`
     : '';
-  return `I could not run that flight search${detail}. Check passengers (1–9) and that any return date is on or after departure. I will not invent fares.`;
+  return `I could not run that flight search${detail}. Check passengers (1–9) and that any return date is on or after departure. ${NO_SUBSTITUTE}`;
 }
 
 export function resolveFlightToolRecovery({

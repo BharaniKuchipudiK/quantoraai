@@ -1,4 +1,8 @@
+import { noteStudyDbCall } from './study-observability.js';
+
 const STUDY_SUPABASE_TIMEOUT_MS = 4_000;
+const STUDY_SUPABASE_PAGE_SIZE = 500;
+const STUDY_SUPABASE_MAX_REPLAY_ROWS = 5_000;
 
 type StudySupabaseRequestInit = RequestInit & {
   headers?: Record<string, string>;
@@ -33,6 +37,7 @@ export async function studySupabaseRequest(
   const cfg = studySupabaseConfig();
   if (!cfg) return null;
 
+  noteStudyDbCall();
   try {
     return await fetch(`${cfg.url}/rest/v1/${path}`, {
       ...init,
@@ -65,4 +70,66 @@ export async function readStudySupabaseRows(
   } catch {
     return null;
   }
+}
+
+export type StudySupabasePagedRowsResult = {
+  rows: any[];
+  status: 'complete' | 'overflow';
+  pages: number;
+};
+
+/**
+ * Read an append-ordered Study result set without silently truncating learner
+ * history. Callers provide a base path with a deterministic order and no
+ * `limit`/`offset`; this helper owns pagination.
+ *
+ * H3.3 deliberately has a hard safety ceiling. Exceeding it returns `overflow`
+ * so learner truth fails closed rather than pretending the first N rows are the
+ * complete ledger. A later snapshot checkpoint may safely remove that ceiling
+ * only after delta/full-replay parity is proven.
+ */
+export async function readStudySupabaseRowsPaged(
+  basePath: string,
+  options: {
+    operation: string;
+    timeoutMs?: number;
+    pageSize?: number;
+    maxRows?: number;
+  },
+): Promise<StudySupabasePagedRowsResult | null> {
+  if (/[?&](?:limit|offset)=/i.test(basePath)) return null;
+  const requestedPageSize = typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)
+    ? Math.floor(options.pageSize)
+    : STUDY_SUPABASE_PAGE_SIZE;
+  const pageSize = Math.max(1, Math.min(500, requestedPageSize));
+  const requestedMaxRows = typeof options.maxRows === 'number' && Number.isFinite(options.maxRows)
+    ? Math.floor(options.maxRows)
+    : STUDY_SUPABASE_MAX_REPLAY_ROWS;
+  const maxRows = Math.max(pageSize, Math.min(20_000, requestedMaxRows));
+  const rows: any[] = [];
+  let pages = 0;
+
+  while (rows.length < maxRows) {
+    const limit = Math.min(pageSize, maxRows - rows.length);
+    const separator = basePath.includes('?') ? '&' : '?';
+    const page = await readStudySupabaseRows(
+      `${basePath}${separator}limit=${limit}&offset=${rows.length}`,
+      { operation: options.operation, timeoutMs: options.timeoutMs },
+    );
+    if (page === null) return null;
+    pages += 1;
+    rows.push(...page);
+    if (page.length < limit) return { rows, status: 'complete', pages };
+  }
+
+  const separator = basePath.includes('?') ? '&' : '?';
+  const probe = await readStudySupabaseRows(
+    `${basePath}${separator}limit=1&offset=${maxRows}`,
+    { operation: options.operation, timeoutMs: options.timeoutMs },
+  );
+  if (probe === null) return null;
+  pages += 1;
+  return probe.length > 0
+    ? { rows, status: 'overflow', pages }
+    : { rows, status: 'complete', pages };
 }

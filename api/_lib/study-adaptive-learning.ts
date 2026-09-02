@@ -1,13 +1,14 @@
-import { readVerifiedStudyMasteryEvidence } from './study-evidence-loader.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
-import { replayStudyLearnerProjection } from './study-learner-projection.js';
+import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
+import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
+import { withStudyTelemetryScope } from './study-observability.js';
 import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-08-31.5';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.9';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -47,6 +48,23 @@ export function teachingStrategyFor(model: StudyLearnerModel): StudyTeachingStra
   }
 }
 
+function emitOperationalLearnerState(model: StudyLearnerModel): void {
+  if (model.nextLearningMove.reasonCode.includes('prerequisite_graph_unavailable')) {
+    emitStudyLearningFlowMetric({ metric: 'prerequisite_graph', outcome: 'prerequisite_graph_unavailable' });
+  }
+
+  if (model.retention.state === 'supported' && model.retention.evidenceCount > 0) {
+    emitStudyLearningFlowMetric({ metric: 'retention', outcome: 'retention_completed' });
+    return;
+  }
+  if (model.nextLearningMove.type === 'retention_probe') {
+    emitStudyLearningFlowMetric({
+      metric: 'retention',
+      outcome: model.retention.due === true ? 'retention_due' : 'retention_not_due',
+    });
+  }
+}
+
 export async function loadStudyLearnerModel(input: {
   studioDomain: string | null;
   userSub?: string | null;
@@ -54,20 +72,25 @@ export async function loadStudyLearnerModel(input: {
   studyContext: StudyRequestContext | null;
 }): Promise<StudyLearnerModel | null> {
   if (input.studioDomain !== 'education' || !input.userSub || input.memoryConsented !== true || !input.studyContext) return null;
-  const concept = await resolveActiveStudyConcept(input.studyContext);
-  if (!concept || concept === 'unavailable') return null;
-  const evidence = await readVerifiedStudyMasteryEvidence(input.userSub, concept.id, concept.canonicalKey);
-  if (!evidence) return null;
-  const projection = replayStudyLearnerProjection({
-    conceptId: concept.id,
-    conceptKey: concept.canonicalKey,
-    evidence,
-    asOf: new Date().toISOString(),
-  });
-  return applyStudyPrerequisiteNextBestAction({
-    userSub: input.userSub,
-    activeConcept: concept,
-    learnerModel: projection.learnerModel,
+
+  return withStudyTelemetryScope('adaptive_learner_model', async () => {
+    const concept = await resolveActiveStudyConcept(input.studyContext!);
+    if (!concept || concept === 'unavailable') return null;
+    const loaded = await loadVerifiedStudyLearnerProjection({
+      userSub: input.userSub!,
+      conceptId: concept.id,
+      conceptKey: concept.canonicalKey,
+      asOf: new Date().toISOString(),
+    });
+    if (!loaded) return null;
+
+    const model = await applyStudyPrerequisiteNextBestAction({
+      userSub: input.userSub!,
+      activeConcept: concept,
+      learnerModel: loaded.projection.learnerModel,
+    });
+    emitOperationalLearnerState(model);
+    return model;
   });
 }
 
