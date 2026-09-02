@@ -21,6 +21,14 @@ const bridge = {
     },
   },
   openExternal: (url: string) => ipcRenderer.invoke(DESKTOP_IPC.openExternal, url),
+  runtime: {
+    info: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeInfo),
+    attach: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeAttach),
+    detach: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeDetach),
+    sync: (entries: Array<{ path: string; content: string }>) => ipcRenderer.invoke(DESKTOP_IPC.runtimeSync, entries),
+    run: (line: string) => ipcRenderer.invoke(DESKTOP_IPC.runtimeRun, line),
+    git: (request: { action: string; message?: string }) => ipcRenderer.invoke(DESKTOP_IPC.runtimeGit, request),
+  },
 };
 
 contextBridge.exposeInMainWorld(DESKTOP_BRIDGE_KEY, bridge);

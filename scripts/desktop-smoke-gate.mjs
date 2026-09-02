@@ -26,6 +26,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright';
+import { DESKTOP_BRIDGE_VERSION } from '../shared/desktop-bridge-contract.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PORT = Number(process.env.QUANTORA_SMOKE_PORT || 3177);
@@ -92,6 +93,7 @@ function stopApiServer(child) {
 }
 
 const userData = mkdtempSync(join(tmpdir(), 'quantora-desktop-smoke-'));
+const workspace = mkdtempSync(join(tmpdir(), 'quantora-desktop-workspace-'));
 const api = await startApiServer();
 let app = null;
 
@@ -105,6 +107,7 @@ try {
       QUANTORA_DESKTOP_SMOKE: '1',
       QUANTORA_DESKTOP_BLOCK_EXTERNAL: '1',
       QUANTORA_USER_DATA_DIR: userData,
+      QUANTORA_SMOKE_WORKSPACE: workspace,
       QUANTORA_WEB_DIST: join(ROOT, 'dist'),
       // The API mirror is on loopback; never let an environment proxy swallow it.
       NO_PROXY: '127.0.0.1,localhost',
@@ -154,7 +157,7 @@ try {
     version: window.quantoraDesktop?.version,
     hasSignIn: typeof window.quantoraDesktop?.auth?.signIn === 'function',
   }));
-  check(bridge.present && bridge.version === 1 && bridge.hasSignIn, 'window.quantoraDesktop bridge present (v1)');
+  check(bridge.present && bridge.version === DESKTOP_BRIDGE_VERSION && bridge.hasSignIn, `window.quantoraDesktop bridge present (v${DESKTOP_BRIDGE_VERSION})`);
   const host = await window.evaluate(() => window.quantoraDesktop.host());
   check(host.apiOrigin === API_ORIGIN, `host reports the configured API origin (${host.apiOrigin})`);
 
@@ -196,6 +199,42 @@ try {
   await window.evaluate(() => window.quantoraDesktop.auth.signOut());
   const after = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json()));
   check(after.user === null, 'sign-out leaves no session behind');
+
+  // 6. the local runtime: a real folder, a real shell, real git (design §6.2)
+  const beforeAttach = await window.evaluate(() => window.quantoraDesktop.runtime.info());
+  check(beforeAttach.attached === false && beforeAttach.capabilities.shell === false, 'no shell before a folder is attached');
+  const refusedRun = await window.evaluate(() => window.quantoraDesktop.runtime.run('echo never'));
+  check(refusedRun.ok === false && /No folder/.test(refusedRun.output), 'a command without a folder is refused, not faked');
+
+  const attached = await window.evaluate(() => window.quantoraDesktop.runtime.attach());
+  check(attached.attached === true && typeof attached.root === 'string', `folder attached (${attached.root})`);
+  const afterAttach = await window.evaluate(() => window.quantoraDesktop.runtime.info());
+  check(afterAttach.capabilities.shell === true && afterAttach.capabilities.git === true, 'shell and git capabilities follow the attach');
+
+  const synced = await window.evaluate(() => window.quantoraDesktop.runtime.sync([
+    { path: 'index.html', content: '<!DOCTYPE html><h1>desk</h1>' },
+    { path: 'src/app.js', content: 'console.log("desk")' },
+  ]));
+  check(synced.ok === true && synced.written === 2, 'desk files written into the folder');
+  const escaped = await window.evaluate(() => window.quantoraDesktop.runtime.sync([{ path: '../escape.txt', content: 'x' }]));
+  check(escaped.ok === false && /Refused/.test(escaped.error || ''), 'a path outside the folder is refused');
+  check(!existsSync(join(workspace, '..', 'escape.txt')), 'nothing was written outside the folder');
+
+  const nonce = `quantora-${randomBytes(4).toString('hex')}`;
+  const echoed = await window.evaluate((n) => window.quantoraDesktop.runtime.run(`echo ${n}`), nonce);
+  check(echoed.ok === true && echoed.output === nonce, `real shell echoed exactly ${nonce}`);
+  const listed = await window.evaluate(() => window.quantoraDesktop.runtime.run('cat src/app.js'));
+  check(listed.ok === true && listed.output === 'console.log("desk")', 'the shell reads the synced file from disk');
+  const failed = await window.evaluate(() => window.quantoraDesktop.runtime.run('exit 7'));
+  check(failed.ok === false && failed.exitCode === 7, 'a failing command reports its real exit code');
+
+  const gitInit = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'init' }));
+  check(gitInit.ok === true, `git init in the folder (${gitInit.output.split('\n')[0]})`);
+  const gitCommit = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'commit', message: 'desk: first' }));
+  check(gitCommit.ok === true && /desk: first/.test(gitCommit.output), 'git commit records the desk files');
+  const gitPush = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'push' }));
+  check(gitPush.ok === false, 'desk git never pushes');
+  check(existsSync(join(workspace, '.git', 'HEAD')), 'the repository really exists on disk');
 } catch (error) {
   failures.push(`gate threw: ${error?.stack || error}`);
   console.error(error);
@@ -203,6 +242,7 @@ try {
   if (app) await app.close().catch(() => {});
   stopApiServer(api);
   rmSync(userData, { recursive: true, force: true });
+  rmSync(workspace, { recursive: true, force: true });
 }
 
 if (failures.length) {

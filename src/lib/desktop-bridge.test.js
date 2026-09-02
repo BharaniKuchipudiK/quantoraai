@@ -9,6 +9,7 @@ function fullBridge(overrides = {}) {
     host: () => {},
     auth: { status: () => {}, signIn: () => {}, signOut: () => {}, onChanged: () => {} },
     openExternal: () => {},
+    runtime: { info: () => {}, attach: () => {}, detach: () => {}, sync: () => {}, run: () => {}, git: () => {} },
     ...overrides,
   };
 }
@@ -28,5 +29,8 @@ test('a version mismatch or a missing method is treated as no bridge, never as a
   const missingSignOut = fullBridge();
   delete missingSignOut.auth.signOut;
   assert.equal(getDesktopBridge({ [DESKTOP_BRIDGE_KEY]: missingSignOut }), null);
+  const missingRuntime = fullBridge();
+  delete missingRuntime.runtime.run;
+  assert.equal(getDesktopBridge({ [DESKTOP_BRIDGE_KEY]: missingRuntime }), null);
   assert.equal(getDesktopBridge({ [DESKTOP_BRIDGE_KEY]: 'not-an-object' }), null);
 });

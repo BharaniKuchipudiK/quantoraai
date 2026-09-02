@@ -2,7 +2,7 @@
   "name": "quantora-desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Quantora Desktop \u2014 the web app plus a local runtime",
+  "description": "Quantora Desktop — the web app plus a local runtime",
   "main": "dist/main.cjs",
   "type": "module",
   "scripts": {
@@ -21,8 +21,6 @@
     "typescript": "~5.8.2"
   },
   "dependencies": {
-    "chokidar": "5.0.0",
-    "electron-updater": "6.6.4",
-    "node-pty": "1.1.0"
+    "electron-updater": "6.6.4"
   }
 }

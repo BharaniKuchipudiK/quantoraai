@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { studioFileCount, studioTerminalBlocker } from '../lib/studio-terminal.js';
 import { runCommandInWorkspace } from '../lib/webcontainer.js';
+import useDesktopRuntime from '../hooks/useDesktopRuntime.js';
 
 export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextColor }) {
   const [lines, setLines] = useState([]);
@@ -9,7 +10,8 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
   const scrollerRef = useRef(null);
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioFileCount(vfs);
-  const blocker = studioTerminalBlocker({ isolated, fileCount });
+  const { desktop, attach } = useDesktopRuntime();
+  const blocker = studioTerminalBlocker({ isolated, fileCount, desktop });
 
   useEffect(() => {
     scrollerRef.current?.scrollTo?.(0, scrollerRef.current.scrollHeight);
@@ -53,10 +55,28 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
     >
       <div ref={scrollerRef} style={{ flex: 1, overflow: 'auto', padding: '12px 14px', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
         {blocker ? (
-          <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
+          <div style={{ color: '#fbbf24', marginBottom: '12px' }}>
+            {blocker}
+            {desktop && !desktop.attached ? (
+              <div style={{ marginTop: '8px' }}>
+                <button
+                  type="button"
+                  data-quantora-desktop-attach="true"
+                  disabled={desktop.busy}
+                  onClick={() => attach()}
+                  style={{ background: '#f97316', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  {desktop.busy ? 'Choosing…' : 'Attach folder'}
+                </button>
+                {desktop.error ? <div style={{ color: '#f87171', marginTop: '6px' }}>{desktop.error}</div> : null}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div style={{ color: '#94a3b8', marginBottom: '12px' }}>
-            Shell runs against the files on this desk. Real output only.
+            {desktop?.attached
+              ? `Shell runs in ${desktop.root}. Real output only.`
+              : 'Shell runs against the files on this desk. Real output only.'}
           </div>
         )}
         <div data-quantora-studio-terminal-log="true">

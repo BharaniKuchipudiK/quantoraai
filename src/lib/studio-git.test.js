@@ -135,3 +135,8 @@ test('changing chats drops the previous desk repo', () => {
   const other = runDeskGit(vfs, { action: 'status', workspaceKey: 'b' });
   assert.match(other.output, /\?\? /);
 });
+
+test('on the desktop git asks for a folder, then needs no isolation', () => {
+  assert.match(studioGitBlocker({ isolated: false, fileCount: 2, desktop: { attached: false } }), /Attach a folder/);
+  assert.equal(studioGitBlocker({ isolated: false, fileCount: 2, desktop: { attached: true } }), '');
+});

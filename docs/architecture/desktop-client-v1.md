@@ -1,6 +1,6 @@
 # Quantora Desktop Client — v1 design
 
-**Status:** D0 and D1 built (2026-09-02); D2–D4 designed. Answers ROADMAP
+**Status:** D0, D1 and D2 built (2026-09-02); D3–D4 designed. Answers ROADMAP
 Phase 4.1 ("Tauri/Electron shell — the body the cognitive layer needs"). Every
 claim about the platform below was read from the code and cites the file; §11
 records what each phase was accepted by.
@@ -194,6 +194,18 @@ stays: no fake output, ever.
 
 ### 6.2 Desktop implementation
 
+**Built (D2)** as `desktop/runtime/*` behind the existing seams: inside the
+desktop, `runCommandInWorkspace` and `runGitInWorkspace` in
+`src/lib/webcontainer.js` sync the desk's files to the attached folder and
+run there (`src/lib/desk-runtime.js`); the terminal and git panes are
+unchanged except for the blocker copy and an "Attach folder" action
+(`src/hooks/useDesktopRuntime.js`). Collected-output mode uses
+`child_process` with the user's login shell, ANSI stripped, output capped
+to its tail, silent-timeout kill; a streaming pty terminal is the D2b step
+and brings `node-pty` with it. Not yet built: the external-change watcher
+and the dev-server preview (D2b). Sync never deletes: a file the user
+created in their editor is not the desk's to remove.
+
 Lives in the **Electron main process** (or a `utilityProcess` per workspace so
 a runaway `npm install` cannot stall the UI), reached from the renderer through
 a `contextBridge` API in the preload. IPC shape is the `DeskRuntime` contract
@@ -354,10 +366,20 @@ fourteen checks from boot to sign-out, no network. Still open from the
 original acceptance: running the platform-experience and studio-regression
 browser gates inside Electron.
 
-**D2 — Local runtime.** Folder attach, pty terminal, git, dev-server preview,
-external-change watcher, path confinement. Observations flow to repair.
-*Accept:* the smoke gate's real-terminal assertion; a `repair` turn triggered
-by a real `npm run build` failure; the desk survives a file edited in VS Code.
+**D2 — Local runtime. Built (collected mode).** Folder attach through a
+native dialog, desk → folder sync with path confinement enforced in main
+(`shared/desk-runtime-contract.js`, `desktop/runtime/workspace-policy.ts`),
+real shell in the user's login shell, real git for the desk's four verbs.
+*Accepted by:* `desktop/runtime/*.test.ts` against real processes, and the
+smoke gate's runtime section — a refused command before attach, an attach,
+a refused escape with proof nothing landed outside the folder, an exact
+echoed nonce, a file read back from disk, a real exit code, `git init` and a
+commit that exist on disk, and `push` refused.
+*Still open (D2b):* streaming pty terminal (`node-pty`), external-change
+watcher, dev-server preview, and observations from real failures flowing
+into `task: "repair"`. Also open: the desk currently syncs to the folder on
+every command; a folder-first mode where the folder is read back into the
+desk needs the watcher.
 
 **D3 — Persistent host.** Tray-resident background, notifications under the
 restraint policy, watch loop, local recall cache.
@@ -381,7 +403,7 @@ passes on the updated build.
 | GitHub Releases as the update feed, `GH_TOKEN` in the release workflow | `electron-updater` | D4 |
 | A macOS and a Windows CI runner (GitHub-hosted is enough) | Native builds and the smoke gate on each OS | D1+ |
 | Crash reporter endpoint (Sentry or Electron's `crashReporter` to a bucket) | Native crashes never reach `/api/product-event` | D4 |
-| New dev dependencies: `electron`, `electron-builder`, `electron-updater`, `node-pty`, `chokidar` | Shell, packaging, pty, watcher | D1/D2 |
+| New dependencies (in `desktop/package.json` only): `electron`, `electron-builder`, `esbuild`, `electron-updater` now; `node-pty`, `chokidar` with D2b | Shell, packaging, updater; pty and watcher | D1/D2b |
 
 No new Supabase tables are required for D0–D2. D3's watch loop reads existing
 tables. The one-time auth code is an HMAC blob like the session token, so it

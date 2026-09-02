@@ -6,6 +6,7 @@
 
 import { unifiedTreeDiff } from './studio-file-review.js';
 import { studioFileCount } from './studio-terminal.js';
+import { desktopRuntimeBlocker } from './desk-runtime.js';
 import {
   deskListing,
   deskShellVfs,
@@ -15,8 +16,11 @@ import {
 
 export const STUDIO_GIT_ACTIONS = Object.freeze(['init', 'status', 'diff', 'commit']);
 
-export function studioGitBlocker({ isolated = false, fileCount = 0 } = {}) {
-  if (!isolated) {
+export function studioGitBlocker({ isolated = false, fileCount = 0, desktop = null } = {}) {
+  if (desktop) {
+    const blocked = desktopRuntimeBlocker(desktop);
+    if (blocked) return blocked;
+  } else if (!isolated) {
     return 'Git cannot start on this page. A real git needs an isolated session. Preview still works.';
   }
   if (!fileCount) {

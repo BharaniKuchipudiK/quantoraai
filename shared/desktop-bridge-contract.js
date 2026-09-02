@@ -13,7 +13,7 @@
 export const DESKTOP_BRIDGE_KEY = 'quantoraDesktop';
 
 /** Bump when the bridge surface changes shape. The renderer refuses a mismatch. */
-export const DESKTOP_BRIDGE_VERSION = 1;
+export const DESKTOP_BRIDGE_VERSION = 2;
 
 export const DESKTOP_IPC = Object.freeze({
   hostInfo: 'quantora:host:info',
@@ -22,6 +22,12 @@ export const DESKTOP_IPC = Object.freeze({
   authSignOut: 'quantora:auth:sign-out',
   authChanged: 'quantora:auth:changed',
   openExternal: 'quantora:shell:open-external',
+  runtimeInfo: 'quantora:runtime:info',
+  runtimeAttach: 'quantora:runtime:attach',
+  runtimeDetach: 'quantora:runtime:detach',
+  runtimeSync: 'quantora:runtime:sync',
+  runtimeRun: 'quantora:runtime:run',
+  runtimeGit: 'quantora:runtime:git',
 });
 
 /**
@@ -37,17 +43,26 @@ export function isAllowedExternalUrl(value) {
   }
 }
 
+const isFn = (value) => typeof value === 'function';
+
 /** True when `candidate` looks like a bridge this renderer knows how to talk to. */
 export function isDesktopBridge(candidate) {
   return Boolean(
     candidate
     && candidate.version === DESKTOP_BRIDGE_VERSION
-    && typeof candidate.host === 'function'
+    && isFn(candidate.host)
     && candidate.auth
-    && typeof candidate.auth.status === 'function'
-    && typeof candidate.auth.signIn === 'function'
-    && typeof candidate.auth.signOut === 'function'
-    && typeof candidate.auth.onChanged === 'function'
-    && typeof candidate.openExternal === 'function',
+    && isFn(candidate.auth.status)
+    && isFn(candidate.auth.signIn)
+    && isFn(candidate.auth.signOut)
+    && isFn(candidate.auth.onChanged)
+    && isFn(candidate.openExternal)
+    && candidate.runtime
+    && isFn(candidate.runtime.info)
+    && isFn(candidate.runtime.attach)
+    && isFn(candidate.runtime.detach)
+    && isFn(candidate.runtime.sync)
+    && isFn(candidate.runtime.run)
+    && isFn(candidate.runtime.git),
   );
 }
