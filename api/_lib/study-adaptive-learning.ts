@@ -1,4 +1,5 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
+import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
 import { withStudyTelemetryScope } from './study-observability.js';
 import {
@@ -7,7 +8,7 @@ import {
 } from './study-next-best-action.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.8';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.9';
 
 export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
 
@@ -47,6 +48,23 @@ export function teachingStrategyFor(model: StudyLearnerModel): StudyTeachingStra
   }
 }
 
+function emitOperationalLearnerState(model: StudyLearnerModel): void {
+  if (model.nextLearningMove.reasonCode.includes('prerequisite_graph_unavailable')) {
+    emitStudyLearningFlowMetric({ metric: 'prerequisite_graph', outcome: 'prerequisite_graph_unavailable' });
+  }
+
+  if (model.retention.state === 'supported' && model.retention.evidenceCount > 0) {
+    emitStudyLearningFlowMetric({ metric: 'retention', outcome: 'retention_completed' });
+    return;
+  }
+  if (model.nextLearningMove.type === 'retention_probe') {
+    emitStudyLearningFlowMetric({
+      metric: 'retention',
+      outcome: model.retention.due === true ? 'retention_due' : 'retention_not_due',
+    });
+  }
+}
+
 export async function loadStudyLearnerModel(input: {
   studioDomain: string | null;
   userSub?: string | null;
@@ -66,11 +84,13 @@ export async function loadStudyLearnerModel(input: {
     });
     if (!loaded) return null;
 
-    return applyStudyPrerequisiteNextBestAction({
+    const model = await applyStudyPrerequisiteNextBestAction({
       userSub: input.userSub!,
       activeConcept: concept,
       learnerModel: loaded.projection.learnerModel,
     });
+    emitOperationalLearnerState(model);
+    return model;
   });
 }
 
