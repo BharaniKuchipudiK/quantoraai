@@ -45,7 +45,7 @@ function learnerModel(nextLearningMove: StudyNextLearningMove): StudyLearnerMode
   };
 }
 
-const electricityPrompt = 'EMF versus terminal potential difference in a battery circuit with internal resistance.';
+const electricityPrompt = 'EMF and terminal potential difference in a battery circuit with internal resistance.';
 const electricityHistory = [
   { role: 'user', text: `Explain ${electricityPrompt}` },
   { role: 'assistant', text: 'EMF is the energy supplied per coulomb by the source.' },
