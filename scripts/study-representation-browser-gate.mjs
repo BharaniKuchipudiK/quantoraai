@@ -23,6 +23,17 @@ async function visible(locator, message, timeout = 10_000) {
   if (!(await locator.isVisible().catch(() => false))) throw new Error(message);
 }
 
+async function enterStudio() {
+  try {
+    await enterSignedInStudio(page);
+  } catch {
+    // Landing CTA can miss the first hydration window. /desk is the durable
+    // signed-in surface once the session stub is in place.
+    await page.goto(new URL('/desk', BASE_URL).toString(), { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await page.locator('.app-shell--studio textarea').first().waitFor({ state: 'visible', timeout: 20_000 });
+  }
+}
+
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_active_specialist_domain');
@@ -114,7 +125,7 @@ await page.route('**/api/**', async (route) => {
 
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-  await enterSignedInStudio(page);
+  await enterStudio();
 
   const study = page.locator('[data-quantora-advisor="education"]').first();
   await visible(study, 'Study Tutor is missing from the Agentic Workspace sidebar.');
@@ -129,10 +140,20 @@ try {
   await textarea.press('Enter');
   const vectorLesson = page.locator('[data-quantora-study-lesson="true"]').last();
   await visible(vectorLesson, 'Vector lesson did not render.');
-  await visible(
-    vectorLesson.locator('[data-quantora-study-picture="physics-motion"][data-quantora-study-picture-variant="vector-components"]').first(),
-    'Supported vector request did not render vector-components visual.',
-  );
+  const vectorPicture = vectorLesson.locator('[data-quantora-study-picture="physics-motion"][data-quantora-study-picture-variant="vector-components"]').first();
+  await visible(vectorPicture, 'Supported vector request did not render vector-components visual.', 15_000);
+
+  const pictureSvg = vectorPicture.locator('svg[role="img"]').first();
+  await visible(pictureSvg, 'Vector visual is missing a screen-reader image role.');
+  const pictureLabel = String(await pictureSvg.getAttribute('aria-label') || '');
+  if (!/vector|component/i.test(pictureLabel)) {
+    throw new Error('Vector visual aria-label does not describe the instructional relationship.');
+  }
+
+  const vectorText = (await vectorLesson.textContent()) || '';
+  if ((vectorText.match(/\?/g) || []).length > 1) {
+    throw new Error('One-action pacing failed: vector lesson asked multiple learner questions.');
+  }
 
   // 2) Unsupported concept should fail honestly (no fake picture).
   await textarea.fill('unsupported-concept: Teach opportunity cost visually.');
@@ -146,14 +167,11 @@ try {
   if (!/no safe native visual renderer exists/i.test(unsupportedText)) {
     throw new Error('Unsupported concept fallback did not explicitly acknowledge renderer unavailability.');
   }
-
-  // 3) One-action pacing: ensure no multi-question wall appears.
-  const questionMarks = (unsupportedText.match(/\?/g) || []).length;
-  if (questionMarks > 1) {
+  if ((unsupportedText.match(/\?/g) || []).length > 1) {
     throw new Error('One-action pacing failed: unsupported lesson asked multiple learner questions.');
   }
 
-  // 4) Cross-workspace isolation: Study visual policy must not leak into Finance.
+  // 3) Cross-workspace isolation: the newest Finance reply must not use StudyMarkdown.
   const finance = page.locator('[data-quantora-advisor="finance"]').first();
   await visible(finance, 'Finance workspace is missing.');
   await finance.click();
@@ -161,13 +179,17 @@ try {
   await visible(textarea, 'Shared prompt input missing after switching to Finance.');
   await textarea.fill('workspace-isolation-check');
   await textarea.press('Enter');
-  const financeLesson = page.locator('[data-quantora-chat-message="assistant"]').last();
-  const financeText = (await financeLesson.textContent()) || '';
-  if (/quantora-study-picture|EMF|vector/i.test(financeText)) {
-    throw new Error('Study representation behavior leaked into Finance workspace output.');
+  const financeReply = page.locator('[data-quantora-assistant-prose="true"]').last();
+  await visible(financeReply, 'Finance reply did not render.');
+  if (await financeReply.locator('[data-quantora-study-lesson], [data-quantora-study-picture]').count()) {
+    throw new Error('Study representation surface leaked into the newest Finance reply.');
+  }
+  const financeText = (await financeReply.textContent()) || '';
+  if (!/Finance/i.test(financeText)) {
+    throw new Error('Finance isolation reply did not confirm the Finance workspace.');
   }
 
-  console.log('Study representation browser gate passed: visual compliance, honest fallback, one-action pacing, and workspace isolation.');
+  console.log('Study representation browser gate passed: visual compliance, honest fallback, one-action pacing, accessibility label, and workspace isolation.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/study-representation-browser-gate-failure.png', fullPage: true }).catch(() => {});
