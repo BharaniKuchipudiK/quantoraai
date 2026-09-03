@@ -7,6 +7,18 @@ import {
   travelFunctionDeclarations,
 } from './agent-tools.js';
 
+/*
+ * Travel dates in these fixtures must stay in the future: the tools reject a
+ * past date before they look at anything else, so a fixed calendar date turns
+ * every assertion below into INVALID_ARGUMENT the morning it expires. On
+ * 2026-09-03 exactly that happened to daysFromNow(30).
+ */
+function daysFromNow(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 const declaredNames = travelFunctionDeclarations.map((tool: any) => tool?.name);
 
 test('travel tools are scoped only to the travel domain', () => {
@@ -28,7 +40,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const booking = await executeToolCall('make_reservation', {
     bookingType: 'flight',
     itemId: 'off_test',
-    dates: '2026-09-01',
+    dates: daysFromNow(30),
     price: 100,
   }, { duffelClient: null, googleMapsApiKey: null });
 
@@ -43,7 +55,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const alert = await executeToolCall('create_price_alert', {
     entityType: 'flight',
     destination: 'LHR',
-    dates: '2026-09-01',
+    dates: daysFromNow(30),
   }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(alert.status, 'unavailable');
@@ -56,7 +68,7 @@ test('unconnected read-only travel providers stop the agent instead of returning
   const flight = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'LHR',
-    departureDate: '2026-09-01',
+    departureDate: daysFromNow(30),
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
@@ -69,8 +81,8 @@ test('unconnected read-only travel providers stop the agent instead of returning
 
   const hotel = await executeToolCall('search_hotels', {
     location: 'London',
-    checkInDate: '2026-09-01',
-    checkOutDate: '2026-09-03',
+    checkInDate: daysFromNow(30),
+    checkOutDate: daysFromNow(32),
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
@@ -142,8 +154,8 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
 
   const result = await executeToolCall('search_hotels', {
     location: 'London',
-    checkInDate: '2026-09-01',
-    checkOutDate: '2026-09-03',
+    checkInDate: daysFromNow(30),
+    checkOutDate: daysFromNow(32),
     guests: 2,
     minStarRating: 4,
   }, {
@@ -301,8 +313,8 @@ test('Google provider errors fail closed and terminate the interactive agent ste
 
   const hotel = await executeToolCall('search_hotels', {
     location: 'Tokyo',
-    checkInDate: '2026-10-01',
-    checkOutDate: '2026-10-03',
+    checkInDate: daysFromNow(60),
+    checkOutDate: daysFromNow(62),
   }, {
     googleMapsApiKey: 'bad-key',
     fetchFn,
@@ -431,7 +443,7 @@ test('flight provider failure retries on an alternate Duffel client when configu
   const result = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: daysFromNow(40),
   }, {
     duffelClient: primary as any,
     duffelFallbackClient: fallback as any,
@@ -456,7 +468,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const first = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: daysFromNow(40),
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
@@ -471,7 +483,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const second = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: daysFromNow(40),
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },

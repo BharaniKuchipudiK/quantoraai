@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { getDesktopBridge } from '../lib/desktop-bridge.js';
 import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import ProfilePictureEditor from './ProfilePictureEditor.jsx';
@@ -135,7 +134,6 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
         localStorage.removeItem('quantora_user');
       } catch (e) {}
       fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-      getDesktopBridge()?.auth.signOut().catch(() => {});
       setUser(null);
       setActiveTab('landing');
     } else if (confirmModalType === 'delete_account') {

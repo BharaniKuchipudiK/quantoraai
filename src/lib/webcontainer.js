@@ -1,5 +1,4 @@
 import { WebContainer } from '@webcontainer/api';
-import { getDeskRuntime, runDesktopCommand, runDesktopGit } from './desk-runtime.js';
 import { runDeskGit } from './studio-git.js';
 import {
   answerWorkspaceListing,
@@ -121,11 +120,6 @@ export async function runCommandInWorkspace(vfs, commandLine) {
   const line = String(commandLine || '').trim();
   if (!line) return { ok: true, output: '' };
 
-  // Inside Quantora Desktop the shell is a real process in the attached
-  // folder; every command, listings included, is answered by the folder.
-  const runtime = getDeskRuntime();
-  if (runtime.kind === 'desktop') return runDesktopCommand(runtime.bridge, vfs, line);
-
   if (isWorkspaceListingCommand(line)) {
     return answerWorkspaceListing(vfs);
   }
@@ -140,7 +134,5 @@ export async function runCommandInWorkspace(vfs, commandLine) {
 }
 
 export async function runGitInWorkspace(vfs, { action, message, workspaceKey } = {}) {
-  const runtime = getDeskRuntime();
-  if (runtime.kind === 'desktop') return runDesktopGit(runtime.bridge, vfs, { action, message });
   return runDeskGit(deskShellVfs(vfs), { action, message, workspaceKey });
 }

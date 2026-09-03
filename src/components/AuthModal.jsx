@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { getDesktopBridge } from '../lib/desktop-bridge.js';
 import { authGoogleWellStyle, authModalCardStyle, authModalOverlayStyle } from '../lib/auth-modal-styles.js';
 import { isIsolatedStudioPath, stashOAuthReturnPending } from '../lib/studio-isolation.js';
 import { clearPasswordResetToken } from '../lib/password-reset.js';
@@ -135,45 +134,6 @@ export default function AuthModal({
     [MODES.RESET_REQUEST]: 'Reset password',
     [MODES.RESET_CONFIRM]: 'Choose a new password',
   }[mode];
-
-  /*
-   * Inside Quantora Desktop the page lives on quantora://app, where Google's
-   * widget cannot run and no cookie can be set. Every provider still works —
-   * in the system browser. The host opens the grant URL; the browser hands a
-   * one-time code back on a quantora:// link (desktop-client-v1.md §4).
-   */
-  const desktop = getDesktopBridge();
-  if (desktop) {
-    return (
-      <div data-quantora-auth-modal="true" style={authModalOverlayStyle()}>
-        <div className={`auth-modal${isLight ? ' is-light' : ' is-dark'}`} style={authModalCardStyle(isLight)}>
-          <button type="button" className="auth-modal__close" onClick={onClose} aria-label="Close">✕</button>
-          <p className="auth-modal__eyebrow">Quantora Desktop</p>
-          <h2 className="auth-modal__title">Sign in with your browser</h2>
-          <p className="auth-modal__privacy">
-            Your browser opens quantoraai.app. Sign in there with Google, GitHub or email, then come back — the session is stored in your system keychain, never in the page.
-          </p>
-          {externalError && !error && <div className="auth-modal__alert is-error">{externalError}</div>}
-          {error && <div className="auth-modal__alert is-error">{error}</div>}
-          <button
-            type="button"
-            className="auth-modal__github"
-            data-quantora-desktop-signin="true"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError('');
-              desktop.auth.signIn()
-                .catch(() => setError('Could not open your browser. Try again.'))
-                .finally(() => setBusy(false));
-            }}
-          >
-            {busy ? 'Opening your browser…' : 'Continue in browser'}
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div data-quantora-auth-modal="true" style={authModalOverlayStyle()}>

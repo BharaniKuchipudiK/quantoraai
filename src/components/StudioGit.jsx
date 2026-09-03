@@ -7,7 +7,6 @@ import {
   readGithubApiJson,
 } from '../lib/github-import.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
-import useDesktopRuntime from '../hooks/useDesktopRuntime.js';
 
 /*
  * Security containment for #452.
@@ -38,8 +37,7 @@ export default function StudioGit({
   const primedKey = useRef('');
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioGitFileCount(vfs);
-  const { desktop, attach } = useDesktopRuntime();
-  const blocker = studioGitBlocker({ isolated, fileCount, desktop });
+  const blocker = studioGitBlocker({ isolated, fileCount });
   const baseBranch = (githubBaseBranch && String(githubBaseBranch).trim()) || 'main';
   const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', baseBranch);
 
@@ -175,26 +173,7 @@ export default function StudioGit({
       }}
     >
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        {desktop?.attached
-          ? `Git runs in ${desktop.root}. Status, diff, and commit are real git in that folder. Push still happens outside the desk.`
-          : 'Git is for this app’s files on the desk. Status, diff, and commit run locally. Push still happens outside the desk. Create PR is temporarily unavailable while repository authorization is hardened; Open on GitHub remains available.'}
-        {desktop && !desktop.attached ? (
-          <div style={{ marginTop: '8px', color: '#fbbf24' }}>
-            {blocker}
-            <div style={{ marginTop: '8px' }}>
-              <button
-                type="button"
-                data-quantora-desktop-attach="true"
-                disabled={desktop.busy}
-                onClick={() => attach()}
-                style={{ background: '#f97316', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}
-              >
-                {desktop.busy ? 'Choosing…' : 'Attach folder'}
-              </button>
-              {desktop.error ? <div style={{ color: '#f87171', marginTop: '6px' }}>{desktop.error}</div> : null}
-            </div>
-          </div>
-        ) : null}
+        Git is for this app’s files on the desk. Status, diff, and commit run locally. Push still happens outside the desk. Create PR is temporarily unavailable while repository authorization is hardened; Open on GitHub remains available.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>

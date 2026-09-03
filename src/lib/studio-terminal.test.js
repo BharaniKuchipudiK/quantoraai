@@ -17,9 +17,3 @@ test('terminal is allowed when files exist on an isolated page', () => {
 test('file count ignores empty slots', () => {
   assert.equal(studioFileCount({ 'index.html': { content: '<html></html>' }, skip: null }), 1);
 });
-
-test('on the desktop the terminal asks for a folder, then needs no isolation', () => {
-  assert.match(studioTerminalBlocker({ isolated: false, fileCount: 2, desktop: { attached: false } }), /Attach a folder/);
-  assert.equal(studioTerminalBlocker({ isolated: false, fileCount: 2, desktop: { attached: true } }), '');
-  assert.match(studioTerminalBlocker({ isolated: false, fileCount: 0, desktop: { attached: true } }), /No files/i);
-});
