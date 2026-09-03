@@ -67,6 +67,14 @@ const ModelDashboard = lazyWithReload(() => import('./components/ModelDashboard'
 const WelcomeHub = lazyWithReload(() => import('./components/WelcomeHub'));
 import { UserCheck, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import {
+  buildDesktopGrantPath,
+  clearDesktopAuthHandoff,
+  peekDesktopAuthHandoff,
+  readDesktopAuthHandoff,
+  stashDesktopAuthHandoff,
+  stripDesktopAuthParams,
+} from './lib/desktop-auth-handoff.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from './lib/coding-desk-auto-model.js';
 // import { Analytics } from '@vercel/analytics/react';
 // import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -237,6 +245,29 @@ export default function App() {
     url.searchParams.delete('reset');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
+
+  /*
+   * Desktop sign-in handoff (docs/architecture/desktop-client-v1.md §4).
+   * The grant endpoint bounces here when the browser has no session. Stash
+   * the challenge/state, sign in as usual, and once a session exists send the
+   * browser back to the grant so it can hand the code to the desktop app.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handoff = readDesktopAuthHandoff(window.location.search);
+    if (!handoff) return;
+    stashDesktopAuthHandoff(handoff);
+    window.history.replaceState({}, '', stripDesktopAuthParams(window.location.href));
+    setShowAuthModal(true);
+  }, []);
+
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return;
+    const handoff = peekDesktopAuthHandoff();
+    if (!handoff) return;
+    clearDesktopAuthHandoff();
+    window.location.assign(buildDesktopGrantPath(handoff));
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
