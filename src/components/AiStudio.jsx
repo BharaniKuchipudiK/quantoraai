@@ -40,6 +40,7 @@ import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } fro
 import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
@@ -107,6 +108,7 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
+const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -592,6 +594,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * normalizeGithubDestination.
    */
   const [githubDestination, setGithubDestination] = useState(null);
+  /*
+   * Phase 06 — Plan or Build, as chosen. `null` means nobody chose, and the
+   * existing inference decides exactly as it did before this control existed.
+   */
+  const [studioModeChoice, setStudioModeChoice] = useState(null);
+  const studioModeChoiceRef = useRef(null);
+  studioModeChoiceRef.current = studioModeChoice;
   const [githubCheckout, setGithubCheckout] = useState(null);
 
   /*
@@ -1153,7 +1162,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
-    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    /*
+     * Phase 06 — Plan mode's promise is kept HERE, not in the system prompt.
+     *
+     * The model is told to emit no code on a plan turn. Models ignore that, and
+     * a control labelled "Plan" that writes files is worse than no control: it
+     * costs the same money as a build and produces one the user did not
+     * approve. guardPlanTurn returns an assembly that changes nothing, and
+     * src/lib/studio-mode.test.js runs this exact composition over a reply full
+     * of fences to prove the desk survives it.
+     */
+    const assembled = guardPlanTurn(
+      applyWorkspaceFromChat(rawText, vfs, deskJob, { brief }),
+      vfs,
+      studioModeChoiceRef.current,
+    );
     // A plan turn starts the job; every other turn re-judges it against the
     // files that now exist, so a step can also go BACK to not-done if its file
     // is later emptied. The job describes the desk, not the history of claims.
@@ -1181,6 +1204,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const deskForJob = assembled.vfs;
     if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
     else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
+    /*
+     * The plan is the deliverable, so the job above is still read and rendered.
+     * Everything below opens a preview or runs the repair plane over what this
+     * turn produced, and on a plan turn there is deliberately nothing to run.
+     * Returning here rather than relying on the emptied assembly is the belt to
+     * the guard's braces: proveCodingTurn REPAIRS what it is handed, and a
+     * repair is the one thing that could rebuild what was just discarded.
+     */
+    if (studioModeChoiceRef.current === 'plan') {
+      // Cleared when there is nothing to say, so a note from the previous turn
+      // is not left hanging under a plan it has nothing to do with.
+      setPatchNote(planTurnDiscardNotice(assembled.discardedPaths?.length || 0));
+      return;
+    }
     setPatchNote([
       ...(assembled.patchFailures || [])
         .map((failure) => describePatchFailures(failure.result, failure.filepath)),
@@ -1590,6 +1627,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     qirCoding,
     onDeskRename,
     buildJob,
+    studioModeChoice,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -4355,15 +4393,6 @@ Paused — ${autoPauseRef.current}.`
 
 
 
-          <Suspense fallback={null}>
-            <GithubDestinationBar
-              destination={githubDestination}
-              onChange={setGithubDestination}
-              onOpenInDesk={handleOpenRepositoryInDesk}
-              isLight={isLight}
-            />
-          </Suspense>
-
           {/*
             * The checkout's own account of what it could not bring. Rendered
             * because a truncation notice nobody sees is the same as not having
@@ -4834,7 +4863,29 @@ Paused — ${autoPauseRef.current}.`
                 )}
               </div>
 
+              <Suspense fallback={null}>
+                <StudioModeToggle
+                  chosen={studioModeChoice}
+                  onChange={setStudioModeChoice}
+                  isLight={isLight}
+                  subtextColor={subtextColor}
+                />
+              </Suspense>
 
+              {/*
+                * Where this build is going to sit — a setting, so it sits with
+                * the other settings rather than shouting above the prompt.
+                */}
+              <Suspense fallback={null}>
+                <GithubDestinationBar
+                  destination={githubDestination}
+                  onChange={setGithubDestination}
+                  onOpenInDesk={handleOpenRepositoryInDesk}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                />
+              </Suspense>
 
             </div>
 

@@ -360,7 +360,19 @@ export function buildConversationSystemPrompt(options: {
     build += `\n\n${OFFICE_GENERATION_DIRECTIVE}`;
   }
 
-  const plan = options.planMode
+  /*
+   * One plan concept per turn, never two.
+   *
+   * PLAN_DIRECTIVE asks for JSON and nothing else. JOB_PLAN_DIRECTIVE asks for
+   * two or three sentences plus a marker the desk renders as a step checklist.
+   * Sending both tells the model to do two incompatible things and then judges
+   * whatever it picks — the same shape as the 2026-09-01 guided-intake failure,
+   * where the platform punished the model for obeying it.
+   *
+   * The job plan wins when it is in force, because it is the one a human reads
+   * and the one the UI can act on.
+   */
+  const plan = options.planMode && !options.needsJobPlan
     ? `\n\n${PLAN_DIRECTIVE}`
     : "";
 

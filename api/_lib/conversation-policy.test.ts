@@ -60,6 +60,32 @@ test("scopes plan mode to software architecture only", () => {
   assert.match(prompt, /travel, finance, events/);
 });
 
+/*
+ * Phase 06 — the composer's Plan control reaches this function, so the two
+ * plan directives can now be asked for on the same turn. They want opposite
+ * replies: one demands JSON and nothing else, the other demands prose plus a
+ * marker. A model cannot satisfy both, and whichever it picks the platform
+ * judges it against the other — the guided-intake failure again.
+ */
+test("an explicit Plan turn asks for a readable plan, not a JSON blob", () => {
+  const prompt = buildConversationSystemPrompt({ planMode: true, needsJobPlan: true });
+
+  assert.match(prompt, /quantora-plan/, "the desk renders the marker; without it a plan is just prose");
+  assert.match(prompt, /No code this turn/);
+  assert.doesNotMatch(
+    prompt,
+    /Output ONLY valid JSON/,
+    "the model was told to emit prose and a marker, and simultaneously to emit only JSON",
+  );
+});
+
+test("the job plan still stands on its own when nobody pressed Plan", () => {
+  // The size heuristic path predates the toggle and must be unchanged by it.
+  const prompt = buildConversationSystemPrompt({ needsJobPlan: true });
+  assert.match(prompt, /quantora-plan/);
+  assert.doesNotMatch(prompt, /Output ONLY valid JSON/);
+});
+
 test("asks to clarify before detailed personalized plans", () => {
   const prompt = buildConversationSystemPrompt();
   assert.match(prompt, /PERSONALIZED PLANNING/);
