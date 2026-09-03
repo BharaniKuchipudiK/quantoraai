@@ -5,8 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * keeps only a Run-id pointer; transition authority and the durable snapshot
  * remain behind /api/qir-runs. The whole client lives in
  * qir-coding-run-core.js behind a dynamic import: the Desk entry chunk has a
- * 300 KB payload budget (scripts/code-highlight-browser-gate.mjs) and none of
- * the machinery is needed until a durable Run actually starts.
+ * 300 KB payload budget and none of the machinery is needed until a durable Run
+ * actually starts.
  *
  * A Coding goal is durable BEFORE Preview exists. That distinction is critical:
  * the common was-red failure is a model timing out before it writes even one
@@ -53,10 +53,20 @@ export function useQirCodingRun(options) {
       setError(null);
     }
     // Do not wait for artifactRef/code. QIR must own the user's Coding goal even
-    // when the first worker dies before producing files.
+    // when the first worker dies before producing files. `enabled` is the
+    // declarative/background sync path; beginModelAttempt below can force the
+    // same boot synchronously once the turn planner has proved this is Coding.
     if (!enabled || !sessionId) return;
     void withClient((client) => client.sync());
   }, [enabled, sessionId, artifactRef, code, withClient]);
+
+  const beginModelAttempt = useCallback((goal, strategy) => (
+    withClient((client) => client.beginModelAttempt(goal, strategy))
+  ), [withClient]);
+
+  const reportModelFailure = useCallback((failure) => (
+    withClient((client) => client.reportModelFailure(failure))
+  ), [withClient]);
 
   const reportHealedArtifact = useCallback((nextArtifactRef, healedCode) => (
     withClient((client) => client.reportHealedArtifact(nextArtifactRef, healedCode))
@@ -66,5 +76,12 @@ export function useQirCodingRun(options) {
     withClient((client) => client.reportPreviewStatus(status))
   ), [withClient]);
 
-  return { run, error, reportHealedArtifact, reportPreviewStatus };
+  return {
+    run,
+    error,
+    beginModelAttempt,
+    reportModelFailure,
+    reportHealedArtifact,
+    reportPreviewStatus,
+  };
 }

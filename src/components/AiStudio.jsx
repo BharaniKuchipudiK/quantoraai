@@ -80,7 +80,6 @@ import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
 import StudyMarkdown from './StudyMarkdown.jsx';
-import FinanceBoard from './FinanceBoard.jsx';
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
@@ -120,6 +119,8 @@ const StudyTutorWorkspace = lazy(() => import('./StudyTutorWorkspace.jsx'));
 const TravelTripBoard = lazy(() => import('./TravelTripBoard.jsx'));
 // Same deal for the research dossier board: research-only, loaded on demand.
 const ResearchBoard = lazy(() => import('./ResearchBoard.jsx'));
+// Finance is the remaining advisor board still inlined into the Desk chunk.
+const FinanceBoard = lazy(() => import('./FinanceBoard.jsx'));
 
 // A short human title for a generated deck, taken from the first user prompt.
 const deriveDeckTitle = (messages) => {
@@ -1474,6 +1475,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [commitDeskVfs]);
 
+  const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
+  const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
+  const qirCoding = useQirCodingRun({
+    enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
+    sessionId: activeSessionId,
+    goal: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
+    artifactRef: activeSessionId && previewAssemblyKey
+      ? `coding-desk://${activeSessionId}/assembly/${previewAssemblyKey}`
+      : '',
+    code: previewRunCode,
+    vfs,
+    job: deskJob,
+  });
+
   const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
     attachments, setAttachments,
@@ -1497,6 +1512,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
     onCodingTurnExecute,
     onCodingTurnProved,
+    qirCoding,
     onDeskRename,
     buildJob,
   });
@@ -1779,19 +1795,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     () => [...cleanStudyMessages].reverse().find((message) => message.sender === 'user'),
     [cleanStudyMessages],
   );
-  const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
-  const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
-  const qirCoding = useQirCodingRun({
-    enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
-    sessionId: activeSessionId,
-    goal: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',
-    artifactRef: activeSessionId && previewAssemblyKey
-      ? `coding-desk://${activeSessionId}/assembly/${previewAssemblyKey}`
-      : '',
-    code: previewRunCode,
-    vfs,
-    job: deskJob,
-  });
   const shellVfs = useMemo(() => deskShellVfs(vfs, previewRunCode), [vfs, previewRunCode]);
   const deskPacket = useMemo(() => mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,
@@ -2506,11 +2509,13 @@ Paused — ${autoPauseRef.current}.`
                           </div>
                         )}
                         {studioDomain === 'finance' && msg.id === latestAiId && financeBrief?.active ? (
-                          <FinanceBoard
-                            brief={financeBrief}
-                            onAsk={(text) => setInputText(text)}
-                            onSend={(text) => feedHandleSendMessage(text)}
-                          />
+                          <Suspense fallback={null}>
+                            <FinanceBoard
+                              brief={financeBrief}
+                              onAsk={(text) => setInputText(text)}
+                              onSend={(text) => feedHandleSendMessage(text)}
+                            />
+                          </Suspense>
                         ) : null}
                         {studioDomain === 'travel' && msg.id === latestAiId ? (
                           <Suspense fallback={null}>
