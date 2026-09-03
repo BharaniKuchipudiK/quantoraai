@@ -57,7 +57,7 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
   const intent = fs.readFileSync(new URL('../../shared/build-intent.js', import.meta.url), 'utf8');
 
   assert.match(intent, /codingFailureSpineOwnsTurn/);
-  assert.match(stream, /advisorBlocksPreviewBuild\(turnDomain\)/);
+  assert.match(stream, /codingFailureSpineOwnsTurn/);
   assert.match(stream, /codingSpineOwns/);
   assert.match(stream, /qirFail/);
   assert.match(stream, /onCodingModelAttempt/);

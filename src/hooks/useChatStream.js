@@ -21,7 +21,7 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, codingFailureSpineOwnsTurn, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
@@ -791,7 +791,7 @@ export function useChatStream({
       isCodingRequest,
       hasCodingWorkspace,
     }) || studioDomain;
-    const codingSpineOwns = Boolean(isCodingRequest) && !advisorBlocksPreviewBuild(turnDomain);
+    const codingSpineOwns = codingFailureSpineOwnsTurn({ isCodingRequest, studioDomain: turnDomain });
     const qirFail = (kind, message, done) => {
       if (!codingSpineOwns) return;
       try { void onCodingModelFailure?.({ kind, message, retryable: !done, recoveryExhausted: done }); } catch { /* journal must not block */ }
