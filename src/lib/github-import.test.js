@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEFAULT_REPOSITORY_IMPORT_TASK,
-  buildGithubCreatePrRequestBody,
   buildGithubImportRequestBody,
   githubCompareUrl,
   humanGithubHttpError,
@@ -67,16 +66,6 @@ test('compare URL opens GitHub PR expand for an imported repo', () => {
     'https://github.com/acme/widget/compare/main...quantora-desk?expand=1',
   );
   assert.equal(githubCompareUrl('https://example.com/acme/widget'), '');
-});
-
-test('create-pr body includes pipeline stage', () => {
-  const body = buildGithubCreatePrRequestBody({
-    repoUrl: 'https://github.com/acme/widget',
-    title: 'Desk changes',
-    head: 'quantora-desk',
-  });
-  assert.equal(body.targetStage, 'github-create-pr');
-  assert.equal(body.head, 'quantora-desk');
 });
 
 test('human errors stay honest for auth and rate limits', () => {

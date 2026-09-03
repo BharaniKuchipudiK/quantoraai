@@ -54,7 +54,7 @@ test('assistant wording never becomes learner struggle evidence', () => {
   assert.equal(interpretation.intervention.action, 'continue');
 });
 
-test('unsupported Electricity visual remains honest even when the learner is blocked', () => {
+test('blocked Electricity learner gets native visual guided reconstruction', () => {
   const interpretation = interpretStudyTurn({
     studioDomain: 'education',
     message: 'Can you show me visually?',
@@ -73,13 +73,13 @@ test('unsupported Electricity visual remains honest even when the learner is blo
 
   assert.ok(interpretation);
   assert.equal(interpretation.intervention.state, 'blocked');
-  assert.equal(interpretation.representation.primaryRepresentation, 'concise_text');
-  assert.equal(interpretation.representation.rendererRequired, false);
-  assert.equal(interpretation.representation.rendererKind, null);
-  assert.equal(interpretation.representation.fallback, 'renderer_unavailable');
-  assert.deepEqual(interpretation.lessonLoop.beats, ['PREDICT']);
+  assert.equal(interpretation.representation.primaryRepresentation, 'annotated_diagram');
+  assert.equal(interpretation.representation.rendererRequired, true);
+  assert.equal(interpretation.representation.rendererKind, 'electricity-circuit');
+  assert.equal(interpretation.representation.fallback, 'none');
+  assert.deepEqual(interpretation.lessonLoop.beats, ['SEE', 'PREDICT']);
   assert.equal(interpretation.lessonLoop.mustWaitForLearner, true);
-  assert.match(formatStudyCognitiveDirective(interpretation), /do not claim that an unsupported visual/i);
+  assert.match(formatStudyCognitiveDirective(interpretation), /Teaching representation: annotated_diagram/i);
 });
 
 test('an old mechanics topic cannot leak a physics visual into the current Electricity lesson', () => {
@@ -98,10 +98,11 @@ test('an old mechanics topic cannot leak a physics visual into the current Elect
   });
 
   assert.ok(interpretation);
-  assert.equal(interpretation.representation.primaryRepresentation, 'concise_text');
-  assert.equal(interpretation.representation.rendererRequired, false);
-  assert.equal(interpretation.representation.rendererKind, null);
-  assert.equal(interpretation.representation.fallback, 'renderer_unavailable');
+  assert.equal(interpretation.representation.primaryRepresentation, 'annotated_diagram');
+  assert.equal(interpretation.representation.rendererRequired, true);
+  assert.equal(interpretation.representation.rendererKind, 'electricity-circuit');
+  assert.notEqual(interpretation.representation.rendererKind, 'physics-motion');
+  assert.equal(interpretation.representation.fallback, 'none');
 });
 
 test('generic continuation stays inside the authoritative Study teaching-turn policy', () => {

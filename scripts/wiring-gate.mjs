@@ -14,7 +14,7 @@ import { compareToBaseline, findOrphanComponents, findOrphanExports, orphanKey }
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE = join(ROOT, 'src', 'lib', 'wiring-baseline.json');
-const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts'];
+const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts', 'desktop'];
 /*
  * Root config files count as production code.
  *

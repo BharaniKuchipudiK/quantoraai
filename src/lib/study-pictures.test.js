@@ -5,6 +5,7 @@ import {
   ensureStudyTeachingVisual,
   pictureCaptionFitsLesson,
   splitStudySegments,
+  studyElectricityVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
   studyPicturePromptHint,
@@ -74,6 +75,19 @@ test('Algebra never keeps leftover Newton stock scenes', () => {
   assert.equal(appleLeak.some((part) => part.type === 'picture'), false);
 });
 
+test('an Electricity picture cannot leak into a non-Electricity lesson', () => {
+  assert.equal(pictureCaptionFitsLesson(
+    'EMF and terminal potential difference in a battery circuit',
+    'What is Algebra?',
+    'Solve x - 8 = 15',
+  ), false);
+  const electricity = splitStudySegments(
+    '<quantora-study-picture caption="EMF and terminal potential difference in a battery circuit" />\nSolve x - 8 = 15.',
+    'What is Algebra?',
+  );
+  assert.equal(electricity.some((part) => part.type === 'picture'), false);
+});
+
 test('the client does not invent a picture from the word apple', () => {
   const decorated = decorateStudyMessage('Three apples in a box is just counting.');
   assert.doesNotMatch(decorated, /quantora-study-picture|apple-tree/);
@@ -85,6 +99,17 @@ test('a substantial physics explanation receives a real teaching diagram when th
   assert.match(illustrated, /quantora-study-picture/);
   assert.match(illustrated, /velocity continues forward/);
   assert.equal(splitStudySegments(illustrated, 'Newtonian inertia')[0].type, 'picture');
+});
+
+test('a substantial EMF explanation receives the native energy-flow diagram when the model omits its tag', () => {
+  const explanation = 'A real battery has internal resistance. Its EMF is the energy supplied per coulomb by the chemistry, while terminal potential difference is the useful energy transferred per coulomb to the external circuit. When current flows, some energy per coulomb is lost inside the battery.';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'EMF and terminal potential difference');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /energy per coulomb supplied by the battery/);
+  const picture = splitStudySegments(illustrated, 'EMF and terminal potential difference')[0];
+  assert.equal(picture.type, 'picture');
+  assert.equal(studyVisualKind(picture.caption), 'electricity-circuit');
+  assert.equal(studyElectricityVisualVariant(picture.caption), 'emf-terminal-voltage');
 });
 
 test('the visual fallback stays silent for short or unknown explanations', () => {
@@ -109,9 +134,15 @@ test('wantsStudyLab does not treat a generic visual as Newton', () => {
 
 test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('A box accelerating under a net force'), 'physics-motion');
+  assert.equal(studyVisualKind('A battery drives current around a resistor circuit'), 'electricity-circuit');
   assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
+});
+
+test('electricity visuals distinguish a circuit schematic from EMF energy flow', () => {
+  assert.equal(studyElectricityVisualVariant('Battery circuit with current through a resistor'), 'simple-circuit');
+  assert.equal(studyElectricityVisualVariant('EMF versus terminal voltage with internal resistance and lost volts'), 'emf-terminal-voltage');
 });
 
 test('structured captions unlock deterministic process, timeline, and number-line visuals', () => {
@@ -160,6 +191,7 @@ test('structured visual grammar fails closed when the data needed to draw is mis
 
 test('picture prompt teaches the model the native visual grammar without image URLs', () => {
   const hint = studyPicturePromptHint('photosynthesis');
+  assert.match(hint, /electric circuit/);
   assert.match(hint, /Process: input -> change -> result/);
   assert.match(hint, /Timeline: 1914 -> 1918 -> 1939/);
   assert.match(hint, /Number line from -3 to 5, mark 2/);
@@ -172,10 +204,6 @@ test('physics visuals distinguish braking inertia from a free-body diagram', () 
 });
 
 test('a caption about the instruction earns no diagram', () => {
-  // The tutor prompt describes the picture tag, and the model sometimes
-  // captions the tag rather than the subject. There is no diagram of that, and
-  // drawing decorative shapes for it is the placeholder content this platform
-  // refuses to ship in anyone else's build.
   for (const caption of [
     'Opening a study idea with an icebreaker and visual tag',
     'one sentence about this idea',
@@ -188,6 +216,8 @@ test('a caption about the instruction earns no diagram', () => {
 
 test('a caption naming a real subject still earns its diagram', () => {
   assert.equal(studyVisualKind('Free-body diagram of a block on a table'), 'physics-motion');
+  assert.equal(studyVisualKind('Battery circuit with current through a resistor'), 'electricity-circuit');
+  assert.equal(studyVisualKind('EMF versus terminal potential difference with internal resistance'), 'electricity-circuit');
   assert.equal(studyVisualKind('Solving for the unknown on both sides'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus inside a plant cell'), 'biology-cell');
   assert.equal(studyVisualKind('Atoms joined by a covalent bond'), 'chemistry-bond');

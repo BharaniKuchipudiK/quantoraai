@@ -24,7 +24,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  */
 
 const SESSION_COOKIE = "quantora_session";
-const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export type SessionUser = {
   sub: string;      // Google's stable user id — the real primary key
@@ -57,6 +57,15 @@ function getSecret(): string | null {
 
 export function isSessionConfigured(): boolean {
   return getSecret() !== null;
+}
+
+/*
+ * The same secret, for sibling signers (desktop grant codes) that must fail
+ * closed under exactly the same rule. They domain-separate their HMAC input,
+ * so a token minted by one can never verify under the other.
+ */
+export function sessionSigningSecret(): string | null {
+  return getSecret();
 }
 
 function sign(data: string, secret: string): string {
@@ -143,10 +152,30 @@ function parseCookies(header: unknown): Record<string, string> {
   return out;
 }
 
+/*
+ * Second carrier for the same token: `Authorization: Bearer <token>`.
+ *
+ * The desktop client's renderer is served from quantora://app, so the
+ * browser cookie jar never applies to it. It obtains the identical HMAC
+ * session token through the PKCE grant in desktop-auth.ts and presents it
+ * here. One token format, one verifier, two carriers — nothing about the
+ * trust model changes, and a web session is still cookie-only in practice
+ * because nothing in the web app ever sets this header.
+ */
+function bearerToken(req: any): string | null {
+  const header = req?.headers?.authorization;
+  const value = Array.isArray(header) ? header[0] : header;
+  if (typeof value !== "string") return null;
+  const match = /^Bearer\s+(\S+)$/i.exec(value.trim());
+  return match ? match[1] : null;
+}
+
 /* The signed-in user for this request, or null. The single source of truth. */
 export function getSessionUser(req: any): SessionUser | null {
   const cookies = parseCookies(req?.headers?.cookie);
-  return readSessionToken(cookies[SESSION_COOKIE]);
+  const fromCookie = readSessionToken(cookies[SESSION_COOKIE]);
+  if (fromCookie) return fromCookie;
+  return readSessionToken(bearerToken(req));
 }
 
 export const OAUTH_STATE_COOKIE = "quantora_github_oauth_state";
@@ -200,6 +229,30 @@ export function oauthStateCookie(value: string, maxAge = 600): string {
 
 export function clearOAuthStateCookie(): string {
   return `${OAUTH_STATE_COOKIE}=; ${cookieAttributes(0)}`;
+}
+
+/*
+ * The GitHub CONNECT flow gets its own state cookie, separate from the sign-in
+ * one above.
+ *
+ * They are different grants with different consequences — sign-in asks for an
+ * email address, connect asks for repository write access — and sharing one
+ * cookie would let a connect callback land on a state minted by a sign-in
+ * redirect. Two names, two flows, no overlap.
+ */
+export const GITHUB_CONNECT_STATE_COOKIE = "quantora_github_connect_state";
+
+export function githubConnectStateCookie(value: string, maxAge = 600): string {
+  return `${GITHUB_CONNECT_STATE_COOKIE}=${encodeURIComponent(value)}; ${cookieAttributes(maxAge)}`;
+}
+
+export function clearGithubConnectStateCookie(): string {
+  return `${GITHUB_CONNECT_STATE_COOKIE}=; ${cookieAttributes(0)}`;
+}
+
+/** Cookie jar for a request, tolerant of one malformed neighbour. */
+export function readRequestCookies(req: any): Record<string, string> {
+  return parseCookies(req?.headers?.cookie);
 }
 
 /* Convenience for generating a SESSION_SECRET during setup. */

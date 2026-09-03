@@ -23,8 +23,13 @@
  *         re-run on a fallback. The notice names that engine only when the
  *         caller proved one exists — a notice that claims "switching engines"
  *         while re-posting to the same model is a green check over a red log.
+ *   - step deadline
+ *       → DIFFERENT ENGINE when available + SMALLER EXECUTION SLICE. The 175s
+ *         guard is a Step deadline, not permission to dump a Retry button on
+ *         the user. One bounded recovery attempt gets a deliberately smaller
+ *         brief so it is materially different from the timed-out attempt.
  *
- * src/lib/turn-heal-contract.test.js is the gate on both properties.
+ * src/lib/turn-heal-contract.test.js is the gate on these properties.
  */
 
 export const MAX_TURN_ATTEMPTS = 2;
@@ -45,6 +50,17 @@ function buildContractRetryBrief(failureDetail) {
     + ' Do not answer with prose or a plan. Return the complete files for this build,'
     + ' each in a fenced code block (```html / ```css / ```js) so Preview can run them.'
     + ' A response without code fences will fail again.'
+  );
+}
+
+function deadlineRecoveryBrief(failureDetail) {
+  const detail = String(failureDetail || '').trim();
+  return (
+    'PREVIOUS EXECUTION STEP HIT ITS DEADLINE'
+    + (detail ? `: ${detail}.` : '.')
+    + ' Continue the SAME user goal, but reduce this attempt to the smallest independently useful runnable slice.'
+    + ' Preserve existing requirements and working files. For a web build, emit one complete runnable page first;'
+    + ' do not spend this recovery attempt on commentary, planning, or optional expansion.'
   );
 }
 
@@ -69,8 +85,24 @@ export function resolveTurnRecovery({
   if (stoppedByUser) return no('stopped');
   if (Number(attempt) >= MAX_TURN_ATTEMPTS) return no('attempts-exhausted');
 
-  // The deadline is the budget for the whole turn, not per attempt.
-  if (timedOut) return no('timed-out');
+  /*
+   * A deadline ends one execution step, not the user's mission. The caller has
+   * a bounded second attempt and a minimum recovery slice; use it automatically
+   * with a materially different brief instead of making the person tap
+   * "Retry a smaller build". This remains bounded by MAX_TURN_ATTEMPTS.
+   */
+  if (timedOut) {
+    return {
+      retry: true,
+      resume: false,
+      switchModel: true,
+      retryBrief: deadlineRecoveryBrief(failureDetail),
+      notice: fallbackEngineName
+        ? `That execution step hit its deadline. Resuming the same goal on ${fallbackEngineName} with a smaller runnable slice…`
+        : 'That execution step hit its deadline. Replanning the same goal as a smaller runnable slice…',
+      reason: 'step-deadline',
+    };
+  }
 
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
 
@@ -129,7 +161,10 @@ export function resolveTurnRecovery({
   if (networkError) {
     return {
       retry: true,
-      notice: 'The connection dropped. Retrying once before we stop and tell you what failed…',
+      switchModel: true,
+      notice: fallbackEngineName
+        ? `The connection dropped. Resuming once on ${fallbackEngineName} before we stop and tell you what failed…`
+        : 'The connection dropped. Retrying once before we stop and tell you what failed…',
       reason: 'network',
     };
   }
