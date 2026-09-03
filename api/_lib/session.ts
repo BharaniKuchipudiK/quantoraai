@@ -231,6 +231,30 @@ export function clearOAuthStateCookie(): string {
   return `${OAUTH_STATE_COOKIE}=; ${cookieAttributes(0)}`;
 }
 
+/*
+ * The GitHub CONNECT flow gets its own state cookie, separate from the sign-in
+ * one above.
+ *
+ * They are different grants with different consequences — sign-in asks for an
+ * email address, connect asks for repository write access — and sharing one
+ * cookie would let a connect callback land on a state minted by a sign-in
+ * redirect. Two names, two flows, no overlap.
+ */
+export const GITHUB_CONNECT_STATE_COOKIE = "quantora_github_connect_state";
+
+export function githubConnectStateCookie(value: string, maxAge = 600): string {
+  return `${GITHUB_CONNECT_STATE_COOKIE}=${encodeURIComponent(value)}; ${cookieAttributes(maxAge)}`;
+}
+
+export function clearGithubConnectStateCookie(): string {
+  return `${GITHUB_CONNECT_STATE_COOKIE}=; ${cookieAttributes(0)}`;
+}
+
+/** Cookie jar for a request, tolerant of one malformed neighbour. */
+export function readRequestCookies(req: any): Record<string, string> {
+  return parseCookies(req?.headers?.cookie);
+}
+
 /* Convenience for generating a SESSION_SECRET during setup. */
 export function generateSecret(): string {
   return randomBytes(32).toString("base64");
