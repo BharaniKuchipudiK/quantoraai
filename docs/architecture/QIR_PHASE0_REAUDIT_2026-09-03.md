@@ -44,6 +44,23 @@ Three of the twelve questions were **not re-verified** in this pass and are
 recorded as such rather than silently carried forward. An unexamined answer
 presented alongside verified ones would read as fresh when it is not.
 
+**A note on the failure mode this document was written to correct**, because the
+first draft committed it again. Every wrong answer in the superseded gate, and
+every correction made while writing this one, has the same shape: *a claim that
+something does not exist, made from a search that was not exhaustive.*
+
+- "QIR is write-only" — the write paths were traced; the read paths were not.
+  `coding.promote` had been wired the whole time.
+- "No Phase 0 audit exists" — the roadmap section was read; the directory holding
+  ten Phase 0 documents was not listed.
+- "Resume is proven only over reducers" — the unit test was found;
+  `scripts/qir-coding-resume-browser-gate.mjs`, which proves it in a real browser
+  on every CI run, was not. **That error was in this file as first committed.**
+
+The rule this document is held to, and the one worth applying to Phase 3: a
+negative claim requires an exhaustive search, shown. Where the search cannot be
+exhaustive, the honest form is *"I did not find X"* — never *"X does not exist"*.
+
 ---
 
 ## A. The twelve exit answers, re-verified
@@ -230,13 +247,23 @@ The audit's answer was a flat **NO**. The machinery now exists:
 - a browser-local pointer to the Run id, and a resume-by-id read on boot
   (`qir-coding-run-core.js:184-190`);
 - server-side snapshot + `resumeQirRun`;
-- a was-red proof that a broken Preview survives interruption, rejects stale
-  callbacks, and completes only after verification
-  (`api/_lib/qir-coding-runtime.test.ts:64`).
+- a was-red reducer proof that a broken Preview survives interruption, rejects
+  stale callbacks, and completes only after verification
+  (`api/_lib/qir-coding-runtime.test.ts:64`);
+- **and a browser gate that proves the whole sequence in a real browser**, run on
+  every CI build (`.github/workflows/ci.yml:328`):
 
-**Two honest limits.** That proof drives the pure reducers over snapshots; it is
-not a live worker being killed. And resume inherits §2's condition — with the
-store unconfigured there is nothing to resume from.
+```
+ * Browser-visible QIR Phase 2 acceptance proof:
+ * broken Preview -> durable failure -> browser loss -> resume the same Run ->
+ * new recovery generation -> repaired Preview -> independent verifier -> COMPLETE.
+```
+— `scripts/qir-coding-resume-browser-gate.mjs`
+
+**One honest limit**, and it is §2's: resume inherits the store's condition. With
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` unset there is nothing to resume
+from, and the browser gate would not say so — it fulfils the QIR route itself
+(`qirReply`) rather than reaching a real store.
 
 ---
 
