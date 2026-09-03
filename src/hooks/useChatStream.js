@@ -32,7 +32,7 @@ import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallba
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../lib/studio-mode.js';
-import { endSessionWork, sendBlockedReason, startSessionWork } from '../lib/session-activity.js';
+import { TURN_BUILD, TURN_CHAT, endSessionWork, sendBlockedReason, startSessionWork } from '../lib/session-activity.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { resolveTurnRecovery } from '../lib/turn-recovery.js';
@@ -279,8 +279,23 @@ export function useChatStream({
   buildJob = null,
   studioModeChoice = null,
 }) {
-  const abortControllerRef = useRef(null);
-  const generationTokenRef = useRef(null);
+  /*
+   * PER SESSION, not per studio. This is what makes two builds possible.
+   *
+   * These were single slots, and that was the whole reason only one turn could
+   * run: `stillCurrent()` compared against one shared token, so a second turn
+   * starting anywhere overwrote it and the first turn's twenty-six guards all
+   * went false — it stopped writing mid-build, silently, with no error.
+   *
+   * Keyed by the session that owns the turn, the same key everything else in
+   * this hook already binds to. The twenty-six call sites are untouched: each
+   * `stillCurrent` is a closure built per turn, so making the STORE per-session
+   * is the entire change.
+   *
+   * Maps rather than state: these are identity, not something React renders.
+   */
+  const abortControllersRef = useRef(new Map());
+  const generationTokensRef = useRef(new Map());
 
   /*
    * The busy flag belongs to the session the turn STARTED in.
@@ -295,9 +310,16 @@ export function useChatStream({
    * reviewer can see all of it without reading the rest of the file.
    */
   const owningSessionId = activeSessionId;
+  /*
+   * `turnKindRef` records whether the turn in flight writes to the desk. It is
+   * a ref rather than an argument because setIsGenerating(true) is called from
+   * thirteen places, several of them before the turn's kind is known; the send
+   * path sets it once, immediately before starting.
+   */
+  const turnKindRef = useRef(TURN_CHAT);
   const setIsGenerating = (value) => {
     setWorkingSessions?.((previous) => (value
-      ? startSessionWork(previous, owningSessionId)
+      ? startSessionWork(previous, owningSessionId, turnKindRef.current)
       : endSessionWork(previous, owningSessionId)));
   };
   const { getLearnedBehaviors } = useModelExperienceMemory();
@@ -314,12 +336,21 @@ export function useChatStream({
     });
   };
 
+  /*
+   * Stop cancels the chat you are LOOKING AT, and only that one.
+   *
+   * With several turns in flight, clearing the whole store here would stop
+   * builds in chats the user never touched — from a button they pressed in a
+   * different conversation. `activeSessionId` is this render's session, which
+   * is the chat whose Stop button was clicked.
+   */
   const cancelStream = () => {
-    generationTokenRef.current = null;
-    const controller = abortControllerRef.current;
+    const cancelSessionId = activeSessionId;
+    generationTokensRef.current.delete(cancelSessionId);
+    const controller = abortControllersRef.current.get(cancelSessionId);
     if (controller) {
       controller.abort('user');
-      abortControllerRef.current = null;
+      abortControllersRef.current.delete(cancelSessionId);
     }
     // Always clear generating — Stop may fire during moderation/Office before a stream controller exists.
     setIsGenerating(false);
@@ -339,22 +370,36 @@ export function useChatStream({
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
     /*
-     * A refused send now SAYS SO.
+     * Does this turn want the desk?
+     *
+     * Decided here, before anything starts, because it settles whether the turn
+     * may run alongside another. It is the cheap early read — the authoritative
+     * `isCodingRequest` needs context computed much further down, and by then
+     * the turn has already begun. Erring towards "build" is the safe direction:
+     * the cost is waiting, and the cost of the other mistake is two builds
+     * writing into one desk.
+     */
+    const hasDeskFilesNow = Boolean(isWorkspaceMode && vfs && Object.keys(vfs).length > 0);
+    const wantsDesk = Boolean(codingDeskOpen)
+      || hasDeskFilesNow
+      || resolveIsCodingRequest(text, { codingDeskOpen: Boolean(codingDeskOpen), refineDesk: hasDeskFilesNow });
+    turnKindRef.current = wantsDesk ? TURN_BUILD : TURN_CHAT;
+
+    /*
+     * A refused send SAYS SO.
      *
      * This was `if (isGenerating) return;` — the message was discarded with no
      * error, no notice, nothing. The user retyped it, pressed send again, and
-     * watched nothing happen a second time. And because the flag was global, it
-     * fired in a chat that looked completely idle.
+     * watched nothing happen a second time.
      *
-     * One build at a time is still the rule (the hook keeps a single generation
-     * token, so a second turn would silently kill the first). What changes is
-     * that the rule is now stated, and names the chat actually working.
+     * Now a question in another chat runs alongside a build, and only two
+     * things refuse: this chat is already working, or a build is holding the
+     * one shared desk. Both say which chat, and why.
      */
-    const blockedReason = sendBlockedReason(
-      workingSessions,
-      activeSessionId,
-      (id) => (chatSessions || []).find((session) => session.id === id)?.title || '',
-    );
+    const blockedReason = sendBlockedReason(workingSessions, activeSessionId, {
+      isBuild: wantsDesk,
+      titleFor: (id) => (chatSessions || []).find((session) => session.id === id)?.title || '',
+    });
     if (blockedReason) {
       updateActiveMessages((prev) => [...prev, {
         id: createMessageId('ai'),
@@ -366,8 +411,13 @@ export function useChatStream({
     }
 
     const generationToken = createGenerationToken();
-    generationTokenRef.current = generationToken;
-    const stillCurrent = () => isActiveGeneration(generationTokenRef.current, generationToken);
+    /*
+     * This turn now owns its session's slot. `stillCurrent` still means "am I
+     * the newest turn IN MY CHAT" — it just no longer means "in the studio", so
+     * a build starting elsewhere cannot silence this one.
+     */
+    generationTokensRef.current.set(owningSessionId, generationToken);
+    const stillCurrent = () => isActiveGeneration(generationTokensRef.current.get(owningSessionId), generationToken);
 
     const requestedVisibleText = String(sendOptions?.visibleUserText || '').trim();
     const visibleUserText = requestedVisibleText || text.trim();
@@ -1178,9 +1228,9 @@ export function useChatStream({
       const streamSingleModel = async (model, isModelA) => {
         const controller = new AbortController();
         controllers.push(controller);
-        abortControllerRef.current = {
+        abortControllersRef.current.set(owningSessionId, {
           abort: (reason) => controllers.forEach((item) => item.abort(reason)),
-        };
+        });
         const timeoutId = setTimeout(() => controller.abort('timeout'), CHAT_TURN_DEADLINE_MS);
         try {
           const res = await fetch('/api/chat', {
@@ -1389,7 +1439,7 @@ export function useChatStream({
           triedEngines.push(runningEngineName);
         }
         const controller = new AbortController();
-        abortControllerRef.current = controller;
+        abortControllersRef.current.set(owningSessionId, controller);
         /*
          * What the model actually streamed before anything went wrong.
          *
@@ -2197,7 +2247,7 @@ export function useChatStream({
       }
     } finally {
       if (stillCurrent()) {
-        abortControllerRef.current = null;
+        abortControllersRef.current.delete(owningSessionId);
         setIsGenerating(false);
       }
     }
