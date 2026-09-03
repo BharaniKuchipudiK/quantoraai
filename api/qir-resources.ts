@@ -21,7 +21,7 @@ function sendCommit(res: any, result: any) {
   if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
   if (result.status === "stale") return res.status(202).json({ run: result.record.run, storageVersion: result.record.storageVersion, stale: true, durability: "persisted" });
   if (result.status === "invalid") return res.status(409).json({ error: "Run is not waiting for capacity.", run: result.record.run, storageVersion: result.record.storageVersion });
-  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the resource transition." });
+  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the resource transition.", reason: "persist-failed" });
   return res.status(200).json({ run: result.record.run, storageVersion: result.record.storageVersion, durability: "persisted" });
 }
 
@@ -31,7 +31,7 @@ export default async function handler(req: any, res: any) {
 
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return;
-  if (!isQirRunStoreConfigured()) return res.status(503).json({ error: "Durable QIR runtime storage is not configured." });
+  if (!isQirRunStoreConfigured()) return res.status(503).json({ error: "Durable QIR runtime storage is not configured.", reason: "storage-unconfigured" });
 
   const userSub = auth.value.sessionUser.sub;
   const runId = safeId(req.body?.runId, 128);
