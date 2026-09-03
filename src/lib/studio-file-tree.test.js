@@ -38,3 +38,11 @@ test('diff hunks live in Git, not in the file tree', () => {
   assert.match(hunks, /data-quantora-desk-review-hunks/);
   assert.match(hunks, /data-quantora-desk-review-line/);
 });
+
+test('the desk activity rail is a vertical icon strip, not title-bar chips', () => {
+  const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(studio, /orientation="vertical"/);
+  const railIndex = studio.indexOf('<StudioActivityRail');
+  const titleClose = studio.indexOf('data-quantora-desk-ide="true"');
+  assert.ok(railIndex > titleClose, 'the rail must sit below the title bar controls');
+});

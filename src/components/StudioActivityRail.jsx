@@ -4,8 +4,8 @@ import { GitBranch, Play, Terminal, Files } from 'lucide-react';
 const BUTTON_BASE = {
   display: 'inline-flex',
   alignItems: 'center',
+  justifyContent: 'center',
   gap: '6px',
-  height: '28px',
   border: 'none',
   borderRadius: '8px',
   fontSize: '0.72rem',
@@ -13,7 +13,7 @@ const BUTTON_BASE = {
   whiteSpace: 'nowrap',
 };
 
-const BADGE_BASE = { fontSize: '0.66rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums' };
+const BADGE_BASE = { fontSize: '0.58rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1 };
 
 /**
  * The desk's activity rail.
@@ -21,7 +21,7 @@ const BADGE_BASE = { fontSize: '0.66rem', fontWeight: 700, fontVariantNumeric: '
  * Preview, Terminal and Git used to be three small buttons stacked INSIDE the
  * Files list, mixed in with your actual source files — so the two things you
  * switch between most often were buried in the thing you scroll. They belong in
- * the chrome, next to the other desk-level controls.
+ * a quiet icon strip on the desk, not in the title bar.
  *
  * Every entry here opens a tab. Nothing here is a mode you can get stuck in.
  */
@@ -37,7 +37,10 @@ export default function StudioActivityRail({
   textColor,
   subtextColor,
   compact = false,
+  orientation = 'horizontal',
 }) {
+  const vertical = orientation === 'vertical';
+  const iconOnly = vertical || compact;
   const entries = [
     {
       id: 'files',
@@ -81,9 +84,24 @@ export default function StudioActivityRail({
   return (
     <div
       data-quantora-desk-activity-rail="true"
+      data-quantora-desk-activity-rail-orientation={orientation}
       role="group"
       aria-label="Desk panels"
-      style={{ display: 'flex', alignItems: 'center', gap: '2px' }}
+      aria-orientation={vertical ? 'vertical' : 'horizontal'}
+      style={{
+        display: 'flex',
+        flexDirection: vertical ? 'column' : 'row',
+        alignItems: 'center',
+        gap: vertical ? '4px' : '2px',
+        width: vertical ? '40px' : undefined,
+        height: vertical ? '100%' : undefined,
+        flexShrink: 0,
+        padding: vertical ? '8px 4px' : 0,
+        background: vertical ? (isLight ? '#f8fafc' : '#070913') : 'transparent',
+        borderRight: vertical
+          ? (isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)')
+          : 'none',
+      }}
     >
       {entries.map(({ id, label, Icon, active, onClick, title, badge, navAttr }) => (
         <button
@@ -93,15 +111,20 @@ export default function StudioActivityRail({
           {...(navAttr ? { [navAttr]: 'true' } : {})}
           data-quantora-desk-rail-active={active ? 'true' : 'false'}
           aria-pressed={active}
+          aria-label={label}
           title={title}
           onClick={onClick}
           style={{
             ...BUTTON_BASE,
-            padding: compact ? '0 7px' : '0 9px',
+            flexDirection: vertical ? 'column' : 'row',
+            width: vertical ? '32px' : undefined,
+            minHeight: vertical ? '36px' : '28px',
+            height: vertical ? undefined : '28px',
+            padding: iconOnly ? (vertical ? '6px 0' : '0 7px') : '0 9px',
             background: active
-              ? (isLight ? 'rgba(249,115,22,0.12)' : 'rgba(249,115,22,0.16)')
+              ? (isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.10)')
               : 'transparent',
-            color: active ? '#f97316' : subtextColor,
+            color: active ? textColor : subtextColor,
             fontWeight: active ? 700 : 600,
           }}
           onMouseEnter={(event) => {
@@ -115,8 +138,8 @@ export default function StudioActivityRail({
             event.currentTarget.style.color = subtextColor;
           }}
         >
-          <Icon size={13} style={{ flexShrink: 0 }} />
-          {compact ? null : <span>{label}</span>}
+          <Icon size={15} style={{ flexShrink: 0 }} />
+          {iconOnly ? null : <span>{label}</span>}
           {badge ? (
             <span
               data-quantora-desk-rail-changes="true"
@@ -126,7 +149,7 @@ export default function StudioActivityRail({
               {addedLines > 0 && removedLines > 0 ? ' ' : null}
               {removedLines > 0 ? <span style={{ color: '#f87171' }}>−{removedLines}</span> : null}
               {addedLines === 0 && removedLines === 0 ? (
-                <span style={{ color: active ? '#f97316' : subtextColor }}>{changedCount}</span>
+                <span style={{ color: active ? textColor : subtextColor }}>{changedCount}</span>
               ) : null}
             </span>
           ) : null}
