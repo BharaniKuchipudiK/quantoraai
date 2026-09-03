@@ -203,11 +203,15 @@ const OPENROUTER_MODEL_ALIASES: Record<string, string> = {
   "qwen-2.5-coder-32b-instruct": "qwen/qwen-2.5-coder-32b-instruct",
 };
 
+
 async function isApprovedServerModel(modelId: string): Promise<boolean> {
   if (!modelId || typeof modelId !== "string") return false;
   const canonical = canonicalizeModelId(modelId);
   if (canonical.startsWith("gemini") || modelId.startsWith("gemini")) return true;
   if (FEATURED_SERVER_MODELS.has(canonical) || FEATURED_SERVER_MODELS.has(modelId)) return true;
+  // A flagship the live OpenRouter catalogue lists is approved for managed use:
+  // it is a vendor-published paid model, not an unvetted community candidate.
+  // Checked here (not at the call sites) so Auto and an explicit pick agree.
   try {
     const flagships = discoverAnthropicFlagships(await fetchOpenRouterCatalogCached());
     if (flagships.some((model: any) => model.id === canonical || model.id === modelId)) return true;
@@ -232,10 +236,12 @@ function resolveOpenRouterModelId(modelId: string): { slug?: string; error?: str
 function buildGeminiContents(history: any[], currentMessage: string, attachedImages: string[] = []) {
   type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } } | { functionCall: any } | { functionResponse: any } | Record<string, any>;
   const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
+
   if (Array.isArray(history)) {
     for (const msg of history) {
       if (!msg || !msg.text || typeof msg.text !== "string" || !msg.text.trim()) continue;
-      const role: "user" | "model" = msg.sender === "ai" || msg.role === "model" || msg.role === "assistant" ? "model" : "user";
+      const role: "user" | "model" =
+        msg.sender === "ai" || msg.role === "model" || msg.role === "assistant" ? "model" : "user";
       if (contents.length === 0) {
         if (role === "user") contents.push({ role: "user", parts: [{ text: msg.text }] });
       } else {
@@ -249,11 +255,16 @@ function buildGeminiContents(history: any[], currentMessage: string, attachedIma
       }
     }
   }
-  const imageParts: GeminiPart[] = attachedImages.slice(0, 4).map((dataUrl) => {
-    const match = typeof dataUrl === "string" ? dataUrl.match(/^data:([^;]+);base64,(.+)$/) : null;
-    if (!match) return null;
-    return { inlineData: { mimeType: match[1], data: match[2] } };
-  }).filter((part): part is { inlineData: { mimeType: string; data: string } } => Boolean(part));
+
+  const imageParts: GeminiPart[] = attachedImages
+    .slice(0, 4)
+    .map((dataUrl) => {
+      const match = typeof dataUrl === "string" ? dataUrl.match(/^data:([^;]+);base64,(.+)$/) : null;
+      if (!match) return null;
+      return { inlineData: { mimeType: match[1], data: match[2] } };
+    })
+    .filter((part): part is { inlineData: { mimeType: string; data: string } } => Boolean(part));
+
   const userParts: GeminiPart[] = [...imageParts, { text: currentMessage }];
   if (contents.length > 0 && contents[contents.length - 1].role === "user") {
     const last = contents[contents.length - 1];
@@ -294,8 +305,11 @@ async function openGeminiStream(input: {
   const client = new GoogleGenAI({ apiKey: input.apiKey });
   const enabledTools: any[] = [];
   if (input.grounding) enabledTools.push({ googleSearch: {} });
-  if (input.travelToolsEnabled && travelFunctionDeclarations.length > 0) enabledTools.push({ functionDeclarations: travelFunctionDeclarations });
-  return client.models.generateContentStream({
+  if (input.travelToolsEnabled && travelFunctionDeclarations.length > 0) {
+    enabledTools.push({ functionDeclarations: travelFunctionDeclarations });
+  }
+
+  const stream = await client.models.generateContentStream({
     model: input.model,
     contents: input.contents,
     config: {
@@ -306,6 +320,7 @@ async function openGeminiStream(input: {
       ...(input.systemInstruction?.includes("JSON DECK SPEC") ? { responseMimeType: "application/json" } : {})
     },
   });
+  return stream;
 }
 
 async function nextAsyncIteratorWithIdleTimeout(iterator: AsyncIterator<any>, idleMs: number, label: string) {
@@ -334,7 +349,16 @@ function credentialCircuitPartition(secret: unknown) {
   return value ? `key-${createHash('sha256').update(value).digest('hex').slice(0, 16)}` : undefined;
 }
 
-function logTelemetry(modelId: string, latencyMs: number, textLength: number, provider: string, userSub: string | null = null, usedServerKey: boolean = false, context: { studioMode?: string | null; studioDomain?: string | null; choiceSelected?: boolean } = {}, req: any = null) {
+function logTelemetry(
+  modelId: string,
+  latencyMs: number,
+  textLength: number,
+  provider: string,
+  userSub: string | null = null,
+  usedServerKey: boolean = false,
+  context: { studioMode?: string | null; studioDomain?: string | null; choiceSelected?: boolean } = {},
+  req: any = null,
+) {
   const geo = getRequestGeo(req);
   recordUsage({
     userSub,
@@ -348,9 +372,21 @@ function logTelemetry(modelId: string, latencyMs: number, textLength: number, pr
     choiceSelected: context.choiceSelected === true,
     countryCode: geo?.countryCode ?? null,
   });
+  // No second anonymous telemetry write here. Usage bookkeeping already fails
+  // soft in store.ts; duplicate network telemetry was generating avoidable
+  // socket errors without adding user value.
 }
 
-async function openOpenRouterResponse(input: { key: string; modelId: string; modelName: string; messages: any[]; temperature: number; grounding: boolean; jsonMode: boolean; timeoutMs?: number; }) {
+async function openOpenRouterResponse(input: {
+  key: string;
+  modelId: string;
+  modelName: string;
+  messages: any[];
+  temperature: number;
+  grounding: boolean;
+  jsonMode: boolean;
+  timeoutMs?: number;
+}) {
   const controller = new AbortController();
   const timeoutMs = Math.max(15_000, Math.min(Number(input.timeoutMs) || 20_000, 55_000));
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -401,23 +437,35 @@ async function openOpenRouterResponse(input: { key: string; modelId: string; mod
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res);
+
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const correlationId = correlationIdForRequest(req);
   attachCorrelationId(res, correlationId);
   const goldenCanary = isGoldenCanaryRequest(req);
-  const transaction = typeof req.body?.goldenTransaction === 'string' ? req.body.goldenTransaction.slice(0, 80) : null;
+  const transaction = typeof req.body?.goldenTransaction === 'string'
+    ? req.body.goldenTransaction.slice(0, 80)
+    : null;
   traceBoundary({ correlationId, boundary: 'api.chat', state: 'started', transaction, route: '/api/chat' });
 
   const sessionUser = getSessionUser(req);
-  const limitKey = goldenCanary ? 'chat:golden-canary' : sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
-  if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  const limitKey = goldenCanary
+    ? 'chat:golden-canary'
+    : sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
+  if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) {
+    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+  }
+
   const durable = await isRateLimitedDurable(limitKey, RATE_LIMIT_PER_MINUTE, 60);
   const durableGuard = applyDurableCostBearingGuard(limitKey, RATE_LIMIT_PER_MINUTE, durable);
   if (durableGuard.limited) {
     if (durableGuard.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
-    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.', resetsAt: durableGuard.resetsAt, ...(durableGuard.degraded ? { degraded: true } : {}) });
+    return res.status(429).json({
+      error: 'Too many requests. Please wait a minute and try again.',
+      resetsAt: durableGuard.resetsAt,
+      ...(durableGuard.degraded ? { degraded: true } : {}),
+    });
   }
 
   const startTime = Date.now();
@@ -431,73 +479,190 @@ export default async function handler(req: any, res: any) {
     const userKey = byok.gemini;
     const openRouterKey = byok.openRouter;
     const communicationRequest = normalizeCommunicationRequest(req.body);
-    const { message, sessionId, projectId, studioMode: mode, studioDomain: normalizedStudioDomain, memoryConsented, sessionContext: normalizedSessionContext, listeningSignals: normalizedListeningSignals, attachedImages: visionImages, choiceSelected, buildMode, guidedBuild, featureSuggest, isRefine: requestedRefine, hasPreviewCode, studyContext } = communicationRequest;
-    const isRefine = !advisorBlocksPreviewBuild(normalizedStudioDomain) && (requestedRefine || (hasPreviewCode && shouldRefineRunningDesk({ prompt: message, hasDeskFiles: true, studioDomain: normalizedStudioDomain })));
+    const {
+      message,
+      sessionId,
+      projectId,
+      studioMode: mode,
+      studioDomain: normalizedStudioDomain,
+      memoryConsented,
+      sessionContext: normalizedSessionContext,
+      listeningSignals: normalizedListeningSignals,
+      attachedImages: visionImages,
+      choiceSelected,
+      buildMode,
+      guidedBuild,
+      featureSuggest,
+      isRefine: requestedRefine,
+      hasPreviewCode,
+      studyContext,
+    } = communicationRequest;
+    const isRefine = !advisorBlocksPreviewBuild(normalizedStudioDomain)
+      && (requestedRefine || (hasPreviewCode && shouldRefineRunningDesk({
+        prompt: message,
+        hasDeskFiles: true,
+        studioDomain: normalizedStudioDomain,
+      })));
     const advisorTurn = advisorBlocksPreviewBuild(normalizedStudioDomain);
-    const previewCode = advisorTurn ? "" : (typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "");
+    const previewCode = advisorTurn
+      ? ""
+      : (typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "");
     const deskContext = advisorTurn ? null : sanitizeDeskContext(req.body?.deskContext);
     const deskBlock = formatDeskContextForPrompt(deskContext);
-    const refineUserMessage = [message, deskBlock, previewCode ? `CURRENT RUNNING PREVIEW (source of truth — patch one existing file with filepath=, or return the full HTML document in a \`\`\`html block after a short explanation; do not claim a change unless the fenced file contains it):\n\`\`\`html\n${previewCode}\n\`\`\`` : ''].filter(Boolean).join('\n\n');
+    const refineUserMessage = [
+      message,
+      deskBlock,
+      previewCode
+        ? `CURRENT RUNNING PREVIEW (source of truth — patch one existing file with filepath=, or return the full HTML document in a \`\`\`html block after a short explanation; do not claim a change unless the fenced file contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
+        : '',
+    ].filter(Boolean).join('\n\n');
 
     if (task === "feedback") {
       const feedbackRequestId = typeof req.body?.requestId === "string" ? req.body.requestId : "";
       const outcome = req.body?.outcome;
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(feedbackRequestId) || typeof modelId !== "string" || !["helpful", "not_helpful"].includes(outcome)) return res.status(400).json({ error: "Invalid anonymous feedback signal." });
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(feedbackRequestId)
+          || typeof modelId !== "string"
+          || !["helpful", "not_helpful"].includes(outcome)) {
+        return res.status(400).json({ error: "Invalid anonymous feedback signal." });
+      }
       recordModelQualityEvent({ requestId: feedbackRequestId, modelId, taskCategory, outcome });
       return res.status(202).json({ recorded: true });
     }
 
     const explicitBuild = communicationRequest.studioModeExplicit && mode === "build";
+    const explicitAsk = communicationRequest.studioModeExplicit && mode === "ask";
     const planMode = mode === "plan";
-    const honorGuided = shouldHonorGuidedBuild({ guidedBuild: Boolean(guidedBuild), message, studioMode: mode }) && !explicitBuild && !planMode;
-    const effectiveBuildMode = resolveEffectiveBuildMode({ message, studioDomain: normalizedStudioDomain, studioMode: mode, studioModeExplicit: communicationRequest.studioModeExplicit, buildMode: buildMode || isRefine }) || isRefine;
-    const grounding = shouldGroundTurn({ domain: normalizedStudioDomain, buildMode: effectiveBuildMode, task });
+    const honorGuided = shouldHonorGuidedBuild({
+      guidedBuild: Boolean(guidedBuild),
+      message,
+      studioMode: mode,
+    }) && !explicitBuild && !planMode;
+    const effectiveBuildMode = resolveEffectiveBuildMode({
+      message,
+      studioDomain: normalizedStudioDomain,
+      studioMode: mode,
+      studioModeExplicit: communicationRequest.studioModeExplicit,
+      buildMode: buildMode || isRefine,
+    }) || isRefine;
+    const grounding = shouldGroundTurn({
+      domain: normalizedStudioDomain,
+      buildMode: effectiveBuildMode,
+      task,
+    });
+
     let dynamicTemperature = 0.7;
     if (cognitiveLevel === 'Lightning') dynamicTemperature = 0.3;
     else if (cognitiveLevel === 'Deep Think') dynamicTemperature = 0.2;
     if (effectiveBuildMode && !honorGuided) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
     if (planMode) dynamicTemperature = Math.min(dynamicTemperature, 0.3);
-    const telemetryContext = { studioMode: mode, studioDomain: normalizedStudioDomain, choiceSelected: choiceSelected === true };
+
+    const telemetryContext = {
+      studioMode: mode,
+      studioDomain: normalizedStudioDomain,
+      choiceSelected: choiceSelected === true,
+    };
 
     const isRepairTask = task === "repair";
     const isVerifyTask = task === "verify-build";
     const isResearchVerifyTask = task === "research-verify";
     const isResearchDeepDiveTask = task === "research-deep-dive";
     const isResearchWatchTask = task === "research-watch";
+    // Tasks that carry code, claims or a bare question instead of a chat
+    // message, and so skip the message/session/safety validation below.
     const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask || isResearchWatchTask;
 
-    if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) return res.status(400).json({ error: "Message string is required" });
-    if (!isArtifactTask && message.length > MAX_MESSAGE_LENGTH) return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
+    if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
+      return res.status(400).json({ error: "Message string is required" });
+    }
+    if (!isArtifactTask && message.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `Message is too long (max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters). Please shorten it and try again.` });
+    }
     const normalizedSessionId = sessionId == null ? null : normalizeOutcomeSessionId(sessionId);
-    if (!isArtifactTask && sessionId != null && !normalizedSessionId) return res.status(400).json({ error: "A valid sessionId is required when conversation state is supplied." });
+    if (!isArtifactTask && sessionId != null && !normalizedSessionId) {
+      return res.status(400).json({ error: "A valid sessionId is required when conversation state is supplied." });
+    }
     if (!isArtifactTask) {
       const requestGeo = getRequestGeo(req);
       const safety = evaluateSafetyText(message, requestGeo?.countryCode);
-      if (safety.action !== "allow") return res.status(422).json({ error: safety.userMessage, safety: { action: safety.action, category: safety.category, severity: safety.severity, reasonCode: safety.reasonCode, policyVersion: safety.policyVersion, crisisResource: safety.crisisResource }, requestId });
+      if (safety.action !== "allow") {
+        return res.status(422).json({
+          error: safety.userMessage,
+          safety: {
+            action: safety.action,
+            category: safety.category,
+            severity: safety.severity,
+            reasonCode: safety.reasonCode,
+            policyVersion: safety.policyVersion,
+            crisisResource: safety.crisisResource,
+          },
+          requestId,
+        });
+      }
     }
-    const boundedHistory = Array.isArray(history) ? history.slice(-MAX_HISTORY_ITEMS).map(stripGroundingMarkerFromMessage) : history;
+    /*
+     * Strip the grounding marker before ANY of this history reaches a model.
+     *
+     * The marker is what lets the Research board tell the server's source block
+     * from one the model wrote. A model that can see the marker can reproduce
+     * it, and it would see it: assistant turns go back into context verbatim,
+     * so the block format is already something it imitates. One choke point,
+     * because every inference path below reads boundedHistory — Gemini via
+     * buildGeminiContents, OpenRouter via formattedHistory — and a path that
+     * missed the strip would silently hand the marker back.
+     */
+    const boundedHistory = Array.isArray(history)
+      ? history.slice(-MAX_HISTORY_ITEMS).map(stripGroundingMarkerFromMessage)
+      : history;
+
     const auth = sessionUser ? await requireActiveSession(req, res) : null;
     if (auth && !auth.ok) return;
     const activeSessionUser = auth?.ok ? auth.value.sessionUser : sessionUser;
     const mayUseServerKeys = Boolean(activeSessionUser) || goldenCanary;
-    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys ? (resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined) : undefined);
+    // Ignore impostor OPENROUTER_API_KEY values (e.g. Stripe sk_live_…) so a bad
+    // Vercel paste cannot block gateway fallback and leave OR "Last Used: Never".
+    // Keep gateway lookup behind mayUseServerKeys and after BYOK short-circuit.
+    const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys
+      ? (resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined)
+      : undefined);
     const effectiveGeminiKey = userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || await fetchApiGatewayKey('GEMINI') : undefined);
+
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
     const autoModelRequest = !modelId || modelId === 'auto';
+    // Auto resolves after registry load; approval applies to the chosen route, not the sentinel.
     if (usingServerOwnedModelAccess && !autoModelRequest) {
       const approved = await isApprovedServerModel(modelId);
-      if (!approved) return res.status(403).json({ error: `The model "${modelName || modelId}" is not approved for Quantora-managed usage yet.`, requiresApprovedModel: true });
+      if (!approved) {
+        return res.status(403).json({
+          error: `The model "${modelName || modelId}" is not approved for Quantora-managed usage yet.`,
+          requiresApprovedModel: true,
+        });
+      }
     }
-    if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser && !goldenCanary) return res.status(401).json({ error: "Please sign in to use Quantora's built-in AI, or add your own API key.", requiresAuth: true });
+
+    if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser && !goldenCanary) {
+      return res.status(401).json({ error: "Please sign in to use Quantora's built-in AI, or add your own API key.", requiresAuth: true });
+    }
 
     if (isRepairTask) {
       const { code, error, framework } = req.body || {};
       if (!code || typeof code !== "string" || !code.trim()) return res.status(400).json({ error: "No code provided to repair." });
       try {
-        const result = await repairArtifact({ code, error: typeof error === "string" ? error : "", framework: framework === "react" ? "react" : "html", job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null, attempts: Array.isArray(req.body?.attempts) ? req.body.attempts.slice(-6) : undefined, openRouterKey: effectiveOpenRouterKey, geminiKey: effectiveGeminiKey });
+        const result = await repairArtifact({
+          code,
+          error: typeof error === "string" ? error : "",
+          framework: framework === "react" ? "react" : "html",
+          job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
+          // What earlier rounds scored and what stayed wrong. Bounded here
+          // rather than trusted: this arrives from the client.
+          attempts: Array.isArray(req.body?.attempts) ? req.body.attempts.slice(-6) : undefined,
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat repair task:", err);
+        // Provider SDK errors carry the raw JSON response body as .message
+        // (the 2026-09-02 Research-board leak). Echo only sentences we wrote.
         return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Auto-repair failed. Please try again." });
       }
     }
@@ -506,7 +671,14 @@ export default async function handler(req: any, res: any) {
       const { code, brief } = req.body || {};
       if (!code || typeof code !== "string" || !code.trim()) return res.status(400).json({ error: "No code provided to verify." });
       try {
-        const report = await verifyBuild({ code, vfs: req.body?.vfs && typeof req.body.vfs === "object" ? req.body.vfs : {}, brief: typeof brief === "string" ? brief : "", job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null, openRouterKey: effectiveOpenRouterKey, geminiKey: effectiveGeminiKey });
+        const report = await verifyBuild({
+          code,
+          vfs: req.body?.vfs && typeof req.body.vfs === "object" ? req.body.vfs : {},
+          brief: typeof brief === "string" ? brief : "",
+          job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat verify-build task:", err);
@@ -515,11 +687,24 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchVerifyTask) {
-      if (normalizedStudioDomain !== "research") return res.status(400).json({ error: "Verification runs on the research desk only." });
+      // The Research desk's evidence check: fetch the cited public sources,
+      // have a model nominate verbatim passages, and let the deterministic
+      // verifier grant or refuse each standing. Research-only — no other desk
+      // pays for this pass.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Verification runs on the research desk only." });
+      }
       const normalized = normalizeResearchVerifyRequest(req.body);
-      if (!normalized.ok || !normalized.claims || !normalized.sources) return res.status(400).json({ error: normalized.error || "Invalid verification request." });
+      if (!normalized.ok || !normalized.claims || !normalized.sources) {
+        return res.status(400).json({ error: normalized.error || "Invalid verification request." });
+      }
       try {
-        const report = await runResearchVerification({ claims: normalized.claims, sources: normalized.sources, openRouterKey: effectiveOpenRouterKey, geminiKey: effectiveGeminiKey });
+        const report = await runResearchVerification({
+          claims: normalized.claims,
+          sources: normalized.sources,
+          openRouterKey: effectiveOpenRouterKey,
+          geminiKey: effectiveGeminiKey,
+        });
         return res.status(200).json(report);
       } catch (err: any) {
         console.error("Error in /api/chat research-verify task:", err);
@@ -528,13 +713,41 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchDeepDiveTask) {
-      if (normalizedStudioDomain !== "research") return res.status(400).json({ error: "Deep dive runs on the research desk only." });
+      // Decompose → search → synthesize, returned as canonical transcript
+      // messages the dossier brief already parses. Research desk only.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Deep dive runs on the research desk only." });
+      }
       const normalized = normalizeResearchDeepDiveRequest(req.body);
-      if (!normalized.ok || !normalized.question) return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
-      const requestGeo = getRequestGeo(req);
-      const safety = evaluateSafetyText(normalized.question, requestGeo?.countryCode);
-      if (safety.action !== "allow") return res.status(422).json({ error: safety.userMessage, safety: { action: safety.action, category: safety.category, severity: safety.severity, reasonCode: safety.reasonCode, policyVersion: safety.policyVersion, crisisResource: safety.crisisResource }, requestId });
-      if (!effectiveGeminiKey) return res.status(503).json({ error: "Deep dive needs the Gemini search path, which is not configured right now." });
+      if (!normalized.ok || !normalized.question) {
+        return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
+      }
+      // The question is user-authored text bound for the model and live web
+      // search — it gets the same safety policy as an ordinary research turn,
+      // which the artifact-task exemption above skipped.
+      {
+        const requestGeo = getRequestGeo(req);
+        const safety = evaluateSafetyText(normalized.question, requestGeo?.countryCode);
+        if (safety.action !== "allow") {
+          return res.status(422).json({
+            error: safety.userMessage,
+            safety: {
+              action: safety.action,
+              category: safety.category,
+              severity: safety.severity,
+              reasonCode: safety.reasonCode,
+              policyVersion: safety.policyVersion,
+              crisisResource: safety.crisisResource,
+            },
+            requestId,
+          });
+        }
+      }
+      if (!effectiveGeminiKey) {
+        // Grounded search for the dive currently rides the Gemini tool path;
+        // saying so beats a silent generic failure.
+        return res.status(503).json({ error: "Deep dive needs the Gemini search path, which is not configured right now." });
+      }
       try {
         const result = await runResearchDeepDive({ question: normalized.question, geminiKey: effectiveGeminiKey });
         if (!result.ok) return res.status(502).json({ error: result.error });
@@ -546,20 +759,45 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchWatchTask) {
-      if (normalizedStudioDomain !== "research") return res.status(400).json({ error: "Watches live on the research desk only." });
-      if (!activeSessionUser?.sub) return res.status(401).json({ error: "Sign in to watch a question.", requiresAuth: true });
-      if (!isResearchWatchStoreConfigured()) return res.status(503).json({ error: "Watches are not available right now." });
+      // Standing-question watches are per-account state: signed-in only,
+      // research desk only, and every op is scoped to the caller's sub.
+      if (normalizedStudioDomain !== "research") {
+        return res.status(400).json({ error: "Watches live on the research desk only." });
+      }
+      if (!activeSessionUser?.sub) {
+        return res.status(401).json({ error: "Sign in to watch a question.", requiresAuth: true });
+      }
+      if (!isResearchWatchStoreConfigured()) {
+        return res.status(503).json({ error: "Watches are not available right now." });
+      }
       const op = req.body?.op;
       try {
         if (op === "list") {
           const watches = await listResearchWatches(activeSessionUser.sub);
-          return res.status(200).json({ watches: watches.map((watch) => ({ question: watch.question, changed: watch.changed === true, changeNote: watch.change_note || "", lastCheckedAt: watch.last_checked_at })) });
+          return res.status(200).json({
+            watches: watches.map((watch) => ({
+              question: watch.question,
+              changed: watch.changed === true,
+              changeNote: watch.change_note || "",
+              lastCheckedAt: watch.last_checked_at,
+            })),
+          });
         }
         const question = normalizeWatchQuestion(req.body?.question);
         if (!question) return res.status(400).json({ error: "A watchable question is required." });
-        if (op === "create") { const created = await createResearchWatch(activeSessionUser.sub, question); if (!created.ok) return res.status(409).json({ error: created.error }); return res.status(200).json({ watched: true }); }
-        if (op === "delete") { await deleteResearchWatch(activeSessionUser.sub, question); return res.status(200).json({ watched: false }); }
-        if (op === "ack") { await acknowledgeResearchWatch(activeSessionUser.sub, question); return res.status(200).json({ acknowledged: true }); }
+        if (op === "create") {
+          const created = await createResearchWatch(activeSessionUser.sub, question);
+          if (!created.ok) return res.status(409).json({ error: created.error });
+          return res.status(200).json({ watched: true });
+        }
+        if (op === "delete") {
+          await deleteResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ watched: false });
+        }
+        if (op === "ack") {
+          await acknowledgeResearchWatch(activeSessionUser.sub, question);
+          return res.status(200).json({ acknowledged: true });
+        }
         return res.status(400).json({ error: "Unknown watch operation." });
       } catch (err: any) {
         console.error("Error in /api/chat research-watch task:", err);
@@ -568,38 +806,135 @@ export default async function handler(req: any, res: any) {
     }
 
     const [authoritativeOutcome, authoritativeProjectContext, adaptiveStudyLearnerModel] = await Promise.all([
-      activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured() ? readOutcomeState(activeSessionUser.sub, normalizedSessionId) : Promise.resolve(null),
-      activeSessionUser && projectId && isProjectStoreConfigured() ? readProjectContext(activeSessionUser.sub, projectId) : Promise.resolve(null),
-      loadStudyLearnerModel({ studioDomain: normalizedStudioDomain, userSub: activeSessionUser?.sub || null, memoryConsented, studyContext }),
+      activeSessionUser && memoryConsented === true && normalizedSessionId && isStoreConfigured()
+        ? readOutcomeState(activeSessionUser.sub, normalizedSessionId)
+        : Promise.resolve(null),
+      activeSessionUser && projectId && isProjectStoreConfigured()
+        ? readProjectContext(activeSessionUser.sub, projectId)
+        : Promise.resolve(null),
+      loadStudyLearnerModel({
+        studioDomain: normalizedStudioDomain,
+        userSub: activeSessionUser?.sub || null,
+        memoryConsented,
+        studyContext,
+      }),
     ]);
     const [registryModels, qualitySummaryRows, liveCatalog] = await Promise.all([
       readModelRegistryCached(),
       readModelQualitySummaryCached().catch(() => []),
+      // Only worth a catalogue read when a paid route is actually reachable.
       effectiveOpenRouterKey ? fetchOpenRouterCatalogCached().catch(() => null) : Promise.resolve(null),
     ]);
+    // The flagship coder is READ from the live catalogue, never named in code:
+    // a hardcoded model id goes stale, 404s on OpenRouter, and the turn silently
+    // falls back to a cheap coder that truncates the build.
     const discoveredFlagships = discoverAnthropicFlagships(liveCatalog);
-    const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object" ? { probeFailure: req.body.qualityHints.probeFailure === true, repair: req.body.qualityHints.repair === true || req.body?.task === "repair", fileCount: Number(req.body.qualityHints.fileCount) || 0 } : { probeFailure: req.body?.probeFailure === true, repair: req.body?.task === "repair", fileCount: 0 };
+    const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
+      ? {
+          probeFailure: req.body.qualityHints.probeFailure === true,
+          repair: req.body.qualityHints.repair === true || req.body?.task === "repair",
+          fileCount: Number(req.body.qualityHints.fileCount) || 0,
+        }
+      : {
+          probeFailure: req.body?.probeFailure === true,
+          repair: req.body?.task === "repair",
+          fileCount: 0,
+        };
     const routingCatalog = activeModelsForRouting({
       registryRows: registryModels,
-      featuredModels: [...DIRECT_MODELS, ...discoveredFlagships, ...CURATED_MODELS.map((model) => ({ ...model, available: true, pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid' }))],
+      featuredModels: [
+        ...DIRECT_MODELS,
+        ...discoveredFlagships,
+        ...CURATED_MODELS.map((model) => ({
+          ...model,
+          available: true,
+          pricingKind: model.id.endsWith(':free') || String(model.id).startsWith('gemini') ? 'free' : 'paid',
+        })),
+      ],
     });
-    const routingModels = withOutcomeSignals(routingCatalog, outcomeSignalsForTask(qualitySummaryRows, taskCategory));
-    const baseModelRouting = selectModelsForTurn({ models: routingModels, message, explicitModelId: typeof modelId === "string" ? modelId : null, hasImages: visionImages.length > 0, studioMode: mode, guidedBuild: honorGuided, refineMode: isRefine, buildMode: effectiveBuildMode, taskCategory, hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS), allowPaid: Boolean(effectiveOpenRouterKey), qualityHints });
+    // Decorate the catalog with measured-outcome signals for this turn's task so
+    // the router weighs real reliability, not just model-name heuristics. When
+    // there is no evidence yet the catalog passes through unchanged.
+    const routingModels = withOutcomeSignals(
+      routingCatalog,
+      outcomeSignalsForTask(qualitySummaryRows, taskCategory),
+    );
+    const baseModelRouting = selectModelsForTurn({
+      models: routingModels,
+      message,
+      explicitModelId: typeof modelId === "string" ? modelId : null,
+      hasImages: visionImages.length > 0,
+      studioMode: mode,
+      guidedBuild: honorGuided,
+      refineMode: isRefine,
+      buildMode: effectiveBuildMode,
+      taskCategory,
+      hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS),
+      // Paid routes are allowed whenever a usable OpenRouter key is present —
+      // the user's own BYOK key OR the platform's server key (which is already
+      // gated to authenticated sessions via mayUseServerKeys). Using only the
+      // BYOK key here meant builds relying on the server's Vercel key never
+      // escalated to a paid coder, so every build silently fell back to Gemini
+      // and OpenRouter received zero traffic. A truly anonymous visitor (no
+      // session, no BYOK) has no effective key, so they still stay on Gemini.
+      allowPaid: Boolean(effectiveOpenRouterKey),
+      qualityHints,
+    });
     const studyInterpretation = interpretStudyTurn({
       studioDomain: normalizedStudioDomain,
       message,
       history: boundedHistory,
       hasImages: visionImages.length > 0,
-      learnerModel: adaptiveStudyLearnerModel,
     });
-    if (studyInterpretation) dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
-    const financeInterpretation = interpretFinanceTurn({ studioDomain: normalizedStudioDomain, message, history: boundedHistory });
-    if (financeInterpretation) dynamicTemperature = Math.min(dynamicTemperature, financeInterpretation.temperatureCeiling);
-    const modelRouting = applyFinanceStabilityRouting({ interpretation: financeInterpretation, baseDecision: applyStudyCapabilityRouting({ interpretation: studyInterpretation, baseDecision: baseModelRouting, models: routingModels, explicitModelSelected: !autoModelRequest, hasImages: visionImages.length > 0 }), models: routingModels, explicitModelSelected: !autoModelRequest });
-
-    const forceOpenRouter = process.env.QUANTORA_FORCE_OPENROUTER === '1' && Boolean(effectiveOpenRouterKey) && visionImages.length === 0 && (effectiveBuildMode || taskCategory === 'coding');
+    if (studyInterpretation) {
+      dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
+    }
+    /*
+     * Finance is the mirror image of Study. Study escalates for depth; Finance
+     * prefers stability and refuses to escalate onto a paid route, because the
+     * deterministic engines already produced whatever was worth producing. The
+     * two interpretations are mutually exclusive by domain, so they compose by
+     * running in sequence — each returns the decision untouched for the other's
+     * workspace.
+     */
+    const financeInterpretation = interpretFinanceTurn({
+      studioDomain: normalizedStudioDomain,
+      message,
+      history: boundedHistory,
+    });
+    if (financeInterpretation) {
+      dynamicTemperature = Math.min(dynamicTemperature, financeInterpretation.temperatureCeiling);
+    }
+    const modelRouting = applyFinanceStabilityRouting({
+      interpretation: financeInterpretation,
+      baseDecision: applyStudyCapabilityRouting({
+        interpretation: studyInterpretation,
+        baseDecision: baseModelRouting,
+        models: routingModels,
+        explicitModelSelected: !autoModelRequest,
+        hasImages: visionImages.length > 0,
+      }),
+      models: routingModels,
+      explicitModelSelected: !autoModelRequest,
+    });
+    // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
+    // out of the picture entirely for coding/build turns and route straight to an
+    // OpenRouter coder — so you can confirm OpenRouter alone carries builds. With
+    // Gemini excluded below, a broken OpenRouter surfaces as an honest "no healthy
+    // route" instead of being silently rescued by Gemini. Default off = normal
+    // Auto routing. Requires a usable OpenRouter key (BYOK or the server key).
+    // Vision turns are excluded: OpenRouter routes here are not marked
+    // vision-capable and forced mode drops Gemini, so forcing a vision build would
+    // filter every route and 503. A build with an attached image keeps normal
+    // routing (Gemini handles vision).
+    const forceOpenRouter = process.env.QUANTORA_FORCE_OPENROUTER === '1'
+      && Boolean(effectiveOpenRouterKey)
+      && visionImages.length === 0
+      && (effectiveBuildMode || taskCategory === 'coding');
     if (forceOpenRouter) {
-      const openRouterCoder = routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false && /coder|qwen|deepseek|gpt-oss/i.test(String(m.id))) || routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false) || { id: 'qwen/qwen-2.5-coder-32b-instruct' };
+      const openRouterCoder = routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false && /coder|qwen|deepseek|gpt-oss/i.test(String(m.id)))
+        || routingModels.find((m: any) => m?.id && !String(m.id).startsWith('gemini') && m.available !== false)
+        || { id: 'qwen/qwen-2.5-coder-32b-instruct' };
       modelRouting.primaryModelId = String(openRouterCoder.id);
       modelRouting.provider = 'openrouter';
       modelRouting.hasVisionSupport = false;
@@ -607,85 +942,308 @@ export default async function handler(req: any, res: any) {
     }
     if (usingServerOwnedModelAccess && autoModelRequest) {
       const approved = await isApprovedServerModel(modelRouting.primaryModelId);
-      if (!approved) return res.status(403).json({ error: `The model "${modelRouting.primaryModelId}" is not approved for Quantora-managed usage yet.`, requiresApprovedModel: true });
+      if (!approved) {
+        return res.status(403).json({
+          error: `The model "${modelRouting.primaryModelId}" is not approved for Quantora-managed usage yet.`,
+          requiresApprovedModel: true,
+        });
+      }
     }
-
-    const conversationSnapshot = buildConversationSnapshot({ outcomeRecord: authoritativeOutcome, projectContext: authoritativeProjectContext, sessionContext: normalizedSessionContext, listeningSignals: normalizedListeningSignals, message, taskCategory, studioMode: mode, studioDomain: normalizedStudioDomain, guidedBuild: honorGuided, refineMode: isRefine, choiceSelected: choiceSelected === true });
+    const conversationSnapshot = buildConversationSnapshot({
+      outcomeRecord: authoritativeOutcome,
+      projectContext: authoritativeProjectContext,
+      sessionContext: normalizedSessionContext,
+      listeningSignals: normalizedListeningSignals,
+      message,
+      taskCategory,
+      studioMode: mode,
+      studioDomain: normalizedStudioDomain,
+      guidedBuild: honorGuided,
+      refineMode: isRefine,
+      choiceSelected: choiceSelected === true,
+    });
     const conversationDecision = chooseNextConversationMove(conversationSnapshot);
     const responseContract = buildResponseContract(conversationSnapshot, conversationDecision);
     const navigatorDirective = formatConversationDecisionForPrompt(conversationSnapshot, conversationDecision);
-    const basePromptSessionContext = conversationSnapshot.stateSource === "authoritative" ? { ...(conversationSnapshot.goal ? { goal: conversationSnapshot.goal.statement } : {}), ...(conversationSnapshot.inferredFacts[0] ? { understanding: conversationSnapshot.inferredFacts[0] } : {}), facts: conversationSnapshot.confirmedFacts } : normalizedSessionContext;
-    const isAdviceDeskPrompt = normalizedStudioDomain === "finance" || normalizedStudioDomain === "education" || normalizedStudioDomain === "research";
-    const promptSessionContext = isAdviceDeskPrompt ? { facts: (basePromptSessionContext as { facts?: string[] })?.facts ?? [] } : basePromptSessionContext;
-    const finalSystemPromptBase = buildConversationSystemPrompt({ cognitiveLevel, modelName: modelName || modelId, buildMode: effectiveBuildMode, needsJobPlan: effectiveBuildMode && !isRefine && !honorGuided && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} }) && !req.body?.buildJobActive, guided: honorGuided, refineMode: isRefine, featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode, planMode, sessionContext: promptSessionContext, listeningSignals: normalizedListeningSignals, studioDomain: normalizedStudioDomain, userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null, lastMessage: message, history: boundedHistory }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + formatStudyAdaptiveDirective(adaptiveStudyLearnerModel) + formatFinanceDirective(financeInterpretation) + (visionImages.length ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.` : "");
+    const basePromptSessionContext = conversationSnapshot.stateSource === "authoritative"
+      ? {
+          ...(conversationSnapshot.goal ? { goal: conversationSnapshot.goal.statement } : {}),
+          ...(conversationSnapshot.inferredFacts[0] ? { understanding: conversationSnapshot.inferredFacts[0] } : {}),
+          facts: conversationSnapshot.confirmedFacts,
+        }
+      : normalizedSessionContext;
+    /*
+     * The advice desks (Finance, Study, Research) must not be handed a sticky
+     * session GOAL in the prompt. A single goal bleeds across the shared Personal
+     * Workspace, and once the model is told "the goal is X" it fixates on it —
+     * that is why a Finance chat kept steering every turn back to an old "scan
+     * the GitHub repositories" ask. Keep the confirmed facts (real, user-stated
+     * grounding) but drop the goal and the inferred understanding so the model
+     * answers the question actually in front of it.
+     */
+    const isAdviceDeskPrompt = normalizedStudioDomain === "finance"
+      || normalizedStudioDomain === "education"
+      || normalizedStudioDomain === "research";
+    const promptSessionContext = isAdviceDeskPrompt
+      ? { facts: (basePromptSessionContext as { facts?: string[] })?.facts ?? [] }
+      : basePromptSessionContext;
+    const finalSystemPromptBase = buildConversationSystemPrompt({
+      cognitiveLevel,
+      modelName: modelName || modelId,
+      buildMode: effectiveBuildMode,
+      /*
+       * Phase 04: a build too big for one reply is planned instead of attempted.
+       *
+       * Only on a FIRST build turn — never while refining, and never once a job
+       * is already running, or every follow-up would re-plan instead of taking
+       * the next step. `hasVFS` stands in for "there is already a desk here".
+       */
+      needsJobPlan: effectiveBuildMode
+        && !isRefine
+        && !honorGuided
+        && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} })
+        && !req.body?.buildJobActive,
+      guided: honorGuided,
+      refineMode: isRefine,
+      featureSuggest: Boolean(featureSuggest) && !effectiveBuildMode,
+      planMode,
+      sessionContext: promptSessionContext,
+      listeningSignals: normalizedListeningSignals,
+      studioDomain: normalizedStudioDomain,
+      userFirstName: activeSessionUser?.name?.split(/\s+/)[0] || null,
+      lastMessage: message,
+      history: boundedHistory
+    }) + navigatorDirective + formatStudyCognitiveDirective(studyInterpretation) + formatStudyAdaptiveDirective(adaptiveStudyLearnerModel) + formatFinanceDirective(financeInterpretation) + (visionImages.length
+      ? `\n\nVISION MODE\nThe user attached one or more image(s) in this request. You CAN see them — analyze what is visible and answer directly. Never say you cannot see or access the image.`
+      : "");
     let finalSystemPrompt = finalSystemPromptBase;
 
     const conversationMetadata = (response: string) => {
       const verification = verifyConversationResponse({ snapshot: conversationSnapshot, decision: conversationDecision, response });
-      return publicConversationMetadata(conversationSnapshot, conversationDecision, verification, {
-        responseContract,
-        evaluation: evaluationFromVerification({ verification, latencyMs: Date.now() - startTime, usedFallback: Boolean(fallbackFrom) }),
-        routing: modelRouting,
-        ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
-        ...(adaptiveStudyLearnerModel ? { studyAdaptiveLearning: publicStudyAdaptiveMetadata(adaptiveStudyLearnerModel) } : {}),
-        ...(financeInterpretation ? { financeRouting: publicFinanceRoutingMetadata(financeInterpretation) } : {}),
-        communicationRequest: { studioMode: communicationRequest.studioMode, studioDomain: communicationRequest.studioDomain, projectId: communicationRequest.projectId, hasPreviewCode },
-      });
+      return publicConversationMetadata(
+        conversationSnapshot,
+        conversationDecision,
+        verification,
+        {
+          responseContract,
+          evaluation: evaluationFromVerification({
+            verification,
+            latencyMs: Date.now() - startTime,
+            usedFallback: Boolean(fallbackFrom),
+          }),
+          routing: modelRouting,
+          ...(studyInterpretation ? { studyCognitiveRouting: publicStudyCognitiveMetadata(studyInterpretation) } : {}),
+          ...(adaptiveStudyLearnerModel ? { studyAdaptiveLearning: publicStudyAdaptiveMetadata(adaptiveStudyLearnerModel) } : {}),
+          ...(financeInterpretation ? { financeRouting: publicFinanceRoutingMetadata(financeInterpretation) } : {}),
+          communicationRequest: {
+            studioMode: communicationRequest.studioMode,
+            studioDomain: communicationRequest.studioDomain,
+            projectId: communicationRequest.projectId,
+            hasPreviewCode,
+          },
+        },
+      );
     };
 
     const wantTravelTools = shouldEnableTravelTools(normalizedStudioDomain);
     const travelToolsDeferred = isTravelToolExecutionDeferred(req.body);
+    // Live Gemini tools only when Travel wants them, the turn did not defer them,
+    // and a Gemini credential exists. Otherwise fall through to text routes.
     let travelToolsEnabled = wantTravelTools && !travelToolsDeferred && Boolean(effectiveGeminiKey);
     let travelDegraded = wantTravelTools && !travelToolsEnabled;
-    const textCapabilities = visionImages.length ? (['text', 'vision'] as const) : effectiveBuildMode ? (['text', 'code'] as const) : (['text'] as const);
+    const textCapabilities = visionImages.length
+      ? (['text', 'vision'] as const)
+      : effectiveBuildMode
+        ? (['text', 'code'] as const)
+        : (['text'] as const);
 
+    /*
+     * Route planning reads two different authorities about the same model, so it
+     * has to see both.
+     *
+     * The stored registry is authoritative on LIFECYCLE - it is the only source
+     * that knows a model was retired, and `healthFor` uses that to drop the route
+     * before it is attempted.
+     *
+     * The routing catalogue is authoritative on CAPABILITY and COST - it is where
+     * `discoverAnthropicFlagships` puts the catalogue-declared `vision` flag and a
+     * camelCase `pricingKind`. The registry has neither: the scanner persists only
+     * free models, so a paid Claude usually has no row at all, and the rows it does
+     * write use snake_case `pricing_kind`, which `costClassFor` never reads.
+     *
+     * Passing the registry alone meant `capabilitiesFor` saw no `vision` for a
+     * pinned Claude, so an image turn filtered that model out and silently
+     * rerouted to Gemini - or 503'd when no Gemini credential existed. Passing the
+     * routing catalogue alone would lose the retirement signal. Merge by id:
+     * routing values win, and a registry row that reports offline keeps saying so.
+     */
     const routePlanningModels = (() => {
       const merged = new Map<string, InferenceModelLike>();
-      for (const row of registryModels || []) if (row?.id) merged.set(String(row.id), row as InferenceModelLike);
+      for (const row of registryModels || []) {
+        if (row?.id) merged.set(String(row.id), row as InferenceModelLike);
+      }
       for (const model of routingModels || []) {
         if (!model?.id) continue;
         const id = String(model.id);
         const stored = merged.get(id);
-        merged.set(id, { ...stored, ...(model as InferenceModelLike), lifecycle: stored?.lifecycle ?? (model as InferenceModelLike).lifecycle, available: stored?.available === false ? false : (model as InferenceModelLike).available });
+        merged.set(id, {
+          ...stored,
+          ...(model as InferenceModelLike),
+          // Lifecycle stays the registry's call: a retired model must not be
+          // resurrected just because it is still listed in the routing catalogue.
+          lifecycle: stored?.lifecycle ?? (model as InferenceModelLike).lifecycle,
+          available: stored?.available === false ? false : (model as InferenceModelLike).available,
+        });
       }
       return [...merged.values()];
     })();
 
+    /*
+     * The brake. Read the provider's own meter before offering a paid rung.
+     *
+     * The whole cost-control subsystem — recordModelSpend, readMonthlySpend,
+     * canOfferPaidLastResort, decidePaidSpend — was written, tested and called
+     * by nothing, so this platform could not see its spend or refuse a paid
+     * call when the float was gone. It fails closed: a meter that cannot be
+     * read is a refusal, never an assumption of zero.
+     */
     const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
-    let attempts = await planInferenceRoutes({ primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId), fallbackModelIds: modelRouting?.fallbackModelIds || [], models: routePlanningModels, paidLastResortAllowed: paidVerdict.allowed, requiredCapabilities: travelToolsEnabled ? ['text', 'travel-tools'] : [...textCapabilities], geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey), openRouterAvailable: Boolean(effectiveOpenRouterKey), geminiCredentialScope: userKey ? 'user' : 'server', openRouterCredentialScope: openRouterKey ? 'user' : 'server', geminiCredentialPartition: credentialCircuitPartition(userKey), openRouterCredentialPartition: credentialCircuitPartition(openRouterKey), requestPartition: correlationId, circuitStore: providerCircuitStore });
+    let attempts = await planInferenceRoutes({
+      primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
+      fallbackModelIds: modelRouting?.fallbackModelIds || [],
+      models: routePlanningModels,
+      paidLastResortAllowed: paidVerdict.allowed,
+      requiredCapabilities: travelToolsEnabled
+        ? ['text', 'travel-tools']
+        : [...textCapabilities],
+      geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
+      openRouterAvailable: Boolean(effectiveOpenRouterKey),
+      geminiCredentialScope: userKey ? 'user' : 'server',
+      openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+      geminiCredentialPartition: credentialCircuitPartition(userKey),
+      openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+      requestPartition: correlationId,
+      circuitStore: providerCircuitStore,
+    });
 
     if (wantTravelTools && travelToolsEnabled && !attempts.length) {
       travelToolsEnabled = false;
       travelDegraded = true;
-      attempts = await planInferenceRoutes({ primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId), fallbackModelIds: modelRouting?.fallbackModelIds || [], models: routePlanningModels, requiredCapabilities: [...textCapabilities], geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey), openRouterAvailable: Boolean(effectiveOpenRouterKey), geminiCredentialScope: userKey ? 'user' : 'server', openRouterCredentialScope: openRouterKey ? 'user' : 'server', geminiCredentialPartition: credentialCircuitPartition(userKey), openRouterCredentialPartition: credentialCircuitPartition(openRouterKey), requestPartition: correlationId, circuitStore: providerCircuitStore });
+      attempts = await planInferenceRoutes({
+        primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
+        fallbackModelIds: modelRouting?.fallbackModelIds || [],
+        models: routePlanningModels,
+        requiredCapabilities: [...textCapabilities],
+        geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
+        openRouterAvailable: Boolean(effectiveOpenRouterKey),
+        geminiCredentialScope: userKey ? 'user' : 'server',
+        openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+        geminiCredentialPartition: credentialCircuitPartition(userKey),
+        openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+        requestPartition: correlationId,
+        circuitStore: providerCircuitStore,
+      });
     }
-    if (travelDegraded) finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
+
+    if (travelDegraded) {
+      finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
+    }
+
+    // A build rung too short to finish a multi-file page cannot succeed — it only
+    // spends wall-clock the earlier rungs needed. Keep the ladder to the rungs
+    // this turn's budget can actually fund at build size.
     if (effectiveBuildMode && attempts.length > 1) {
       const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS));
       if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
     }
 
     if (!attempts.length) {
+      /*
+       * "Please retry in a moment" was wrong whenever the cause was a MISSING
+       * CREDENTIAL: no amount of retrying adds an API key, and the opacity turned
+       * a one-line configuration fault into a long diagnosis. Name which side is
+       * unusable. No secret is revealed - only whether a credential resolved.
+       */
       const noGemini = !effectiveGeminiKey;
       const noOpenRouter = !effectiveOpenRouterKey;
       const missingCredentials = noGemini && noOpenRouter;
-      const reason = missingCredentials ? 'no-provider-credential' : noGemini ? 'openrouter-routes-unhealthy' : noOpenRouter ? 'gemini-routes-unhealthy' : 'all-routes-unhealthy';
+      const reason = missingCredentials
+        ? 'no-provider-credential'
+        : noGemini
+          ? 'openrouter-routes-unhealthy'
+          : noOpenRouter
+            ? 'gemini-routes-unhealthy'
+            : 'all-routes-unhealthy';
       return res.status(503).json({
-        error: wantTravelTools ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.' : missingCredentials ? 'No AI provider credential is available on this deployment — neither Gemini nor OpenRouter resolved a usable key. This is a configuration problem, not a temporary one: retrying will not help. Add GEMINI_API_KEY or OPENROUTER_API_KEY (a real sk-or-v1-… key) to the server environment, or paste your own key under Privacy Vault → Session-only provider keys.' : noOpenRouter ? 'Every Gemini route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no OpenRouter key is configured as a backup. Add an OpenRouter key to give this turn a second provider.' : noGemini ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.' : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
+        error: wantTravelTools
+          ? 'Live travel lookup needs Gemini, and no conversational backup route is available. Please retry shortly.'
+          : missingCredentials
+            ? 'No AI provider credential is available on this deployment — neither Gemini nor OpenRouter resolved a usable key. This is a configuration problem, not a temporary one: retrying will not help. Add GEMINI_API_KEY or OPENROUTER_API_KEY (a real sk-or-v1-… key) to the server environment, or paste your own key under Privacy Vault → Session-only provider keys.'
+            : noOpenRouter
+              ? 'Every Gemini route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no OpenRouter key is configured as a backup. Add an OpenRouter key to give this turn a second provider.'
+              : noGemini
+                ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
+                : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
         reason,
-        ...(missingCredentials ? { door: describeDoors(doorsBlocking(['own_provider_key']), { ask: 'this' }) } : {}),
+        /*
+         * When there is no credential at all, the user has a handle: their own
+         * Gemini or OpenRouter key, pasted into the Vault, works immediately
+         * and needs no redeploy. The prose above names the server variables —
+         * which only the operator can set — so without this a signed-in user
+         * reads a wall where they are actually standing at a door.
+         *
+         * Only for missingCredentials. An unhealthy route is not something a
+         * user key fixes, and offering a handle that changes nothing would be
+         * the crueller lie.
+         */
+        ...(missingCredentials
+          ? { door: describeDoors(doorsBlocking(['own_provider_key']), { ask: 'this' }) }
+          : {}),
+        // Lets the desk state the cause without another round of guesswork.
         providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
-        ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
+      // When the float is what held premium back, say so with the number rather
+      // than letting the turn read as a mysterious downgrade.
+      ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
+    traceBoundary({
+      correlationId,
+      boundary: 'inference.plan',
+      state: 'selected',
+      transaction,
+      modelId: attempts[0].id,
+      gateway: attempts[0].gateway,
+      upstreamProvider: attempts[0].upstreamProvider,
+      failureDomain: attempts[0].failureDomain,
+      quotaDomain: attempts[0].quotaDomain,
+      costClass: attempts[0].costClass,
+      health: attempts[0].health,
+      circuit: attempts[0].circuit,
+    });
 
-    traceBoundary({ correlationId, boundary: 'inference.plan', state: 'selected', transaction, modelId: attempts[0].id, gateway: attempts[0].gateway, upstreamProvider: attempts[0].upstreamProvider, failureDomain: attempts[0].failureDomain, quotaDomain: attempts[0].quotaDomain, costClass: attempts[0].costClass, health: attempts[0].health, circuit: attempts[0].circuit });
-
+    // Provider-neutral text/build execution. The route is not committed until
+    // the upstream produces a usable first token, so a dead endpoint, exhausted
+    // quota domain, or empty stream can fail over before Quantora starts SSE.
     if (!travelToolsEnabled) {
-      const formattedHistory = [{ role: "system", content: finalSystemPrompt }, ...(boundedHistory || []).map((item: any) => ({ role: item.role === "model" || item.role === "assistant" || item.sender === "ai" ? "assistant" : "user", content: item.text || item.content || "" }))];
-      formattedHistory.push({ role: "user", content: visionImages.length ? [...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })), { type: "text", text: refineUserMessage }] : refineUserMessage });
+      const formattedHistory = [
+        { role: "system", content: finalSystemPrompt },
+        ...(boundedHistory || []).map((item: any) => ({
+          role: item.role === "model" || item.role === "assistant" || item.sender === "ai" ? "assistant" : "user",
+          content: item.text || item.content || "",
+        })),
+      ];
+      formattedHistory.push({
+        role: "user",
+        content: visionImages.length
+          ? [
+              ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
+              { type: "text", text: refineUserMessage },
+            ]
+          : refineUserMessage,
+      });
       const geminiContents = buildGeminiContents(boundedHistory, refineUserMessage, visionImages);
+      // Committed only from the attempt that actually answered — see below.
       let sources: Array<{ uri: string; title: string }> = [];
       let fullReply = '';
       let usedRoute: InferenceRoute | null = null;
@@ -696,15 +1254,59 @@ export default async function handler(req: any, res: any) {
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
-        if (failedQuotaDomains.has(route.quotaDomain)) continue;
+        if (failedQuotaDomains.has(route.quotaDomain)) {
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'skipped',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            detailCode: 'quota-domain-failed-this-turn',
+          });
+          continue;
+        }
         const attemptStartedAt = Date.now();
-        const attemptBudgetMs = effectiveBuildMode ? inferenceAttemptBudgetMs(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS), attempts.length - index, { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS }) : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
+        const attemptBudgetMs = effectiveBuildMode
+          ? inferenceAttemptBudgetMs(
+              remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS),
+              attempts.length - index,
+              { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
+            )
+          : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
+        traceBoundary({
+          correlationId,
+          boundary: 'inference.provider',
+          state: 'attempting',
+          transaction,
+          modelId: route.id,
+          gateway: route.gateway,
+          upstreamProvider: route.upstreamProvider,
+          failureDomain: route.failureDomain,
+          quotaDomain: route.quotaDomain,
+          costClass: route.costClass,
+          health: route.health,
+          circuit: route.circuit,
+          budgetMs: attemptBudgetMs,
+          detailCode: effectiveBuildMode ? 'build' : 'conversation',
+        });
+
         try {
           let attemptReply = '';
+          // Citations are evidence for THIS attempt's reply only. Collected
+          // per attempt and committed with it: a failed attempt's citations
+          // appended to a fallback attempt's answer would be forged
+          // provenance — a Sources block backing prose its model never saw.
           const attemptSources: Array<{ uri: string; title: string }> = [];
           const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
-          const attemptSystemPrompt = recoverHtmlPreview ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}` : finalSystemPrompt;
+          const attemptSystemPrompt = recoverHtmlPreview
+            ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
+            : finalSystemPrompt;
           formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
@@ -714,31 +1316,93 @@ export default async function handler(req: any, res: any) {
             const openTimer = setTimeout(() => openController.abort(), openRemainingMs);
             let stream;
             try {
-              stream = await openGeminiStream({ apiKey: effectiveGeminiKey as string, model: route.id, contents: geminiContents, systemInstruction: attemptSystemPrompt, temperature: dynamicTemperature, grounding, travelToolsEnabled: false, signal: openController.signal });
-            } finally { clearTimeout(openTimer); }
+              stream = await openGeminiStream({
+                apiKey: effectiveGeminiKey as string,
+                model: route.id,
+                contents: geminiContents,
+                systemInstruction: attemptSystemPrompt,
+                temperature: dynamicTemperature,
+                grounding,
+                travelToolsEnabled: false,
+                signal: openController.signal,
+              });
+            } catch (error) {
+              if (openController.signal.aborted) throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              throw error;
+            } finally {
+              clearTimeout(openTimer);
+            }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
               assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
-              if (attemptRemainingMs <= 0) { await iterator.return?.(undefined); throw inferenceAttemptTimeout(route, attemptBudgetMs); }
-              const next = await nextAsyncIteratorWithIdleTimeout(iterator, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'Gemini stream');
+              if (attemptRemainingMs <= 0) {
+                await iterator.return?.(undefined);
+                throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              }
+              let next;
+              try {
+                next = await nextAsyncIteratorWithIdleTimeout(iterator, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'Gemini stream');
+              } catch (error) {
+                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
+                  await iterator.return?.(undefined);
+                  throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                throw error;
+              }
               if (next.done) break;
               const chunk = next.value;
-              if (chunk?.text) { attemptReply += chunk.text; emitBuildProgress(sse, effectiveBuildMode, buildBeat); if (!effectiveBuildMode) sse.text(chunk.text); }
+              if (chunk?.text) {
+                attemptReply += chunk.text;
+                emitBuildProgress(sse, effectiveBuildMode, buildBeat);
+                if (!effectiveBuildMode) sse.text(chunk.text);
+              }
               const groundingChunks = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
-              if (Array.isArray(groundingChunks)) for (const groundingChunk of groundingChunks) { const uri = groundingChunk?.web?.uri; if (uri && !attemptSeenSources.has(uri)) { attemptSeenSources.add(uri); attemptSources.push({ uri, title: groundingChunk?.web?.title || uri }); } }
+              if (Array.isArray(groundingChunks)) {
+                for (const groundingChunk of groundingChunks) {
+                  const uri = groundingChunk?.web?.uri;
+                  if (uri && !attemptSeenSources.has(uri)) {
+                    attemptSeenSources.add(uri);
+                    attemptSources.push({ uri, title: groundingChunk?.web?.title || uri });
+                  }
+                }
+              }
             }
           } else {
             const resolved = resolveOpenRouterModelId(route.id);
             if (resolved.error) throw new Error(resolved.error);
-            const response = await openOpenRouterResponse({ key: effectiveOpenRouterKey as string, modelId: resolved.slug as string, modelName: route.id, messages: formattedHistory, temperature: dynamicTemperature, grounding, jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'), timeoutMs: attemptBudgetMs });
+            const response = await openOpenRouterResponse({
+              key: effectiveOpenRouterKey as string,
+              modelId: resolved.slug as string,
+              modelName: route.id,
+              messages: formattedHistory,
+              temperature: dynamicTemperature,
+              grounding,
+              jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
+              timeoutMs: attemptBudgetMs,
+            });
             if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
             while (true) {
               assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
-              const { done, value } = await readWithIdleTimeout(reader, Math.min(PROVIDER_STREAM_IDLE_MS, attemptBudgetMs - (Date.now() - attemptStartedAt)), 'OpenRouter stream');
+              const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
+              if (attemptRemainingMs <= 0) {
+                await reader.cancel().catch(() => {});
+                throw inferenceAttemptTimeout(route, attemptBudgetMs);
+              }
+              let chunkResult;
+              try {
+                chunkResult = await readWithIdleTimeout(reader, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'OpenRouter stream');
+              } catch (error) {
+                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
+                  await reader.cancel().catch(() => {});
+                  throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                throw error;
+              }
+              const { done, value } = chunkResult;
               if (done) break;
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split('\n');
@@ -750,48 +1414,207 @@ export default async function handler(req: any, res: any) {
                   const parsed = JSON.parse(line.slice(6));
                   midStreamFailure = streamErrorFrom(parsed, route.gateway);
                   const token = parsed.choices?.[0]?.delta?.content || '';
-                  if (token) { attemptReply += token; emitBuildProgress(sse, effectiveBuildMode, buildBeat); if (!effectiveBuildMode) sse.text(token); }
-                  if (!midStreamFailure) for (const source of extractOpenRouterAnnotationSources(parsed)) if (!attemptSeenSources.has(source.uri)) { attemptSeenSources.add(source.uri); attemptSources.push(source); }
-                } catch { /* malformed upstream event */ }
+                  if (token) {
+                    attemptReply += token;
+                    emitBuildProgress(sse, effectiveBuildMode, buildBeat);
+                    if (!effectiveBuildMode) sse.text(token);
+                  }
+                  // The web plugin's citations arrive as url_citation
+                  // ANNOTATIONS, not content — dropping them left grounded
+                  // replies with inline links the board could not credit
+                  // (see openrouter-citations.ts). An event that carries a
+                  // provider failure contributes nothing: its attempt is
+                  // about to be thrown away.
+                  if (!midStreamFailure) {
+                    for (const source of extractOpenRouterAnnotationSources(parsed)) {
+                      if (!attemptSeenSources.has(source.uri)) {
+                        attemptSeenSources.add(source.uri);
+                        attemptSources.push(source);
+                      }
+                    }
+                  }
+                } catch { /* malformed upstream events do not satisfy the route contract */ }
+                // Thrown outside the try: the catch above deliberately swallows
+                // malformed events, and a real provider failure is not one.
                 if (midStreamFailure) throw midStreamFailure;
               }
             }
           }
-          if (!attemptReply.trim()) throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
+
+          if (!attemptReply.trim()) {
+            throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
+          }
           if (effectiveBuildMode) {
-            const artifactContract = validateBuildArtifactResponse(attemptReply, goldenCanary ? transaction : null, { allowIntake: honorGuided });
+            const artifactContract = validateBuildArtifactResponse(
+              attemptReply,
+              goldenCanary ? transaction : null,
+              // A guided first turn is TOLD not to output code (FIRST-TURN
+              // RULE) — failing it for complying burned every route on the
+              // same compliant reply. Artifact canaries (a goldenTransaction
+              // naming calculator/simple-website) still owe files: the
+              // transaction argument forbids intake inside the validator.
+              // Gating on the canary HEADER here as well would re-punish a
+              // canary-driven guided-intake transaction for obeying — the
+              // exact class this option exists to end.
+              { allowIntake: honorGuided },
+            );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
           fullReply = attemptReply;
-          sources = attemptSources;
+          sources = attemptSources; // the answering attempt's evidence, and only its
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'succeeded',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            durationMs: Date.now() - attemptStartedAt,
+          });
           if (effectiveBuildMode) sse.text(attemptReply);
           break;
         } catch (error: any) {
           lastRouteError = error;
-          const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing' || error?.detailCode === 'code-fences-missing' || (isRefine && error?.detailCode === 'code-fences-missing');
+          const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
+            || error?.detailCode === 'code-fences-missing'
+            || (isRefine && error?.detailCode === 'code-fences-missing');
           if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
-          if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') await recordInferenceRouteFailure(providerCircuitStore, route, status);
-          if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) { htmlRecoveryTried = true; index -= 1; continue; }
+          // A response-contract miss is specific to this prompt/output. It may
+          // use this turn's independent fallback, but must not poison the
+          // shared operational health circuit for unrelated users.
+          if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
+            await recordInferenceRouteFailure(providerCircuitStore, route, status);
+          }
+          traceBoundary({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'failed',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            upstreamProvider: route.upstreamProvider,
+            failureDomain: route.failureDomain,
+            quotaDomain: route.quotaDomain,
+            costClass: route.costClass,
+            durationMs: Date.now() - attemptStartedAt,
+            statusCode: status,
+            detailCode: error?.code === 'BUILD_ARTIFACT_CONTRACT'
+              ? error.detailCode
+              : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
+          });
+          if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) {
+            htmlRecoveryTried = true;
+            index -= 1;
+            continue;
+          }
           const nextRoute = attempts[index + 1];
-          if (sse.isCommitted || index >= attempts.length - 1 || !shouldFallbackBeforeStreaming(error, { currentGateway: route.gateway, nextGateway: nextRoute?.gateway })) throw error;
+          if (
+            sse.isCommitted
+            || index >= attempts.length - 1
+            || !shouldFallbackBeforeStreaming(error, {
+              currentGateway: route.gateway,
+              nextGateway: nextRoute?.gateway,
+            })
+          ) throw error;
+          if (!sse.isCommitted && nextRoute) {
+            sse.status({
+              phase: 'build',
+              state: 'failover',
+              label: partnerProviderPressureLabel({
+                attempt: index + 1,
+                maxAttempts: attempts.length,
+                nextModelLabel: nextRoute.id,
+                statusCode: status,
+              }),
+            });
+          }
         }
       }
+
       if (!usedRoute) throw lastRouteError || new Error('No inference route completed the turn.');
-      if (grounding && sources.length) { const sourceBlock = buildGroundedSourceBlock(sources); fullReply += sourceBlock; sse.text(sourceBlock); }
+      if (grounding && sources.length) {
+        const sourceBlock = buildGroundedSourceBlock(sources);
+        fullReply += sourceBlock;
+        sse.text(sourceBlock);
+      }
+
       const latencyMs = Date.now() - startTime;
-      logTelemetry(usedRoute.id, latencyMs, fullReply.length, usedRoute.gateway === 'gemini' ? 'Gemini' : 'OpenRouter', activeSessionUser?.sub ?? null, usedRoute.gateway === 'gemini' ? !userKey && mayUseServerKeys : !openRouterKey && mayUseServerKeys, telemetryContext, req);
-      recordModelQualityEvent({ requestId, modelId: usedRoute.id, taskCategory, outcome: 'success', latencyMs, fallbackFrom: usedRoute.reason === 'fallback' ? modelId : fallbackFrom });
-      sse.done({ provider: `${usedRoute.gateway === 'gemini' ? 'Google Gemini' : 'OpenRouter'} (${usedRoute.id})`, latencyMs, modelId: usedRoute.id, requestId, correlationId, liveConnected: true, grounded: grounding && sources.length > 0, fallbackUsed: usedRoute.reason === 'fallback', inferenceRoute: { gateway: usedRoute.gateway, upstreamProvider: usedRoute.upstreamProvider, failureDomain: usedRoute.failureDomain, quotaDomain: usedRoute.quotaDomain, costClass: usedRoute.costClass, health: usedRoute.health, circuit: usedRoute.circuit }, conversation: conversationMetadata(fullReply), ...(travelDegraded ? { travelDegraded: true } : {}) });
+      logTelemetry(
+        usedRoute.id,
+        latencyMs,
+        fullReply.length,
+        usedRoute.gateway === 'gemini' ? 'Gemini' : 'OpenRouter',
+        activeSessionUser?.sub ?? null,
+        usedRoute.gateway === 'gemini' ? !userKey && mayUseServerKeys : !openRouterKey && mayUseServerKeys,
+        telemetryContext,
+        req,
+      );
+      recordModelQualityEvent({
+        requestId,
+        modelId: usedRoute.id,
+        taskCategory,
+        outcome: 'success',
+        latencyMs,
+        fallbackFrom: usedRoute.reason === 'fallback' ? modelId : fallbackFrom,
+      });
+      sse.done({
+        provider: `${usedRoute.gateway === 'gemini' ? 'Google Gemini' : 'OpenRouter'} (${usedRoute.id})`,
+        latencyMs,
+        modelId: usedRoute.id,
+        requestId,
+        correlationId,
+        liveConnected: true,
+        grounded: grounding && sources.length > 0,
+        fallbackUsed: usedRoute.reason === 'fallback',
+        inferenceRoute: {
+          gateway: usedRoute.gateway,
+          upstreamProvider: usedRoute.upstreamProvider,
+          failureDomain: usedRoute.failureDomain,
+          quotaDomain: usedRoute.quotaDomain,
+          costClass: usedRoute.costClass,
+          health: usedRoute.health,
+          circuit: usedRoute.circuit,
+        },
+        conversation: conversationMetadata(fullReply),
+        ...(travelDegraded ? { travelDegraded: true } : {}),
+      });
+      traceBoundary({
+        correlationId,
+        boundary: 'api.chat',
+        state: 'succeeded',
+        transaction,
+        route: '/api/chat',
+        modelId: usedRoute.id,
+        gateway: usedRoute.gateway,
+        durationMs: latencyMs,
+      });
       return;
     }
 
     if (attempts[0].provider === 'gemini') {
-      if (!effectiveGeminiKey) return res.status(401).json({ error: "No Google Gemini API key configured.", requiresKey: "gemini" });
-      const travelPersona = travelToolsEnabled ? `\n\nTRAVEL TOOL SAFETY DIRECTIVE:\n- Use connected travel tools only for the current travel-domain request.\n- Live flight search may be available through Duffel. Do not call search_flights until origin airport, destination airport, and a YYYY-MM-DD departure date are known — ask for what is missing instead.\n- Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places).\n- Ask one material clarifying question instead of guessing missing dates, budget, group, or preferences.\n- Any future transaction must require explicit human confirmation immediately before execution.\n` : '';
+      if (!effectiveGeminiKey) {
+        return res.status(401).json({ error: "No Google Gemini API key configured.", requiresKey: "gemini" });
+      }
+
+      const travelPersona = travelToolsEnabled ? `\n\nTRAVEL TOOL SAFETY DIRECTIVE:
+- Use connected travel tools only for the current travel-domain request.
+- Live flight search may be available through Duffel. Do not call search_flights until origin airport, destination airport, and a YYYY-MM-DD departure date are known — ask for what is missing instead. If the provider is not connected or errors, say so plainly and do not substitute invented results.
+- Hotels, stays, property ratings, websites, Google Maps links, and photos MUST use search_hotels (Google Places). Never call get_places_routing for hotels. Dates are optional for discovery.
+- search_hotels location MUST be a city, island, or neighbourhood (Phuket, Seminyak, Gold Coast, Singapore). If the latest user message is that place, use it. Do not ask for the city again. If the traveller only named a vibe such as beach resorts or kids' clubs, ASK for the place first. Do not call the tool with that vibe as the location.
+- After search_hotels succeeds, paste mandatoryShortlist verbatim so every property has ★ Google user rating (when supplied), a website or Maps link, and is clickable. Do not invent extra hotels or ratings.
+- Google Places may provide hotel/place identity and ratings, not date-specific room inventory or nightly rates.
+- Transactional booking, ticketing, and background price-alert creation are disabled in this production build. Never claim a booking, ticket, PNR, confirmation code, purchase, alert, or background monitor exists unless a connected provider has actually confirmed it.
+- Ask one material clarifying question instead of guessing missing dates, budget, group, or preferences.
+- Any future transaction must require explicit human confirmation immediately before execution.
+` : '';
       const injectedSystemPrompt = finalSystemPrompt + travelPersona;
       const contents = buildGeminiContents(boundedHistory, message, visionImages);
       let fullReply = '';
@@ -803,89 +1626,255 @@ export default async function handler(req: any, res: any) {
       let loopCount = 0;
       let continueAgent = true;
       let travelPlaces: any[] = [];
+
       while (continueAgent && loopCount < MAX_AGENT_STEPS) {
         assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
         loopCount += 1;
         continueAgent = false;
+
         let stream: any = null;
         let lastOpenError: any = null;
-        const candidateAttempts = loopCount === 1 && !sse.isCommitted ? attempts.filter((attempt) => attempt.provider === 'gemini') : [{ id: currentModel, provider: 'gemini', reason: 'primary' as const }];
+        const candidateAttempts = loopCount === 1 && !sse.isCommitted
+          ? attempts.filter((attempt) => attempt.provider === 'gemini')
+          : [{ id: currentModel, provider: 'gemini', reason: 'primary' as const }];
+
         for (let index = 0; index < candidateAttempts.length; index += 1) {
           const attempt = candidateAttempts[index];
           try {
-            stream = await openGeminiStream({ apiKey: effectiveGeminiKey, model: attempt.id, contents, systemInstruction: injectedSystemPrompt, temperature: dynamicTemperature, grounding, travelToolsEnabled });
+            try {
+              stream = await openGeminiStream({
+                apiKey: effectiveGeminiKey,
+                model: attempt.id,
+                contents,
+                systemInstruction: injectedSystemPrompt,
+                temperature: dynamicTemperature,
+                grounding,
+                travelToolsEnabled,
+              });
+            } catch (groundError) {
+              if (!grounding) throw groundError;
+              stream = await openGeminiStream({
+                apiKey: effectiveGeminiKey,
+                model: attempt.id,
+                contents,
+                systemInstruction: injectedSystemPrompt,
+                temperature: dynamicTemperature,
+                grounding: false,
+                travelToolsEnabled,
+              });
+            }
             currentModel = attempt.id;
             usedModel = attempt.id;
             modelFallbackUsed = index > 0;
             break;
           } catch (error) {
             lastOpenError = error;
-            if (sse.isCommitted || index >= candidateAttempts.length - 1 || !shouldFallbackBeforeStreaming(error, { currentGateway: 'gemini', nextGateway: candidateAttempts[index + 1] ? 'gemini' : undefined })) throw error;
+            if (
+              sse.isCommitted
+              || index >= candidateAttempts.length - 1
+              || !shouldFallbackBeforeStreaming(error, {
+                currentGateway: 'gemini',
+                nextGateway: candidateAttempts[index + 1] ? 'gemini' : undefined,
+              })
+            ) throw error;
           }
         }
         if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
+
         const iterator = stream[Symbol.asyncIterator]();
         let signedFunctionTurn: ReturnType<typeof extractSignedFunctionTurn> = null;
+
         while (true) {
+          assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
           const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
           if (next.done) break;
           const chunk = next.value;
           const toolTurn = extractSignedFunctionTurn(chunk);
-          if (toolTurn) { signedFunctionTurn = toolTurn; break; }
-          if (chunk?.text) { fullReply += chunk.text; sse.text(chunk.text); }
+          if (toolTurn) {
+            signedFunctionTurn = toolTurn;
+            break;
+          }
+
+          if (chunk?.text) {
+            fullReply += chunk.text;
+            sse.text(chunk.text);
+          }
           const gcs = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
-          if (Array.isArray(gcs)) for (const gc of gcs) { const uri = gc?.web?.uri; if (uri && !seenSources.has(uri)) { seenSources.add(uri); sources.push({ uri, title: gc?.web?.title || uri }); } }
+          if (Array.isArray(gcs)) {
+            for (const gc of gcs) {
+              const uri = gc?.web?.uri;
+              if (uri && !seenSources.has(uri)) {
+                seenSources.add(uri);
+                sources.push({ uri, title: gc?.web?.title || uri });
+              }
+            }
+          }
         }
+
         if (signedFunctionTurn) {
-          if (!travelToolsEnabled) throw new Error(`Blocked unexpected travel tool call outside travel domain: ${signedFunctionTurn.call.name || 'unknown'}`);
+          if (!travelToolsEnabled) {
+            throw new Error(`Blocked unexpected travel tool call outside travel domain: ${signedFunctionTurn.call.name || 'unknown'}`);
+          }
+          sse.status({ phase: 'tool', state: 'running', tool: signedFunctionTurn.call.name });
           const hasTurnAttempt = Object.prototype.hasOwnProperty.call(req.body || {}, 'turnAttempt');
           const turnAttempt = hasTurnAttempt ? Math.max(1, Number(req.body?.turnAttempt) || 1) : null;
-          const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, { recentUserTexts: recentUserTextsFromChat(boundedHistory, message), ...(hasTurnAttempt ? { turnAttempt } : {}) });
-          if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) travelPlaces = toolResult.hotels; else if (Array.isArray(toolResult?.attractions) && toolResult.attractions.length) travelPlaces = toolResult.attractions; else if (Array.isArray(toolResult?.places) && toolResult.places.length) travelPlaces = toolResult.places;
-          if (toolResult?.action === 'PAUSE_AND_ASK') {
-            const askMsg = toolResult?.status === 'unavailable' ? `\n\n${toolResult.message}\n\n` : `\n\n**Clarifying Question:** ${toolResult.message}\n\n`;
-            fullReply += askMsg; sse.text(askMsg); break;
+          const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, {
+            recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
+            ...(hasTurnAttempt ? { turnAttempt } : {}),
+          });
+          if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
+            travelPlaces = toolResult.hotels;
+          } else if (Array.isArray(toolResult?.attractions) && toolResult.attractions.length) {
+            travelPlaces = toolResult.attractions;
+          } else if (Array.isArray(toolResult?.places) && toolResult.places.length) {
+            travelPlaces = toolResult.places;
           }
+
+          if (toolResult?.action === 'PAUSE_AND_ASK') {
+            const autoRetryToolTurn = toolResult?.autoRetryTurn === true
+              && toolResult?.retryable === true
+              && !sse.isCommitted;
+            sse.status({
+              phase: 'tool',
+              state: autoRetryToolTurn
+                ? 'cleared'
+                : (toolResult?.status === 'unavailable' ? 'unavailable' : 'waiting_for_user'),
+              tool: signedFunctionTurn.call.name,
+            });
+            if (autoRetryToolTurn) {
+              // Mirror turn-recovery (#273): clear the tool status and fail the
+              // stream as retryable so the desk re-runs the tool turn once.
+              sse.fail({
+                message: String(toolResult?.message || 'Live flight lookup failed. Retrying…'),
+                code: TRAVEL_FLIGHT_PROVIDER_CODE,
+                retryable: true,
+                requestId,
+                correlationId,
+              });
+              return;
+            }
+            const askMsg = toolResult?.status === 'unavailable'
+              ? `\n\n${toolResult.message}\n\n`
+              : `\n\n**Clarifying Question:** ${toolResult.message}\n\n`;
+            fullReply += askMsg;
+            sse.text(askMsg);
+            break;
+          }
+
           appendFunctionResponse(contents, signedFunctionTurn.modelTurn, signedFunctionTurn.call, toolResult);
+          sse.status({ phase: 'tool', state: 'completed', tool: signedFunctionTurn.call.name });
           continueAgent = true;
         }
       }
-      if (continueAgent && loopCount >= MAX_AGENT_STEPS) throw new Error(`Agent execution exceeded the ${MAX_AGENT_STEPS}-step safety limit.`);
-      if (travelPlaces.length) { const shortlist = formatTravelPlaceShortlist(travelPlaces); if (shortlist && (!/★\s*\d/.test(fullReply) || !/https?:\/\//i.test(fullReply))) { const hotelBlock = `\n\n${shortlist}\n`; fullReply += hotelBlock; sse.text(hotelBlock); } }
-      if (grounding && sources.length) { const block = buildGroundedSourceBlock(sources); fullReply += block; sse.text(block); }
+
+      if (continueAgent && loopCount >= MAX_AGENT_STEPS) {
+        throw new Error(`Agent execution exceeded the ${MAX_AGENT_STEPS}-step safety limit.`);
+      }
+
+      if (travelPlaces.length) {
+        const shortlist = formatTravelPlaceShortlist(travelPlaces);
+        const hasRating = /★\s*\d/.test(fullReply);
+        const hasLink = /https?:\/\//i.test(fullReply);
+        if (shortlist && (!hasRating || !hasLink)) {
+          const hotelBlock = `\n\n${shortlist}\n`;
+          fullReply += hotelBlock;
+          sse.text(hotelBlock);
+        }
+      }
+
+      if (grounding && sources.length) {
+        const block = buildGroundedSourceBlock(sources);
+        fullReply += block;
+        sse.text(block);
+      }
+
       const latencyMs = Date.now() - startTime;
       logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", activeSessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
       recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
-      sse.done({ provider: `Google Gemini (${modelName || usedModel})`, latencyMs, modelId: usedModel, requestId, correlationId, liveConnected: true, grounded: grounding && sources.length > 0, fallbackUsed: modelFallbackUsed, conversation: conversationMetadata(fullReply), ...(travelPlaces.length ? { travelPlaces: travelPlaces.slice(0, 8) } : {}), ...(travelDegraded ? { travelDegraded: true } : {}) });
+      sse.done({
+        provider: `Google Gemini (${modelName || usedModel})`,
+        latencyMs,
+        modelId: usedModel,
+        requestId,
+        correlationId,
+        liveConnected: true,
+        grounded: grounding && sources.length > 0,
+        fallbackUsed: modelFallbackUsed,
+        conversation: conversationMetadata(fullReply),
+        ...(travelPlaces.length ? { travelPlaces: travelPlaces.slice(0, 8) } : {}),
+        ...(travelDegraded ? { travelDegraded: true } : {}),
+      });
       return;
     }
 
-    if (!effectiveOpenRouterKey) return res.status(401).json({ error: `No OpenRouter API key configured.`, requiresKey: "openrouter" });
-    const formattedHistory = [{ role: "system", content: finalSystemPrompt }, ...(boundedHistory || []).map((item: any) => ({ role: item.role === "model" || item.role === "assistant" || item.sender === "ai" ? "assistant" : "user", content: item.text || item.content || "" }))];
-    formattedHistory.push({ role: "user", content: visionImages.length ? [...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })), { type: "text", text: refineUserMessage }] : refineUserMessage });
+    if (!effectiveOpenRouterKey) {
+      return res.status(401).json({ error: `No OpenRouter API key configured.`, requiresKey: "openrouter" });
+    }
+
+    const formattedHistory = [
+      { role: "system", content: finalSystemPrompt },
+      ...(boundedHistory || []).map((item: any) => ({
+        role: item.role === "model" || item.role === "assistant" || item.sender === "ai" ? "assistant" : "user",
+        content: item.text || item.content || "",
+      }))
+    ];
+    formattedHistory.push({
+      role: "user",
+      content: visionImages.length
+        ? [
+            ...visionImages.map((url: string) => ({ type: "image_url", image_url: { url } })),
+            { type: "text", text: refineUserMessage },
+          ]
+        : refineUserMessage,
+    });
+
     const openRouterAttempts = attempts.filter((attempt) => attempt.provider === 'openrouter');
     let response: Response | null = null;
     let usedOpenRouterModel = '';
     let modelFallbackUsed = false;
     let lastError: any = null;
+
     for (let index = 0; index < openRouterAttempts.length; index += 1) {
+      assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
       const attempt = openRouterAttempts[index];
       const resolved = resolveOpenRouterModelId(attempt.id);
-      if (resolved.error) { lastError = new Error(resolved.error); continue; }
+      if (resolved.error) {
+        lastError = new Error(resolved.error);
+        continue;
+      }
       try {
-        response = await openOpenRouterResponse({ key: effectiveOpenRouterKey, modelId: resolved.slug as string, modelName: attempt.id, messages: formattedHistory, temperature: dynamicTemperature, grounding, jsonMode: finalSystemPrompt.includes("JSON DECK SPEC") });
+        response = await openOpenRouterResponse({
+          key: effectiveOpenRouterKey,
+          modelId: resolved.slug as string,
+          modelName: attempt.id,
+          messages: formattedHistory,
+          temperature: dynamicTemperature,
+          grounding,
+          jsonMode: finalSystemPrompt.includes("JSON DECK SPEC"),
+        });
         usedOpenRouterModel = resolved.slug as string;
         modelFallbackUsed = index > 0;
         break;
-      } catch (error) { lastError = error; if (index >= openRouterAttempts.length - 1 || !shouldFallbackBeforeStreaming(error, { currentGateway: 'openrouter', nextGateway: openRouterAttempts[index + 1] ? 'openrouter' : undefined })) throw error; }
+      } catch (error) {
+        lastError = error;
+        if (
+          index >= openRouterAttempts.length - 1
+          || !shouldFallbackBeforeStreaming(error, {
+            currentGateway: 'openrouter',
+            nextGateway: openRouterAttempts[index + 1] ? 'openrouter' : undefined,
+          })
+        ) throw error;
+      }
     }
     if (!response || !usedOpenRouterModel) throw lastError || new Error('OpenRouter did not return a response.');
     if (!response.body) throw new Error("OpenRouter API returned no body.");
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let fullReply = '';
     let buffer = '';
     while (true) {
+      assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
       const { done, value } = await readWithIdleTimeout(reader, PROVIDER_STREAM_IDLE_MS, 'OpenRouter stream');
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -894,25 +1883,104 @@ export default async function handler(req: any, res: any) {
       for (const line of lines) {
         if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
         let midStreamFailure: Error | null = null;
-        try { const parsed = JSON.parse(line.slice(6)); midStreamFailure = streamErrorFrom(parsed, 'OpenRouter'); const token = parsed.choices?.[0]?.delta?.content || ''; if (token) { fullReply += token; sse.text(token); } } catch { /* ignore malformed */ }
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          midStreamFailure = streamErrorFrom(parsed, 'OpenRouter');
+          const token = parsed.choices?.[0]?.delta?.content || '';
+          if (token) {
+            fullReply += token;
+            sse.text(token);
+          }
+        } catch { /* ignore malformed upstream event */ }
+        // Must escape before the success path below, which records
+        // outcome:"success" into the ledger the outcome router reads.
         if (midStreamFailure) throw midStreamFailure;
       }
     }
+
     const latencyMs = Date.now() - startTime;
     logTelemetry(usedOpenRouterModel, latencyMs, fullReply.length, "OpenRouter", activeSessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
     recordModelQualityEvent({ requestId, modelId: usedOpenRouterModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
-    sse.done({ provider: `OpenRouter (${modelName || usedOpenRouterModel})`, latencyMs, modelId: usedOpenRouterModel, requestId, correlationId, liveConnected: true, fallbackUsed: modelFallbackUsed, conversation: conversationMetadata(fullReply), ...(travelDegraded ? { travelDegraded: true } : {}) });
+    sse.done({
+      provider: `OpenRouter (${modelName || usedOpenRouterModel})`,
+      latencyMs,
+      modelId: usedOpenRouterModel,
+      requestId,
+      correlationId,
+      liveConnected: true,
+      fallbackUsed: modelFallbackUsed,
+      conversation: conversationMetadata(fullReply),
+      ...(travelDegraded ? { travelDegraded: true } : {}),
+    });
     return;
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    traceBoundary({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', durationMs: Date.now() - startTime, statusCode: Number(err?.status || 500), detailCode: Number(err?.status) === 429 ? 'quota-exhausted' : 'chat-failure' });
-    if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") recordModelQualityEvent({ requestId, modelId: req.body.modelId, taskCategory, outcome: "failure", latencyMs: Date.now() - startTime, fallbackFrom: req.body?.fallbackFrom });
+    traceBoundary({
+      correlationId,
+      boundary: 'api.chat',
+      state: 'failed',
+      transaction,
+      route: '/api/chat',
+      durationMs: Date.now() - startTime,
+      statusCode: Number(err?.status || 500),
+      detailCode: Number(err?.status) === 429 ? 'quota-exhausted' : 'chat-failure',
+    });
+    if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") {
+      recordModelQualityEvent({
+        requestId,
+        modelId: req.body.modelId,
+        taskCategory,
+        outcome: "failure",
+        latencyMs: Date.now() - startTime,
+        fallbackFrom: req.body?.fallbackFrom,
+      });
+    }
+
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    // 429 across the board is quota, not a transient blip — say so honestly.
     const quotaExhausted = Number(err?.status) === 429 || err?.detailCode === 'quota-exhausted';
+    // An auth/billing rejection must never be reported as "retry in a moment".
     const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
-    const publicError = artifactContractFailure ? (err?.detailCode === 'browser-preview-missing' ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.' : err?.detailCode === 'code-fences-missing' ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.' : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.') : credentialRejected ? describeCredentialFailure(err, req.body?.modelId) : quotaExhausted ? "Every configured AI route is out of quota right now, so retrying will not help this minute. Add or top up a provider key (or wait for the quota window to reset) and I'll pick straight back up." : retryableProviderFailure ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment." : "Quantora could not complete this request.";
-    if (sse.isStarted) { sse.fail({ message: publicError, code: err?.code || 'CHAT_STREAM_FAILURE', retryable: retryableProviderFailure || artifactContractFailure, provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter', requestId, correlationId }); return; }
-    return res.status(retryableProviderFailure ? 503 : 500).json({ error: publicError, modelName: req.body?.modelName || req.body?.modelId, requestId, correlationId });
+    const publicError = artifactContractFailure
+      ? (err?.detailCode === 'browser-preview-missing'
+        ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        : err?.detailCode === 'code-fences-missing'
+          ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
+        : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+      : credentialRejected
+      // Names the provider and separates an empty balance from a bad key. The
+      // old sentence did neither, and sent somebody to re-issue a Gemini key
+      // that its own dashboard showed working at 100% success.
+      ? describeCredentialFailure(err, req.body?.modelId)
+      : quotaExhausted
+      /*
+       * "Retry in a moment" is false when the quota is spent — retrying just
+       * burns another failed turn and the person is told the same thing again.
+       * Name the real condition and the real remedy instead.
+       */
+      ? "Every configured AI route is out of quota right now, so retrying will not help this minute. Add or top up a provider key (or wait for the quota window to reset) and I'll pick straight back up."
+      : retryableProviderFailure
+      ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
+      : "Quantora could not complete this request.";
+
+    if (sse.isStarted) {
+      sse.fail({
+        message: publicError,
+        code: err?.code || 'CHAT_STREAM_FAILURE',
+        retryable: retryableProviderFailure || artifactContractFailure,
+        provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
+        requestId,
+        correlationId,
+      });
+      return;
+    }
+
+    return res.status(retryableProviderFailure ? 503 : 500).json({
+      error: publicError,
+      modelName: req.body?.modelName || req.body?.modelId,
+      requestId,
+      correlationId,
+    });
   }
 }
