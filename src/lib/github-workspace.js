@@ -26,6 +26,7 @@ export const GITHUB_ENDPOINTS = Object.freeze({
   createRepository: '/api/github/create-repo',
   listRepositories: '/api/github/list-repos',
   listBranches: '/api/github/list-branches',
+  checkout: '/api/github/checkout',
 });
 
 const STAGE_BY_ENDPOINT = Object.freeze({
@@ -41,6 +42,7 @@ const STAGE_BY_ENDPOINT = Object.freeze({
   [GITHUB_ENDPOINTS.createRepository]: 'github-create-repo',
   [GITHUB_ENDPOINTS.listRepositories]: 'github-list-repos',
   [GITHUB_ENDPOINTS.listBranches]: 'github-list-branches',
+  [GITHUB_ENDPOINTS.checkout]: 'github-checkout',
 });
 
 /**
@@ -214,4 +216,53 @@ export function githubDestinationBlocker(destination) {
     return `You have read access to ${target.owner}/${target.repo}, not write. Quantora could build here but never save it. Pick another repository.`;
   }
   return '';
+}
+
+/**
+ * A checkout, as the desk's file map.
+ *
+ * The desk stores each file as `{ content, language }`, NOT as a bare string.
+ * A first version of this wrote strings, which every part of the desk then read
+ * as an entry with no content — so a checkout loaded and the pane reported "the
+ * shell is empty while Preview has files", with no error anywhere. The shape is
+ * the whole job of this function, which is why it is named and tested.
+ *
+ * The empty case matters too: replacing the desk with {} would silently wipe
+ * whatever the user had, which is a data-loss bug wearing the clothes of a
+ * no-op. Callers check the result before setting state.
+ */
+const LANGUAGE_BY_EXTENSION = {
+  js: 'jsx', jsx: 'jsx', mjs: 'jsx', cjs: 'jsx',
+  ts: 'tsx', tsx: 'tsx',
+  html: 'html', htm: 'html',
+  css: 'css', scss: 'css', sass: 'css', less: 'css',
+  json: 'json', md: 'markdown', mdx: 'markdown',
+  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java',
+  sh: 'shell', bash: 'shell', yml: 'yaml', yaml: 'yaml', sql: 'sql',
+};
+
+export function languageForPath(path = '') {
+  const extension = String(path).split('.').pop()?.toLowerCase() || '';
+  return LANGUAGE_BY_EXTENSION[extension] || 'plaintext';
+}
+
+export function checkoutFilesToVfs(files = []) {
+  const vfs = {};
+  for (const file of files) {
+    if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') continue;
+    const path = file.path.replace(/^\/+/, '');
+    if (!path) continue;
+    vfs[path] = { content: file.content, language: languageForPath(path) };
+  }
+  return vfs;
+}
+
+/** What opening a repository in the desk should say afterwards. */
+export function checkoutOutcomeMessage(checkout = {}) {
+  const count = Array.isArray(checkout.files) ? checkout.files.length : 0;
+  const where = `${checkout.owner}/${checkout.repo}`;
+  const at = String(checkout.commitSha || '').slice(0, 7);
+  const head = `Opened ${where} at ${checkout.branch}${at ? ` (${at})` : ''} — ${count} file${count === 1 ? '' : 's'}.`;
+  // The notice is the server's own account of what it could not bring.
+  return checkout.notice ? `${head} ${checkout.notice}` : head;
 }

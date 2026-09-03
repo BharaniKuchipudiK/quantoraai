@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { classifyDeskGitLine, looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
+import { classifyDeskGitLine, deskGitBase, looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
 import { githubCompareUrl } from '../lib/github-import.js';
 import { studioFileLabel } from '../lib/studio-file-tree.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
@@ -45,6 +45,8 @@ export default function StudioGit({
   const blocker = studioGitBlocker({ isolated, fileCount });
   const baseBranch = (githubBaseBranch && String(githubBaseBranch).trim()) || 'main';
   const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', baseBranch);
+  // What this desk is a working copy of, when it was opened from a repository.
+  const workingCopyBase = deskGitBase(workspaceKey);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo?.(0, scrollerRef.current.scrollHeight);
@@ -125,6 +127,21 @@ export default function StudioGit({
         fontSize: '0.78rem',
       }}
     >
+      {workingCopyBase ? (
+        <div
+          data-quantora-desk-git-base="true"
+          style={{
+            padding: '8px 12px',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            color: '#7dd3fc',
+            lineHeight: 1.45,
+          }}
+        >
+          Working copy of {workingCopyBase.repository || 'this repository'} at{' '}
+          <strong>{workingCopyBase.branch}</strong> ({String(workingCopyBase.commitSha).slice(0, 7)}).
+          Status and diff below are against that commit.
+        </div>
+      ) : null}
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
         Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Save to GitHub, below, is the one thing that leaves — it writes these files to a repository on your own connected account, and Quantora asks GitHub whether you may write before it does.
       </div>

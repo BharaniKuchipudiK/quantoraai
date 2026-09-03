@@ -21,7 +21,6 @@ import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../li
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
-import StudioToolsMenu from './StudioToolsMenu';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -40,6 +39,7 @@ import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } fro
 import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
@@ -54,7 +54,6 @@ import {
   studySyllabusContinueSet,
   studySyllabusHaystack,
 } from '../lib/study-syllabus-overlay.js';
-import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { useQirCodingRun } from '../hooks/useQirCodingRun.js';
@@ -107,6 +106,22 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
+const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
+/*
+ * Popovers, deferred out of the desk's entry chunk.
+ *
+ * scripts/code-highlight-browser-gate.mjs caps that chunk at 300,000 bytes and
+ * it had fallen to 358 bytes of headroom — close enough that the next person to
+ * add a comment to this file would have got a red build with no idea why.
+ *
+ * Neither of these can be on screen in the first frame: the tools menu returns
+ * null until its `+` is pressed (and its one effect no-ops while closed, so
+ * gating the mount changes nothing), and the decision modal only renders when
+ * modalData exists. Anything in here that the first frame cannot show belongs
+ * behind a lazy boundary.
+ */
+const StudioToolsMenu = lazy(() => import('./StudioToolsMenu.jsx'));
+const StudioDecisionModal = lazy(() => import('./StudioDecisionModal.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -592,6 +607,81 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * normalizeGithubDestination.
    */
   const [githubDestination, setGithubDestination] = useState(null);
+  /*
+   * Phase 06 — Plan or Build, as chosen. `null` means nobody chose, and the
+   * existing inference decides exactly as it did before this control existed.
+   */
+  const [studioModeChoice, setStudioModeChoice] = useState(null);
+  const studioModeChoiceRef = useRef(null);
+  studioModeChoiceRef.current = studioModeChoice;
+  const [githubCheckout, setGithubCheckout] = useState(null);
+
+  /*
+   * Open a repository in the desk: a real checkout, not the ten-file reading
+   * sample. Replaces the desk contents, so it refuses when there is unsaved
+   * work rather than overwriting it — the files on the desk may be the only
+   * copy that exists, and no confirmation dialog is worth losing them to.
+   */
+  const handleOpenRepositoryInDesk = useCallback(async (target) => {
+    if (!target) return;
+    const deskHasWork = Object.keys(vfs || {}).length > 0;
+    if (deskHasWork && !window.confirm(
+      `Opening ${target.owner}/${target.repo} replaces the ${Object.keys(vfs).length} file(s) currently on the desk. Anything not pushed to GitHub is lost. Continue?`,
+    )) return;
+
+    setGithubCheckout({ status: 'loading', message: `Opening ${target.owner}/${target.repo}…` });
+    try {
+      /*
+       * Imported here rather than at module scope on purpose. A static import
+       * puts both libraries in the desk's entry chunk, which the code payload
+       * gate caps: adding them took AiStudio from under budget to 301,933
+       * bytes. Nothing below runs until someone clicks Open in desk, so nothing
+       * below belongs in the bundle everyone downloads.
+       */
+      const [
+        { GITHUB_ENDPOINTS, buildGithubStageBody, checkoutFilesToVfs, checkoutOutcomeMessage, githubDestinationRepoUrl },
+        { seedDeskRepoFromCheckout },
+      ] = await Promise.all([
+        import('../lib/github-workspace.js'),
+        import('../lib/studio-git.js'),
+      ]);
+
+      const response = await fetch(GITHUB_ENDPOINTS.checkout, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(buildGithubStageBody(GITHUB_ENDPOINTS.checkout, {
+          repoUrl: githubDestinationRepoUrl(target),
+          branch: target.branch,
+        })),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setGithubCheckout({ status: 'error', message: String(data?.error || `Could not open that repository (HTTP ${response.status}).`) });
+        return;
+      }
+      const nextVfs = checkoutFilesToVfs(data.files);
+      if (Object.keys(nextVfs).length === 0) {
+        // Never replace the desk with nothing: an empty result is a failure to
+        // read, not an instruction to wipe what the user had.
+        setGithubCheckout({ status: 'error', message: 'That checkout returned no readable files, so the desk was left as it was.' });
+        return;
+      }
+      setVfs(nextVfs);
+      // Seed desk git from the commit we opened, so status immediately after
+      // reports a clean tree rather than calling the whole project untracked.
+      seedDeskRepoFromCheckout(activeSessionId || '', data.files, {
+        commitSha: data.commitSha,
+        branch: data.branch,
+        repository: `${data.owner}/${data.repo}`,
+      });
+      setIsWorkspaceMode(true);
+      setWorkspaceActiveTab('preview');
+      setGithubCheckout({ status: 'ready', message: checkoutOutcomeMessage(data), commitSha: data.commitSha });
+    } catch (error) {
+      setGithubCheckout({ status: 'error', message: error?.message || 'Could not open that repository.' });
+    }
+  }, [vfs, activeSessionId]);
   /*
    * The tab strip.
    *
@@ -1085,7 +1175,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     const brief = [...messages].reverse().find((message) => message.sender === 'user')?.text || '';
-    const assembled = applyWorkspaceFromChat(rawText, vfs, deskJob, { brief });
+    /*
+     * Phase 06 — Plan mode's promise is kept HERE, not in the system prompt.
+     *
+     * The model is told to emit no code on a plan turn. Models ignore that, and
+     * a control labelled "Plan" that writes files is worse than no control: it
+     * costs the same money as a build and produces one the user did not
+     * approve. guardPlanTurn returns an assembly that changes nothing, and
+     * src/lib/studio-mode.test.js runs this exact composition over a reply full
+     * of fences to prove the desk survives it.
+     */
+    const assembled = guardPlanTurn(
+      applyWorkspaceFromChat(rawText, vfs, deskJob, { brief }),
+      vfs,
+      studioModeChoiceRef.current,
+    );
     // A plan turn starts the job; every other turn re-judges it against the
     // files that now exist, so a step can also go BACK to not-done if its file
     // is later emptied. The job describes the desk, not the history of claims.
@@ -1113,6 +1217,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const deskForJob = assembled.vfs;
     if (proposed) setBuildJob(advanceBuildJob(proposed, deskForJob));
     else setBuildJob((prev) => (prev ? advanceBuildJob(prev, deskForJob) : prev));
+    /*
+     * The plan is the deliverable, so the job above is still read and rendered.
+     * Everything below opens a preview or runs the repair plane over what this
+     * turn produced, and on a plan turn there is deliberately nothing to run.
+     * Returning here rather than relying on the emptied assembly is the belt to
+     * the guard's braces: proveCodingTurn REPAIRS what it is handed, and a
+     * repair is the one thing that could rebuild what was just discarded.
+     */
+    if (studioModeChoiceRef.current === 'plan') {
+      // Cleared when there is nothing to say, so a note from the previous turn
+      // is not left hanging under a plan it has nothing to do with.
+      setPatchNote(planTurnDiscardNotice(assembled.discardedPaths?.length || 0));
+      return;
+    }
     setPatchNote([
       ...(assembled.patchFailures || [])
         .map((failure) => describePatchFailures(failure.result, failure.filepath)),
@@ -1522,6 +1640,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     qirCoding,
     onDeskRename,
     buildJob,
+    studioModeChoice,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -2201,6 +2320,7 @@ Paused — ${autoPauseRef.current}.`
                       )}
 
                       {modalData && (
+                        <Suspense fallback={null}>
                         <StudioDecisionModal
                           modalData={modalData}
                           isLight={isLight}
@@ -2216,6 +2336,7 @@ Paused — ${autoPauseRef.current}.`
                             )));
                           }}
                         />
+                        </Suspense>
                       )}
 
                       {msg.sender === 'ai' && msg.autoRouted && msg.modelUsed && !isActiveGenerating && (
@@ -4287,13 +4408,28 @@ Paused — ${autoPauseRef.current}.`
 
 
 
-          <Suspense fallback={null}>
-            <GithubDestinationBar
-              destination={githubDestination}
-              onChange={setGithubDestination}
-              isLight={isLight}
-            />
-          </Suspense>
+          {/*
+            * The checkout's own account of what it could not bring. Rendered
+            * because a truncation notice nobody sees is the same as not having
+            * one: the model would reason about a codebase with holes in it and
+            * the user would never learn why.
+            */}
+          {githubCheckout ? (
+            <div
+              data-quantora-github-checkout-status={githubCheckout.status}
+              style={{
+                padding: '6px 10px',
+                marginBottom: '8px',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                lineHeight: 1.45,
+                background: githubCheckout.status === 'error' ? 'rgba(248,113,113,0.12)' : 'rgba(56,189,248,0.10)',
+                color: githubCheckout.status === 'error' ? '#fca5a5' : subtextColor,
+              }}
+            >
+              {githubCheckout.message}
+            </div>
+          ) : null}
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '0' }}>
@@ -4421,6 +4557,8 @@ Paused — ${autoPauseRef.current}.`
                 >
                   <Plus size={18} />
                 </button>
+                {showToolsMenu ? (
+                <Suspense fallback={null}>
                 <StudioToolsMenu
                   isOpen={showToolsMenu}
                   anchorRef={plusMenuAnchorRef}
@@ -4465,6 +4603,8 @@ Paused — ${autoPauseRef.current}.`
                     }
                   }}
                 />
+                </Suspense>
+                ) : null}
               </div>
 
               {/* Attach File */}
@@ -4742,7 +4882,29 @@ Paused — ${autoPauseRef.current}.`
                 )}
               </div>
 
+              <Suspense fallback={null}>
+                <StudioModeToggle
+                  chosen={studioModeChoice}
+                  onChange={setStudioModeChoice}
+                  isLight={isLight}
+                  subtextColor={subtextColor}
+                />
+              </Suspense>
 
+              {/*
+                * Where this build is going to sit — a setting, so it sits with
+                * the other settings rather than shouting above the prompt.
+                */}
+              <Suspense fallback={null}>
+                <GithubDestinationBar
+                  destination={githubDestination}
+                  onChange={setGithubDestination}
+                  onOpenInDesk={handleOpenRepositoryInDesk}
+                  isLight={isLight}
+                  textColor={textColor}
+                  subtextColor={subtextColor}
+                />
+              </Suspense>
 
             </div>
 

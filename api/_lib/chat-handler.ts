@@ -999,10 +999,21 @@ export default async function handler(req: any, res: any) {
        * is already running, or every follow-up would re-plan instead of taking
        * the next step. `hasVFS` stands in for "there is already a desk here".
        */
-      needsJobPlan: effectiveBuildMode
-        && !isRefine
+      /*
+       * Phase 06: an explicit Plan is not a hint, so it does not consult the
+       * size heuristic.
+       *
+       * briefNeedsJob exists to spot a build too large for one turn when nobody
+       * said anything. When the person has pressed Plan, the question is
+       * settled — and a "Plan" button that quietly builds a small app because
+       * the brief was under 400 characters is a control that lies about itself.
+       *
+       * It also outranks isRefine. Planning a change to a desk that already has
+       * files is the most valuable case there is ("plan how to add checkout to
+       * this shop"), and treating it as a refine would write the checkout.
+       */
+      needsJobPlan: (planMode || (effectiveBuildMode && !isRefine && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} })))
         && !honorGuided
-        && briefNeedsJob(message, { vfs: req.body?.hasVFS ? { placeholder: 1 } : {} })
         && !req.body?.buildJobActive,
       guided: honorGuided,
       refineMode: isRefine,

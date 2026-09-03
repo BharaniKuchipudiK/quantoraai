@@ -31,6 +31,7 @@ import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
+import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../lib/studio-mode.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { resolveTurnRecovery } from '../lib/turn-recovery.js';
@@ -272,6 +273,7 @@ export function useChatStream({
   qirCoding = null,
   onDeskRename = null,
   buildJob = null,
+  studioModeChoice = null,
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
@@ -720,6 +722,17 @@ export function useChatStream({
       hasDeskFiles: deskFiles,
       studioDomain,
     });
+    /*
+     * Phase 06 — the mode this turn actually runs in.
+     *
+     * This line used to be the literal `refineDesk ? 'build' : 'ask'` inside
+     * the request body, which is why the server's plan path — normalizer,
+     * temperature, directive, all of it — had never once executed in
+     * production. With no choice made, resolveStudioMode returns exactly that
+     * literal, so nothing about the old behaviour moves.
+     */
+    const turnStudioMode = resolveStudioMode({ chosen: studioModeChoice, refineDesk });
+    const planTurn = !mayWriteToDesk(turnStudioMode);
     const deskPacket = buildCodingTurnPacket({
       vfs,
       canvasCode,
@@ -972,7 +985,7 @@ export function useChatStream({
       text: visibleUserText,
       hasPreview: Boolean(typeof canvasCode === 'string' && canvasCode.trim()),
       isWorkspace: hasCodingWorkspace,
-      studioMode: refineDesk ? 'build' : 'ask',
+      studioMode: turnStudioMode,
       isVisionQuestion: attachedImages.length > 0,
     });
 
@@ -1005,6 +1018,12 @@ export function useChatStream({
        * than a rebuild, for the user and for the credit meter.
        */
       guidedBuild: guidedIntakeTurn,
+      /*
+       * Sent ONLY when the person chose. See studioModeRequestFields — the
+       * server reads a present studioMode as explicit, and an explicit "ask"
+       * switches build mode off for the whole turn.
+       */
+      ...studioModeRequestFields(studioModeChoice),
       // Keep server inference sticky even when this turn is chat-only on a live desk.
       taskCategory: isCodingRequest || hasCodingWorkspace ? 'coding' : 'general',
       hasVFS: vfsFileCountForHints > 0,
@@ -1630,9 +1649,18 @@ export function useChatStream({
           // A guided intake turn is exempt: its deliverable is the designer's one
           // question (see guidedIntakeTurn above), and demanding files from it is
           // the contradiction that burned the 2026-09-01 boutique build.
+          /*
+           * A plan turn owes STEPS, not files — the same shape as a guided
+           * intake turn owing a question. Without this exemption the platform
+           * asks the model for a plan with no code, then fails the turn for
+           * having no code and burns a retry on the compliant answer. That is
+           * the 2026-09-01 boutique failure exactly, and the reason
+           * guided-intake-browser-gate.mjs exists.
+           */
           if (
             codingSpineOwns
             && !guidedIntakeTurn
+            && !planTurn
             && !assembleStudioPreview(currentText).code
           ) {
             const shopOwned = Boolean(
@@ -1735,7 +1763,7 @@ export function useChatStream({
           let proofChips = [];
           // An intake turn owes a question, not files — proving it would re-note
           // the same false failure the no-preview exemption above just removed.
-          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn) {
+          if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn && !planTurn) {
             const assembled = assembleStudioPreview(currentText, vfs || {});
             const seedVfs = {
               ...(vfs || {}),
