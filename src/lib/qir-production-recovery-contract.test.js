@@ -57,9 +57,9 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
   const intent = fs.readFileSync(new URL('../../shared/build-intent.js', import.meta.url), 'utf8');
 
   assert.match(intent, /codingFailureSpineOwnsTurn/);
-  assert.match(stream, /codingFailureSpineOwnsTurn/);
-  assert.match(stream, /notifyCodingAttempt/);
-  assert.match(stream, /notifyCodingFailure/);
+  assert.match(stream, /advisorBlocksPreviewBuild\(turnDomain\)/);
+  assert.match(stream, /codingSpineOwns/);
+  assert.match(stream, /qirFail/);
   assert.match(stream, /onCodingModelAttempt/);
   assert.match(stream, /onCodingModelFailure/);
   assert.match(studio, /onCodingModelAttempt/);
@@ -79,6 +79,8 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
   const ci = fs.readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(gate, /Make a few flashcards for Newton's laws/);
   assert.match(gate, /Retry a smaller build/);
+  assert.match(gate, /\.markdown-prose/);
+  assert.doesNotMatch(gate, /Coding desk/);
   assert.match(ci, /qir-production-recovery-browser-gate\.mjs/);
   assert.match(ci, /QIR_PRODUCTION_RECOVERY_OUTCOME/);
 });

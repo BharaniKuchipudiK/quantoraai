@@ -1497,12 +1497,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
     onCodingTurnExecute,
     onCodingTurnProved,
-    onCodingModelAttempt: (goal, strategy) => {
-      void qirCodingApiRef.current?.beginModelAttempt?.(goal, strategy);
-    },
-    onCodingModelFailure: (failure) => {
-      void qirCodingApiRef.current?.reportModelFailure?.(failure);
-    },
+    onCodingModelAttempt: (goal, strategy) => { void qirCodingApiRef.current?.beginModelAttempt?.(goal, strategy); },
+    onCodingModelFailure: (failure) => { void qirCodingApiRef.current?.reportModelFailure?.(failure); },
     onDeskRename,
     buildJob,
   });

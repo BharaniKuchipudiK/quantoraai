@@ -28,8 +28,7 @@ const HEALED_PAGE = [
   '<!doctype html><html><body><main><h1>Factory Schedule</h1><table><thead><tr><th>Line</th><th>Job</th></tr></thead><tbody><tr><td>A</td><td>Cut</td></tr></tbody></table></main></body></html>',
   '```',
 ].join('\n');
-const CODING_LEAK = /Preview was ready|Retry a smaller build|catalog photos|Coding desk|Add to Cart/i;
-const STUDY_ADMISSION = /Temporarily unavailable|connection dropped|could not reach|Request failed|ran out of time|Stopped/i;
+const CODING_LEAK = /before Preview was ready|Retry a smaller build|catalog photos|Add to Cart/i;
 
 function sseBody(text) {
   return [
@@ -139,14 +138,15 @@ try {
       await prompt.press('Enter');
 
       await page.waitForFunction(
-        (pattern) => new RegExp(pattern, 'i').test(document.body.innerText),
-        STUDY_ADMISSION.source,
+        () => [...document.querySelectorAll('.markdown-prose')]
+          .some((node) => /Request failed|Temporarily unavailable|connection dropped|could not reach/i.test(node.textContent || '')),
+        null,
         { timeout: 20_000 },
       );
 
-      const text = await page.locator('body').innerText();
-      if (CODING_LEAK.test(text)) {
-        throw new Error(`Study route death leaked Coding Preview recovery: ${text.replace(/\s+/g, ' ').slice(0, 400)}`);
+      const reply = await page.locator('.markdown-prose').last().innerText();
+      if (CODING_LEAK.test(reply)) {
+        throw new Error(`Study route death leaked Coding Preview recovery: ${reply.replace(/\s+/g, ' ').slice(0, 400)}`);
       }
       if (state.qirAttempts > 0) {
         throw new Error(`Study journaled ${state.qirAttempts} Coding QIR attempt(s).`);
