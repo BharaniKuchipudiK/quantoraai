@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { StudyLearnerModel, StudyNextLearningMove } from './study-learner-model.js';
 import {
   STUDY_TEACHING_REPRESENTATION_VERSION,
   planStudyTeachingRepresentation,
@@ -7,6 +8,47 @@ import {
 
 function learnerHistory(contextText = '') {
   return contextText.split('\n').filter(Boolean).map((text) => ({ role: 'user', text }));
+}
+
+function verifiedLearnerModel(nextLearningMove: StudyNextLearningMove): StudyLearnerModel {
+  return {
+    version: 'study-learner-model-test-fixture',
+    concept: { id: 'electricity-emf', key: 'physics.electricity.emf-terminal-voltage' },
+    understanding: {
+      state: 'emerging',
+      evidenceCount: 1,
+      evidenceKinds: ['assessment_item'],
+      observedThrough: '2026-09-03T00:00:00.000Z',
+    },
+    misconception: {
+      state: 'none_observed',
+      signalCount: 0,
+      latestSignalAt: null,
+      code: null,
+      confidence: null,
+      reasonCodes: [],
+      remediation: null,
+      lastResolvedCode: null,
+    },
+    retention: {
+      state: nextLearningMove === 'retention_probe' ? 'needs_support' : 'untested',
+      evidenceCount: 0,
+      targetDelayDays: 1,
+      dueAt: null,
+      due: nextLearningMove === 'retention_probe',
+    },
+    transfer: {
+      state: nextLearningMove === 'transfer_task' ? 'untested' : 'untested',
+      evidenceCount: 0,
+      latestObservedAt: null,
+    },
+    nextLearningMove: {
+      type: nextLearningMove,
+      reasonCode: `test:${nextLearningMove}`,
+      instruction: 'Use the verified next learning move.',
+      learnerFacingText: 'Try the verified next learning move.',
+    },
+  };
 }
 
 test('explicit visual request selects an existing subject-native visual when one is supported', () => {
@@ -122,6 +164,57 @@ test('repeated failed modality changes trigger guided reconstruction instead of 
   assert.equal(plan.reason, 'struggle_repair');
   assert.equal(plan.primaryRepresentation, 'interactive_probe');
   assert.equal(plan.learnerAction, 'predict');
+});
+
+test('the same Electricity concept materially changes representation from verified learner state', () => {
+  const contextText = 'EMF versus terminal voltage in a battery circuit with internal resistance';
+  const cases: Array<{
+    move: StudyNextLearningMove;
+    representation: string;
+    action: string;
+    rendererKind?: string | null;
+  }> = [
+    { move: 'independent_retrieval', representation: 'interactive_probe', action: 'retrieve' },
+    { move: 'diagnose_misconception', representation: 'comparison', action: 'compare' },
+    { move: 'confirm_misconception', representation: 'comparison', action: 'compare' },
+    { move: 'guided_repair', representation: 'annotated_diagram', action: 'predict', rendererKind: 'electricity-circuit' },
+    { move: 'vary_evidence', representation: 'worked_example', action: 'calculate' },
+    { move: 'retention_probe', representation: 'governed_assessment', action: 'retrieve' },
+    { move: 'transfer_task', representation: 'governed_assessment', action: 'explain' },
+  ];
+
+  for (const expected of cases) {
+    const plan = planStudyTeachingRepresentation({
+      message: 'What should I do next with this concept?',
+      contextText,
+      learnerModel: verifiedLearnerModel(expected.move),
+    });
+    assert.equal(plan.reason, 'verified_learner_state', expected.move);
+    assert.equal(plan.primaryRepresentation, expected.representation, expected.move);
+    assert.equal(plan.learnerAction, expected.action, expected.move);
+    assert.equal(plan.rendererKind, expected.rendererKind || null, expected.move);
+  }
+});
+
+test('an explicit learner representation request outranks stored learner state', () => {
+  const plan = planStudyTeachingRepresentation({
+    message: 'Show me visually',
+    contextText: 'EMF versus terminal voltage in a battery circuit',
+    learnerModel: verifiedLearnerModel('transfer_task'),
+  });
+  assert.equal(plan.reason, 'explicit_request');
+  assert.equal(plan.primaryRepresentation, 'annotated_diagram');
+  assert.equal(plan.rendererKind, 'electricity-circuit');
+});
+
+test('a fresh learner struggle signal outranks older verified state without rewriting that state', () => {
+  const plan = planStudyTeachingRepresentation({
+    message: "I still don't understand",
+    contextText: 'EMF versus terminal voltage in a battery circuit',
+    learnerModel: verifiedLearnerModel('transfer_task'),
+  });
+  assert.equal(plan.reason, 'struggle_repair');
+  assert.equal(plan.primaryRepresentation, 'concise_text');
 });
 
 test('ordinary Study turn has a stable conservative default and does not invent a renderer', () => {
