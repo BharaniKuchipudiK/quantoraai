@@ -567,6 +567,8 @@ export default async function handler(req: any, res: any) {
     const isResearchVerifyTask = task === "research-verify";
     const isResearchDeepDiveTask = task === "research-deep-dive";
     const isResearchWatchTask = task === "research-watch";
+    // Tasks that carry code, claims or a bare question instead of a chat
+    // message, and so skip the message/session/safety validation below.
     const isArtifactTask = isRepairTask || isVerifyTask || isResearchVerifyTask || isResearchDeepDiveTask || isResearchWatchTask;
 
     if (!isArtifactTask && (!message || typeof message !== "string" || !message.trim())) {
@@ -597,6 +599,17 @@ export default async function handler(req: any, res: any) {
         });
       }
     }
+    /*
+     * Strip the grounding marker before ANY of this history reaches a model.
+     *
+     * The marker is what lets the Research board tell the server's source block
+     * from one the model wrote. A model that can see the marker can reproduce
+     * it, and it would see it: assistant turns go back into context verbatim,
+     * so the block format is already something it imitates. One choke point,
+     * because every inference path below reads boundedHistory — Gemini via
+     * buildGeminiContents, OpenRouter via formattedHistory — and a path that
+     * missed the strip would silently hand the marker back.
+     */
     const boundedHistory = Array.isArray(history)
       ? history.slice(-MAX_HISTORY_ITEMS).map(stripGroundingMarkerFromMessage)
       : history;
@@ -605,6 +618,9 @@ export default async function handler(req: any, res: any) {
     if (auth && !auth.ok) return;
     const activeSessionUser = auth?.ok ? auth.value.sessionUser : sessionUser;
     const mayUseServerKeys = Boolean(activeSessionUser) || goldenCanary;
+    // Ignore impostor OPENROUTER_API_KEY values (e.g. Stripe sk_live_…) so a bad
+    // Vercel paste cannot block gateway fallback and leave OR "Last Used: Never".
+    // Keep gateway lookup behind mayUseServerKeys and after BYOK short-circuit.
     const effectiveOpenRouterKey = openRouterKey || (mayUseServerKeys
       ? (resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || undefined)
       : undefined);
@@ -612,6 +628,7 @@ export default async function handler(req: any, res: any) {
 
     const usingServerOwnedModelAccess = !userKey && !openRouterKey && mayUseServerKeys;
     const autoModelRequest = !modelId || modelId === 'auto';
+    // Auto resolves after registry load; approval applies to the chosen route, not the sentinel.
     if (usingServerOwnedModelAccess && !autoModelRequest) {
       const approved = await isApprovedServerModel(modelId);
       if (!approved) {
@@ -635,6 +652,8 @@ export default async function handler(req: any, res: any) {
           error: typeof error === "string" ? error : "",
           framework: framework === "react" ? "react" : "html",
           job: req.body?.job && typeof req.body.job === "object" ? req.body.job : null,
+          // What earlier rounds scored and what stayed wrong. Bounded here
+          // rather than trusted: this arrives from the client.
           attempts: Array.isArray(req.body?.attempts) ? req.body.attempts.slice(-6) : undefined,
           openRouterKey: effectiveOpenRouterKey,
           geminiKey: effectiveGeminiKey,
@@ -642,6 +661,8 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(result);
       } catch (err: any) {
         console.error("Error in /api/chat repair task:", err);
+        // Provider SDK errors carry the raw JSON response body as .message
+        // (the 2026-09-02 Research-board leak). Echo only sentences we wrote.
         return res.status(500).json({ error: err instanceof UserFacingError ? err.message : "Auto-repair failed. Please try again." });
       }
     }
@@ -666,6 +687,10 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchVerifyTask) {
+      // The Research desk's evidence check: fetch the cited public sources,
+      // have a model nominate verbatim passages, and let the deterministic
+      // verifier grant or refuse each standing. Research-only — no other desk
+      // pays for this pass.
       if (normalizedStudioDomain !== "research") {
         return res.status(400).json({ error: "Verification runs on the research desk only." });
       }
@@ -688,6 +713,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchDeepDiveTask) {
+      // Decompose → search → synthesize, returned as canonical transcript
+      // messages the dossier brief already parses. Research desk only.
       if (normalizedStudioDomain !== "research") {
         return res.status(400).json({ error: "Deep dive runs on the research desk only." });
       }
@@ -695,6 +722,9 @@ export default async function handler(req: any, res: any) {
       if (!normalized.ok || !normalized.question) {
         return res.status(400).json({ error: normalized.error || "Invalid deep-dive request." });
       }
+      // The question is user-authored text bound for the model and live web
+      // search — it gets the same safety policy as an ordinary research turn,
+      // which the artifact-task exemption above skipped.
       {
         const requestGeo = getRequestGeo(req);
         const safety = evaluateSafetyText(normalized.question, requestGeo?.countryCode);
@@ -714,6 +744,8 @@ export default async function handler(req: any, res: any) {
         }
       }
       if (!effectiveGeminiKey) {
+        // Grounded search for the dive currently rides the Gemini tool path;
+        // saying so beats a silent generic failure.
         return res.status(503).json({ error: "Deep dive needs the Gemini search path, which is not configured right now." });
       }
       try {
@@ -727,6 +759,8 @@ export default async function handler(req: any, res: any) {
     }
 
     if (isResearchWatchTask) {
+      // Standing-question watches are per-account state: signed-in only,
+      // research desk only, and every op is scoped to the caller's sub.
       if (normalizedStudioDomain !== "research") {
         return res.status(400).json({ error: "Watches live on the research desk only." });
       }
@@ -788,8 +822,12 @@ export default async function handler(req: any, res: any) {
     const [registryModels, qualitySummaryRows, liveCatalog] = await Promise.all([
       readModelRegistryCached(),
       readModelQualitySummaryCached().catch(() => []),
+      // Only worth a catalogue read when a paid route is actually reachable.
       effectiveOpenRouterKey ? fetchOpenRouterCatalogCached().catch(() => null) : Promise.resolve(null),
     ]);
+    // The flagship coder is READ from the live catalogue, never named in code:
+    // a hardcoded model id goes stale, 404s on OpenRouter, and the turn silently
+    // falls back to a cheap coder that truncates the build.
     const discoveredFlagships = discoverAnthropicFlagships(liveCatalog);
     const qualityHints = req.body?.qualityHints && typeof req.body.qualityHints === "object"
       ? {
@@ -814,6 +852,9 @@ export default async function handler(req: any, res: any) {
         })),
       ],
     });
+    // Decorate the catalog with measured-outcome signals for this turn's task so
+    // the router weighs real reliability, not just model-name heuristics. When
+    // there is no evidence yet the catalog passes through unchanged.
     const routingModels = withOutcomeSignals(
       routingCatalog,
       outcomeSignalsForTask(qualitySummaryRows, taskCategory),
@@ -829,6 +870,13 @@ export default async function handler(req: any, res: any) {
       buildMode: effectiveBuildMode,
       taskCategory,
       hasVFS: Boolean(hasPreviewCode) || Boolean(req.body?.hasVFS),
+      // Paid routes are allowed whenever a usable OpenRouter key is present —
+      // the user's own BYOK key OR the platform's server key (which is already
+      // gated to authenticated sessions via mayUseServerKeys). Using only the
+      // BYOK key here meant builds relying on the server's Vercel key never
+      // escalated to a paid coder, so every build silently fell back to Gemini
+      // and OpenRouter received zero traffic. A truly anonymous visitor (no
+      // session, no BYOK) has no effective key, so they still stay on Gemini.
       allowPaid: Boolean(effectiveOpenRouterKey),
       qualityHints,
     });
@@ -837,11 +885,18 @@ export default async function handler(req: any, res: any) {
       message,
       history: boundedHistory,
       hasImages: visionImages.length > 0,
-      learnerModel: adaptiveStudyLearnerModel,
     });
     if (studyInterpretation) {
       dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
     }
+    /*
+     * Finance is the mirror image of Study. Study escalates for depth; Finance
+     * prefers stability and refuses to escalate onto a paid route, because the
+     * deterministic engines already produced whatever was worth producing. The
+     * two interpretations are mutually exclusive by domain, so they compose by
+     * running in sequence — each returns the decision untouched for the other's
+     * workspace.
+     */
     const financeInterpretation = interpretFinanceTurn({
       studioDomain: normalizedStudioDomain,
       message,
@@ -862,6 +917,16 @@ export default async function handler(req: any, res: any) {
       models: routingModels,
       explicitModelSelected: !autoModelRequest,
     });
+    // Diagnostic isolation switch: set QUANTORA_FORCE_OPENROUTER=1 to take Gemini
+    // out of the picture entirely for coding/build turns and route straight to an
+    // OpenRouter coder — so you can confirm OpenRouter alone carries builds. With
+    // Gemini excluded below, a broken OpenRouter surfaces as an honest "no healthy
+    // route" instead of being silently rescued by Gemini. Default off = normal
+    // Auto routing. Requires a usable OpenRouter key (BYOK or the server key).
+    // Vision turns are excluded: OpenRouter routes here are not marked
+    // vision-capable and forced mode drops Gemini, so forcing a vision build would
+    // filter every route and 503. A build with an attached image keeps normal
+    // routing (Gemini handles vision).
     const forceOpenRouter = process.env.QUANTORA_FORCE_OPENROUTER === '1'
       && Boolean(effectiveOpenRouterKey)
       && visionImages.length === 0
@@ -907,6 +972,15 @@ export default async function handler(req: any, res: any) {
           facts: conversationSnapshot.confirmedFacts,
         }
       : normalizedSessionContext;
+    /*
+     * The advice desks (Finance, Study, Research) must not be handed a sticky
+     * session GOAL in the prompt. A single goal bleeds across the shared Personal
+     * Workspace, and once the model is told "the goal is X" it fixates on it —
+     * that is why a Finance chat kept steering every turn back to an old "scan
+     * the GitHub repositories" ask. Keep the confirmed facts (real, user-stated
+     * grounding) but drop the goal and the inferred understanding so the model
+     * answers the question actually in front of it.
+     */
     const isAdviceDeskPrompt = normalizedStudioDomain === "finance"
       || normalizedStudioDomain === "education"
       || normalizedStudioDomain === "research";
@@ -917,6 +991,13 @@ export default async function handler(req: any, res: any) {
       cognitiveLevel,
       modelName: modelName || modelId,
       buildMode: effectiveBuildMode,
+      /*
+       * Phase 04: a build too big for one reply is planned instead of attempted.
+       *
+       * Only on a FIRST build turn — never while refining, and never once a job
+       * is already running, or every follow-up would re-plan instead of taking
+       * the next step. `hasVFS` stands in for "there is already a desk here".
+       */
       needsJobPlan: effectiveBuildMode
         && !isRefine
         && !honorGuided
@@ -966,6 +1047,8 @@ export default async function handler(req: any, res: any) {
 
     const wantTravelTools = shouldEnableTravelTools(normalizedStudioDomain);
     const travelToolsDeferred = isTravelToolExecutionDeferred(req.body);
+    // Live Gemini tools only when Travel wants them, the turn did not defer them,
+    // and a Gemini credential exists. Otherwise fall through to text routes.
     let travelToolsEnabled = wantTravelTools && !travelToolsDeferred && Boolean(effectiveGeminiKey);
     let travelDegraded = wantTravelTools && !travelToolsEnabled;
     const textCapabilities = visionImages.length
@@ -974,6 +1057,26 @@ export default async function handler(req: any, res: any) {
         ? (['text', 'code'] as const)
         : (['text'] as const);
 
+    /*
+     * Route planning reads two different authorities about the same model, so it
+     * has to see both.
+     *
+     * The stored registry is authoritative on LIFECYCLE - it is the only source
+     * that knows a model was retired, and `healthFor` uses that to drop the route
+     * before it is attempted.
+     *
+     * The routing catalogue is authoritative on CAPABILITY and COST - it is where
+     * `discoverAnthropicFlagships` puts the catalogue-declared `vision` flag and a
+     * camelCase `pricingKind`. The registry has neither: the scanner persists only
+     * free models, so a paid Claude usually has no row at all, and the rows it does
+     * write use snake_case `pricing_kind`, which `costClassFor` never reads.
+     *
+     * Passing the registry alone meant `capabilitiesFor` saw no `vision` for a
+     * pinned Claude, so an image turn filtered that model out and silently
+     * rerouted to Gemini - or 503'd when no Gemini credential existed. Passing the
+     * routing catalogue alone would lose the retirement signal. Merge by id:
+     * routing values win, and a registry row that reports offline keeps saying so.
+     */
     const routePlanningModels = (() => {
       const merged = new Map<string, InferenceModelLike>();
       for (const row of registryModels || []) {
@@ -986,6 +1089,8 @@ export default async function handler(req: any, res: any) {
         merged.set(id, {
           ...stored,
           ...(model as InferenceModelLike),
+          // Lifecycle stays the registry's call: a retired model must not be
+          // resurrected just because it is still listed in the routing catalogue.
           lifecycle: stored?.lifecycle ?? (model as InferenceModelLike).lifecycle,
           available: stored?.available === false ? false : (model as InferenceModelLike).available,
         });
@@ -993,6 +1098,15 @@ export default async function handler(req: any, res: any) {
       return [...merged.values()];
     })();
 
+    /*
+     * The brake. Read the provider's own meter before offering a paid rung.
+     *
+     * The whole cost-control subsystem — recordModelSpend, readMonthlySpend,
+     * canOfferPaidLastResort, decidePaidSpend — was written, tested and called
+     * by nothing, so this platform could not see its spend or refuse a paid
+     * call when the float was gone. It fails closed: a meter that cannot be
+     * read is a refusal, never an assumption of zero.
+     */
     const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
@@ -1035,12 +1149,21 @@ export default async function handler(req: any, res: any) {
       finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
     }
 
+    // A build rung too short to finish a multi-file page cannot succeed — it only
+    // spends wall-clock the earlier rungs needed. Keep the ladder to the rungs
+    // this turn's budget can actually fund at build size.
     if (effectiveBuildMode && attempts.length > 1) {
       const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS));
       if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
     }
 
     if (!attempts.length) {
+      /*
+       * "Please retry in a moment" was wrong whenever the cause was a MISSING
+       * CREDENTIAL: no amount of retrying adds an API key, and the opacity turned
+       * a one-line configuration fault into a long diagnosis. Name which side is
+       * unusable. No secret is revealed - only whether a credential resolved.
+       */
       const noGemini = !effectiveGeminiKey;
       const noOpenRouter = !effectiveOpenRouterKey;
       const missingCredentials = noGemini && noOpenRouter;
@@ -1062,11 +1185,25 @@ export default async function handler(req: any, res: any) {
                 ? 'Every OpenRouter route for this turn is unavailable (rate-limited or temporarily circuit-broken) and no Gemini key is configured as a backup. Add a Gemini key to give this turn a second provider.'
                 : 'Every configured AI route is temporarily unavailable (rate-limited or circuit-broken). Please retry in a moment.',
         reason,
+        /*
+         * When there is no credential at all, the user has a handle: their own
+         * Gemini or OpenRouter key, pasted into the Vault, works immediately
+         * and needs no redeploy. The prose above names the server variables —
+         * which only the operator can set — so without this a signed-in user
+         * reads a wall where they are actually standing at a door.
+         *
+         * Only for missingCredentials. An unhealthy route is not something a
+         * user key fixes, and offering a handle that changes nothing would be
+         * the crueller lie.
+         */
         ...(missingCredentials
           ? { door: describeDoors(doorsBlocking(['own_provider_key']), { ask: 'this' }) }
           : {}),
+        // Lets the desk state the cause without another round of guesswork.
         providers: { gemini: noGemini ? 'no-credential' : 'credentialed', openRouter: noOpenRouter ? 'no-credential' : 'credentialed' },
-        ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
+      // When the float is what held premium back, say so with the number rather
+      // than letting the turn read as a mysterious downgrade.
+      ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
@@ -1085,6 +1222,9 @@ export default async function handler(req: any, res: any) {
       circuit: attempts[0].circuit,
     });
 
+    // Provider-neutral text/build execution. The route is not committed until
+    // the upstream produces a usable first token, so a dead endpoint, exhausted
+    // quota domain, or empty stream can fail over before Quantora starts SSE.
     if (!travelToolsEnabled) {
       const formattedHistory = [
         { role: "system", content: finalSystemPrompt },
@@ -1103,6 +1243,7 @@ export default async function handler(req: any, res: any) {
           : refineUserMessage,
       });
       const geminiContents = buildGeminiContents(boundedHistory, refineUserMessage, visionImages);
+      // Committed only from the attempt that actually answered — see below.
       let sources: Array<{ uri: string; title: string }> = [];
       let fullReply = '';
       let usedRoute: InferenceRoute | null = null;
@@ -1156,6 +1297,10 @@ export default async function handler(req: any, res: any) {
 
         try {
           let attemptReply = '';
+          // Citations are evidence for THIS attempt's reply only. Collected
+          // per attempt and committed with it: a failed attempt's citations
+          // appended to a fallback attempt's answer would be forged
+          // provenance — a Sources block backing prose its model never saw.
           const attemptSources: Array<{ uri: string; title: string }> = [];
           const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
@@ -1274,6 +1419,12 @@ export default async function handler(req: any, res: any) {
                     emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);
                   }
+                  // The web plugin's citations arrive as url_citation
+                  // ANNOTATIONS, not content — dropping them left grounded
+                  // replies with inline links the board could not credit
+                  // (see openrouter-citations.ts). An event that carries a
+                  // provider failure contributes nothing: its attempt is
+                  // about to be thrown away.
                   if (!midStreamFailure) {
                     for (const source of extractOpenRouterAnnotationSources(parsed)) {
                       if (!attemptSeenSources.has(source.uri)) {
@@ -1283,6 +1434,8 @@ export default async function handler(req: any, res: any) {
                     }
                   }
                 } catch { /* malformed upstream events do not satisfy the route contract */ }
+                // Thrown outside the try: the catch above deliberately swallows
+                // malformed events, and a real provider failure is not one.
                 if (midStreamFailure) throw midStreamFailure;
               }
             }
@@ -1295,12 +1448,20 @@ export default async function handler(req: any, res: any) {
             const artifactContract = validateBuildArtifactResponse(
               attemptReply,
               goldenCanary ? transaction : null,
+              // A guided first turn is TOLD not to output code (FIRST-TURN
+              // RULE) — failing it for complying burned every route on the
+              // same compliant reply. Artifact canaries (a goldenTransaction
+              // naming calculator/simple-website) still owe files: the
+              // transaction argument forbids intake inside the validator.
+              // Gating on the canary HEADER here as well would re-punish a
+              // canary-driven guided-intake transaction for obeying — the
+              // exact class this option exists to end.
               { allowIntake: honorGuided },
             );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
           fullReply = attemptReply;
-          sources = attemptSources;
+          sources = attemptSources; // the answering attempt's evidence, and only its
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
           traceBoundary({
@@ -1326,6 +1487,9 @@ export default async function handler(req: any, res: any) {
           if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
+          // A response-contract miss is specific to this prompt/output. It may
+          // use this turn's independent fallback, but must not poison the
+          // shared operational health circuit for unrelated users.
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
             await recordInferenceRouteFailure(providerCircuitStore, route, status);
           }
@@ -1578,6 +1742,8 @@ export default async function handler(req: any, res: any) {
               tool: signedFunctionTurn.call.name,
             });
             if (autoRetryToolTurn) {
+              // Mirror turn-recovery (#273): clear the tool status and fail the
+              // stream as retryable so the desk re-runs the tool turn once.
               sse.fail({
                 message: String(toolResult?.message || 'Live flight lookup failed. Retrying…'),
                 code: TRAVEL_FLIGHT_PROVIDER_CODE,
@@ -1726,6 +1892,8 @@ export default async function handler(req: any, res: any) {
             sse.text(token);
           }
         } catch { /* ignore malformed upstream event */ }
+        // Must escape before the success path below, which records
+        // outcome:"success" into the ledger the outcome router reads.
         if (midStreamFailure) throw midStreamFailure;
       }
     }
@@ -1769,7 +1937,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const retryableProviderFailure = shouldFallbackBeforeStreaming(err);
+    // 429 across the board is quota, not a transient blip — say so honestly.
     const quotaExhausted = Number(err?.status) === 429 || err?.detailCode === 'quota-exhausted';
+    // An auth/billing rejection must never be reported as "retry in a moment".
     const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
     const publicError = artifactContractFailure
@@ -1777,10 +1947,18 @@ export default async function handler(req: any, res: any) {
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
-          : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+        : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : credentialRejected
+      // Names the provider and separates an empty balance from a bad key. The
+      // old sentence did neither, and sent somebody to re-issue a Gemini key
+      // that its own dashboard showed working at 100% success.
       ? describeCredentialFailure(err, req.body?.modelId)
       : quotaExhausted
+      /*
+       * "Retry in a moment" is false when the quota is spent — retrying just
+       * burns another failed turn and the person is told the same thing again.
+       * Name the real condition and the real remedy instead.
+       */
       ? "Every configured AI route is out of quota right now, so retrying will not help this minute. Add or top up a provider key (or wait for the quota window to reset) and I'll pick straight back up."
       : retryableProviderFailure
       ? "Quantora could not reach a healthy AI route for this turn. Please retry in a moment."
