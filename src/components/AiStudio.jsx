@@ -21,7 +21,6 @@ import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../li
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
 import StudioMissionCard from './StudioMissionCard';
-import StudioToolsMenu from './StudioToolsMenu';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -55,7 +54,6 @@ import {
   studySyllabusContinueSet,
   studySyllabusHaystack,
 } from '../lib/study-syllabus-overlay.js';
-import StudioDecisionModal from './StudioDecisionModal';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { useQirCodingRun } from '../hooks/useQirCodingRun.js';
@@ -109,6 +107,21 @@ const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
+/*
+ * Popovers, deferred out of the desk's entry chunk.
+ *
+ * scripts/code-highlight-browser-gate.mjs caps that chunk at 300,000 bytes and
+ * it had fallen to 358 bytes of headroom — close enough that the next person to
+ * add a comment to this file would have got a red build with no idea why.
+ *
+ * Neither of these can be on screen in the first frame: the tools menu returns
+ * null until its `+` is pressed (and its one effect no-ops while closed, so
+ * gating the mount changes nothing), and the decision modal only renders when
+ * modalData exists. Anything in here that the first frame cannot show belongs
+ * behind a lazy boundary.
+ */
+const StudioToolsMenu = lazy(() => import('./StudioToolsMenu.jsx'));
+const StudioDecisionModal = lazy(() => import('./StudioDecisionModal.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -2307,6 +2320,7 @@ Paused — ${autoPauseRef.current}.`
                       )}
 
                       {modalData && (
+                        <Suspense fallback={null}>
                         <StudioDecisionModal
                           modalData={modalData}
                           isLight={isLight}
@@ -2322,6 +2336,7 @@ Paused — ${autoPauseRef.current}.`
                             )));
                           }}
                         />
+                        </Suspense>
                       )}
 
                       {msg.sender === 'ai' && msg.autoRouted && msg.modelUsed && !isActiveGenerating && (
@@ -4542,6 +4557,8 @@ Paused — ${autoPauseRef.current}.`
                 >
                   <Plus size={18} />
                 </button>
+                {showToolsMenu ? (
+                <Suspense fallback={null}>
                 <StudioToolsMenu
                   isOpen={showToolsMenu}
                   anchorRef={plusMenuAnchorRef}
@@ -4586,6 +4603,8 @@ Paused — ${autoPauseRef.current}.`
                     }
                   }}
                 />
+                </Suspense>
+                ) : null}
               </div>
 
               {/* Attach File */}
