@@ -23,6 +23,7 @@ import {
   mergePullRequest,
   pushFilesToRepository,
 } from "./github-actions.js";
+import { checkoutRepository, describeCheckoutOmissions } from "./github-checkout.js";
 import { assertRepositoryWithinDeploymentBoundary, type GithubPrincipal } from "./github-principal.js";
 
 export const GITHUB_STAGES = Object.freeze([
@@ -38,6 +39,7 @@ export const GITHUB_STAGES = Object.freeze([
   "github-create-repo",
   "github-list-repos",
   "github-list-branches",
+  "github-checkout",
 ]);
 
 /** Stages that change something on GitHub. Reads are not in this set. */
@@ -188,6 +190,21 @@ async function dispatch(input: {
   if (stage === "github-list-issues") {
     const issues = await listIssues({ principal, owner, repo, limit: Number(req.body?.limit) || 20 });
     res.status(200).json({ repository: `${owner}/${repo}`, issues });
+    return;
+  }
+
+  if (stage === "github-checkout") {
+    const checkout = await checkoutRepository({
+      principal,
+      owner,
+      repo,
+      branch: String(req.body?.branch || ""),
+    });
+    res.status(200).json({
+      ...checkout,
+      // The caller must be able to say what is missing without recomputing it.
+      notice: describeCheckoutOmissions(checkout),
+    });
     return;
   }
 

@@ -26,6 +26,7 @@ export const GITHUB_ENDPOINTS = Object.freeze({
   createRepository: '/api/github/create-repo',
   listRepositories: '/api/github/list-repos',
   listBranches: '/api/github/list-branches',
+  checkout: '/api/github/checkout',
 });
 
 const STAGE_BY_ENDPOINT = Object.freeze({
@@ -41,6 +42,7 @@ const STAGE_BY_ENDPOINT = Object.freeze({
   [GITHUB_ENDPOINTS.createRepository]: 'github-create-repo',
   [GITHUB_ENDPOINTS.listRepositories]: 'github-list-repos',
   [GITHUB_ENDPOINTS.listBranches]: 'github-list-branches',
+  [GITHUB_ENDPOINTS.checkout]: 'github-checkout',
 });
 
 /**
@@ -214,4 +216,32 @@ export function githubDestinationBlocker(destination) {
     return `You have read access to ${target.owner}/${target.repo}, not write. Quantora could build here but never save it. Pick another repository.`;
   }
   return '';
+}
+
+/**
+ * A checkout, as the desk's file map.
+ *
+ * The desk keeps files as a flat path→content object, so this is the whole
+ * conversion. It is a named function rather than an inline reduce because the
+ * empty case matters: replacing the desk with {} would silently wipe whatever
+ * the user had, and that is a data-loss bug wearing the clothes of a no-op.
+ */
+export function checkoutFilesToVfs(files = []) {
+  const vfs = {};
+  for (const file of files) {
+    if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') continue;
+    const path = file.path.replace(/^\/+/, '');
+    if (path) vfs[path] = file.content;
+  }
+  return vfs;
+}
+
+/** What opening a repository in the desk should say afterwards. */
+export function checkoutOutcomeMessage(checkout = {}) {
+  const count = Array.isArray(checkout.files) ? checkout.files.length : 0;
+  const where = `${checkout.owner}/${checkout.repo}`;
+  const at = String(checkout.commitSha || '').slice(0, 7);
+  const head = `Opened ${where} at ${checkout.branch}${at ? ` (${at})` : ''} — ${count} file${count === 1 ? '' : 's'}.`;
+  // The notice is the server's own account of what it could not bring.
+  return checkout.notice ? `${head} ${checkout.notice}` : head;
 }

@@ -47,6 +47,7 @@ async function postStage(endpoint, payload = {}) {
 export default function GithubDestinationBar({
   destination = null,
   onChange,
+  onOpenInDesk,
   isLight = false,
   compact = false,
 }) {
@@ -266,6 +267,18 @@ export default function GithubDestinationBar({
           ) : null}
         </div>
       ))}
+
+      {target && onOpenInDesk ? (
+        <button
+          type="button"
+          data-quantora-github-destination-open="true"
+          onClick={() => onOpenInDesk(target)}
+          style={{ ...chipStyle('set'), borderStyle: 'dashed' }}
+          title={`Load ${target.owner}/${target.repo} at ${target.branch} into the desk`}
+        >
+          Open in desk
+        </button>
+      ) : null}
 
       {blocker ? (
         <span data-quantora-github-destination-blocker="true" style={{ fontSize: '0.72rem', color: '#f59e0b', flexBasis: '100%' }}>

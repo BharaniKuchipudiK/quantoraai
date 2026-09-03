@@ -107,6 +107,13 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
+import {
+  GITHUB_ENDPOINTS,
+  buildGithubStageBody,
+  checkoutFilesToVfs,
+  checkoutOutcomeMessage,
+  githubDestinationRepoUrl,
+} from '../lib/github-workspace.js';
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -592,6 +599,52 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * normalizeGithubDestination.
    */
   const [githubDestination, setGithubDestination] = useState(null);
+  const [githubCheckout, setGithubCheckout] = useState(null);
+
+  /*
+   * Open a repository in the desk: a real checkout, not the ten-file reading
+   * sample. Replaces the desk contents, so it refuses when there is unsaved
+   * work rather than overwriting it — the files on the desk may be the only
+   * copy that exists, and no confirmation dialog is worth losing them to.
+   */
+  const handleOpenRepositoryInDesk = useCallback(async (target) => {
+    if (!target) return;
+    const deskHasWork = Object.keys(vfs || {}).length > 0;
+    if (deskHasWork && !window.confirm(
+      `Opening ${target.owner}/${target.repo} replaces the ${Object.keys(vfs).length} file(s) currently on the desk. Anything not pushed to GitHub is lost. Continue?`,
+    )) return;
+
+    setGithubCheckout({ status: 'loading', message: `Opening ${target.owner}/${target.repo}…` });
+    try {
+      const response = await fetch(GITHUB_ENDPOINTS.checkout, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(buildGithubStageBody(GITHUB_ENDPOINTS.checkout, {
+          repoUrl: githubDestinationRepoUrl(target),
+          branch: target.branch,
+        })),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setGithubCheckout({ status: 'error', message: String(data?.error || `Could not open that repository (HTTP ${response.status}).`) });
+        return;
+      }
+      const nextVfs = checkoutFilesToVfs(data.files);
+      if (Object.keys(nextVfs).length === 0) {
+        // Never replace the desk with nothing: an empty result is a failure to
+        // read, not an instruction to wipe what the user had.
+        setGithubCheckout({ status: 'error', message: 'That checkout returned no readable files, so the desk was left as it was.' });
+        return;
+      }
+      setVfs(nextVfs);
+      setIsWorkspaceMode(true);
+      setWorkspaceActiveTab('preview');
+      setGithubCheckout({ status: 'ready', message: checkoutOutcomeMessage(data), commitSha: data.commitSha });
+    } catch (error) {
+      setGithubCheckout({ status: 'error', message: error?.message || 'Could not open that repository.' });
+    }
+  }, [vfs]);
   /*
    * The tab strip.
    *
@@ -4290,9 +4343,33 @@ Paused — ${autoPauseRef.current}.`
             <GithubDestinationBar
               destination={githubDestination}
               onChange={setGithubDestination}
+              onOpenInDesk={handleOpenRepositoryInDesk}
               isLight={isLight}
             />
           </Suspense>
+
+          {/*
+            * The checkout's own account of what it could not bring. Rendered
+            * because a truncation notice nobody sees is the same as not having
+            * one: the model would reason about a codebase with holes in it and
+            * the user would never learn why.
+            */}
+          {githubCheckout ? (
+            <div
+              data-quantora-github-checkout-status={githubCheckout.status}
+              style={{
+                padding: '6px 10px',
+                marginBottom: '8px',
+                borderRadius: '8px',
+                fontSize: '0.75rem',
+                lineHeight: 1.45,
+                background: githubCheckout.status === 'error' ? 'rgba(248,113,113,0.12)' : 'rgba(56,189,248,0.10)',
+                color: githubCheckout.status === 'error' ? '#fca5a5' : subtextColor,
+              }}
+            >
+              {githubCheckout.message}
+            </div>
+          ) : null}
 
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '0' }}>
