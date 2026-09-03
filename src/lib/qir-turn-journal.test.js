@@ -113,3 +113,74 @@ test('failure evidence carries the terminal signal that separates REPLANNING fro
     { kind: 'transport', message: 'all engines exhausted', retryable: false, recoveryExhausted: true },
   ], 'retryable must be derived from the terminal signal, never from copy');
 });
+
+/*
+ * WHICH ENGINE DIED (2026-09-03).
+ *
+ * The observation this journal writes has carried an engine slot since Phase 2
+ * — `ref: model:<id>` in qir-coding-run-core.js — and nothing ever filled it.
+ * Measured against the real transition guard, the durable record of a failed
+ * boutique build read:
+ *
+ *     which engine failed, per the durable record: [ null ]
+ *
+ * So the Run knew an attempt had failed and not what it failed on, which meant
+ * no later turn could avoid repeating it. Durable and useless are not far apart.
+ */
+test('[was-red] failure evidence names the engine that failed', () => {
+  const client = spyClient();
+  const journal = codingTurn(client);
+
+  assert.equal(journal.reportFailure({
+    kind: 'transport', message: 'no healthy AI route', engineId: 'gemini-flash-latest',
+  }), true);
+
+  const [[, payload]] = client.calls;
+  assert.equal(
+    payload.modelId,
+    'gemini-flash-latest',
+    'the engine is the one field that makes this evidence actionable rather than merely durable',
+  );
+});
+
+test('an unattributed failure claims no engine rather than guessing at one', () => {
+  /*
+   * A turn that dies before any engine is resolved has nothing to attribute.
+   * Emitting the key with an empty value would put `model:` in the durable
+   * evidence and burn an engine named '' for the rest of the mission.
+   */
+  const client = spyClient();
+  codingTurn(client).reportFailure({ kind: 'timeout', message: '175s step deadline' });
+
+  const [[, payload]] = client.calls;
+  assert.equal('modelId' in payload, false, 'no engine known, no engine claimed');
+});
+
+test('[was-red] the terminal signal is the MISSION’s, and a spent turn is not it', () => {
+  /*
+   * Both halves of the same field. api/_lib/qir-contracts.ts turns
+   * `recoveryExhausted: true` into FAILED_TERMINAL, which makes
+   * deriveQirContinuation return null and coding.attempt answer 409 — the Run
+   * stops accepting anything for the rest of the session. Reporting a spent
+   * TURN budget through it sealed the mission the person was still asking for.
+   */
+  const client = spyClient();
+  const journal = codingTurn(client);
+
+  journal.reportFailure({ kind: 'transport', message: 'turn budget spent', engineId: 'gemini-flash-latest' });
+  journal.reportFailure({
+    kind: 'transport', message: 'every engine failed on this mission',
+    engineId: 'anthropic/claude-sonnet', recoveryExhausted: true,
+  });
+
+  assert.deepEqual(client.calls.map(([, payload]) => payload), [
+    {
+      kind: 'transport', message: 'turn budget spent', modelId: 'gemini-flash-latest',
+      retryable: true, recoveryExhausted: false,
+    },
+    {
+      kind: 'transport', message: 'every engine failed on this mission', modelId: 'anthropic/claude-sonnet',
+      retryable: false, recoveryExhausted: true,
+    },
+  ], 'a default of true here is what bricked the durable Run after one failed turn');
+});

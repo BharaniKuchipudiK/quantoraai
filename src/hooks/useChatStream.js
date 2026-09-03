@@ -28,7 +28,7 @@ import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
-import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
+import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallbacks, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../lib/studio-mode.js';
@@ -36,6 +36,8 @@ import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { resolveTurnRecovery } from '../lib/turn-recovery.js';
 import { MIN_VIABLE_ATTEMPT_MS, mayRunAttempt, planTurnEscalation } from '../lib/turn-escalation.js';
+import { orderEnginesForMission, planMissionContinuation, rerouteBurnedEngine } from '../lib/mission-continuation.js';
+import { attemptEngineId, attemptEngineName, repeatsSpentEngine } from '../lib/turn-engine-identity.js';
 import { describeTurnFailure } from '../lib/turn-failure-sentence.js';
 import {
   assessShopBuildAsk,
@@ -762,18 +764,18 @@ export function useChatStream({
     // show what routing actually did instead of re-deciding it in the UI.
     let autoLadderReason = '';
     const shopIntakeAsk = turnPlan.shop || assessShopBuildAsk(intakeAccept.expanded ? text : (visibleUserText || text));
+    const autoTarget = (modelId, modelName) => ({
+      id: 'auto',
+      name: 'Auto',
+      resolvedModelId: modelId,
+      resolvedModelName: modelName,
+    });
     if (autoMode && isCodingRequest) {
       if (turnPlan.modelPlan?.modelId) {
         autoResolvedLabel = turnPlan.modelPlan.modelName || turnPlan.modelPlan.modelId;
         autoLadderReason = turnPlan.modelPlan.reason || '';
-        targetModel = {
-          id: 'auto',
-          name: 'Auto',
-          resolvedModelId: turnPlan.modelPlan.modelId,
-          resolvedModelName: autoResolvedLabel,
-        };
+        targetModel = autoTarget(turnPlan.modelPlan.modelId, autoResolvedLabel);
       } else {
-        const openRouterApiKeyHint = getClientSecret('openrouter');
         const vfsFileCount = vfs && typeof vfs === 'object' ? Object.keys(vfs).length : 0;
         const resolved = resolveCodingDeskModel({
           task: 'coding',
@@ -785,16 +787,55 @@ export function useChatStream({
             fileCount: vfsFileCount,
             shopImageOversize: shopIntakeAsk.oversize,
           },
-          allowPaid: Boolean(openRouterApiKeyHint),
+          allowPaid: Boolean(getClientSecret('openrouter')),
         });
         autoResolvedLabel = resolved.model?.name || resolved.modelId;
         autoLadderReason = resolved.reason || '';
-        targetModel = {
-          id: 'auto',
-          name: 'Auto',
-          resolvedModelId: resolved.modelId,
-          resolvedModelName: autoResolvedLabel,
-        };
+        targetModel = autoTarget(resolved.modelId, autoResolvedLabel);
+      }
+      /*
+       * MISSION MEMORY — the first read of QIR that changes what actually runs.
+       *
+       * Auto picks the best engine for the JOB. The durable Run knows which
+       * engines already failed on THIS mission, across earlier turns. When the
+       * two disagree the mission wins: re-running an engine that just failed on
+       * this exact goal is the definition of a retry that is not a repair
+       * (src/lib/turn-heal-contract.test.js).
+       *
+       * The replacement comes from rankCodingDeskFallbacks, the platform's own
+       * order of failover candidates by MEASURED finish-reliability. Two
+       * cheaper-looking options were measured and rejected:
+       *
+       *  - re-asking resolveCodingDeskModel with the burned engine withheld
+       *    does nothing. Its default branch reads
+       *    `gemini?.id || 'gemini-flash-latest'`, so withholding Gemini returns
+       *    the hardcoded id anyway and the reroute silently no-ops;
+       *  - taking the next id in catalogue order throws away the reliability
+       *    evidence and can route a heavy build onto whatever happens to be next.
+       *
+       * If every ranked candidate is burned, Auto's own pick stands. Mission
+       * memory reorders; it must never be the reason a request goes unanswered.
+       */
+      const reachableEngines = new Map((availableModels || [])
+        .filter((model) => model?.id && model.available !== false)
+        .map((model) => [model.id, model]));
+      const rerouteId = rerouteBurnedEngine({
+        engineId: targetModel?.resolvedModelId || '',
+        rankedFallbackIds: rankCodingDeskFallbacks(availableModels || [], {
+          primaryId: targetModel?.resolvedModelId || '',
+          allowPaid: Boolean(getClientSecret('openrouter')),
+        }),
+        reachableEngineIds: [...reachableEngines.keys()],
+        run: qirCoding?.run || null,
+      });
+      if (rerouteId) {
+        const burnedName = targetModel.resolvedModelName || targetModel.resolvedModelId;
+        // Optional chain on purpose: this runs BEFORE the turn's try/catch, so a
+        // throw here would take the whole turn down. The id is correct copy on
+        // its own, and the invariant is gated in mission-continuation.test.js.
+        autoResolvedLabel = reachableEngines.get(rerouteId)?.name || rerouteId;
+        autoLadderReason = `${autoResolvedLabel} — ${burnedName} already failed on this mission`;
+        targetModel = autoTarget(rerouteId, autoResolvedLabel);
       }
     }
     const turnDomain = resolveTurnStudioDomain({
@@ -806,7 +847,17 @@ export function useChatStream({
     }) || studioDomain;
     const qirTurn = createQirTurnJournal({ isCodingRequest, studioDomain: turnDomain, qirCoding });
     const codingSpineOwns = qirTurn.owns;
-    const qirFail = (kind, message, done) => qirTurn.reportFailure({ kind, message, recoveryExhausted: done });
+    /*
+     * `done` is the MISSION's verdict, never the turn's. The durable contract
+     * reads it as FAILED_TERMINAL, which seals the Run for the rest of the
+     * session; a spent turn budget is not that. See mission-continuation.js.
+     */
+    const qirFail = (kind, message, done) => qirTurn.reportFailure({
+      kind,
+      message,
+      engineId: attemptEngineId(targetModel),
+      recoveryExhausted: done,
+    });
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
@@ -1205,13 +1256,23 @@ export function useChatStream({
     const triedEngines = [];
     const triedEngineIds = new Set();
     let retryBrief = '';
-    const nextFallbackEngine = () => (availableModels || []).find((model) => (
-      model
-      && model.available !== false
-      && model.id
-      && model.id !== targetModel?.id
-      && !triedEngineIds.has(model.id)
-    )) || null;
+    /*
+     * The next engine to escalate to.
+     *
+     * Mission-ordered, so an engine that already failed on this mission in an
+     * EARLIER turn is not the first thing tried again; identity-compared, so
+     * `Auto` cannot hide the engine it resolved to. On the default path the old
+     * comparison was `model.id !== 'auto'`, which excluded nothing, so the
+     * "switch engines" repair re-ran the engine that had just failed.
+     *
+     * Ordering never removes an engine, so this can never be the reason a turn
+     * has nowhere left to go.
+     */
+    const nextFallbackEngine = () => orderEnginesForMission(
+      availableModels,
+      qirCoding?.run || null,
+      triedEngineIds,
+    ).find((model) => !repeatsSpentEngine(model, targetModel, triedEngineIds)) || null;
     /*
      * The turn's escalation ceiling, measured fresh each time it is asked for:
      * how many further attempts the remaining wall clock and the live engine
@@ -1224,6 +1285,18 @@ export function useChatStream({
       turnDeadlineMs,
       engineCount: (availableModels || []).filter((m) => m && m.available !== false && m.id).length,
     });
+    /*
+     * Has the MISSION run out of materially different things to try? Only when
+     * no engine remains that has not already failed on it — the promise the
+     * product makes, and the only honest ground for terminal copy. The turn's
+     * clock decides when THIS turn stops; it never decides that the mission is
+     * over.
+     */
+    const missionSpent = () => planMissionContinuation({
+      run: qirCoding?.run || null,
+      availableModels: availableModels || [],
+      spentEngineIds: triedEngineIds,
+    }).missionExhausted;
     const applyRecoveryRepairs = (recovery) => {
       qirFail(
         recovery.reason === 'step-deadline' ? 'timeout' : recovery.reason === 'build-contract' ? 'contract' : 'transport',
@@ -1256,11 +1329,18 @@ export function useChatStream({
          */
         const escalation = escalationNow();
         if (attempt > 1 && !mayRunAttempt(attempt, escalation)) break;
-        qirTurn.beginAttempt(visibleUserText || text, targetModel?.id || '');
-        // Record the engine this attempt actually runs on, for honest terminal copy.
-        if (targetModel?.id) triedEngineIds.add(targetModel.id);
-        if (targetModel?.name && triedEngines[triedEngines.length - 1] !== targetModel.name) {
-          triedEngines.push(targetModel.name);
+        qirTurn.beginAttempt(visibleUserText || text, attemptEngineId(targetModel));
+        /*
+         * Record the engine this attempt actually runs on, for honest terminal
+         * copy AND for the ladder's own exclusion set. In auto mode
+         * `targetModel.id` is the string 'auto', so recording it meant the
+         * engine Auto resolved to was never marked as tried.
+         */
+        const runningEngineId = attemptEngineId(targetModel);
+        const runningEngineName = attemptEngineName(targetModel);
+        if (runningEngineId) triedEngineIds.add(runningEngineId);
+        if (runningEngineName && triedEngines[triedEngines.length - 1] !== runningEngineName) {
+          triedEngines.push(runningEngineName);
         }
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -1536,7 +1616,7 @@ export function useChatStream({
                   return;
                 }
               }
-              qirFail('transport', streamedError?.message || 'no healthy AI route', true);
+              qirFail('transport', streamedError?.message || 'no healthy AI route', missionSpent());
               const providerOutcome = resolveCodingTurnOutcome({
                 kind: 'provider-dead',
                 errorMessage: artifactFailed
@@ -1547,6 +1627,8 @@ export function useChatStream({
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                runId: qirCoding?.run?.runId || '',
+                missionExhausted: missionSpent(),
                 fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('provider-dead', {
@@ -1608,13 +1690,15 @@ export function useChatStream({
           }
           if (!receivedDone) {
             if (codingSpineOwns) {
-              qirFail('transport', 'the response stream ended unexpectedly', true);
+              qirFail('transport', 'the response stream ended unexpectedly', missionSpent());
               const streamOutcome = resolveCodingTurnOutcome({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                runId: qirCoding?.run?.runId || '',
+                missionExhausted: missionSpent(),
                 fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('stream-ended', {
@@ -1724,7 +1808,7 @@ export function useChatStream({
             }
             // No authored scaffold here either: a build that produced no files is
             // reported as the failure it is, via resolveCodingTurnOutcome below.
-            qirFail('contract', 'the reply was a chat plan with no runnable files', true);
+            qirFail('contract', 'the reply was a chat plan with no runnable files', missionSpent());
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
@@ -1733,6 +1817,8 @@ export function useChatStream({
                   shopIntakeAsk,
                   attemptsMade: attempt,
                   triedEngines,
+                  runId: qirCoding?.run?.runId || '',
+                  missionExhausted: missionSpent(),
                 });
                 recordTurnLesson('no-preview', {
                   shopIntakeAsk,
@@ -1987,7 +2073,7 @@ export function useChatStream({
               }
             }
             if (!stopped) {
-              qirFail(timedOut ? 'timeout' : 'transport', error.message || (timedOut ? 'step deadline' : 'Unable to reach the AI gateway.'), true);
+              qirFail(timedOut ? 'timeout' : 'transport', error.message || (timedOut ? 'step deadline' : 'Unable to reach the AI gateway.'), missionSpent());
             }
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',
@@ -1999,6 +2085,8 @@ export function useChatStream({
               isShopPhotoTurn,
               attemptsMade: attempt,
               triedEngines,
+              runId: qirCoding?.run?.runId || '',
+              missionExhausted: missionSpent(),
               fallbackEngine: nextFallbackEngine(),
             });
             if (!stopped) {

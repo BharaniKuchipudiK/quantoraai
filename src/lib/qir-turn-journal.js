@@ -68,13 +68,25 @@ export function createQirTurnJournal({
 
     /**
      * Record failure evidence against the running action.
+     *
      * `recoveryExhausted` is the terminal signal: it is the difference between
-     * REPLANNING and FAILED_TERMINAL, so it must not be inferred from copy.
+     * REPLANNING and FAILED_TERMINAL, so it must not be inferred from copy —
+     * and it is the MISSION's verdict, not the turn's. A spent turn budget
+     * reported here as exhaustion seals the Run for the whole browser session
+     * (see mission-continuation.js for the measurement).
+     *
+     * `engineId` is what makes the evidence usable rather than merely durable.
+     * The field has always existed at the other end of this call — the
+     * observation's `ref: model:<id>` — and nothing ever filled it, so the Run
+     * recorded that an attempt failed without recording what it failed on.
+     * Nothing downstream could then avoid repeating it.
+     *
      * @returns {boolean} whether the failure was actually journaled
      */
-    reportFailure: ({ kind, message, recoveryExhausted = false } = {}) => send('reportModelFailure', [{
+    reportFailure: ({ kind, message, engineId = '', recoveryExhausted = false } = {}) => send('reportModelFailure', [{
       kind,
       message,
+      ...(engineId ? { modelId: engineId } : {}),
       retryable: !recoveryExhausted,
       recoveryExhausted,
     }]),

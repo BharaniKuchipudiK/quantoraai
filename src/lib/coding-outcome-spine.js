@@ -49,6 +49,88 @@ function describeAttemptsSpent(attemptsMade, triedEngines) {
   );
 }
 
+/**
+ * The durable Run this failure belongs to, when there is one.
+ *
+ * WHY THIS LINE EXISTS. Every failure copy here named what broke and what the
+ * loop tried, and gave the person nothing to quote. QIR has minted a durable
+ * `runId` since Phase 2 and the desk renders it — in a tooltip — so the one
+ * moment it is worth having, the terminal failure, was the one place it never
+ * appeared.
+ *
+ * It is also the first thing in the product that READS from QIR rather than
+ * writing to it. The journal has been write-only: `qir-contracts.ts` decides
+ * completion and nothing consults it, this module had no idea a Run existed.
+ * Surfacing the id is small, but it points the right way.
+ *
+ * The id is printed only when the caller has one, which makes its presence
+ * meaningful rather than decorative: a Run id exists precisely when the durable
+ * journal accepted this attempt, so the line cannot promise a record that was
+ * never written. No id, no line — never a placeholder.
+ */
+function describeRunReference(runId) {
+  const id = String(runId || '').trim();
+  if (!id) return '';
+  return `**Run:** \`${id}\` — the durable record of this attempt, with the failure evidence attached.\n`;
+}
+
+/**
+ * Where the MISSION stands, as distinct from where this turn stands.
+ *
+ * WHY BOTH LINES EXIST. Every terminal message here spoke only about the turn,
+ * so a spent retry budget read to the person as the end of the road — and until
+ * now it genuinely was one: useChatStream reported the turn's exhaustion as the
+ * mission's, api/_lib/qir-contracts.ts turned that into FAILED_TERMINAL, and the
+ * durable Run stopped accepting anything for the rest of the session.
+ *
+ * A Cursor error card the founder sent over says "try again in a few moments"
+ * and hands the retry back with no plan. That is the shape to avoid. If the
+ * mission survives, say what SURVIVED and what will be different; if it does
+ * not, say that plainly instead of dressing another identical attempt up as
+ * hope.
+ *
+ * `missionExhausted` is tri-state on purpose. Absent means the caller had no
+ * mission evidence, and then neither claim may be made — the same law as the
+ * Run reference above: no evidence, no line, never a placeholder.
+ */
+function describeMissionState(missionExhausted, triedEngines) {
+  if (missionExhausted === true) {
+    /*
+     * No engine list here. "What I tried" prints it one line above, and saying
+     * it twice is the defect the founder caught in a screenshot on 2026-09-02.
+     */
+    return (
+      '**The mission:** every engine available to me has now failed on this goal. '
+      + 'Another identical attempt is not a plan, so I am not going to sell you one.\n'
+    );
+  }
+  if (missionExhausted === false) {
+    return (
+      '**The mission is kept:** the durable Run stays open, so the next attempt continues this '
+      + 'same goal instead of starting over — and it will not be routed back to an engine that '
+      + 'already failed on it.\n'
+    );
+  }
+  return '';
+}
+
+/**
+ * The one repair that is materially different when no engine is left: a smaller
+ * job. Defined once because two branches offer it, and a copy that drifts
+ * between them is how the pair stops meaning the same thing (CLAUDE.md §6).
+ */
+function smallerBuildChip() {
+  return {
+    id: 'outcome-retry-smaller',
+    label: 'Retry a smaller build',
+    value: (
+      'Retry with a smaller scope: one working HTML page that runs in Preview now. '
+      + 'Do not expand scope. Ship files, not a chat-only plan.'
+    ),
+    priority: 110,
+  };
+}
+
 function shopChips(shopIntakeAsk) {
   if (!shopIntakeAsk?.oversize || !Array.isArray(shopIntakeAsk.chips)) return null;
   return {
@@ -75,6 +157,11 @@ export function resolveCodingTurnOutcome({
   attemptsMade = 1,
   /** Engine names those attempts ran on, in order. */
   triedEngines = [],
+  /** The durable QIR Run id for this attempt, when the journal accepted one. */
+  runId = '',
+  /** Whether the MISSION (not this turn) has run out of untried engines.
+   *  null when the caller has no mission evidence — then no claim is made. */
+  missionExhausted = null,
   /** The next untried engine ({ id, name }) the retry chip should pin, or
    *  null when the catalog is exhausted. The chip only names an engine it
    *  will actually use — same law as the recovery notice. */
@@ -164,20 +251,12 @@ export function resolveCodingTurnOutcome({
         `That turn hit the ${Math.round(turnDeadlineSec)}s limit before Preview had a runnable page.\n\n`
         + `**What failed:** the model did not finish writing files in time.\n`
         + describeAttemptsSpent(attemptsMade, triedEngines)
+        + describeMissionState(missionExhausted, triedEngines)
+        + describeRunReference(runId)
         + `**Your move:** tap **Retry a smaller build** — one working page first, instead of sitting on a dead spinner.`
       ),
       isError: true,
-      continueSet: {
-        items: [{
-          id: 'outcome-retry-smaller',
-          label: 'Retry a smaller build',
-          value: (
-            'Retry with a smaller scope: one working HTML page that runs in Preview now. '
-            + 'Do not expand scope. Ship files, not a chat-only plan.'
-          ),
-          priority: 110,
-        }],
-      },
+      continueSet: { items: [smallerBuildChip()] },
     };
   }
 
@@ -210,6 +289,15 @@ export function resolveCodingTurnOutcome({
   if (kind === 'provider-dead' || kind === 'stream-ended') {
     const detail = String(errorMessage || '').trim();
     const overloaded = /overload|429|503|high demand|capacity/i.test(detail);
+    /*
+     * "Retry on the next engine" in a state with no next engine is the exact
+     * contradiction turn-heal-contract.test.js exists to reject — and with a
+     * null fallbackEngine the chip degrades to a bare "Retry with fallback"
+     * carrying no override, which is the prayer the note below warns about.
+     * When the mission is out of engines, the only honest offer is a smaller
+     * job.
+     */
+    const noEngineLeft = missionExhausted === true && !fallbackEngine?.id;
     return {
       kind,
       text: (
@@ -218,12 +306,19 @@ export function resolveCodingTurnOutcome({
           : `The connection to the model died before Preview was ready.\n\n`)
         + `**What failed:** ${detail || 'the AI gateway closed the stream without a runnable result.'}\n`
         + describeAttemptsSpent(attemptsMade, triedEngines)
-        + `**Your move:** pick a chip below — retry on the next engine, or shrink the job `
-        + `(about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop).`
+        + describeMissionState(missionExhausted, triedEngines)
+        + describeRunReference(runId)
+        + (noEngineLeft
+          ? `**Your move:** tap **Retry a smaller build** — a smaller job is the one thing left here `
+            + `that is actually different (about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop).`
+          : `**Your move:** pick a chip below — retry on the next engine, or shrink the job `
+            + `(about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop).`)
       ),
       isError: true,
       continueSet: shopIntakeAsk?.oversize
         ? shopChips(shopIntakeAsk)
+        : noEngineLeft
+        ? { items: [smallerBuildChip()] }
         : {
           items: [{
             id: 'outcome-retry-fallback',
