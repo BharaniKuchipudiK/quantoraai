@@ -16,7 +16,13 @@ import { isRateLimited } from "./rate-limit.js";
 import { parseGithubRepositoryUrl } from "./repository-preview.js";
 import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection } from "./github-connection-store.js";
 import { listIssues, listPullRequests, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
-import { commentOnPullRequest, createPullRequest, mergePullRequest } from "./github-actions.js";
+import {
+  commentOnPullRequest,
+  createPullRequest,
+  createRepository,
+  mergePullRequest,
+  pushFilesToRepository,
+} from "./github-actions.js";
 import { assertRepositoryWithinDeploymentBoundary, type GithubPrincipal } from "./github-principal.js";
 
 export const GITHUB_STAGES = Object.freeze([
@@ -28,6 +34,8 @@ export const GITHUB_STAGES = Object.freeze([
   "github-comment",
   "github-create-pr",
   "github-merge-pr",
+  "github-push",
+  "github-create-repo",
 ]);
 
 /** Stages that change something on GitHub. Reads are not in this set. */
@@ -35,7 +43,17 @@ export const GITHUB_WRITE_STAGES = Object.freeze([
   "github-comment",
   "github-create-pr",
   "github-merge-pr",
+  "github-push",
+  "github-create-repo",
 ]);
+
+/**
+ * Creating a repository is the one write with no repository to name, so it
+ * cannot go through the repoUrl parse every other stage depends on.
+ */
+export function isRepositorylessGithubStage(stage: unknown): boolean {
+  return stage === "github-create-repo";
+}
 
 export function isGithubWriteStage(stage: unknown): boolean {
   return typeof stage === "string" && GITHUB_WRITE_STAGES.includes(stage);
@@ -87,6 +105,26 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
   const principal = await readGithubPrincipal(sessionUser.sub);
   if (!principal) {
     res.status(412).json({ error: NOT_CONNECTED, needsGithubConnection: true });
+    return;
+  }
+
+  if (isRepositorylessGithubStage(stage)) {
+    try {
+      const owner = String(req.body?.owner || principal.login);
+      const name = String(req.body?.name || "");
+      // A deployment narrowed to specific repositories must not be able to
+      // create its way out of that boundary.
+      assertRepositoryWithinDeploymentBoundary(owner, name);
+      const created = await createRepository({ principal }, {
+        owner,
+        name,
+        description: String(req.body?.description || ""),
+        isPrivate: req.body?.isPrivate !== false,
+      });
+      res.status(201).json({ ...created, actedAs: principal.login });
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "The repository was not created." });
+    }
     return;
   }
 
@@ -170,6 +208,22 @@ async function dispatch(input: {
       draft: req.body?.draft !== false,
     });
     res.status(201).json({ ...result.pullRequest, actedAs: principal.login, access: result.permission.level });
+    return;
+  }
+
+  if (stage === "github-push") {
+    const result = await pushFilesToRepository(context, {
+      files: req.body?.files,
+      message: String(req.body?.message || ""),
+      branch: String(req.body?.branch || ""),
+    });
+    res.status(201).json({
+      pushed: true,
+      ...result,
+      access: result.permission.level,
+      actedAs: principal.login,
+      repository: `${owner}/${repo}`,
+    });
     return;
   }
 

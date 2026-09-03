@@ -146,6 +146,14 @@
       "destination": "/api/pipeline?github=comment"
     },
     {
+      "source": "/api/github/push",
+      "destination": "/api/pipeline?github=push"
+    },
+    {
+      "source": "/api/github/create-repo",
+      "destination": "/api/pipeline?github=create-repo"
+    },
+    {
       "source": "/api/github/preview",
       "destination": "/api/pipeline?github=preview"
     },

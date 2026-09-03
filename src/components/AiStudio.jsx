@@ -5256,6 +5256,7 @@ Paused — ${autoPauseRef.current}.`
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
                  githubRepoUrl={importedGithubRepoUrl}
+                 projectName={activeProject?.name || ''}
                  githubBaseBranch={importedGithubBaseBranch}
                  isLight={isLight}
                  textColor={textColor}

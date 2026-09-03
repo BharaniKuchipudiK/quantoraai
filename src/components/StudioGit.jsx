@@ -17,11 +17,13 @@ import { runGitInWorkspace } from '../lib/webcontainer.js';
  * push. Nothing below should imply otherwise.
  */
 const GithubPullRequests = lazy(() => import('./GithubPullRequests.jsx'));
+const GithubPushPanel = lazy(() => import('./GithubPushPanel.jsx'));
 
 export default function StudioGit({
   vfs = {},
   workspaceKey = '',
   githubRepoUrl = '',
+  projectName = '',
   githubBaseBranch = 'main',
   isLight,
   textColor,
@@ -119,7 +121,7 @@ export default function StudioGit({
       }}
     >
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        Git is for this app’s files on the desk. Status, diff, and commit run locally — the desk never pushes. Pull requests below run on your own connected GitHub account, so a branch must already exist on GitHub before a pull request can open against it.
+        Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Save to GitHub, below, is the one thing that leaves — it writes these files to a repository on your own connected account, and Quantora asks GitHub whether you may write before it does.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>
@@ -164,7 +166,8 @@ export default function StudioGit({
           />
         </div>
       ) : null}
-      <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading pull requests…</div>}>
+      <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading GitHub…</div>}>
+        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} projectName={projectName} />
         <GithubPullRequests
           repoUrl={githubRepoUrl}
           headBranch={prHead || 'quantora-desk'}
