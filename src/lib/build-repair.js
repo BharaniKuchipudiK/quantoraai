@@ -70,7 +70,7 @@ export const MISSING_FILE_REFUSAL = 'it points at a file, and creating a page no
  * brief can name the real defect to the model, which is where the actual repair
  * happens.
  */
-export const UNINTERPOLATED_TEMPLATE_REFUSAL = 'the placeholder was never interpolated, so the fix belongs in the code that builds this markup, not in the markup';
+export const UNINTERPOLATED_TEMPLATE_REFUSAL = 'the fix is in the code that builds this markup — quotes where backticks belong — not in the markup itself';
 
 function slug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

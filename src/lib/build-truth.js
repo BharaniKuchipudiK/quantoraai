@@ -256,9 +256,18 @@ function uninterpolatedTemplate(target, where) {
   return {
     kind: 'uninterpolated-template',
     data: { target, expression },
-    what: `"${target}" is a template placeholder that never got filled in`
-      + `${expression ? ` - \`${expression}\` was not interpolated` : ''}`
-      + ', so the browser receives it as literal text. The quotes around it need to be backticks.',
+    /*
+     * ONE FACT, ONCE. describeRepair renders a refused finding as
+     * `${what} I didn't change it because ${why}.`, so anything said here is
+     * said again next to the refusal. The first version of this sentence carried
+     * "never got filled in", "was not interpolated" AND the backtick fix, and
+     * composed into a bullet that said "not interpolated" three times and named
+     * the fix twice. The target already shows the expression; the refusal already
+     * owns where the fix belongs. This states the defect and its visible effect,
+     * and stops.
+     */
+    what: `"${target}" is a template placeholder that was never interpolated, `
+      + 'so the browser receives it as literal text.',
     where,
   };
 }

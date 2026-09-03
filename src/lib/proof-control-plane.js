@@ -385,7 +385,32 @@ export function buildTruthNote(verdict) {
    * changed on their page before they are told what is still wrong with it, and
    * the repair account carries its own refusals so nothing goes unmentioned.
    */
-  const repaired = describeRepair(verdict?.repair || NO_REPAIR);
-  const remaining = describeBuildTruth(verdict?.truth || NO_TRUTH);
+  const repair = verdict?.repair || NO_REPAIR;
+  const repaired = describeRepair(repair);
+
+  /*
+   * "Remaining" has to actually mean remaining.
+   *
+   * The comment above is the design — the repair account already names every
+   * refusal — but describeBuildTruth was handed EVERY finding, so anything
+   * refused was printed twice: once under "things I can't fix for you" and again,
+   * verbatim, under "things on this page don't work yet". A boutique build showed
+   * the same two placeholders under both headings, which reads as four problems
+   * and teaches the person to skim a report that is supposed to be exhaustive.
+   *
+   * Keyed on the rendered sentence rather than object identity: that is the thing
+   * the reader sees duplicated, and it survives a verdict that was serialised
+   * between inspection and rendering.
+   */
+  const truth = verdict?.truth || NO_TRUTH;
+  const accounted = new Set(
+    [...(repair.fixes || []), ...(repair.refusals || [])]
+      .map((entry) => entry?.finding?.what)
+      .filter(Boolean),
+  );
+  const remaining = describeBuildTruth({
+    ...truth,
+    findings: (truth.findings || []).filter((finding) => !accounted.has(finding?.what)),
+  });
   return [repaired, remaining].filter(Boolean).join('\n\n');
 }
