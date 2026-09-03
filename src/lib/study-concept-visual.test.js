@@ -149,6 +149,20 @@ test('existing subject diagrams remain available when the topic itself establish
   ), true);
 });
 
+test('a later unsupported concept does not inherit an earlier vector visual family', () => {
+  const history = [
+    'Teach me vector components visually.',
+    'unsupported-concept: Teach opportunity cost visually.',
+  ].join('\n');
+  const reply = [
+    'No safe native visual renderer exists for this concept yet, so I will keep this concise and structured rather than pretending a diagram exists.',
+    '',
+    'State one concrete trade-off from the scenario in one sentence.',
+  ].join('\n');
+  const topic = studyActiveConcept(history, reply);
+  assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
+});
+
 test('the word curve alone is not enough to justify a graph inside a non-graph topic', () => {
   assert.equal(studyPictureFitsTopic(
     'The curved surface changes the direction of reflected rays',

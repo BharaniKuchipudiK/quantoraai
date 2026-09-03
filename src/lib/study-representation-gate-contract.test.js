@@ -25,3 +25,14 @@ test('the representation browser gate anchors on durable Study hooks, not prose 
   assert.match(gate, /svg\[role="img"\]/);
   assert.doesNotMatch(gate, /data-quantora-chat-message/);
 });
+
+test('the unsupported-concept check waits for a new lesson instead of the previous vector turn', () => {
+  const gate = read('scripts/study-representation-browser-gate.mjs');
+  const unsupportedBlock = gate.slice(gate.indexOf('unsupported-concept:'));
+  assert.match(unsupportedBlock, /lessonsBeforeUnsupported/);
+  assert.match(unsupportedBlock, /\.nth\(lessonsBeforeUnsupported\)/);
+  assert.doesNotMatch(
+    unsupportedBlock.slice(0, unsupportedBlock.indexOf('workspace-isolation-check')),
+    /study-lesson="true"\]'\)\.last\(\)/,
+  );
+});

@@ -134,12 +134,14 @@ try {
 
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Study prompt input is missing.');
+  const studyLessons = page.locator('[data-quantora-study-lesson="true"]');
 
   // 1) Supported visual request should render an actual visual.
+  const lessonsBeforeVector = await studyLessons.count();
   await textarea.fill('Teach me vector components visually.');
   await textarea.press('Enter');
-  const vectorLesson = page.locator('[data-quantora-study-lesson="true"]').last();
-  await visible(vectorLesson, 'Vector lesson did not render.');
+  const vectorLesson = studyLessons.nth(lessonsBeforeVector);
+  await visible(vectorLesson, 'Vector lesson did not render.', 15_000);
   const vectorPicture = vectorLesson.locator('[data-quantora-study-picture="physics-motion"][data-quantora-study-picture-variant="vector-components"]').first();
   await visible(vectorPicture, 'Supported vector request did not render vector-components visual.', 15_000);
 
@@ -156,10 +158,19 @@ try {
   }
 
   // 2) Unsupported concept should fail honestly (no fake picture).
+  // Wait for a NEW lesson. `.last()` is already visible from the vector turn,
+  // so a negative picture check against it is a false fail on a fast runner.
+  const lessonsBeforeUnsupported = await studyLessons.count();
   await textarea.fill('unsupported-concept: Teach opportunity cost visually.');
   await textarea.press('Enter');
-  const unsupportedLesson = page.locator('[data-quantora-study-lesson="true"]').last();
-  await visible(unsupportedLesson, 'Unsupported concept lesson did not render.');
+  const unsupportedLesson = studyLessons.nth(lessonsBeforeUnsupported);
+  await visible(unsupportedLesson, 'Unsupported concept lesson did not render.', 15_000);
+  await page.waitForFunction((index) => {
+    const lesson = document.querySelectorAll('[data-quantora-study-lesson="true"]')[index];
+    return /no safe native visual renderer exists/i.test(lesson?.textContent || '');
+  }, lessonsBeforeUnsupported, { timeout: 15_000 }).catch(() => {
+    throw new Error('Unsupported concept fallback did not explicitly acknowledge renderer unavailability.');
+  });
   if (await unsupportedLesson.locator('[data-quantora-study-picture]').count()) {
     throw new Error('Unsupported concept rendered a fake Study picture instead of failing honestly.');
   }
@@ -177,10 +188,12 @@ try {
   await finance.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'finance');
   await visible(textarea, 'Shared prompt input missing after switching to Finance.');
+  const financeReplies = page.locator('[data-quantora-assistant-prose="true"]');
+  const repliesBeforeFinance = await financeReplies.count();
   await textarea.fill('workspace-isolation-check');
   await textarea.press('Enter');
-  const financeReply = page.locator('[data-quantora-assistant-prose="true"]').last();
-  await visible(financeReply, 'Finance reply did not render.');
+  const financeReply = financeReplies.nth(repliesBeforeFinance);
+  await visible(financeReply, 'Finance reply did not render.', 15_000);
   if (await financeReply.locator('[data-quantora-study-lesson], [data-quantora-study-picture]').count()) {
     throw new Error('Study representation surface leaked into the newest Finance reply.');
   }
