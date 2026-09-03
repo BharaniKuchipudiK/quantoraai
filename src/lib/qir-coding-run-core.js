@@ -38,6 +38,14 @@ async function requestQir(payload, query = '') {
     const error = new Error(data.error || 'Durable Coding Run is unavailable.');
     error.status = response.status;
     error.conflict = data.conflict === true;
+    /*
+     * The reason is DATA, not the sentence. Three different 503s come back from
+     * this route — storage that was never configured, and two kinds of failed
+     * write — and a reader that told them apart by matching English would break
+     * the first time someone reworded a message. Same lesson as the server's
+     * spent-engine set: prose is invisible to code.
+     */
+    error.reason = typeof data.reason === 'string' ? data.reason : '';
     throw error;
   }
   return data;

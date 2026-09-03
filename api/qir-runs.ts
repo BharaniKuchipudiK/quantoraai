@@ -49,7 +49,7 @@ function artifactMatchesCode(ref: string, code: string): boolean {
 function sendCommit(res: any, result: Awaited<ReturnType<typeof commitQirRunEvent>>) {
   if (result.status === "conflict") return res.status(409).json({ error: "Run changed; resume the durable snapshot and retry.", conflict: true });
   if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
-  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the durable Run transition." });
+  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the durable Run transition.", reason: "persist-failed" });
   return res.status(200).json({
     run: result.record.run,
     storageVersion: result.record.storageVersion,
@@ -320,7 +320,7 @@ export default async function handler(req: any, res: any) {
   const userSub = auth.value.sessionUser.sub;
 
   if (!isQirRunStoreConfigured()) {
-    return res.status(503).json({ error: "Durable QIR runtime storage is not configured." });
+    return res.status(503).json({ error: "Durable QIR runtime storage is not configured.", reason: "storage-unconfigured" });
   }
 
   if (req.method === "GET") {
@@ -352,7 +352,7 @@ export default async function handler(req: any, res: any) {
   }
 
   const record = await createQirRun(userSub, candidate);
-  if (!record) return res.status(503).json({ error: "Unable to persist the durable Run." });
+  if (!record) return res.status(503).json({ error: "Unable to persist the durable Run.", reason: "persist-failed" });
   return res.status(201).json({
     run: record.run,
     storageVersion: record.storageVersion,
