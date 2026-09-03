@@ -39,7 +39,13 @@ import assert from 'node:assert/strict';
 import { resolveCodingTurnOutcome } from './coding-outcome-spine.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from './turn-recovery.js';
 import { orderEnginesForMission } from './mission-continuation.js';
-import { attemptEngineId, attemptEngineName, repeatsSpentEngine } from './turn-engine-identity.js';
+import {
+  attemptEngineId,
+  attemptEngineName,
+  engineDisplayName,
+  repeatsSpentEngine,
+  unrecordedServerEngines,
+} from './turn-engine-identity.js';
 
 const TERMINAL_KINDS = ['provider-dead', 'stream-ended', 'no-preview', 'timeout'];
 
@@ -339,11 +345,11 @@ test('[was-red] the fallback selector no longer compares a routing label to an e
     /model\.id !== targetModel\?\.id/,
     'comparing a catalogue id to `targetModel.id` reads "auto" in auto mode and excludes nothing',
   );
-  assert.match(body, /repeatsSpentEngine\(model, targetModel, triedEngineIds\)/, 'exclusion must go through engine identity');
+  assert.match(body, /repeatsSpentEngine\(model, targetModel, spentEngineIds\)/, 'exclusion must go through engine identity');
   assert.match(body, /orderEnginesForMission\(/, 'and the ladder must start from what this mission has not burned');
   assert.match(
     hook,
-    /triedEngineIds\.add\(runningEngineId\)/,
+    /spentEngineIds\.add\(runningEngineId\)/,
     'the set of spent engines must hold engine ids, not the string "auto"',
   );
 });
@@ -423,4 +429,98 @@ test('the chat stream tells the outcome copy which mission state it is in', () =
     resolved,
     `${resolved} terminal outcomes are resolved but only ${informed} are told whether the mission survived`,
   );
+});
+
+/*
+ * THE RUNGS THE DESK COULD NOT SEE (2026-09-03, same day, one layer down).
+ *
+ * The fix above stops the BROWSER repeating an engine. It does not stop the
+ * server, which runs its own inference ladder behind a single request: on a
+ * build turn api/_lib/chat-handler.ts funds two rungs out of the 165s budget
+ * (110s primary, then the remainder) and may burn both. The desk saw one
+ * attempt, because which rungs burned was stated only inside a human-readable
+ * failover label.
+ *
+ * Measured through the real modules:
+ *
+ *     the server actually burned      : gemini-flash-latest, nemotron-3-super
+ *     the durable Run records         : gemini-flash-latest
+ *     so turn 2 reroutes to           : nemotron-3-super
+ *     RED: turn 2 is sent to an engine the server already burned on this mission.
+ *
+ * Which is this file's own class — a retry identical to an attempt that already
+ * failed — arriving through the seam the previous fix did not cover.
+ */
+test('[was-red] engines the server burned are recorded, and the browser’s own is not double-counted', () => {
+  const recorded = new Set(['gemini-flash-latest']);
+
+  assert.deepEqual(
+    unrecordedServerEngines(
+      ['gemini-flash-latest', 'nvidia/nemotron-3-super-120b-a12b:free'],
+      recorded,
+    ),
+    ['nvidia/nemotron-3-super-120b-a12b:free'],
+    'the primary is already on the browser’s record; only the rungs behind it are news',
+  );
+
+  assert.deepEqual(
+    unrecordedServerEngines(['a', 'a', '', null, 'b'], new Set()),
+    ['a', 'b'],
+    'a repeated or empty id is not an extra engine',
+  );
+  assert.deepEqual(unrecordedServerEngines(undefined, recorded), [], 'a server that reports nothing burns nothing');
+});
+
+test('a reported engine is named for the person, falling back to something quotable', () => {
+  const catalogue = [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }];
+  assert.equal(engineDisplayName('gemini-flash-latest', catalogue), 'Gemini Flash');
+  assert.equal(
+    engineDisplayName('nvidia/nemotron-3-super-120b-a12b:free', catalogue),
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'an id the catalogue does not carry is still something the person can quote — a placeholder is not',
+  );
+  assert.equal(engineDisplayName('', catalogue), '');
+});
+
+test('[was-red] the desk absorbs the server’s rungs wherever they can arrive', () => {
+  /*
+   * Three arrival points, because a turn can die at any of them: a live
+   * failover status, a streamed terminal error, and a non-2xx response that
+   * never opened a stream at all. Missing one loses the whole record for that
+   * failure mode — and a unit test cannot see a receive point that was never
+   * wired.
+   */
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  assert.match(hook, /const absorbServerEngines = \(reported\) => \{/, 'the absorber must exist before it can be called');
+  const absorbed = hook.match(/absorbServerEngines\([^)]*\)/g) || [];
+  assert.equal(
+    absorbed.length,
+    3,
+    `expected three arrival points, found ${absorbed.length}: ${absorbed.join(' | ')}`,
+  );
+  assert.ok(absorbed.includes('absorbServerEngines(parsed.status.spentEngineIds)'), 'a live failover names the rung it just left');
+  assert.ok(absorbed.includes('absorbServerEngines(parsed.error.spentEngineIds)'), 'a streamed terminal error carries the full set');
+  assert.ok(absorbed.includes('absorbServerEngines(errData?.spentEngineIds)'), 'a turn that never opened a stream still burned rungs');
+
+  assert.match(
+    hook,
+    /attemptsMade: Math\.max\(attempt, spentEngineIds\.size\)/,
+    'one browser attempt over two engines is two model attempts, and the copy may not under-report it',
+  );
+});
+
+test('[was-red] the durable journal is told every engine, once', () => {
+  /*
+   * `qirFail` reports what is NEW since the last call. Re-listing the whole
+   * spent set on every failure would inflate each engine's recorded failure
+   * count, which is the weight orderEnginesForMission sorts by — an engine
+   * would sink for having been mentioned often rather than for failing often.
+   */
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const qirFail = hook.slice(hook.indexOf('const qirFail = (kind, message, done)'));
+  const body = qirFail.slice(0, qirFail.indexOf('\n    };') + 7);
+
+  assert.match(body, /!journaledEngineIds\.has\(engineId\)/, 'an engine already journaled is not news');
+  assert.match(body, /\.\.\.spentEngineIds\]/, 'and the server’s rungs must be in the set that gets journaled');
+  assert.match(body, /engineIds,/, 'the journal takes the whole list, not a single engine');
 });

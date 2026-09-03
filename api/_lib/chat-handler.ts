@@ -487,6 +487,14 @@ export default async function handler(req: any, res: any) {
 
   const startTime = Date.now();
   const requestId = randomUUID();
+  /*
+   * Every engine THIS request actually ran on. The inference ladder below works
+   * down its own rungs, so one browser attempt can burn several engines; the
+   * browser could only ever see the primary it chose. Reported as data on
+   * failover and on terminal failure so the desk and the durable mission both
+   * know what is genuinely spent.
+   */
+  const spentEngineIds = new Set<string>();
   const taskCategory = normaliseTaskCategory(req.body?.taskCategory);
   const sse = new SseWriter(res);
 
@@ -1524,6 +1532,9 @@ export default async function handler(req: any, res: any) {
           break;
         } catch (error: any) {
           lastRouteError = error;
+          // This rung ran and did not deliver. A Set because the HTML-recovery
+          // path below re-runs the same route.
+          spentEngineIds.add(route.id);
           const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
             || error?.detailCode === 'code-fences-missing'
             || (isRefine && error?.detailCode === 'code-fences-missing');
@@ -1577,6 +1588,10 @@ export default async function handler(req: any, res: any) {
                 nextModelLabel: nextRoute.id,
                 statusCode: status,
               }),
+              // The same facts the label states in prose, as fields the desk can
+              // act on rather than parse.
+              spentEngineIds: [...spentEngineIds],
+              nextEngineId: nextRoute.id,
             });
           }
         }
@@ -2067,6 +2082,7 @@ export default async function handler(req: any, res: any) {
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
         correlationId,
+        spentEngineIds: [...spentEngineIds],
       });
       return;
     }
@@ -2076,6 +2092,8 @@ export default async function handler(req: any, res: any) {
       modelName: req.body?.modelName || req.body?.modelId,
       requestId,
       correlationId,
+      // A turn that dies before the stream starts still burned rungs getting there.
+      ...(spentEngineIds.size ? { spentEngineIds: [...spentEngineIds] } : {}),
     });
   }
 }

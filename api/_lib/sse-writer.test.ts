@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { SseWriter, readWithIdleTimeout, remainingBudgetMs } from './sse-writer.js';
 
 function fakeResponse() {
@@ -74,4 +75,71 @@ test('idle timeout rejects a stalled reader', async () => {
 
 test('remaining request budget never goes negative', () => {
   assert.equal(remainingBudgetMs(Date.now() - 100, 50), 0);
+});
+
+/*
+ * A FAILURE MUST NAME THE ENGINES IT BURNED.
+ *
+ * chat-handler.ts plans an inference ladder and works down its own rungs behind
+ * one browser request, so a build turn routinely spends two engines before the
+ * desk sees a single failure. Which rungs burned was carried only inside a
+ * human-readable failover label — and prose is invisible to routing, the lesson
+ * src/lib/coding-outcome-spine.js already records for its retry chip. So the
+ * desk counted one attempt, under-reported what it tried, and told the durable
+ * mission the other rungs were still fresh.
+ */
+test('a stream failure carries the engines the turn actually ran, as data', () => {
+  const fixture = fakeResponse();
+  const stream = new SseWriter(fixture.response);
+  stream.fail({
+    message: 'Quantora could not reach a healthy AI route for this turn.',
+    code: 'CHAT_STREAM_FAILURE',
+    retryable: true,
+    spentEngineIds: ['gemini-flash-latest', 'nvidia/nemotron-3-super-120b-a12b:free'],
+  });
+
+  const errorEvent = fixture.chunks
+    .map((chunk) => chunk.replace(/^data: /, '').trim())
+    .filter((body) => body && body !== '[DONE]')
+    .map((body) => JSON.parse(body))
+    .find((payload) => payload.error);
+  assert.ok(errorEvent, `no structured error was streamed. Got: ${fixture.chunks.join('')}`);
+  assert.deepEqual(
+    errorEvent.error.spentEngineIds,
+    ['gemini-flash-latest', 'nvidia/nemotron-3-super-120b-a12b:free'],
+    'the desk cannot avoid repeating a rung it was never told about',
+  );
+});
+
+test('a failure with no engines to report claims none', () => {
+  const fixture = fakeResponse();
+  const stream = new SseWriter(fixture.response);
+  stream.fail({ message: 'Quantora could not complete this request.' });
+
+  const errorEvent = fixture.chunks
+    .map((chunk) => chunk.replace(/^data: /, '').trim())
+    .filter((body) => body && body !== '[DONE]')
+    .map((body) => JSON.parse(body))
+    .find((payload) => payload.error);
+  assert.equal(
+    'spentEngineIds' in errorEvent.error,
+    false,
+    'an absent field is honest; an empty array would read as "we tried nothing"',
+  );
+});
+
+test('the chat handler reports every rung it burned, not just the one it started on', () => {
+  /*
+   * The writer can carry the field; this is whether the handler fills it. A
+   * behavioural test cannot see a set that is never populated, and that blind
+   * spot is exactly how the server's rungs stayed invisible.
+   */
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /spentEngineIds\.add\(route\.id\)/, 'a rung that ran and failed must be recorded');
+  assert.match(handler, /spentEngineIds: \[\.\.\.spentEngineIds\]/, 'and reported to the desk');
+  assert.doesNotMatch(
+    handler,
+    /spentEngineIds: \[\]/,
+    'a hardcoded empty list would satisfy every other assertion here while reporting nothing',
+  );
 });
