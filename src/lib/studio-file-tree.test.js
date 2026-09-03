@@ -46,3 +46,10 @@ test('the desk activity rail is a vertical icon strip, not title-bar chips', () 
   const titleClose = studio.indexOf('data-quantora-desk-ide="true"');
   assert.ok(railIndex > titleClose, 'the rail must sit below the title bar controls');
 });
+
+test('open desk tabs are labelled, not painted in brand orange', () => {
+  const tabs = fs.readFileSync(new URL('../components/StudioTabBar.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(tabs, /#f97316|#c2410c|#fdba74/);
+  assert.match(tabs, /deskTabLabel\(tab\)/);
+  assert.match(tabs, /PINNED_DESK_TAB/);
+});
