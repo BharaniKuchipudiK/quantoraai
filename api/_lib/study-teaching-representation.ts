@@ -83,9 +83,9 @@ function planForVerifiedLearnerState(
   const common = {
     version: STUDY_TEACHING_REPRESENTATION_VERSION,
     requestedMode: null,
-    fallback: 'none' as const,
-    reason: 'verified_learner_state' as const,
-  };
+    fallback: 'none',
+    reason: 'verified_learner_state',
+  } as const;
 
   switch (learnerModel.nextLearningMove.type) {
     case 'diagnose_misconception':
