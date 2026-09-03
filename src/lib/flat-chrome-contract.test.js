@@ -32,6 +32,8 @@ const chromeSources = [
   'src/components/Footer.jsx',
   'src/components/WelcomeHub.jsx',
   'src/components/AiStudio.jsx',
+  'src/components/FeedbackWidget.jsx',
+  'src/styles/feedback-widget.css',
 ];
 
 test('post-auth chrome contains no CSS gradient functions', () => {

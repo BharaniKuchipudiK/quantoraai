@@ -47,8 +47,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const booking = await executeToolCall('make_reservation', {
     bookingType: 'flight',
     itemId: 'off_test',
-    dates: DEPARTURE_DATE,
-    price: 100,
+    dates: DEPARTURE_DATE,    price: 100,
   }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(booking.status, 'unavailable');
@@ -62,8 +61,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const alert = await executeToolCall('create_price_alert', {
     entityType: 'flight',
     destination: 'LHR',
-    dates: DEPARTURE_DATE,
-  }, { duffelClient: null, googleMapsApiKey: null });
+    dates: DEPARTURE_DATE,  }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(alert.status, 'unavailable');
   assert.equal(alert.executed, false);
@@ -75,8 +73,7 @@ test('unconnected read-only travel providers stop the agent instead of returning
   const flight = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'LHR',
-    departureDate: DEPARTURE_DATE,
-  }, { duffelClient: null, googleMapsApiKey: null });
+    departureDate: DEPARTURE_DATE,  }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
   assert.equal(flight.action, 'PAUSE_AND_ASK');
@@ -89,8 +86,7 @@ test('unconnected read-only travel providers stop the agent instead of returning
   const hotel = await executeToolCall('search_hotels', {
     location: 'London',
     checkInDate: DEPARTURE_DATE,
-    checkOutDate: RETURN_DATE,
-  }, { duffelClient: null, googleMapsApiKey: null });
+    checkOutDate: RETURN_DATE,  }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
   assert.match(hotel.message, /London/i);
@@ -162,8 +158,7 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
   const result = await executeToolCall('search_hotels', {
     location: 'London',
     checkInDate: DEPARTURE_DATE,
-    checkOutDate: RETURN_DATE,
-    guests: 2,
+    checkOutDate: RETURN_DATE,    guests: 2,
     minStarRating: 4,
   }, {
     duffelClient: null,

@@ -1,6 +1,6 @@
 {
   "name": "Quantora",
-  "description": "The Citizen AI Lab — an AI coding desk. From idea to outcome: files, live preview, and the work on the desk.",
+  "description": "Free outcomes studio — apps, research, study, travel, finance. Proof before done. Publish when it's real.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

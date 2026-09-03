@@ -5,6 +5,10 @@ import {
   planStudyTeachingRepresentation,
 } from './study-teaching-representation.js';
 
+function learnerHistory(contextText = '') {
+  return contextText.split('\n').filter(Boolean).map((text) => ({ role: 'user', text }));
+}
+
 test('explicit visual request selects an existing subject-native visual when one is supported', () => {
   const plan = planStudyTeachingRepresentation({
     message: 'Teach me using images',
@@ -14,6 +18,7 @@ test('explicit visual request selects an existing subject-native visual when one
   assert.equal(plan.requestedMode, 'visual');
   assert.equal(plan.primaryRepresentation, 'annotated_diagram');
   assert.equal(plan.rendererRequired, true);
+  assert.equal(plan.rendererKind, 'physics-motion');
   assert.equal(plan.fallback, 'none');
   assert.equal(plan.reason, 'explicit_request');
 });
@@ -26,6 +31,7 @@ test('explicit visual request fails honestly when the current renderer family is
   assert.equal(plan.requestedMode, 'visual');
   assert.equal(plan.primaryRepresentation, 'concise_text');
   assert.equal(plan.rendererRequired, false);
+  assert.equal(plan.rendererKind, null);
   assert.equal(plan.fallback, 'renderer_unavailable');
   assert.equal(plan.reason, 'explicit_request');
 });
@@ -37,6 +43,7 @@ test('graph request selects graph only when graph semantics are established', ()
   });
   assert.equal(supported.primaryRepresentation, 'graph');
   assert.equal(supported.rendererRequired, true);
+  assert.equal(supported.rendererKind, 'graph');
 
   const unsupported = planStudyTeachingRepresentation({
     message: 'Show me with a graph',
@@ -60,9 +67,11 @@ test('make it easy requests concise teaching', () => {
 });
 
 test('first struggle compresses rather than forcing a visual everywhere', () => {
+  const contextText = 'algebra equation x + 3 = 5';
   const plan = planStudyTeachingRepresentation({
     message: "I still don't understand",
-    contextText: 'algebra equation x + 3 = 5',
+    contextText,
+    history: learnerHistory(contextText),
   });
   assert.equal(plan.reason, 'struggle_repair');
   assert.equal(plan.primaryRepresentation, 'concise_text');
@@ -70,17 +79,22 @@ test('first struggle compresses rather than forcing a visual everywhere', () => 
 });
 
 test('repeated struggle changes representation and chooses a visual only when the concept supports one', () => {
+  const visualContext = 'Newtonian motion and friction\nMake it easier for me';
   const visualRepair = planStudyTeachingRepresentation({
     message: "I still don't understand",
-    contextText: 'Newtonian motion and friction\nMake it easier for me',
+    contextText: visualContext,
+    history: learnerHistory(visualContext),
   });
   assert.equal(visualRepair.reason, 'struggle_repair');
   assert.equal(visualRepair.primaryRepresentation, 'annotated_diagram');
   assert.equal(visualRepair.rendererRequired, true);
+  assert.equal(visualRepair.rendererKind, 'physics-motion');
 
+  const nonVisualContext = 'a concept with no current renderer family\nMake it easier for me';
   const nonVisualRepair = planStudyTeachingRepresentation({
     message: "I still don't understand",
-    contextText: 'a concept with no current renderer family\nMake it easier for me',
+    contextText: nonVisualContext,
+    history: learnerHistory(nonVisualContext),
   });
   assert.equal(nonVisualRepair.reason, 'struggle_repair');
   assert.equal(nonVisualRepair.primaryRepresentation, 'worked_example');
@@ -88,9 +102,11 @@ test('repeated struggle changes representation and chooses a visual only when th
 });
 
 test('repeated failed modality changes trigger guided reconstruction instead of another explanation', () => {
+  const contextText = 'Explain it with a story\nI am confused\nShow me an example';
   const plan = planStudyTeachingRepresentation({
     message: "I still don't understand",
-    contextText: 'Explain it with a story\nI am confused\nShow me an example',
+    contextText,
+    history: learnerHistory(contextText),
   });
   assert.equal(plan.reason, 'struggle_repair');
   assert.equal(plan.primaryRepresentation, 'interactive_probe');

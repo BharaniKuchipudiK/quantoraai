@@ -807,6 +807,23 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
   }, [allChatSessions, defaultGreetingMsg, projects]);
 
+  /*
+   * Open one specific chat, switching projects if it lives in another one.
+   * setActiveProjectId cannot do this: it resume-picks a session for the
+   * project (and creates one if none), which is right for opening a project
+   * folder and wrong for clicking a particular chat in the sidebar tree.
+   */
+  const openChatSession = useCallback((sessionId) => {
+    const session = allChatSessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const projectId = session.projectId || DEFAULT_PROJECT_ID;
+    if (projectId !== activeProject.id && projects.some((project) => project.id === projectId)) {
+      setRemoteProjectContext(null);
+      setActiveProjectIdState(projectId);
+    }
+    setActiveSessionId(sessionId);
+  }, [allChatSessions, activeProject.id, projects]);
+
   const handleCreateProject = useCallback((input = {}) => {
     const now = Date.now();
     const name = String(input.name || '').trim() || 'Untitled Project';
@@ -914,6 +931,10 @@ export function useStudioSession({ user, selectedModel }) {
      */
     storageFault,
     chatSessions,
+    // Every chat across every project, for the sidebar's project tree —
+    // chatSessions above stays scoped to the active project.
+    allChatSessions,
+    openChatSession,
     setChatSessions: setAllChatSessions,
     activeSessionId,
     setActiveSessionId,

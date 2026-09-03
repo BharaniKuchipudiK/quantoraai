@@ -1,4 +1,4 @@
-export const STUDY_LEARNING_INTERVENTION_VERSION = 'study-learning-intervention-2026-09-02.2';
+export const STUDY_LEARNING_INTERVENTION_VERSION = 'study-learning-intervention-2026-09-02.3';
 
 export type StudyLearningInterventionState = 'stable' | 'struggling' | 'blocked' | 'prerequisite_gap';
 export type StudyLearningInterventionAction =
@@ -22,7 +22,7 @@ type HistoryItem = { role?: string; sender?: string; text?: string; content?: st
 
 const STRUGGLE_RE = /\b(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|i\s+don'?t\s+know|confused|lost|not getting it|too hard|difficult to understand|doesn['’]?t make sense)\b/i;
 const SIMPLIFY_RE = /\b(?:make it easy|make it easier|simplify|simpler|plain english|from basics?|start from basics?|explain again|another way)\b/i;
-const REPRESENTATION_RE = /\b(?:image|images|picture|diagram|visual|graph|animation|animate|gif|story|storytelling|analogy|example|step[- ]by[- ]step)\b/i;
+const REPRESENTATION_RE = /\b(?:image|images|picture|diagram|visual(?:ly)?|graph|animation|animate|gif|story|storytelling|analogy|example|step[- ]by[- ]step)\b/i;
 const REFERENCE_RE = /\b(?:reference|resource|video|book|notes|material|study material|where can i learn)\b/i;
 
 function textOf(item: HistoryItem): string {

@@ -60,11 +60,10 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
   assert.match(stream, /codingFailureSpineOwnsTurn/);
   assert.match(stream, /codingSpineOwns/);
   assert.match(stream, /qirFail/);
-  assert.match(stream, /onCodingModelAttempt/);
-  assert.match(stream, /onCodingModelFailure/);
-  assert.match(studio, /onCodingModelAttempt/);
-  assert.match(studio, /beginModelAttempt/);
-  assert.match(studio, /reportModelFailure/);
+  assert.match(stream, /qirCoding\?\.beginModelAttempt/);
+  assert.match(stream, /qirCoding\?\.reportModelFailure/);
+  assert.match(studio, /qirCoding,/);
+  assert.match(studio, /useQirCodingRun/);
   /*
    * The leak was a bare `if (isCodingRequest)` around resolveCodingTurnOutcome.
    * Advisor rooms must pass the second ownership gate before that copy can render.

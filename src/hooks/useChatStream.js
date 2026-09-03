@@ -268,8 +268,7 @@ export function useChatStream({
   updateActiveSession,
   onCodingTurnExecute = null,
   onCodingTurnProved = null,
-  onCodingModelAttempt = null,
-  onCodingModelFailure = null,
+  qirCoding = null,
   onDeskRename = null,
   buildJob = null,
 }) {
@@ -794,7 +793,7 @@ export function useChatStream({
     const codingSpineOwns = codingFailureSpineOwnsTurn({ isCodingRequest, studioDomain: turnDomain });
     const qirFail = (kind, message, done) => {
       if (!codingSpineOwns) return;
-      try { void onCodingModelFailure?.({ kind, message, retryable: !done, recoveryExhausted: done }); } catch { /* journal must not block */ }
+      try { void qirCoding?.reportModelFailure?.({ kind, message, retryable: !done, recoveryExhausted: done }); } catch { /* journal must not block */ }
     };
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
@@ -1221,7 +1220,7 @@ export function useChatStream({
       for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
         if (!stillCurrent()) return;
         if (codingSpineOwns) {
-          try { void onCodingModelAttempt?.(visibleUserText || text, targetModel?.id || ''); } catch { /* journal must not block */ }
+          try { void qirCoding?.beginModelAttempt?.(visibleUserText || text, targetModel?.id || ''); } catch { /* journal must not block */ }
         }
         // Record the engine this attempt actually runs on, for honest terminal copy.
         if (targetModel?.id) triedEngineIds.add(targetModel.id);
