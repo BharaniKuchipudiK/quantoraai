@@ -36,10 +36,19 @@ test('repeated struggle with a supported visual changes to see then predict', ()
   assert.equal(result.mustWaitForLearner, true);
 });
 
-test('repeated struggle without a renderer uses a worked repair rather than inventing a visual', () => {
+test('repeated Electricity struggle changes to see then predict', () => {
   const result = plan({
     message: "I still don't understand",
     contextText: 'EMF and terminal potential difference\nMake it easier for me',
+  });
+  assert.deepEqual(result.beats, ['SEE', 'PREDICT']);
+  assert.equal(result.mustWaitForLearner, true);
+});
+
+test('repeated struggle without a renderer uses a worked repair rather than inventing a visual', () => {
+  const result = plan({
+    message: "I still don't understand",
+    contextText: 'opportunity cost and trade-offs\nMake it easier for me',
   });
   assert.deepEqual(result.beats, ['EXPLAIN', 'TRY']);
   assert.equal(result.mustWaitForLearner, true);
