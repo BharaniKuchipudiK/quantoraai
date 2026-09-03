@@ -1,7 +1,9 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { classifyDeskGitLine, looksLikeMissingGitRepo, studioGitBlocker, studioGitFileCount } from '../lib/studio-git.js';
 import { githubCompareUrl } from '../lib/github-import.js';
+import { studioFileLabel } from '../lib/studio-file-tree.js';
 import { runGitInWorkspace } from '../lib/webcontainer.js';
+import StudioDeskReviewHunks from './StudioDeskReviewHunks.jsx';
 
 /*
  * Pull request work moved out of this pane and into GithubPullRequests.
@@ -23,8 +25,11 @@ export default function StudioGit({
   vfs = {},
   workspaceKey = '',
   githubRepoUrl = '',
+  githubDestination = null,
   projectName = '',
   githubBaseBranch = 'main',
+  review = [],
+  onSelectFile,
   isLight,
   textColor,
 }) {
@@ -167,7 +172,7 @@ export default function StudioGit({
         </div>
       ) : null}
       <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading GitHub…</div>}>
-        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} projectName={projectName} />
+        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} githubDestination={githubDestination} projectName={projectName} />
         <GithubPullRequests
           repoUrl={githubRepoUrl}
           headBranch={prHead || 'quantora-desk'}
@@ -175,6 +180,63 @@ export default function StudioGit({
         />
       </Suspense>
       <div ref={scrollerRef} style={{ flex: 1, overflow: 'auto', padding: '12px 14px', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+        {Array.isArray(review) && review.length > 0 ? (
+          <div data-quantora-desk-review="true" data-quantora-desk-review-in="git" style={{ marginBottom: '14px' }}>
+            <div style={{
+              fontSize: '0.65rem',
+              fontWeight: 800,
+              letterSpacing: '0.06em',
+              color: '#94a3b8',
+              padding: '0 0 8px',
+              textTransform: 'uppercase',
+            }}
+            >
+              This turn
+            </div>
+            {review.map((row) => (
+              <div key={`git-review-${row.path}`}>
+                <button
+                  type="button"
+                  data-quantora-desk-review-file={row.path}
+                  onClick={() => onSelectFile?.(row.path)}
+                  title={row.path}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    textAlign: 'left',
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#e2e8f0',
+                    padding: '4px 0 6px',
+                    cursor: onSelectFile ? 'pointer' : 'default',
+                    font: 'inherit',
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {studioFileLabel(row.path)}
+                  </span>
+                  {row.exact === false ? (
+                    <span style={{ fontSize: '0.62rem', color: '#94a3b8' }}>changed</span>
+                  ) : (
+                    <span style={{ fontSize: '0.62rem', fontVariantNumeric: 'tabular-nums' }}>
+                      {row.added ? <span style={{ color: '#4ade80' }}>+{row.added}</span> : null}
+                      {row.added && row.removed ? ' ' : null}
+                      {row.removed ? <span style={{ color: '#f87171' }}>−{row.removed}</span> : null}
+                    </span>
+                  )}
+                </button>
+                <StudioDeskReviewHunks
+                  path={row.path}
+                  hunks={row.hunks}
+                  note={row.note}
+                  subtextColor="#94a3b8"
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
         {blocker ? (
           <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
         ) : null}

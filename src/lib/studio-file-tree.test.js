@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { listStudioFiles, studioFileLabel } from './studio-file-tree.js';
 
@@ -18,4 +19,37 @@ test('preview is labelled Preview, not a fake file name', () => {
   assert.equal(studioFileLabel('terminal'), 'Terminal');
   assert.equal(studioFileLabel('git'), 'Git');
   assert.equal(studioFileLabel('src/App.jsx'), 'src/App.jsx');
+});
+
+test('the file tree does not repeat the desk job card', () => {
+  const tree = fs.readFileSync(new URL('../components/StudioFileTree.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(tree, /data-quantora-desk-job-panel/);
+  const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(studio, /data-quantora-desk-job="true"/);
+});
+
+test('diff hunks live in Git, not in the file tree', () => {
+  const tree = fs.readFileSync(new URL('../components/StudioFileTree.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(tree, /data-quantora-desk-review-hunk/);
+  assert.match(tree, /data-quantora-desk-review="true"/);
+  const git = fs.readFileSync(new URL('../components/StudioGit.jsx', import.meta.url), 'utf8');
+  assert.match(git, /StudioDeskReviewHunks/);
+  const hunks = fs.readFileSync(new URL('../components/StudioDeskReviewHunks.jsx', import.meta.url), 'utf8');
+  assert.match(hunks, /data-quantora-desk-review-hunks/);
+  assert.match(hunks, /data-quantora-desk-review-line/);
+});
+
+test('the desk activity rail is a vertical icon strip, not title-bar chips', () => {
+  const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(studio, /orientation="vertical"/);
+  const railIndex = studio.indexOf('<StudioActivityRail');
+  const titleClose = studio.indexOf('data-quantora-desk-ide="true"');
+  assert.ok(railIndex > titleClose, 'the rail must sit below the title bar controls');
+});
+
+test('open desk tabs are labelled, not painted in brand orange', () => {
+  const tabs = fs.readFileSync(new URL('../components/StudioTabBar.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(tabs, /#f97316|#c2410c|#fdba74/);
+  assert.match(tabs, /deskTabLabel\(tab\)/);
+  assert.match(tabs, /PINNED_DESK_TAB/);
 });

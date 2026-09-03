@@ -106,6 +106,7 @@ import {
 const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
+const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -585,6 +586,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('preview');
+  /*
+   * Where this build is going to sit, chosen before it starts. null means "not
+   * saved to GitHub", which is the default and a real answer — see
+   * normalizeGithubDestination.
+   */
+  const [githubDestination, setGithubDestination] = useState(null);
   /*
    * The tab strip.
    *
@@ -3238,6 +3245,7 @@ Paused — ${autoPauseRef.current}.`
     : '';
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
+  const deskChromeCompact = deskFullscreen || (deskWidthPx > 0 && deskWidthPx < 1060);
   const isIdeLayout = isCodingDesk;
 
   return (
@@ -4279,6 +4287,14 @@ Paused — ${autoPauseRef.current}.`
 
 
 
+          <Suspense fallback={null}>
+            <GithubDestinationBar
+              destination={githubDestination}
+              onChange={setGithubDestination}
+              isLight={isLight}
+            />
+          </Suspense>
+
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '0' }}>
             <textarea
@@ -4946,7 +4962,9 @@ Paused — ${autoPauseRef.current}.`
             flexShrink: 0
           }}>
             <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
-              <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Coding desk</span>
+              {deskJobLabel ? null : (
+                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Coding desk</span>
+              )}
               {deskLadder ? (
                 <span
                   data-quantora-desk-ladder="true"
@@ -4966,14 +4984,14 @@ Paused — ${autoPauseRef.current}.`
                   }}
                 >
                   <Layers size={10} />
-                  {deskLadderChipLabel(deskLadder)}
+                  {deskChromeCompact ? null : deskLadderChipLabel(deskLadder)}
                 </span>
               ) : null}
               {deskJobLabel ? (
                 <span
                   data-quantora-desk-job="true"
                   title={deskJob?.mustWork?.join(' • ') || deskJobLabel}
-                  style={{ fontSize: '0.68rem', fontWeight: 600, color: subtextColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
                   {deskJobLabel}
                 </span>
@@ -4997,22 +5015,6 @@ Paused — ${autoPauseRef.current}.`
               ) : null}
             </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
-              <Suspense fallback={<div aria-hidden="true" style={{ width: (!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060) ? '150px' : '330px', height: '28px' }} />}>
-              <StudioActivityRail
-                activeTab={workspaceActiveTab}
-                onOpenTab={setWorkspaceActiveTab}
-                filesOpen={deskFilesOpen}
-                onToggleFiles={() => setDeskFilesOpen((open) => !open)}
-                changedCount={deskChangedCount}
-                addedLines={deskAddedLines}
-                removedLines={deskRemovedLines}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
-              />
-              </Suspense>
-              <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.12)' }} />
               {canOfferVercelPublish({
                 messages,
                 vfs,
@@ -5062,7 +5064,7 @@ Paused — ${autoPauseRef.current}.`
                     isLight={isLight}
                     textColor={textColor}
                     subtextColor={subtextColor}
-                    compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+                    compact={deskChromeCompact}
                   />
                 </Suspense>
               ) : null}
@@ -5117,6 +5119,24 @@ Paused — ${autoPauseRef.current}.`
               </button>
             </div>
           </div>
+
+          <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+          <Suspense fallback={<div aria-hidden="true" style={{ width: '40px', flexShrink: 0, height: '100%', background: isLight ? '#f8fafc' : '#070913', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
+          <StudioActivityRail
+            activeTab={workspaceActiveTab}
+            onOpenTab={setWorkspaceActiveTab}
+            filesOpen={deskFilesOpen}
+            onToggleFiles={() => setDeskFilesOpen((open) => !open)}
+            changedCount={deskChangedCount}
+            addedLines={deskAddedLines}
+            removedLines={deskRemovedLines}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            orientation="vertical"
+          />
+          </Suspense>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
 
           <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f5f5f5' : '#0a0a0a', borderBottom: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.08)' }} />}>
           <StudioTabBar
@@ -5256,8 +5276,11 @@ Paused — ${autoPauseRef.current}.`
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
                  githubRepoUrl={importedGithubRepoUrl}
+                 githubDestination={githubDestination}
                  projectName={activeProject?.name || ''}
                  githubBaseBranch={importedGithubBaseBranch}
+                 review={deskReview}
+                 onSelectFile={setWorkspaceActiveTab}
                  isLight={isLight}
                  textColor={textColor}
                />
@@ -5273,6 +5296,8 @@ Paused — ${autoPauseRef.current}.`
                </Suspense>
              )}
             </div>
+          </div>
+          </div>
           </div>
         </div>
       )}

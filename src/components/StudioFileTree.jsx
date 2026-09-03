@@ -4,15 +4,6 @@ import { listStudioFiles, studioFileLabel } from '../lib/studio-file-tree.js';
 import { checkState } from '../lib/studio-desk-criteria.js';
 
 const PROBE_MARK = { ok: 'ok', fix: 'fix', unverified: '?' };
-const REVIEW_LINE_COLOR = { hunk: '#38bdf8', add: '#22c55e', del: '#f87171' };
-
-function reviewLineKind(line = '') {
-  const text = String(line || '');
-  if (text.startsWith('@@')) return 'hunk';
-  if (text.startsWith('+')) return 'add';
-  if (text.startsWith('-')) return 'del';
-  return 'ctx';
-}
 
 export default function StudioFileTree({
   vfs,
@@ -28,7 +19,12 @@ export default function StudioFileTree({
   width = 212,
 }) {
   const files = listStudioFiles(vfs);
-  const jobPurpose = typeof job?.purpose === 'string' ? job.purpose : '';
+  /*
+   * Job name belongs in the desk title (`data-quantora-desk-job`). Repeating it
+   * here as a JOB card ate the file list and duplicated the header. Callers may
+   * still pass `job`; do not render it in the tree.
+   */
+  void job;
   const paneWidth = Math.max(120, Number(width) || 212);
 
   return (
@@ -55,38 +51,7 @@ export default function StudioFileTree({
       >
         Files
       </div>
-      {jobPurpose ? (
-        <div
-          data-quantora-desk-job-panel="true"
-          style={{
-            margin: '0 4px 8px',
-            padding: '8px',
-            borderRadius: '8px',
-            background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.08)',
-            border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.25)',
-          }}
-        >
-          <div style={{
-            fontSize: '0.62rem',
-            fontWeight: 800,
-            letterSpacing: '0.06em',
-            color: subtextColor,
-            textTransform: 'uppercase',
-            marginBottom: '4px',
-          }}
-          >
-            Job
-          </div>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textColor, lineHeight: 1.35 }}>
-            {jobPurpose}
-          </div>
-          {Array.isArray(job?.mustWork) && job.mustWork[0] ? (
-            <div style={{ fontSize: '0.65rem', color: subtextColor, marginTop: '4px', lineHeight: 1.35 }}>
-              {job.mustWork[0]}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Changed files only. Diff hunks render in Git (`StudioDeskReviewHunks`). */}
       {Array.isArray(review) && review.length > 0 ? (
         <div data-quantora-desk-review="true" style={{ padding: '8px 4px 6px' }}>
           <div style={{
@@ -123,59 +88,6 @@ export default function StudioFileTree({
                   </span>
                 )}
               </button>
-              {Array.isArray(row.hunks) && row.hunks.length > 0 ? (
-                <div
-                  data-quantora-desk-review-hunks="true"
-                  style={{
-                    margin: '0 4px 8px',
-                    padding: '6px 6px 4px',
-                    borderRadius: '6px',
-                    background: isLight ? '#fff' : 'rgba(15,23,42,0.65)',
-                    border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)',
-                    overflowX: 'auto',
-                  }}
-                >
-                  {row.hunks.map((hunk, hunkIndex) => (
-                    <pre
-                      key={`${row.path}-hunk-${hunkIndex}`}
-                      data-quantora-desk-review-hunk="true"
-                      style={{
-                        margin: hunkIndex ? '8px 0 0' : 0,
-                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                        fontSize: '0.58rem',
-                        lineHeight: 1.4,
-                        whiteSpace: 'pre',
-                      }}
-                    >
-                      {hunk.header ? (
-                        <div data-quantora-desk-review-line="hunk" style={{ color: '#38bdf8' }}>
-                          {hunk.header}
-                        </div>
-                      ) : null}
-                      {(hunk.lines || []).map((line, lineIndex) => {
-                        const kind = reviewLineKind(line);
-                        return (
-                          <div
-                            key={`${row.path}-hunk-${hunkIndex}-${lineIndex}`}
-                            data-quantora-desk-review-line={kind}
-                            style={{ color: REVIEW_LINE_COLOR[kind] || subtextColor }}
-                          >
-                            {line}
-                          </div>
-                        );
-                      })}
-                    </pre>
-                  ))}
-                </div>
-              ) : null}
-              {row.note ? (
-                <div
-                  data-quantora-desk-review-note="true"
-                  style={{ padding: '0 8px 8px', fontSize: '0.62rem', color: subtextColor, lineHeight: 1.35 }}
-                >
-                  {row.note}
-                </div>
-              ) : null}
             </div>
           ))}
         </div>

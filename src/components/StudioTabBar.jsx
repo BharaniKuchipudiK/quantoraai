@@ -94,7 +94,7 @@ export default function StudioTabBar({
               flexShrink: 0,
               paddingRight: pinned ? '4px' : '6px',
               background: active ? (isLight ? '#ffffff' : '#0d1127') : 'transparent',
-              borderTop: active ? '2px solid #f97316' : '2px solid transparent',
+              borderTop: '2px solid transparent',
               borderBottom: active ? '1px solid transparent' : border,
               borderLeft: active ? border : '1px solid transparent',
               borderRight: active ? border : '1px solid transparent',
@@ -122,7 +122,7 @@ export default function StudioTabBar({
                 fontSize: '0.74rem',
                 fontFamily: 'inherit',
                 fontWeight: active ? 700 : 500,
-                color: active ? (isLight ? '#c2410c' : '#fdba74') : subtextColor,
+                color: active ? textColor : subtextColor,
               }}
             >
               <Icon size={12} style={{ flexShrink: 0 }} />
@@ -147,7 +147,7 @@ export default function StudioTabBar({
                   border: 'none',
                   borderRadius: '5px',
                   background: 'transparent',
-                  color: active ? (isLight ? '#c2410c' : '#fdba74') : subtextColor,
+                  color: active ? textColor : subtextColor,
                   cursor: 'pointer',
                   opacity: 0.7,
                 }}

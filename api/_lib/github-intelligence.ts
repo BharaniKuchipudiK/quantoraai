@@ -387,3 +387,111 @@ export async function readChecks(input: {
     statuses: statuses.ok ? statuses.data?.statuses : [],
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * Choosing a destination before the work starts
+ * ------------------------------------------------------------------ */
+
+export type RepositoryChoice = {
+  owner: string;
+  repo: string;
+  fullName: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  canPush: boolean;
+  updatedAt: string;
+};
+
+/**
+ * The repositories this user could actually send work to.
+ *
+ * `canPush` comes from GitHub's own `permissions` block on each row, and rows
+ * without it resolve to false. Showing a repository the user can only read, as
+ * though it were a destination, moves the refusal to the end of the job — after
+ * the build, at the push — which is the worst possible moment to discover it.
+ * The picker still lists them, greyed, because "I can see it but not write to
+ * it" is information; it just never presents them as writable.
+ *
+ * Archived repositories are dropped entirely: GitHub refuses every write to
+ * them, so they are never a destination, only a distraction.
+ */
+export async function listRepositories(input: {
+  principal: GithubPrincipal;
+  limit?: number;
+  fetchImpl?: FetchLike;
+}): Promise<RepositoryChoice[]> {
+  const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 100);
+  const result = await githubRequest(
+    `/user/repos?per_page=${limit}&sort=updated&direction=desc&affiliation=owner,collaborator,organization_member`,
+    { token: input.principal.token, fetchImpl: input.fetchImpl },
+  );
+  if (result.status === 401) {
+    throw new Error("GitHub rejected your connected token. Reconnect your GitHub account in Quantora.");
+  }
+  if (!result.ok) {
+    throw new Error(`GitHub could not list your repositories (HTTP ${result.status}).`);
+  }
+
+  return (Array.isArray(result.data) ? result.data : [])
+    .filter((row: any) => row?.archived !== true)
+    .map((row: any) => ({
+      owner: text(row?.owner?.login, 120),
+      repo: text(row?.name, 200),
+      fullName: text(row?.full_name, 320),
+      defaultBranch: text(row?.default_branch, 200) || "main",
+      isPrivate: row?.private === true,
+      canPush: row?.permissions?.push === true || row?.permissions?.admin === true,
+      updatedAt: text(row?.updated_at, 40),
+    }))
+    .filter((row: RepositoryChoice) => Boolean(row.owner && row.repo));
+}
+
+export type BranchChoice = { name: string; isDefault: boolean; protected: boolean };
+
+/**
+ * Branches, with the default one first and marked.
+ *
+ * `protected` is carried through rather than filtered out. A protected branch
+ * is a legitimate destination — GitHub decides whether a given push is allowed,
+ * not Quantora — but a person choosing one deserves to know before they build,
+ * not when the push is refused.
+ */
+export async function listBranches(input: {
+  principal: GithubPrincipal;
+  owner: string;
+  repo: string;
+  defaultBranch?: string;
+  limit?: number;
+  fetchImpl?: FetchLike;
+}): Promise<BranchChoice[]> {
+  const limit = Math.min(Math.max(Number(input.limit) || 100, 1), 100);
+  const result = await githubRequest(
+    `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/branches?per_page=${limit}`,
+    { token: input.principal.token, fetchImpl: input.fetchImpl },
+  );
+
+  // A repository created moments ago has no commits and therefore no branches.
+  // That is an ordinary state for a fresh destination, not an error, so it
+  // reports the default branch as the one a first push would create.
+  if (result.status === 409) {
+    const fallback = text(input.defaultBranch, 200) || "main";
+    return [{ name: fallback, isDefault: true, protected: false }];
+  }
+  if (!result.ok) {
+    throw new Error(`GitHub could not list branches for ${input.owner}/${input.repo} (HTTP ${result.status}).`);
+  }
+
+  const fallbackDefault = text(input.defaultBranch, 200) || "main";
+  const branches = (Array.isArray(result.data) ? result.data : [])
+    .map((row: any) => ({
+      name: text(row?.name, 200),
+      isDefault: text(row?.name, 200) === fallbackDefault,
+      protected: row?.protected === true,
+    }))
+    .filter((row: BranchChoice) => Boolean(row.name));
+
+  return branches.sort((left, right) => {
+    if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
+}

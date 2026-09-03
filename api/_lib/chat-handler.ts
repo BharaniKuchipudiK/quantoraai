@@ -885,6 +885,7 @@ export default async function handler(req: any, res: any) {
       message,
       history: boundedHistory,
       hasImages: visionImages.length > 0,
+      learnerModel: adaptiveStudyLearnerModel,
     });
     if (studyInterpretation) {
       dynamicTemperature = Math.min(dynamicTemperature, studyInterpretation.temperatureCeiling);
@@ -1947,7 +1948,7 @@ export default async function handler(req: any, res: any) {
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
-        : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+          : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
       : credentialRejected
       // Names the provider and separates an empty balance from a bad key. The
       // old sentence did neither, and sent somebody to re-issue a Gemini key
