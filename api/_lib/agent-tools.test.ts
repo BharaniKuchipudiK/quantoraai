@@ -28,7 +28,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const booking = await executeToolCall('make_reservation', {
     bookingType: 'flight',
     itemId: 'off_test',
-    dates: '2026-09-01',
+    dates: '2026-12-01',
     price: 100,
   }, { duffelClient: null, googleMapsApiKey: null });
 
@@ -43,7 +43,7 @@ test('transactional travel calls fail closed and never fabricate success', async
   const alert = await executeToolCall('create_price_alert', {
     entityType: 'flight',
     destination: 'LHR',
-    dates: '2026-09-01',
+    dates: '2026-12-01',
   }, { duffelClient: null, googleMapsApiKey: null });
 
   assert.equal(alert.status, 'unavailable');
@@ -56,7 +56,7 @@ test('unconnected read-only travel providers stop the agent instead of returning
   const flight = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'LHR',
-    departureDate: '2026-09-01',
+    departureDate: '2026-12-15',
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(flight.status, 'unavailable');
   assert.equal(flight.executed, false);
@@ -69,8 +69,8 @@ test('unconnected read-only travel providers stop the agent instead of returning
 
   const hotel = await executeToolCall('search_hotels', {
     location: 'London',
-    checkInDate: '2026-09-01',
-    checkOutDate: '2026-09-03',
+    checkInDate: '2026-12-01',
+    checkOutDate: '2026-12-03',
   }, { duffelClient: null, googleMapsApiKey: null });
   assert.equal(hotel.status, 'unavailable');
   assert.equal(hotel.action, 'PAUSE_AND_ASK');
@@ -142,8 +142,8 @@ test('Google Places hotel discovery returns provider-backed facts without fake i
 
   const result = await executeToolCall('search_hotels', {
     location: 'London',
-    checkInDate: '2026-09-01',
-    checkOutDate: '2026-09-03',
+    checkInDate: '2026-12-01',
+    checkOutDate: '2026-12-03',
     guests: 2,
     minStarRating: 4,
   }, {

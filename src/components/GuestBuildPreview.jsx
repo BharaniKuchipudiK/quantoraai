@@ -202,20 +202,18 @@ export default function GuestBuildPreview({
           ))}
         </aside>
         <div className="guest-preview__stage">
-          {running && !ready && (
-            <p className="guest-preview__read">{reading}{reading.length >= 64 ? '…' : ''}</p>
-          )}
+          <p className={`guest-preview__read${running && !ready ? ' is-visible' : ''}`}>
+            {reading}{reading.length >= 64 ? '…' : ''}
+          </p>
           <TodayBoard interactive={ready} assemble={ready ? 4 : assemble} />
         </div>
       </div>
-      {ready && (
-        <div className="guest-preview__cta">
-          <p>Use it. Then continue — your desk keeps the work.</p>
-          <button type="button" data-quantora-login="true" onClick={onContinue}>
-            Continue with Quantora <ArrowRight size={16} />
-          </button>
-        </div>
-      )}
+      <div className={`guest-preview__cta${ready ? ' is-visible' : ''}`} aria-hidden={!ready}>
+        <p>Use it. Then continue — your desk keeps the work.</p>
+        <button type="button" data-quantora-login="true" onClick={onContinue}>
+          Continue with Quantora <ArrowRight size={16} />
+        </button>
+      </div>
     </div>
   );
 }
