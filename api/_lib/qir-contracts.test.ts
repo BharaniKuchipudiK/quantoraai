@@ -233,3 +233,84 @@ test("another worker can derive the next action from serialized Run state", () =
     actionId: null,
   });
 });
+
+/*
+ * THE MISSION MUST OUTLIVE THE TURN (2026-09-03).
+ *
+ * The rule above is right, and the browser lied to it. Every terminal failure
+ * site in src/hooks/useChatStream.js reported `recoveryExhausted: true` meaning
+ * "this TURN's automatic retry budget is spent", which this guard reads as the
+ * MISSION's verdict. Measured end to end:
+ *
+ *     turn 1 ends -> Run status becomes: FAILED_TERMINAL
+ *     turn 2 asks the journal where to continue: null
+ *     turn 2 may open a new attempt (needs QUEUED|REPLANNING): false
+ *
+ * So the first spent turn sealed the Run: deriveQirContinuation returns null
+ * for FAILED_TERMINAL and api/qir-runs.ts answers 409 to coding.attempt, which
+ * means the durable journal stopped accepting anything for the rest of the
+ * browser session while the person was still asking for the same thing. That
+ * is why QIR looked write-only — it wrote once and then bricked itself.
+ *
+ * src/lib/mission-continuation.js now decides that boolean from evidence: the
+ * mission is exhausted only when no engine remains that has not already failed
+ * on it. These two tests pin what each answer must buy.
+ */
+test("a spent turn budget leaves the mission continuable", () => {
+  const turnBudgetSpent = assessQirRunTransition({
+    run: run(),
+    incomingObservation: observation({
+      status: "failure",
+      artifactId: null,
+      artifactGeneration: null,
+      error: {
+        code: "PROVIDER_TRANSPORT",
+        message: "no healthy AI route",
+        retryable: true,
+        recoveryExhausted: false,
+      },
+    }),
+    proofOfDoneStatus: "not_ready",
+    latestVerification: null,
+  });
+
+  assert.equal(turnBudgetSpent.recommendedStatus, "REPLANNING");
+  assert.equal(turnBudgetSpent.terminalFailure, false);
+
+  const continued = { ...run(), status: turnBudgetSpent.recommendedStatus };
+  assert.notEqual(
+    deriveQirContinuation(continued),
+    null,
+    "the next turn must be able to find where this mission stands",
+  );
+  assert.ok(
+    ["QUEUED", "REPLANNING"].includes(continued.status),
+    "coding.attempt accepts only these, so anything else silently ends the mission",
+  );
+});
+
+test("an exhausted mission is terminal, and stays terminal", () => {
+  const exhausted = assessQirRunTransition({
+    run: run(),
+    incomingObservation: observation({
+      status: "failure",
+      artifactId: null,
+      artifactGeneration: null,
+      error: {
+        code: "PROVIDER_TRANSPORT",
+        message: "every engine available has failed on this mission",
+        retryable: false,
+        recoveryExhausted: true,
+      },
+    }),
+    proofOfDoneStatus: "not_ready",
+    latestVerification: null,
+  });
+
+  assert.equal(exhausted.recommendedStatus, "FAILED_TERMINAL");
+  assert.equal(
+    deriveQirContinuation({ ...run(), status: "FAILED_TERMINAL" }),
+    null,
+    "a genuinely dead mission must not offer a continuation either",
+  );
+});

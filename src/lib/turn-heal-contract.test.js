@@ -38,6 +38,8 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { resolveCodingTurnOutcome } from './coding-outcome-spine.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from './turn-recovery.js';
+import { orderEnginesForMission } from './mission-continuation.js';
+import { attemptEngineId, attemptEngineName, repeatsSpentEngine } from './turn-engine-identity.js';
 
 const TERMINAL_KINDS = ['provider-dead', 'stream-ended', 'no-preview', 'timeout'];
 
@@ -257,5 +259,168 @@ test('the chat stream hands every terminal outcome the Run id it has', () => {
     threaded,
     sites,
     `${sites} terminal outcomes are resolved but only ${threaded} carry the Run id`,
+  );
+});
+
+/*
+ * THE LADDER THAT NEVER MOVED (2026-09-03).
+ *
+ * Everything above assumed the loop knew which engine an attempt ran on. On the
+ * default Coding path it did not.
+ *
+ * The desk ships with `Auto` selected (`badge: 'Default'`), and in auto mode
+ * useChatStream sets `targetModel = { id: 'auto', ..., resolvedModelId }`. Three
+ * readers took `targetModel.id` as the engine: the fallback filter
+ * (`model.id !== targetModel?.id`), `triedEngineIds`, and the durable QIR
+ * journal. No real model has the id `'auto'`, so the filter excluded NOTHING.
+ *
+ * Measured on the real resolver and the real catalogue
+ * (api/_lib/model-catalog.js: gemini-flash-latest, then nemotron-3-super):
+ *
+ *     attempt 1 ran on          : gemini-flash-latest
+ *     triedEngineIds now holds  : [ 'auto' ]
+ *     switchModel picks         : gemini-flash-latest   <-- the same engine
+ *     journal recorded strategy : auto
+ *
+ * So `resolveTurnRecovery` correctly diagnosed "switch engines", the code
+ * correctly asked for a fallback, and the fallback handed back the engine that
+ * had just died — the exact class this file exists to close, alive on the path
+ * almost every build takes, because the ladder was comparing a routing label to
+ * an engine id.
+ */
+test('[was-red] the engine identity a repair reads is the engine that ran, not the routing label', () => {
+  const autoTurn = { id: 'auto', name: 'Auto', resolvedModelId: 'gemini-flash-latest', resolvedModelName: 'Gemini Flash' };
+
+  assert.equal(attemptEngineId(autoTurn), 'gemini-flash-latest', 'Auto is a routing decision; the engine is what it resolved to');
+  assert.equal(attemptEngineName(autoTurn), 'Gemini Flash', '"3 attempts (Auto, then Auto, then Auto)" names nothing the person can act on');
+
+  // A pinned engine is its own identity — the two must not diverge there.
+  assert.equal(attemptEngineId({ id: 'anthropic/claude-sonnet', name: 'Claude Sonnet' }), 'anthropic/claude-sonnet');
+});
+
+test('[was-red] a "switch engines" repair cannot hand back the engine Auto just ran', () => {
+  const catalogue = [
+    { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', available: true },
+  ];
+  const autoTurn = { id: 'auto', name: 'Auto', resolvedModelId: 'gemini-flash-latest' };
+  const spent = new Set([attemptEngineId(autoTurn)]);
+
+  const fallback = orderEnginesForMission(catalogue, null, spent)
+    .find((model) => !repeatsSpentEngine(model, autoTurn, spent));
+
+  assert.ok(fallback, 'a catalogue with an untried engine must produce one');
+  assert.notEqual(fallback.id, 'gemini-flash-latest', 'the repair must differ from the attempt that failed');
+  assert.equal(fallback.id, 'nvidia/nemotron-3-super-120b-a12b:free');
+
+  // And the collision itself is now recognised rather than being invisible.
+  assert.equal(
+    repeatsSpentEngine(catalogue[0], autoTurn, spent),
+    true,
+    'the engine Auto resolved to must read as already tried',
+  );
+});
+
+test('[was-red] the fallback selector no longer compares a routing label to an engine id', () => {
+  /*
+   * The instance is fixed above; this is the class. A behavioural test cannot
+   * see which expression the hook uses to pick a fallback, and that blind spot
+   * is precisely how `model.id !== targetModel?.id` survived being wrong on the
+   * default path for as long as it did.
+   */
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const selector = hook.slice(hook.indexOf('const nextFallbackEngine ='));
+  // Ends at the selector's own statement, so a failure prints the expression
+  // under review and not the next forty lines of the hook (CLAUDE.md §8).
+  const body = selector.slice(0, selector.indexOf('|| null;') + 8);
+
+  assert.doesNotMatch(
+    body,
+    /model\.id !== targetModel\?\.id/,
+    'comparing a catalogue id to `targetModel.id` reads "auto" in auto mode and excludes nothing',
+  );
+  assert.match(body, /repeatsSpentEngine\(model, targetModel, triedEngineIds\)/, 'exclusion must go through engine identity');
+  assert.match(body, /orderEnginesForMission\(/, 'and the ladder must start from what this mission has not burned');
+  assert.match(
+    hook,
+    /triedEngineIds\.add\(runningEngineId\)/,
+    'the set of spent engines must hold engine ids, not the string "auto"',
+  );
+});
+
+/*
+ * WHAT THE PERSON READS WHEN THE MISSION IS ACTUALLY OVER.
+ *
+ * Asserted on the COMPOSED text. Writing the mission line, I read it alone and
+ * shipped a message that said "every engine available to me has now failed" and
+ * then, four lines later, "retry on the next engine" — with a chip that
+ * degraded to a bare "Retry with fallback" carrying no override. That is this
+ * file's own class (copy promising action in a state with no future) and the
+ * duplication class from 2026-09-02 at once, and reading the halves is what
+ * hid both.
+ */
+test('[was-red] an exhausted mission is never offered "the next engine"', () => {
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 3,
+    triedEngines: ['Gemini Flash', 'Nemotron 3 Super 120B'],
+    runId: 'coding-run-7f3a91c',
+    missionExhausted: true,
+    fallbackEngine: null,
+  });
+
+  assert.match(outcome.text, /every engine available to me has now failed/, 'the terminal state must be stated, not implied');
+  assert.doesNotMatch(outcome.text, /retry on the next engine/i, 'there is no next engine; offering one is the promise this file forbids');
+  assert.doesNotMatch(
+    outcome.text.split('**The mission:**')[1] || '',
+    /Gemini Flash/,
+    'the engines were named one line above; saying it twice is the 2026-09-02 duplication defect',
+  );
+
+  const chips = outcome.continueSet.items;
+  assert.equal(chips.length, 1);
+  assert.equal(chips[0].label, 'Retry a smaller build', 'a smaller job is the one repair that is materially different here');
+});
+
+test('[was-red] a mission that survives says so, and the chip still pins a real engine', () => {
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 2,
+    triedEngines: ['Gemini Flash'],
+    runId: 'coding-run-7f3a91c',
+    missionExhausted: false,
+    fallbackEngine: { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B' },
+  });
+
+  assert.match(outcome.text, /The mission is kept/, 'a Run that stays open is the fact the person needs');
+  assert.doesNotMatch(outcome.text, /every engine available to me/, 'a surviving mission must not read as a dead one');
+  assert.equal(outcome.continueSet.items[0].modelOverrideId, 'nvidia/nemotron-3-super-120b-a12b:free');
+});
+
+test('no mission evidence, no mission claim', () => {
+  /*
+   * Same law as the Run reference: absent evidence renders nothing. A default
+   * of `true` would tell every caller that has not been wired yet to give up,
+   * and a default of `false` would promise a durable Run that may not exist.
+   */
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 2,
+    triedEngines: ['Gemini Flash'],
+  });
+  assert.doesNotMatch(outcome.text, /The mission/, 'neither mission claim may be made without evidence for it');
+});
+
+test('the chat stream tells the outcome copy which mission state it is in', () => {
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const resolved = (hook.match(/resolveCodingTurnOutcome\(\{/g) || []).length;
+  const informed = (hook.match(/missionExhausted: missionSpent\(\)/g) || []).length;
+  assert.equal(
+    informed,
+    resolved,
+    `${resolved} terminal outcomes are resolved but only ${informed} are told whether the mission survived`,
   );
 });
