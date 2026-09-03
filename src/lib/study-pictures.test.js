@@ -134,10 +134,14 @@ test('wantsStudyLab does not treat a generic visual as Newton', () => {
 
 test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('A box accelerating under a net force'), 'physics-motion');
+  assert.equal(studyVisualKind('Resolve a vector into x and y components'), 'physics-motion');
+  assert.equal(studyPhysicsVisualVariant('Resolve a vector into x and y components'), 'vector-components');
+  assert.equal(studyVisualKind('Electric field lines around a positive charge'), 'field-lines');
   assert.equal(studyVisualKind('A battery drives current around a resistor circuit'), 'electricity-circuit');
   assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
+  assert.equal(studyVisualKind('Plot sine and cosine on the unit circle graph by quadrant'), 'graph');
 });
 
 test('electricity visuals distinguish a circuit schematic from EMF energy flow', () => {
