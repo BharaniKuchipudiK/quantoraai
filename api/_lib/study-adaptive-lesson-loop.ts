@@ -1,7 +1,7 @@
 import type { StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import type { StudyLearningIntervention } from './study-learning-intervention.js';
 
-export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-03.2';
+export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-03.3';
 
 export type StudyTeachingBeat = 'HOOK' | 'PREDICT' | 'SEE' | 'EXPLAIN' | 'TRY' | 'VERIFY' | 'EXAM_READY';
 
@@ -18,6 +18,7 @@ export type StudyAdaptiveLessonLoopPlan = {
     | 'verification'
     | 'continuation_policy'
     | 'explicit_representation'
+    | 'verified_learner_state'
     | 'direct_explanation';
 };
 
@@ -105,6 +106,22 @@ export function planStudyAdaptiveLessonLoop(input: {
       mustWaitForLearner: false,
       maxLearnerQuestions: 0,
       reason: 'explicit_representation',
+    };
+  }
+
+  if (representation.reason === 'verified_learner_state') {
+    const beats: StudyTeachingBeat[] = representation.rendererRequired
+      ? ['SEE', 'PREDICT']
+      : representation.primaryRepresentation === 'interactive_probe'
+        || representation.primaryRepresentation === 'governed_assessment'
+        ? ['TRY']
+        : ['EXPLAIN', 'TRY'];
+    return {
+      version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
+      beats,
+      mustWaitForLearner: true,
+      maxLearnerQuestions: 1,
+      reason: 'verified_learner_state',
     };
   }
 

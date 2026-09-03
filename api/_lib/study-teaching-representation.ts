@@ -1,10 +1,11 @@
+import type { StudyLearnerModel } from './study-learner-model.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import {
   resolveStudyRepresentationCapability,
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-03.8';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-03.9';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -44,10 +45,11 @@ export type StudyTeachingRepresentationPlan = {
   rendererRequired: boolean;
   rendererKind: StudyRepresentationRendererKind | null;
   fallback: StudyTeachingRepresentationFallback;
-  reason: 'explicit_request' | 'struggle_repair' | 'default_teaching';
+  reason: 'explicit_request' | 'struggle_repair' | 'verified_learner_state' | 'default_teaching';
 };
 
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
+type StudyRepresentationCapability = NonNullable<ReturnType<typeof resolveStudyRepresentationCapability>>;
 
 const VISUAL_REQUEST = /\b(?:image|images|picture|pictures|diagram|diagrams|visual|visually|show me|draw|sketch)\b/i;
 const GRAPH_REQUEST = /\b(?:graph|plot|chart)\b/i;
@@ -68,11 +70,91 @@ function requestedMode(message: string): StudyTeachingRequestedMode {
   return null;
 }
 
+/**
+ * Project the one authoritative verified learner model into a representation.
+ * This is deliberately a pure projection: it creates no learner state and
+ * writes nothing. Current explicit requests and fresh struggle signals are
+ * handled first; verified state changes the otherwise-stable teaching path.
+ */
+function planForVerifiedLearnerState(
+  learnerModel: StudyLearnerModel,
+  capability: StudyRepresentationCapability | null,
+): StudyTeachingRepresentationPlan {
+  const common = {
+    version: STUDY_TEACHING_REPRESENTATION_VERSION,
+    requestedMode: null,
+    fallback: 'none',
+    reason: 'verified_learner_state',
+  } as const;
+
+  switch (learnerModel.nextLearningMove.type) {
+    case 'diagnose_misconception':
+    case 'confirm_misconception':
+      return {
+        ...common,
+        primaryRepresentation: 'comparison',
+        learnerAction: 'compare',
+        rendererRequired: false,
+        rendererKind: null,
+      };
+    case 'guided_repair':
+      return capability
+        ? {
+            ...common,
+            primaryRepresentation: capability.representation,
+            learnerAction: 'predict',
+            rendererRequired: true,
+            rendererKind: capability.rendererKind,
+          }
+        : {
+            ...common,
+            primaryRepresentation: 'worked_example',
+            learnerAction: 'calculate',
+            rendererRequired: false,
+            rendererKind: null,
+          };
+    case 'vary_evidence':
+      return {
+        ...common,
+        primaryRepresentation: 'worked_example',
+        learnerAction: 'calculate',
+        rendererRequired: false,
+        rendererKind: null,
+      };
+    case 'retention_probe':
+      return {
+        ...common,
+        primaryRepresentation: 'governed_assessment',
+        learnerAction: 'retrieve',
+        rendererRequired: false,
+        rendererKind: null,
+      };
+    case 'transfer_task':
+      return {
+        ...common,
+        primaryRepresentation: 'governed_assessment',
+        learnerAction: 'explain',
+        rendererRequired: false,
+        rendererKind: null,
+      };
+    case 'independent_retrieval':
+    default:
+      return {
+        ...common,
+        primaryRepresentation: 'interactive_probe',
+        learnerAction: 'retrieve',
+        rendererRequired: false,
+        rendererKind: null,
+      };
+  }
+}
+
 export function planStudyTeachingRepresentation(input: {
   message?: string | null;
   contextText?: string | null;
   history?: HistoryItem[];
   intervention?: StudyLearningIntervention | null;
+  learnerModel?: StudyLearnerModel | null;
 }): StudyTeachingRepresentationPlan {
   const message = String(input.message || '').trim();
   const contextText = String(input.contextText || '').trim();
@@ -219,6 +301,10 @@ export function planStudyTeachingRepresentation(input: {
       fallback: 'none',
       reason: 'struggle_repair',
     };
+  }
+
+  if (input.learnerModel) {
+    return planForVerifiedLearnerState(input.learnerModel, capability);
   }
 
   return {
