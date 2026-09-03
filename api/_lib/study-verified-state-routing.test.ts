@@ -53,25 +53,25 @@ const electricityHistory = [
 test('production Study cognitive route changes representation for the same concept from verified learner state', () => {
   const retrieval = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'What should I do next?',
+    message: 'Next',
     history: electricityHistory,
     learnerModel: learnerModel('independent_retrieval'),
   });
   const repair = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'What should I do next?',
+    message: 'Next',
     history: electricityHistory,
     learnerModel: learnerModel('guided_repair'),
   });
   const retention = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'What should I do next?',
+    message: 'Next',
     history: electricityHistory,
     learnerModel: learnerModel('retention_probe'),
   });
   const transfer = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'What should I do next?',
+    message: 'Next',
     history: electricityHistory,
     learnerModel: learnerModel('transfer_task'),
   });
