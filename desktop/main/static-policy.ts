@@ -1,13 +1,10 @@
 import path from "node:path";
 
 /*
- * Pure routing for the bundled web app, mirroring vercel.json's SPA rewrite:
- *
- *   /((?!api/.*|preview/.*|monaco/.*|robots.txt|sitemap.xml).*)  →  /index.html
- *
- * Everything under /preview/ and /monaco/ is a real file or a 404. Anything
- * else that does not exist on disk is the SPA shell. Path traversal is
- * rejected here, before any filesystem call.
+ * Pure routing for the desktop renderer: a real file is served, an unknown
+ * app route falls back to index.html, anything under /monaco/ or /assets/ is
+ * a real file or a 404. Path traversal is rejected here, before any
+ * filesystem call.
  */
 
 export type StaticRoute =
@@ -15,7 +12,7 @@ export type StaticRoute =
   | { kind: "index" }
   | { kind: "forbidden" };
 
-const NEVER_FALLBACK = [/^\/preview\//, /^\/monaco\//, /^\/robots\.txt$/, /^\/sitemap\.xml$/];
+const NEVER_FALLBACK = [/^\/monaco\//, /^\/assets\//];
 
 export function routeStaticPath(pathname: string, exists: (relativePath: string) => boolean): StaticRoute {
   let decoded: string;
@@ -67,18 +64,4 @@ const MIME: Record<string, string> = {
 
 export function mimeTypeFor(relativePath: string): string {
   return MIME[path.posix.extname(relativePath).toLowerCase()] || "application/octet-stream";
-}
-
-/**
- * Headers vercel.json would serve for this path, minus the ones that only
- * mean something over https. Everything CSP/COOP/COEP stays, so the desktop
- * renderer runs under exactly the production policy.
- */
-export function rendererHeaders(resolved: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(resolved)) {
-    if (key === "strict-transport-security") continue;
-    out[key] = value;
-  }
-  return out;
 }

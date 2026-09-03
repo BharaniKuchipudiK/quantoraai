@@ -7,28 +7,53 @@ import { DESKTOP_BRIDGE_KEY, DESKTOP_BRIDGE_VERSION, DESKTOP_IPC } from "../../s
  * Fixed functions on fixed channels; no ipcRenderer passthrough.
  */
 
+function subscribe<T>(channel: string) {
+  return (callback: (payload: T) => void) => {
+    const listener = (_event: unknown, payload: T) => callback(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  };
+}
+
 const bridge = {
   version: DESKTOP_BRIDGE_VERSION,
   host: () => ipcRenderer.invoke(DESKTOP_IPC.hostInfo),
+  openExternal: (url: string) => ipcRenderer.invoke(DESKTOP_IPC.openExternal, url),
+  onMenuAction: subscribe<string>(DESKTOP_IPC.menuAction),
   auth: {
     status: () => ipcRenderer.invoke(DESKTOP_IPC.authStatus),
     signIn: () => ipcRenderer.invoke(DESKTOP_IPC.authSignIn),
     signOut: () => ipcRenderer.invoke(DESKTOP_IPC.authSignOut),
-    onChanged: (callback: (payload: { signedIn: boolean }) => void) => {
-      const listener = (_event: unknown, payload: { signedIn: boolean }) => callback(payload);
-      ipcRenderer.on(DESKTOP_IPC.authChanged, listener);
-      return () => ipcRenderer.removeListener(DESKTOP_IPC.authChanged, listener);
-    },
+    onChanged: subscribe<{ signedIn: boolean }>(DESKTOP_IPC.authChanged),
   },
-  openExternal: (url: string) => ipcRenderer.invoke(DESKTOP_IPC.openExternal, url),
-  runtime: {
-    info: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeInfo),
-    attach: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeAttach),
-    detach: () => ipcRenderer.invoke(DESKTOP_IPC.runtimeDetach),
-    sync: (entries: Array<{ path: string; content: string }>) => ipcRenderer.invoke(DESKTOP_IPC.runtimeSync, entries),
-    run: (line: string) => ipcRenderer.invoke(DESKTOP_IPC.runtimeRun, line),
-    git: (request: { action: string; message?: string }) => ipcRenderer.invoke(DESKTOP_IPC.runtimeGit, request),
+  workspace: {
+    info: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceInfo),
+    open: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceOpen),
+    openPath: (folder: string) => ipcRenderer.invoke(DESKTOP_IPC.workspaceOpenPath, folder),
+    close: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceClose),
+    recent: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceRecent),
+    clone: (url: string) => ipcRenderer.invoke(DESKTOP_IPC.workspaceClone, url),
+    onChanged: subscribe<{ paths: string[] }>(DESKTOP_IPC.workspaceChanged),
   },
+  files: {
+    tree: () => ipcRenderer.invoke(DESKTOP_IPC.filesTree),
+    read: (path: string) => ipcRenderer.invoke(DESKTOP_IPC.filesRead, path),
+    write: (path: string, content: string) => ipcRenderer.invoke(DESKTOP_IPC.filesWrite, path, content),
+    snapshot: () => ipcRenderer.invoke(DESKTOP_IPC.filesSnapshot),
+    sync: (entries: Array<{ path: string; content: string }>) => ipcRenderer.invoke(DESKTOP_IPC.filesSync, entries),
+  },
+  pty: {
+    open: (size: { cols: number; rows: number }) => ipcRenderer.invoke(DESKTOP_IPC.ptyOpen, size),
+    write: (id: string, data: string) => ipcRenderer.invoke(DESKTOP_IPC.ptyWrite, id, data),
+    resize: (id: string, cols: number, rows: number) => ipcRenderer.invoke(DESKTOP_IPC.ptyResize, id, cols, rows),
+    close: (id: string) => ipcRenderer.invoke(DESKTOP_IPC.ptyClose, id),
+    onData: subscribe<{ id: string; chunk: string }>(DESKTOP_IPC.ptyData),
+    onExit: subscribe<{ id: string; exitCode: number }>(DESKTOP_IPC.ptyExit),
+  },
+  git: {
+    run: (request: { action: string; message?: string }) => ipcRenderer.invoke(DESKTOP_IPC.gitRun, request),
+  },
+  runCollected: (line: string) => ipcRenderer.invoke(DESKTOP_IPC.runCollected, line),
 };
 
 contextBridge.exposeInMainWorld(DESKTOP_BRIDGE_KEY, bridge);

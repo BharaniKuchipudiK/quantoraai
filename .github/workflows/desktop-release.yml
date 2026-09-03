@@ -51,9 +51,6 @@ jobs:
       - name: Install locked application dependencies
         run: npm ci
 
-      - name: Build production frontend (bundled into the app as resources/web)
-        run: npm run build
-
       - name: Install locked desktop dependencies
         run: npm ci
         working-directory: desktop

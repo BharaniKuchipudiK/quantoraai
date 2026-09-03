@@ -33,7 +33,7 @@ local runtime.
 | Decision | Choice | Reversible? |
 |---|---|---|
 | Shell | **Electron** (Chromium + Node). Tauri is the fallback if binary size ever matters more than engine determinism. See §2. | Only before D2 — the local runtime bridge is shell-specific. |
-| Renderer | **Bundled `dist/`** served on a custom secure scheme `quantora://app`, never `file://`, never a remote page with a local bridge. See §3. | Yes, but the auth story in §4 assumes it. |
+| Renderer | **A dedicated desktop UI** (`desktop/renderer`: sign-in → launcher → workspace), served on a custom secure scheme `quantora://app`, never `file://`, never the website and never a remote page with a local bridge. See §3. | Yes, but the auth story in §4 assumes the scheme. |
 | API | The existing hosted API (`https://quantoraai.app/api/*`). The renderer keeps calling relative `/api/...`; the host's protocol handler proxies those calls and attaches the bearer. No business logic in the desktop. See §5. | — |
 | Identity | Existing HMAC session (`api/_lib/session.ts`) carried as a **bearer header** instead of a cookie, obtained via a system-browser + PKCE flow. See §4. | — |
 | Local runtime | A **`DeskRuntime`** interface with two implementations: `webcontainer` (today's code) and `desktop` (real processes on a real folder). See §6. | — |
@@ -69,22 +69,23 @@ Three options were considered:
 2. **Bundle `dist/` and load it from `file://`.** **Rejected:** `file://` is a
    null origin — no CSP, no cookies, no `crossOriginIsolated`, and Google
    Identity Services refuses it.
-3. **Bundle `dist/`, serve it from `quantora://app` via
-   `protocol.handle()`** registered as `standard` + `secure`. The renderer
-   gets a real, stable origin; CSP and the `vercel.json` header set can be
-   replayed on it from `src/lib/vercel-headers.js` (already the single source
-   of headers for dev and prod). **Chosen.**
+3. **Bundle the website's `dist/` and serve it from `quantora://app`.**
+   Built first (D1), and **rejected on use**: it put the whole website —
+   landing page, hub, every desk — inside a window, which is a wrapper, not
+   a client. A desktop client is a login screen, a launcher and a
+   workspace, like Cursor or the Claude app.
+4. **A dedicated desktop renderer, served from `quantora://app` via
+   `protocol.handle()`** registered as `standard` + `secure`. **Chosen.**
+   `desktop/renderer` is its own Vite app (React, Monaco, xterm) with three
+   screens: sign-in, launcher (open folder, clone, recent), workspace
+   (explorer, editor tabs, terminal, git, Quantora chat on the folder). It
+   shares *pure* logic with the website — `shared/` contracts and the reply
+   parser in `src/lib/studio-preview-helpers.js` — never pages or components.
+   It is served under the desktop's own strict CSP (`script-src 'self'`,
+   `connect-src 'self'`, `frame-src 'none'`), not the website's.
 
-Consequence: the origin is `quantora://app`, not `APP_URL`, so the API must
-learn to trust it (§5) and the cookie session does not apply (§4).
-
-Routing needs no change. `src/lib/studio-isolation.js` routes on
-`window.location` + `?tab=`; the custom protocol serves `index.html` for
-every path exactly like the SPA rewrite in `vercel.json`. The `/desk`
-document split exists only because the browser cannot have both
-`COOP: same-origin` (WebContainer) and `same-origin-allow-popups` (Google
-popup) on one page. On desktop the shell handles both concerns (§4, §6), so
-`/desk` simply becomes another path served by the same handler.
+Consequence: the origin is `quantora://app`, not `APP_URL`, so the cookie
+session does not apply (§4) and every API call goes through the host (§5).
 
 ## 4. Identity: same session, different carrier
 
@@ -355,32 +356,34 @@ folded into `api/auth.ts` with rewrites, mirrored in `server.ts` ·
 and an end-to-end run against the Express mirror (bounce → grant → exchange →
 bearer restore → tampered bearer → replay).
 
-**D1 — Shell MVP. Built.** Electron main + sandboxed preload, `quantora://app`
-serving `dist/` under the vercel.json header policy, `/api/*` proxied with the
-bearer, system-browser + PKCE sign-in over the `quantora://` deep link,
-keychain session store, navigation pinned to the app origin. The AuthModal
-shows a single "Continue in browser" action inside the desktop. WebContainer
-is *not* wired on desktop (its origin-bound licence and the COEP replay are
-not worth it when D2 replaces it).
+**D1 — Shell + desktop UI. Built, then rebuilt.** Electron main + sandboxed
+preload, `quantora://app`, `/api/*` proxied with the bearer, system-browser +
+PKCE sign-in over the `quantora://` deep link, keychain session store,
+navigation pinned to the app origin, native menu bar. The first cut served
+the website bundle and was replaced the same day by `desktop/renderer` (§3):
+sign-in screen, launcher with open/clone/recent, workspace with explorer,
+Monaco tabs, terminal, git panel and the chat on the folder. The website is
+untouched apart from the browser-side sign-in handoff.
 *Accepted by:* `scripts/desktop-smoke-gate.mjs` (CI job `desktop-smoke`),
-fourteen checks from boot to sign-out, no network. Still open from the
-original acceptance: running the platform-experience and studio-regression
-browser gates inside Electron.
+thirty-one checks through every screen, no network.
 
-**D2 — Local runtime. Built (collected mode).** Folder attach through a
-native dialog, desk → folder sync with path confinement enforced in main
-(`shared/desk-runtime-contract.js`, `desktop/runtime/workspace-policy.ts`),
-real shell in the user's login shell, real git for the desk's four verbs.
+**D2 — Local runtime. Built.** Folder open through a native dialog (and
+`git clone` into a picked parent), explorer and editor reads/writes with
+path confinement enforced in main (`shared/desk-runtime-contract.js`,
+`desktop/runtime/workspace-policy.ts`, `files.ts`), an external-change
+watcher (chokidar) that refreshes the explorer and reloads clean editors,
+a streaming pty terminal (xterm ↔ node-pty) with an honest collected-output
+fallback when node-pty did not build, real git for the desk's four verbs,
+and the chat: the folder's text files go to `/api/chat` as the desk, the
+reply's files are written back, and the message says exactly which.
 *Accepted by:* `desktop/runtime/*.test.ts` against real processes, and the
 smoke gate's runtime section — a refused command before attach, an attach,
 a refused escape with proof nothing landed outside the folder, an exact
 echoed nonce, a file read back from disk, a real exit code, `git init` and a
 commit that exist on disk, and `push` refused.
-*Still open (D2b):* streaming pty terminal (`node-pty`), external-change
-watcher, dev-server preview, and observations from real failures flowing
-into `task: "repair"`. Also open: the desk currently syncs to the folder on
-every command; a folder-first mode where the folder is read back into the
-desk needs the watcher.
+*Still open (D2b):* dev-server preview inside the workspace, observations
+from real build failures flowing into `task: "repair"`, and a diff review
+before the chat's files are written.
 
 **D3 — Persistent host. Built (first loop).** Tray-resident background
 (`desktop/main/tray.ts`; closing the window hides it, Quit in the tray

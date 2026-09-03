@@ -24,8 +24,7 @@
     "preload/**/*.ts",
     "runtime/**/*.ts",
     "../shared/desktop-contract.js",
-    "../shared/desktop-bridge-contract.js",
-    "../src/lib/vercel-headers.js"
+    "../shared/desktop-bridge-contract.js"
   ],
   "exclude": [
     "node_modules",

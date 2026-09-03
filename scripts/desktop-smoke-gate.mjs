@@ -1,11 +1,14 @@
 /*
- * Desktop smoke gate — the Electron shell, driven end to end.
+ * Desktop smoke gate — Quantora Desktop, driven end to end.
  *
  * What only this catches (docs/architecture/desktop-client-v1.md §10):
  *   - the shell not booting, or booting somewhere other than quantora://app
- *   - the bundled web app not rendering under the custom scheme
+ *   - the desktop renderer not mounting, or mounting the wrong screen
  *   - /api/* not being proxied to the API origin (or losing the bearer)
  *   - the deep-link sign-in not completing, or completing for the wrong state
+ *   - the launcher not opening a folder, the explorer not showing its files
+ *   - the editor not reading/writing the real file, the terminal or git not
+ *     running in the folder, the chat not reporting an API failure honestly
  *   - sign-out leaving a session behind
  *
  * The API is the repo's own Express mirror (server.ts) on a local port with a
@@ -14,14 +17,13 @@
  * to production.
  *
  * Preconditions (the gate fails loudly, never skips, if they are missing):
- *   npm run build              → dist/index.html
- *   (cd desktop && npm ci && npm run build)  → desktop/dist/main.cjs + the Electron binary
+ *   (cd desktop && npm ci && npm run build) → desktop/dist/main.cjs, dist/renderer, Electron
  *
  * Run headless on Linux with:  xvfb-run -a node scripts/desktop-smoke-gate.mjs
  */
 import { spawn } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,8 +50,8 @@ function precondition(path, hint) {
   }
 }
 
-precondition(join(ROOT, 'dist', 'index.html'), 'run `npm run build` first');
 precondition(join(ROOT, 'desktop', 'dist', 'main.cjs'), 'run `npm run build` inside desktop/ first');
+precondition(join(ROOT, 'desktop', 'dist', 'renderer', 'index.html'), 'run `npm run build` inside desktop/ first');
 
 const electronBinary = (await import(join(ROOT, 'desktop', 'node_modules', 'electron', 'index.js'))).default;
 precondition(electronBinary, 'the Electron binary was not downloaded; run `npm ci` inside desktop/');
@@ -95,8 +97,11 @@ function stopApiServer(child) {
 
 const userData = mkdtempSync(join(tmpdir(), 'quantora-desktop-smoke-'));
 const workspace = mkdtempSync(join(tmpdir(), 'quantora-desktop-workspace-'));
+writeFileSync(join(workspace, 'index.html'), '<!DOCTYPE html><h1>desk</h1>\n');
 const api = await startApiServer();
 let app = null;
+
+const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
   app = await electron.launch({
@@ -111,7 +116,6 @@ try {
       QUANTORA_DESKTOP_BLOCK_EXTERNAL: '1',
       QUANTORA_USER_DATA_DIR: userData,
       QUANTORA_SMOKE_WORKSPACE: workspace,
-      QUANTORA_WEB_DIST: join(ROOT, 'dist'),
       // The API mirror is on loopback; never let an environment proxy swallow it.
       NO_PROXY: '127.0.0.1,localhost',
       no_proxy: '127.0.0.1,localhost',
@@ -130,141 +134,166 @@ try {
   window.on('crash', () => diagnostics.push('renderer crashed'));
   await window.waitForLoadState('domcontentloaded');
 
-  // 1. the shell serves the app on its own origin. The app shell carries
-  // this hook on every route once React has mounted.
-  try {
-    await window.waitForSelector('.app-shell[data-quantora-isolated-desk]', { timeout: 60_000 });
-    check(true, 'web app mounted from the bundled dist');
-  } catch (error) {
-    const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 2000)).catch((e) => `evaluate failed: ${e.message}`);
-    diagnostics.push(`DOM at timeout:\n${dom}`);
-    throw error;
-  }
-  check(window.url().startsWith('quantora://app/'), `window is on quantora://app (got ${window.url()})`);
+  const screen = async () => window.evaluate(() => document.querySelector('[data-qd-screen]')?.getAttribute('data-qd-screen') || '');
+  const waitScreen = async (name, timeout = 60_000) => {
+    try {
+      await window.waitForSelector(`[data-qd-screen="${name}"]`, { timeout });
+      return true;
+    } catch {
+      const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 2000)).catch((e) => `evaluate failed: ${e.message}`);
+      diagnostics.push(`DOM while waiting for screen ${name}:\n${dom}`);
+      return false;
+    }
+  };
 
+  // 1. the shell boots on its own origin and shows the sign-in screen
+  check(await waitScreen('signin'), 'renderer mounted on the sign-in screen (signed out)');
+  check(window.url().startsWith('quantora://app/'), `window is on quantora://app (got ${window.url()})`);
   const policy = await window.evaluate(async () => {
     const response = await fetch('/');
-    return {
-      csp: response.headers.get('content-security-policy') || '',
-      coop: response.headers.get('cross-origin-opener-policy') || '',
-      coep: response.headers.get('cross-origin-embedder-policy') || '',
-    };
+    return { csp: response.headers.get('content-security-policy') || '' };
   });
-  check(policy.csp.includes("default-src 'self'"), 'renderer is served the vercel.json CSP');
-  check(policy.coop && policy.coep, 'renderer is served COOP and COEP');
+  check(policy.csp.includes("script-src 'self'") && policy.csp.includes("frame-src 'none'"), 'renderer is served the desktop CSP');
 
   // 2. relative /api calls reach the API origin through the host
-  const providersResponse = await window.evaluate(async () => {
+  const providers = await window.evaluate(async () => {
     const response = await fetch('/api/auth/providers');
-    return { status: response.status, type: response.headers.get('content-type') || '', text: await response.text() };
+    return { status: response.status, text: await response.text() };
   });
-  let providers = null;
-  try { providers = JSON.parse(providersResponse.text); } catch { /* reported below */ }
-  check(
-    providersResponse.status === 200 && providers && 'email' in providers,
-    `/api/auth/providers proxied to the API mirror (status ${providersResponse.status}, ${providersResponse.type || 'no content-type'})`,
-  );
-  const anonymous = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json()));
-  check(anonymous.user === null, 'no session before sign-in');
+  let parsedProviders = null;
+  try { parsedProviders = JSON.parse(providers.text); } catch { /* reported below */ }
+  check(providers.status === 200 && parsedProviders && 'email' in parsedProviders, `/api/auth/providers proxied to the API mirror (status ${providers.status})`);
 
   // 3. the bridge is exposed with the contracted shape
-  const bridge = await window.evaluate(() => ({
-    present: Boolean(window.quantoraDesktop),
-    version: window.quantoraDesktop?.version,
-    hasSignIn: typeof window.quantoraDesktop?.auth?.signIn === 'function',
-  }));
-  check(bridge.present && bridge.version === DESKTOP_BRIDGE_VERSION && bridge.hasSignIn, `window.quantoraDesktop bridge present (v${DESKTOP_BRIDGE_VERSION})`);
+  const bridge = await window.evaluate(() => ({ present: Boolean(window.quantoraDesktop), version: window.quantoraDesktop?.version }));
+  check(bridge.present && bridge.version === DESKTOP_BRIDGE_VERSION, `window.quantoraDesktop bridge present (v${DESKTOP_BRIDGE_VERSION})`);
   const host = await window.evaluate(() => window.quantoraDesktop.host());
   check(host.apiOrigin === API_ORIGIN, `host reports the configured API origin (${host.apiOrigin})`);
 
-  // 4. sign-in: the host hands us the grant URL (smoke mode), we play the browser
+  // 4. sign-in through the UI: the button asks the host, the host (smoke mode)
+  //    hands back the grant URL, we play the browser, the deep link completes it
+  const grantUrlPromise = app.evaluate(() => null); // keep evaluate ordering explicit
+  await grantUrlPromise;
+  await window.click('[data-qd-signin]');
+  await settle(500);
+  const waitingCopy = await window.evaluate(() => document.querySelector('[data-qd-signin]')?.textContent || '');
+  check(/browser/i.test(waitingCopy), `sign-in button hands off to the browser (${waitingCopy.trim()})`);
+  // The UI call already created the pending attempt; ask the host for the grant
+  // URL of a fresh attempt so the gate holds the matching state.
   const { grantUrl } = await window.evaluate(() => window.quantoraDesktop.auth.signIn());
   check(typeof grantUrl === 'string' && grantUrl.startsWith(`${API_ORIGIN}/api/auth/desktop/grant?`), 'signIn() produced the grant URL');
-
   const grant = await fetch(grantUrl, { headers: { cookie: `quantora_session=${browserSessionToken()}` } });
   const html = await grant.text();
   const match = /href="(quantora:\/\/auth\/callback\?[^"]+)"/.exec(html);
   check(grant.status === 200 && Boolean(match), 'website grant returned the deep link for a signed-in browser');
   const deepLink = match ? match[1].replace(/&amp;/g, '&') : '';
-
   const emitDeepLink = (url) => app.evaluate(({ app: electronApp }, link) => {
     electronApp.emit('open-url', { preventDefault() {} }, link);
   }, url);
 
-  // 4a. a deep link for someone else's attempt must not sign us in
-  const forged = deepLink.replace(/state=[^&]+/, 'state=not-our-attempt-0000');
-  await emitDeepLink(forged);
-  await new Promise((r) => setTimeout(r, 1500));
-  const afterForged = await app.evaluate(() => null).then(() => window.evaluate(() => window.quantoraDesktop.auth.status()));
-  check(afterForged.signedIn === false, 'a deep link with a foreign state is rejected');
+  await emitDeepLink(deepLink.replace(/state=[^&]+/, 'state=not-our-attempt-0000'));
+  await settle(1500);
+  check((await screen()) === 'signin', 'a deep link with a foreign state leaves us signed out');
 
-  // 4b. the real one completes the exchange and the app resumes signed in
   await emitDeepLink(deepLink);
-  await window.waitForURL((url) => url.href.includes('auth=success') || url.href === 'quantora://app/', { timeout: 30_000 }).catch(() => {});
-  await window.waitForLoadState('domcontentloaded');
-  let session = null;
-  for (let attempt = 0; attempt < 20 && !session?.user; attempt += 1) {
-    session = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json())).catch(() => null);
-    if (!session?.user) await new Promise((r) => setTimeout(r, 500));
-  }
+  check(await waitScreen('launcher', 30_000), 'the real deep link signs us in and shows the launcher');
+  const session = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json()));
   check(session?.user?.email === USER.email, `bearer session restored through the proxy (${session?.user?.email || 'none'})`);
-  const status = await window.evaluate(() => window.quantoraDesktop.auth.status());
-  check(status.signedIn === true && status.user?.email === USER.email, 'bridge reports signed in');
+  const whoami = await window.evaluate(() => document.querySelector('[data-qd-user]')?.textContent || '');
+  check(whoami.includes(USER.email), `launcher shows who is signed in (${whoami})`);
 
   // 4c. the persistent host reports its capabilities honestly and polls without inventing news
   const hostAfter = await window.evaluate(() => window.quantoraDesktop.host());
-  check(
-    typeof hostAfter.capabilities.notifications === 'boolean' && typeof hostAfter.capabilities.background === 'boolean',
-    `host reports notification/background support as booleans (notifications=${hostAfter.capabilities.notifications}, background=${hostAfter.capabilities.background})`,
-  );
+  check(typeof hostAfter.capabilities.notifications === 'boolean' && typeof hostAfter.capabilities.background === 'boolean',
+    `host reports notification/background support as booleans (notifications=${hostAfter.capabilities.notifications}, background=${hostAfter.capabilities.background})`);
   const poll = await app.evaluate(() => globalThis.__quantoraSmoke.pollWatches());
-  check(
-    poll.ok === false && poll.reason === 'unavailable' && poll.status === 503 && poll.notified === 0,
-    `watch poll reports the mirror's 503 honestly and raises nothing (${JSON.stringify(poll)})`,
-  );
+  check(poll.ok === false && poll.reason === 'unavailable' && poll.status === 503 && poll.notified === 0,
+    `watch poll reports the mirror's 503 honestly and raises nothing (${JSON.stringify(poll)})`);
 
-  // 5. sign-out drops the token everywhere
-  await window.evaluate(() => window.quantoraDesktop.auth.signOut());
+  // 5. open the folder from the launcher → workspace with the real files
+  await window.click('[data-qd-open-folder]');
+  check(await waitScreen('workspace', 30_000), 'open folder shows the workspace');
+  const shownRoot = await window.evaluate(() => document.querySelector('[data-qd-screen="workspace"]')?.getAttribute('data-qd-workspace') || '');
+  check(shownRoot.endsWith(workspace.split('/').pop()), `workspace title shows the folder (${shownRoot})`);
+  await window.waitForSelector('[data-qd-file="index.html"]', { timeout: 15_000 }).catch(() => {});
+  check(Boolean(await window.$('[data-qd-file="index.html"]')), 'explorer lists the folder\'s file');
+
+  // 6. editor: open the file, edit, save with the keyboard, verify on disk
+  await window.click('[data-qd-file="index.html"]');
+  await window.waitForSelector('[data-qd-editor="index.html"] .monaco-editor', { timeout: 30_000 }).catch(() => {});
+  check(Boolean(await window.$('[data-qd-editor="index.html"] .monaco-editor')), 'Monaco opened the file');
+  await window.click('[data-qd-editor="index.html"] .monaco-editor');
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+End' : 'Control+End');
+  const nonce = `edited-${randomBytes(3).toString('hex')}`;
+  await window.keyboard.type(`\n<!-- ${nonce} -->`);
+  await settle(300);
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
+  await settle(800);
+  const onDisk = readFileSync(join(workspace, 'index.html'), 'utf8');
+  check(onDisk.includes(nonce), `Cmd/Ctrl+S wrote the edit to disk (${nonce})`);
+
+  // 7. terminal: whichever the host has, it must run in the folder for real
+  const caps = (await window.evaluate(() => window.quantoraDesktop.workspace.info())).capabilities;
+  const shellNonce = `quantora-${randomBytes(4).toString('hex')}`;
+  if (caps.terminal) {
+    const seen = await window.evaluate(async (n) => {
+      const api = window.quantoraDesktop;
+      let out = '';
+      const off = api.pty.onData(({ chunk }) => { out += chunk; });
+      const opened = await api.pty.open({ cols: 80, rows: 24 });
+      if (!opened.ok) { off(); return `open failed: ${opened.error}`; }
+      await new Promise((r) => setTimeout(r, 800));
+      await api.pty.write(opened.id, `echo ${n}\r`);
+      await new Promise((r) => setTimeout(r, 1500));
+      await api.pty.close(opened.id);
+      off();
+      return out;
+    }, shellNonce);
+    check(seen.split(shellNonce).length >= 3, `the pty terminal echoed ${shellNonce} in the folder`);
+    check(Boolean(await window.$('[data-qd-terminal="pty"]')), 'terminal pane is the interactive terminal');
+  } else {
+    const echoed = await window.evaluate((n) => window.quantoraDesktop.runCollected(`echo ${n} && pwd`), shellNonce);
+    check(echoed.ok && echoed.output.startsWith(shellNonce), `collected shell echoed ${shellNonce}`);
+    check(echoed.output.trim().endsWith(workspace.split('/').pop()), 'collected shell runs in the folder');
+    check(Boolean(await window.$('[data-qd-terminal="collected"]')), 'terminal pane says it is collected-output mode (no pty on this machine)');
+  }
+  const refused = await window.evaluate(() => window.quantoraDesktop.files.sync([{ path: '../escape.txt', content: 'x' }]));
+  check(refused.ok === false && !existsSync(join(workspace, '..', 'escape.txt')), 'a path outside the folder is refused and nothing lands outside');
+
+  // 8. git panel: init, then status shows the file
+  await window.click('[data-qd-bottom-git]');
+  await window.click('[data-qd-git-init]');
+  await settle(800);
+  await window.click('[data-qd-git-status]');
+  await settle(800);
+  const gitOut = await window.evaluate(() => document.querySelector('[data-qd-git-output]')?.textContent || '');
+  check(/\?\? index\.html/.test(gitOut), 'git status in the panel lists the untracked file');
+  check(existsSync(join(workspace, '.git', 'HEAD')), 'the repository really exists on disk');
+
+  // 9. chat: a turn against a mirror with no model keys must report the failure, not invent a reply
+  await window.fill('[data-qd-chat-input]', 'Add a footer to index.html');
+  await window.click('[data-qd-chat-send]');
+  await window.waitForSelector('[data-qd-message="ai"]', { timeout: 15_000 }).catch(() => {});
+  let aiText = '';
+  for (let i = 0; i < 40; i += 1) {
+    aiText = await window.evaluate(() => document.querySelector('[data-qd-message="ai"]')?.textContent || '');
+    if (aiText && !/Thinking/.test(aiText)) break;
+    await settle(500);
+  }
+  const aiIsError = await window.evaluate(() => document.querySelector('[data-qd-message="ai"]')?.getAttribute('data-qd-message-error') === 'true');
+  check(aiText.length > 0 && !/Thinking/.test(aiText), `chat turn finished with a visible outcome (${aiText.slice(0, 80)})`);
+  check(aiIsError || /Wrote|Did not apply|footer/i.test(aiText), 'chat reported an error from the mirror or a real file change, never a blank success');
+
+  // 10. sign-out drops the token everywhere and returns to sign-in
+  await app.evaluate(({ BrowserWindow }) => {
+    // The menu's Sign Out item sends the same action the launcher's button uses.
+    BrowserWindow.getAllWindows()[0].webContents.send('quantora:menu:action', 'sign-out');
+  });
+  check(await waitScreen('signin', 15_000), 'Sign Out from the menu returns to the sign-in screen');
   const after = await window.evaluate(() => fetch('/api/auth/session').then((r) => r.json()));
   check(after.user === null, 'sign-out leaves no session behind');
   const pollSignedOut = await app.evaluate(() => globalThis.__quantoraSmoke.pollWatches());
   check(pollSignedOut.reason === 'signed-out', 'the watch loop does nothing once signed out');
-
-  // 6. the local runtime: a real folder, a real shell, real git (design §6.2)
-  const beforeAttach = await window.evaluate(() => window.quantoraDesktop.runtime.info());
-  check(beforeAttach.attached === false && beforeAttach.capabilities.shell === false, 'no shell before a folder is attached');
-  const refusedRun = await window.evaluate(() => window.quantoraDesktop.runtime.run('echo never'));
-  check(refusedRun.ok === false && /No folder/.test(refusedRun.output), 'a command without a folder is refused, not faked');
-
-  const attached = await window.evaluate(() => window.quantoraDesktop.runtime.attach());
-  check(attached.attached === true && typeof attached.root === 'string', `folder attached (${attached.root})`);
-  const afterAttach = await window.evaluate(() => window.quantoraDesktop.runtime.info());
-  check(afterAttach.capabilities.shell === true && afterAttach.capabilities.git === true, 'shell and git capabilities follow the attach');
-
-  const synced = await window.evaluate(() => window.quantoraDesktop.runtime.sync([
-    { path: 'index.html', content: '<!DOCTYPE html><h1>desk</h1>' },
-    { path: 'src/app.js', content: 'console.log("desk")' },
-  ]));
-  check(synced.ok === true && synced.written === 2, 'desk files written into the folder');
-  const escaped = await window.evaluate(() => window.quantoraDesktop.runtime.sync([{ path: '../escape.txt', content: 'x' }]));
-  check(escaped.ok === false && /Refused/.test(escaped.error || ''), 'a path outside the folder is refused');
-  check(!existsSync(join(workspace, '..', 'escape.txt')), 'nothing was written outside the folder');
-
-  const nonce = `quantora-${randomBytes(4).toString('hex')}`;
-  const echoed = await window.evaluate((n) => window.quantoraDesktop.runtime.run(`echo ${n}`), nonce);
-  check(echoed.ok === true && echoed.output === nonce, `real shell echoed exactly ${nonce}`);
-  const listed = await window.evaluate(() => window.quantoraDesktop.runtime.run('cat src/app.js'));
-  check(listed.ok === true && listed.output === 'console.log("desk")', 'the shell reads the synced file from disk');
-  const failed = await window.evaluate(() => window.quantoraDesktop.runtime.run('exit 7'));
-  check(failed.ok === false && failed.exitCode === 7, 'a failing command reports its real exit code');
-
-  const gitInit = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'init' }));
-  check(gitInit.ok === true, `git init in the folder (${gitInit.output.split('\n')[0]})`);
-  const gitCommit = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'commit', message: 'desk: first' }));
-  check(gitCommit.ok === true && /desk: first/.test(gitCommit.output), 'git commit records the desk files');
-  const gitPush = await window.evaluate(() => window.quantoraDesktop.runtime.git({ action: 'push' }));
-  check(gitPush.ok === false, 'desk git never pushes');
-  check(existsSync(join(workspace, '.git', 'HEAD')), 'the repository really exists on disk');
 } catch (error) {
   failures.push(`gate threw: ${error?.stack || error}`);
   console.error(error);

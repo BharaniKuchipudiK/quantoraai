@@ -390,11 +390,10 @@ jobs:
             package-lock.json
             desktop/package-lock.json
 
+      # Root dependencies are needed: the desktop renderer resolves React,
+      # Vite and Monaco from the repository's node_modules.
       - name: Install locked application dependencies
         run: npm ci
-
-      - name: Build production frontend
-        run: npm run build
 
       # The Electron binary is ~100 MB; cache it by the exact pinned version so
       # the download happens once per version, not once per run.
@@ -412,9 +411,9 @@ jobs:
         run: npm run typecheck && npm run build
         working-directory: desktop
 
-      # Drives the real Electron shell: boots on quantora://app, mounts the
-      # bundled web app under the vercel.json header policy, proxies /api to a
-      # local API mirror, completes the PKCE deep-link sign-in against it,
-      # rejects a foreign-state deep link, and signs out. No network.
+      # Drives the real desktop app: sign-in screen, PKCE deep-link sign-in
+      # against a local API mirror, launcher, open folder, explorer, Monaco
+      # edit saved to disk, shell and git in the folder, chat reporting the
+      # mirror's error honestly, sign-out from the native menu. No network.
       - name: Execute desktop smoke gate
         run: xvfb-run -a node scripts/desktop-smoke-gate.mjs

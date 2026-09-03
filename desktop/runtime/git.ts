@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { isDeskGitAction } from "../../shared/desk-runtime-contract.js";
+import { isCloneableRepositoryUrl } from "../../shared/desktop-bridge-contract.js";
 import { capOutput, stripAnsi } from "./workspace-policy.js";
 import { DESK_OUTPUT_MAX_BYTES } from "../../shared/desk-runtime-contract.js";
 
@@ -72,4 +73,13 @@ export async function runDeskGitOnDisk(
   if (commit.code !== 0) return { ok: false, output: commit.output || "git commit failed." };
   const head = await git(["log", "-1", "--oneline"], cwd);
   return { ok: true, output: [head.output, commit.output].filter(Boolean).join("\n") };
+}
+
+/** `git clone <url> <destination>`; the destination is chosen by a native dialog, never by the page. */
+export async function cloneRepository(url: unknown, destination: string): Promise<GitResult> {
+  if (!isCloneableRepositoryUrl(url)) return { ok: false, output: "That is not a repository URL this desk will clone." };
+  const parent = destination.replace(/[\\/][^\\/]+$/, "");
+  const result = await git(["clone", "--progress", String(url), destination], parent);
+  if (result.spawnError) return { ok: false, output: `git is not installed on this machine (${result.spawnError}).` };
+  return { ok: result.code === 0, output: result.output || (result.code === 0 ? `Cloned into ${destination}` : "git clone failed.") };
 }

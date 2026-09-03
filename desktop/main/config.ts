@@ -28,35 +28,17 @@ export function desktopVersion(): string {
   return String(process.env.QUANTORA_DESKTOP_VERSION || app.getVersion() || "0.0.0");
 }
 
-/*
- * In development the bundle lives at desktop/dist/main.cjs, so the repository
- * root is two levels up from __dirname — regardless of whether Electron was
- * launched with the package directory or the file itself as its argument.
- */
-function repoRoot(): string {
-  return path.join(__dirname, "..", "..");
-}
-
-/** The bundled web app (`vite build` output). */
-export function webDistDir(): string {
-  const override = process.env.QUANTORA_WEB_DIST;
+/** The desktop renderer (`vite build` of desktop/renderer), shipped inside the app. */
+export function rendererDir(): string {
+  const override = process.env.QUANTORA_RENDERER_DIST;
   if (override) return path.resolve(override);
-  if (app.isPackaged) return path.join(process.resourcesPath, "web");
-  return path.join(repoRoot(), "dist");
-}
-
-/** vercel.json — the single source of the header policy the renderer is served with. */
-export function vercelConfigPath(): string {
-  const override = process.env.QUANTORA_VERCEL_CONFIG;
-  if (override) return path.resolve(override);
-  if (app.isPackaged) return path.join(process.resourcesPath, "vercel.json");
-  return path.join(repoRoot(), "vercel.json");
+  return path.join(__dirname, "renderer");
 }
 
 export function preloadPath(): string {
   return path.join(__dirname, "preload.cjs");
 }
 
-export function webDistReady(): boolean {
-  return existsSync(path.join(webDistDir(), "index.html"));
+export function rendererReady(): boolean {
+  return existsSync(path.join(rendererDir(), "index.html"));
 }

@@ -125,13 +125,13 @@ policy** so it's proactive, not noisy.
   background presence, local notifications, optional file access. **Gated on
   Phase 0.1** (don't distribute a binary over an unfixed sandbox).
   → **Built through D3** (2026-09-02): `docs/architecture/desktop-client-v1.md`
-  — Electron shell (`desktop/`), bundled renderer on `quantora://app` with the
-  API proxied and the bearer attached in main, browser + PKCE sign-in over a
-  `quantora://` deep link, an attached-folder runtime with a real shell and
-  real git, tray-resident background with the research-watch notification
+  — Electron shell (`desktop/`) with its own renderer (sign-in → launcher →
+  workspace: explorer, Monaco, terminal, git, chat on the folder), API proxied
+  with the bearer attached in main, browser + PKCE sign-in over a `quantora://`
+  deep link, tray-resident background with the research-watch notification
   loop under a restraint policy, and `scripts/desktop-smoke-gate.mjs` (CI job
-  `desktop-smoke`) proving it. Open: signing/notarisation accounts (D4),
-  streaming pty terminal, external-change watcher, dev-server preview.
+  `desktop-smoke`) proving every screen. Open: signing/notarisation accounts
+  (D4), dev-server preview, diff review before chat writes.
 
 ## Phase 5 — Architecture hygiene (continuous)
 

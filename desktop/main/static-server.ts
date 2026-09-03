@@ -1,20 +1,32 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { resolveHeadersForPath } from "../../src/lib/vercel-headers.js";
-import { mimeTypeFor, rendererHeaders, routeStaticPath } from "./static-policy.js";
+import { mimeTypeFor, routeStaticPath } from "./static-policy.js";
 
 /*
- * Serve the bundled `dist/` on quantora://app with the vercel.json header
- * policy. vercel.json is read once at install time from the packaged copy,
- * so the desktop cannot drift from what production serves (design §3, §9).
+ * Serve the desktop renderer on quantora://app.
+ *
+ * The policy is the desktop's own, and strict: scripts and styles only from
+ * the app itself (Monaco and xterm need inline styles and blob workers),
+ * connections only to the app origin — every API call goes through the
+ * host's proxy, never straight to the network — and no frames at all.
  */
-
-type HeadersConfig = { headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }> };
+export const RENDERER_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join("; ");
 
 export type StaticServer = (request: Request) => Response;
 
-export function createStaticServer(distDir: string, vercelConfigFile: string): StaticServer {
-  const config: HeadersConfig = JSON.parse(readFileSync(vercelConfigFile, "utf8"));
+export function createStaticServer(distDir: string): StaticServer {
   const indexPath = path.join(distDir, "index.html");
 
   const exists = (relativePath: string) => {
@@ -29,10 +41,14 @@ export function createStaticServer(distDir: string, vercelConfigFile: string): S
     if (route.kind === "forbidden") return new Response("Not found", { status: 404 });
 
     const filePath = route.kind === "index" ? indexPath : path.join(distDir, route.relativePath);
-    const policyPath = route.kind === "index" ? url.pathname : `/${route.relativePath}`;
-    const headers = rendererHeaders(resolveHeadersForPath(config, policyPath) as Record<string, string>);
-    headers["content-type"] = route.kind === "index" ? "text/html; charset=utf-8" : mimeTypeFor(route.relativePath);
-    headers["cache-control"] = route.kind === "index" ? "no-store" : "public, max-age=3600";
+    const headers: Record<string, string> = {
+      "content-security-policy": RENDERER_CSP,
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+      "cross-origin-opener-policy": "same-origin",
+      "content-type": route.kind === "index" ? "text/html; charset=utf-8" : mimeTypeFor(route.relativePath),
+      "cache-control": route.kind === "index" ? "no-store" : "public, max-age=3600",
+    };
 
     let body: Buffer;
     try {

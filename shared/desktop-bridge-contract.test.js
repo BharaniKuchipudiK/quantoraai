@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { DESKTOP_IPC, isAllowedExternalUrl } from './desktop-bridge-contract.js';
 
 /*
@@ -11,7 +11,13 @@ import { DESKTOP_IPC, isAllowedExternalUrl } from './desktop-bridge-contract.js'
 
 const here = new URL('.', import.meta.url);
 const preload = readFileSync(new URL('../desktop/preload/index.ts', here), 'utf8');
-const ipc = readFileSync(new URL('../desktop/main/ipc.ts', here), 'utf8');
+// Main-process channels are answered in ipc.ts and, for the native menu,
+// sent from menu.ts; every main module counts as "the main process".
+const mainDir = new URL('../desktop/main/', here);
+const ipc = readdirSync(mainDir)
+  .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+  .map((name) => readFileSync(new URL(name, mainDir), 'utf8'))
+  .join('\n');
 
 test('every IPC channel in the contract is used by both the preload and the main process', () => {
   for (const key of Object.keys(DESKTOP_IPC)) {

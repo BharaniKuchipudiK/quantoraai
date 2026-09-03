@@ -34,7 +34,7 @@
     "test:dead-controls": "node scripts/platform-dead-control-gate.mjs",
     "test:judgment": "tsx scripts/finance-judgment-gate.mjs",
     "test:imports": "node scripts/runtime-import-gate.mjs",
-    "desktop:build": "npm run build && npm --prefix desktop run build",
+    "desktop:build": "npm --prefix desktop run build",
     "test:desktop": "xvfb-run -a node scripts/desktop-smoke-gate.mjs"
   },
   "dependencies": {

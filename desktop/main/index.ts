@@ -1,12 +1,13 @@
 import { app, dialog, session } from "electron";
 import path from "node:path";
 import { DESKTOP_DEEP_LINK_SCHEME } from "../../shared/desktop-contract.js";
-import { apiOrigin, isSmokeMode, vercelConfigPath, webDistDir, webDistReady } from "./config.js";
+import { apiOrigin, isSmokeMode, rendererDir, rendererReady } from "./config.js";
 import { completeSignIn } from "./auth-broker.js";
 import { deepLinkFromArgv } from "./auth-flow.js";
-import { notifyAuthChanged, registerIpc } from "./ipc.js";
+import { notifyAuthChanged, registerIpc, shutdownRuntime } from "./ipc.js";
+import { installMenu } from "./menu.js";
 import { installQuantoraProtocol, registerQuantoraScheme } from "./protocol.js";
-import { createMainWindow, focusMainWindow, loadPostAuth, markQuitting } from "./window.js";
+import { createMainWindow, focusMainWindow, markQuitting } from "./window.js";
 import { installTray } from "./tray.js";
 import { pollWatches, startWatchLoop, stopWatchLoop } from "./watch-loop.js";
 import { readSessionToken } from "./session-store.js";
@@ -57,6 +58,7 @@ if (!isPrimary) {
   app.on("before-quit", () => {
     markQuitting();
     stopWatchLoop();
+    shutdownRuntime();
   });
 
   app.on("window-all-closed", () => {
@@ -73,8 +75,8 @@ if (!isPrimary) {
   });
 
   void app.whenReady().then(() => {
-    if (!webDistReady()) {
-      const message = `The web bundle was not found at ${webDistDir()}.\nRun \`npm run build\` in the repository root first.`;
+    if (!rendererReady()) {
+      const message = `The desktop renderer was not found at ${rendererDir()}.\nRun \`npm run build\` inside desktop/ first.`;
       if (isSmokeMode()) {
         console.error(`[quantora-desktop] ${message}`);
         app.exit(2);
@@ -96,8 +98,9 @@ if (!isPrimary) {
         // And no proxy: the mirror is on loopback and a CI proxy must not sit in between.
         void session.defaultSession.setProxy({ mode: "direct" });
       }
-      installQuantoraProtocol({ apiOrigin: apiOrigin(), distDir: webDistDir(), vercelConfigFile: vercelConfigPath() });
+      installQuantoraProtocol({ apiOrigin: apiOrigin(), distDir: rendererDir() });
       registerIpc();
+      installMenu();
       createMainWindow();
       // Background presence is opt-out via the tray's own Quit; the smoke
       // gate runs without a tray so the window close ends the process.
@@ -121,9 +124,8 @@ async function handleDeepLink(url: string): Promise<void> {
   const outcome = await completeSignIn(url);
   focusMainWindow();
   if (outcome.ok === true) {
-    notifyAuthChanged({ signedIn: true });
     startWatchLoop();
-    loadPostAuth();
+    notifyAuthChanged({ signedIn: true });
     return;
   }
   if (outcome.error === "Not a sign-in link.") return;

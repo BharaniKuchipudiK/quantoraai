@@ -36,8 +36,10 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: "Quantora",
-    backgroundColor: "#0a0a0a",
-    autoHideMenuBar: true,
+    backgroundColor: "#0b0d12",
+    autoHideMenuBar: false,
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: { x: 14, y: 12 },
     webPreferences: {
       preload: preloadPath(),
       contextIsolation: true,
@@ -88,10 +90,4 @@ export function focusMainWindow(): void {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-}
-
-/** After sign-in: reload into the app's own post-auth path so it resumes as on the web. */
-export function loadPostAuth(): void {
-  const win = getMainWindow() || createMainWindow();
-  void win.loadURL(`${DESKTOP_APP_ORIGIN}/?auth=success`);
 }

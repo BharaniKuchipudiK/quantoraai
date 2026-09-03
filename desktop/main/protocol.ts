@@ -8,7 +8,7 @@ import { createStaticServer } from "./static-server.js";
  * quantora:// — one scheme, two jobs:
  *
  *   quantora://app/api/*   → proxied to the API with the bearer token
- *   quantora://app/*       → the bundled web app under the vercel.json policy
+ *   quantora://app/*       → the desktop renderer under its own strict CSP
  *   quantora://auth/*      → deep links; handled by the OS → app, never fetched
  *
  * `standard` gives the origin real URL semantics (localStorage, relative
@@ -37,8 +37,8 @@ export function registerQuantoraScheme(): void {
   ]);
 }
 
-export function installQuantoraProtocol(options: { apiOrigin: string; distDir: string; vercelConfigFile: string }): void {
-  const serveStatic = createStaticServer(options.distDir, options.vercelConfigFile);
+export function installQuantoraProtocol(options: { apiOrigin: string; distDir: string }): void {
+  const serveStatic = createStaticServer(options.distDir);
 
   protocol.handle(DESKTOP_DEEP_LINK_SCHEME, async (request) => {
     const url = new URL(request.url);
