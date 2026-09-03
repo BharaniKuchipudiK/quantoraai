@@ -225,6 +225,29 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     if (!current?.cursor?.actionId || current.status !== 'EXECUTING') return current;
     const observedAt = new Date().toISOString();
     const observationId = id('model-failure');
+    /*
+     * ONE observation, ONE evidence entry PER ENGINE THAT ACTUALLY RAN.
+     *
+     * A single chat turn is one attempt from the browser's point of view and up
+     * to four from the server's: api/_lib/chat-handler.ts plans an inference
+     * ladder and works down it, so a build turn routinely burns two engines
+     * behind one request. Recording only the primary left the mission believing
+     * the second was untried, and the next turn was routed straight into it.
+     *
+     * The evidence array was always an array; nothing but the writer assumed one
+     * entry.
+     */
+    const engineIds = (Array.isArray(failure.modelIds) ? failure.modelIds : [failure.modelId])
+      .map((engineId) => String(engineId || '').trim())
+      .filter((engineId, index, all) => engineId && all.indexOf(engineId) === index);
+    const evidence = (engineIds.length ? engineIds : [null]).map((engineId, index) => ({
+      evidenceId: `${observationId}-evidence${index ? `-${index}` : ''}`,
+      source: 'provider',
+      kind: `provider.${String(failure.kind || 'transport').slice(0, 40)}`,
+      actionId: current.cursor.actionId,
+      ref: engineId ? `model:${engineId.slice(0, 160)}` : null,
+      observedAt,
+    }));
     return accept(await requestQir({
       action: 'coding.observe',
       runId: current.runId,
@@ -236,14 +259,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         artifactGeneration: null,
         kind: 'model',
         status: 'failure',
-        evidence: [{
-          evidenceId: `${observationId}-evidence`,
-          source: 'provider',
-          kind: `provider.${String(failure.kind || 'transport').slice(0, 40)}`,
-          actionId: current.cursor.actionId,
-          ref: failure.modelId ? `model:${String(failure.modelId).slice(0, 160)}` : null,
-          observedAt,
-        }],
+        evidence,
         error: {
           code: failureCode(failure.kind),
           message: String(failure.message || 'Model execution did not produce a usable result.').slice(0, 500),
