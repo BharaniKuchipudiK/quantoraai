@@ -39,6 +39,32 @@ test('the failure report names the spend condition, not just the symptom', () =>
   assert.match(report.markdown, /the spend meter could not be read/);
 });
 
+test('the annotation is a headline, not the page-state dump', () => {
+  /*
+   * Regression: the first CI run of this reporter put the whole error into the
+   * ::warning::. The golden's errors carry a serialized `Page state: {...}`,
+   * so the banner became a wall of JSON that GitHub truncated mid-string —
+   * unreadable at a glance, which is the exact failure this script exists to
+   * fix (§8). The detail belongs in the summary, which has room.
+   */
+  const evidence = {
+    ...FAILING_EVIDENCE,
+    error: 'The chat turn failed before any artifact was produced. Page state: '
+      + JSON.stringify({ url: 'https://example.app/desk', assistantMessages: 1, consoleErrors: ['x'.repeat(4000)] }),
+  };
+  const report = buildReport('failure', evidence);
+
+  assert.ok(!report.warning.includes('consoleErrors'), 'the annotation must not carry the page-state dump');
+  assert.ok(!report.warning.includes('{'), 'the annotation must not carry raw JSON');
+  assert.ok(report.warning.length < 320, `annotation too long to read at a glance: ${report.warning.length}`);
+  assert.match(report.warning, /The chat turn failed before any artifact was produced/);
+  // The condition still reaches the banner, because that is what makes it act-on-able.
+  assert.match(report.warning, /paid routes off: the spend meter could not be read/);
+
+  // …and the full error is still available where there is room for it.
+  assert.match(report.markdown, /Page state/);
+});
+
 test('a failing golden with NO readable evidence still reports the failure', () => {
   // The case that decides whether this is a real report or a decorative one:
   // an unreadable evidence file must not degrade into an empty section that

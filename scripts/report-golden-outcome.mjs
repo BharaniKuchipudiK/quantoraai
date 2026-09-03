@@ -48,6 +48,22 @@ function truncate(text, max = 600) {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
+/*
+ * The annotation gets the headline; the summary gets the detail.
+ *
+ * The first CI run of this reporter put the whole error in the ::warning::,
+ * and the golden's errors carry a serialized `Page state: {...}` dump — so the
+ * banner became a wall of JSON that GitHub then truncated mid-string. Readable
+ * is the entire point (§8): an annotation nobody can parse at a glance is the
+ * failure mode this script exists to fix, reproduced one layer up.
+ */
+export function headline(error) {
+  const value = String(error ?? '').trim();
+  if (!value) return '';
+  const [before] = value.split(/\s*Page state(?: at timeout)?:/i);
+  return truncate((before || value).trim(), 180);
+}
+
 export function buildReport(outcome, evidence) {
   const passed = outcome === 'success';
   const lines = ['## Deployed golden chat transaction', ''];
@@ -82,6 +98,10 @@ export function buildReport(outcome, evidence) {
     lines.push('### What failed', '', '```', error, '```', '');
   }
 
+  // Carried into the annotation so the banner names the condition, not just
+  // the symptom: "no healthy AI route" reads like a provider outage, while
+  // paid routes being off because the meter is unreadable points at the cause.
+  let spendNote = '';
   const health = evidence.inferenceHealth;
   if (health && typeof health === 'object') {
     const shown = HEALTH_KEYS
@@ -89,9 +109,11 @@ export function buildReport(outcome, evidence) {
       .map((key) => `| \`${key}\` | ${JSON.stringify(health[key])} |`);
     const spend = health.spend;
     if (spend && typeof spend === 'object' && spend.paidRoutesAllowed === false) {
-      // Names the condition rather than the symptom: with paid routes off, a
-      // single unhealthy free route is enough to produce "no healthy AI route".
-      shown.push(`| \`spend.paidRoutesAllowed\` | false — ${JSON.stringify(spend.reason ?? 'no reason given')} |`);
+      // With paid routes off, a single unhealthy free route is enough to
+      // produce "no healthy AI route".
+      const reason = truncate(spend.reason ?? 'no reason given', 80);
+      shown.push(`| \`spend.paidRoutesAllowed\` | false — ${JSON.stringify(reason)} |`);
+      spendNote = ` — paid routes off: ${reason}`;
     }
     if (shown.length) {
       lines.push('### Deployment readiness at failure', '', '| field | value |', '| --- | --- |', ...shown, '');
@@ -103,7 +125,7 @@ export function buildReport(outcome, evidence) {
 
   return {
     passed,
-    warning: `Deployed golden chat FAILED: ${error || 'see the run artifact'}`,
+    warning: `Deployed golden chat FAILED: ${headline(evidence.error) || 'see the run artifact'}${spendNote}`,
     markdown: `${lines.join('\n')}\n`,
   };
 }
