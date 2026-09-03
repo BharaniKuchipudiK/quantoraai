@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { bridge, bridgeAvailable, type AuthStatus, type HostInfo, type WorkspaceInfo } from "./lib/bridge.ts";
-import { SignIn } from "./screens/SignIn.tsx";
-import { Launcher } from "./screens/Launcher.tsx";
-import { Workspace } from "./screens/Workspace.tsx";
+import { bridge, bridgeAvailable, type AuthStatus, type HostInfo, type WorkspaceInfo } from "./lib/bridge.js";
+import { SignIn } from "./screens/SignIn.js";
+import { Launcher } from "./screens/Launcher.js";
+import { Workspace } from "./screens/Workspace.js";
 
 /*
  * Three screens, one rule: you are either signed out, choosing a folder, or

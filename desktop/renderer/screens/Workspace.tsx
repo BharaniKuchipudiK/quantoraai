@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { bridge, type HostInfo, type SessionUser, type TreeEntry, type WorkspaceInfo } from "../lib/bridge.ts";
-import type { MenuBus } from "../app.tsx";
-import { FileTree } from "../components/FileTree.tsx";
-import { EditorPane, type OpenFile } from "../components/EditorPane.tsx";
-import { TerminalPane } from "../components/TerminalPane.tsx";
-import { GitPanel } from "../components/GitPanel.tsx";
-import { ChatPanel } from "../components/ChatPanel.tsx";
+import { bridge, type HostInfo, type SessionUser, type TreeEntry, type WorkspaceInfo } from "../lib/bridge.js";
+import type { MenuBus } from "../app.js";
+import { FileTree } from "../components/FileTree.js";
+import { EditorPane, type OpenFile } from "../components/EditorPane.js";
+import { TerminalPane } from "../components/TerminalPane.js";
+import { GitPanel } from "../components/GitPanel.js";
+import { ChatPanel } from "../components/ChatPanel.js";
 
 export function Workspace({ workspace, user, host, menu, onClosed }: {
   workspace: WorkspaceInfo;

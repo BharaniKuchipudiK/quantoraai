@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { bridge } from "../lib/bridge.ts";
-import { filesFromReply, newMessage, streamChatTurn, type ChatMessage } from "../lib/chat-client.ts";
+import { bridge } from "../lib/bridge.js";
+import { filesFromReply, newMessage, streamChatTurn, type ChatMessage } from "../lib/chat-client.js";
 
 /*
  * Quantora on the folder. Each turn sends the folder's text files as the

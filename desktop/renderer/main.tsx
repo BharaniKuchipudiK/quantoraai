@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { App } from "./app.tsx";
+import { App } from "./app.js";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
 

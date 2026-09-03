@@ -1,5 +1,5 @@
 import { assembleStudioPreview } from "@web/lib/studio-preview-helpers.js";
-import type { VfsFile } from "./bridge.ts";
+import type { VfsFile } from "./bridge.js";
 
 /*
  * The desktop's chat client for /api/chat (proxied by the host, bearer

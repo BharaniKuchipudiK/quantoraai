@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { bridge, type HostInfo, type RecentWorkspace, type SessionUser } from "../lib/bridge.ts";
+import { bridge, type HostInfo, type RecentWorkspace, type SessionUser } from "../lib/bridge.js";
 import { isCloneableRepositoryUrl } from "@shared/desktop-bridge-contract.js";
 
 export function Launcher({ user, host, onOpened, onSignedOut }: {

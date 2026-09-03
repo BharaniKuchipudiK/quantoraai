@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { bridge } from "../lib/bridge.ts";
+import { bridge } from "../lib/bridge.js";
 
 /*
  * A real terminal (xterm ↔ node-pty in the host) when the host has a pty,

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { TreeEntry } from "../lib/bridge.ts";
+import type { TreeEntry } from "../lib/bridge.js";
 
 type Node = { entry: TreeEntry; children: Node[] };
 

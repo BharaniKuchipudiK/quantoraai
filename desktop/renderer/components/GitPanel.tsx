@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bridge } from "../lib/bridge.ts";
+import { bridge } from "../lib/bridge.js";
 
 function classify(line: string): string {
   if (line.startsWith("$ ")) return "cmd";

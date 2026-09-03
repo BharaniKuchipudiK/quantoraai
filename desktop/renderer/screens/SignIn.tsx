@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bridge } from "../lib/bridge.ts";
+import { bridge } from "../lib/bridge.js";
 
 export function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
   const [waiting, setWaiting] = useState(false);
