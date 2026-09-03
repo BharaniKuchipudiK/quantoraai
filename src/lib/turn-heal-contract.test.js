@@ -34,6 +34,7 @@
  * before the fix landed.
  */
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { resolveCodingTurnOutcome } from './coding-outcome-spine.js';
 import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from './turn-recovery.js';
@@ -190,4 +191,71 @@ test('with no untried engine left, the chip claims nothing it cannot do', () => 
   assert.ok(chip, 'retry stays available even without an override');
   assert.equal(chip.modelOverrideId, undefined, 'no override is stamped when none exists');
   assert.doesNotMatch(chip.label, /retry on /i, 'the label never names an engine it will not use');
+});
+
+/*
+ * THE MISSING REQUEST ID (2026-09-04).
+ *
+ * Every terminal failure named what broke and what the loop tried, and gave the
+ * person nothing to quote. QIR has minted a durable `runId` since Phase 2, and
+ * the desk rendered it — in a tooltip — so the one moment it is worth having was
+ * the one place it never appeared.
+ *
+ * It is also the first read FROM QIR anywhere in the product. The journal has
+ * been write-only: qir-contracts.ts decides completion and nothing consults it.
+ *
+ * Asserted on the COMPOSED text, not on the helper. Two regressions today came
+ * from gates that checked the halves I wrote while the sentence the user reads
+ * went unexamined.
+ */
+test('[was-red] a terminal failure names the durable Run, so the person has something to quote', () => {
+  for (const kind of ['provider-dead', 'stream-ended', 'timeout']) {
+    const outcome = resolveCodingTurnOutcome({
+      kind,
+      errorMessage: 'no healthy AI route',
+      attemptsMade: 3,
+      triedEngines: ['Nemotron 3 Super 120B', 'Gemini Flash'],
+      runId: 'qir_run_7f3a91c',
+    });
+    assert.match(
+      outcome.text,
+      /qir_run_7f3a91c/,
+      `${kind}: the failure must name the Run it belongs to. Got:\n${outcome.text}`,
+    );
+  }
+});
+
+test('no Run, no line — the id is never a placeholder', () => {
+  /*
+   * A Run id exists precisely when the durable journal accepted the attempt, so
+   * printing "Run: unknown" would claim a record that was never written — the
+   * same overclaim the honesty law above exists to prevent.
+   */
+  const outcome = resolveCodingTurnOutcome({
+    kind: 'provider-dead',
+    errorMessage: 'no healthy AI route',
+    attemptsMade: 2,
+    triedEngines: ['Gemini Flash'],
+  });
+  assert.doesNotMatch(outcome.text, /\*\*Run:\*\*/, 'with no Run id there must be no Run line at all');
+  assert.doesNotMatch(outcome.text, /unknown|n\/a|undefined/i, 'and never a placeholder in its place');
+});
+
+test('the chat stream hands every terminal outcome the Run id it has', () => {
+  /*
+   * The unit above proves the copy; this proves the caller supplies it. Four
+   * terminal branches resolve an outcome, and a branch that forgets the id
+   * silently loses the reference for exactly the failure mode it covers.
+   */
+  const stream = readFileSync(
+    new URL('../hooks/useChatStream.js', import.meta.url),
+    'utf8',
+  );
+  const sites = stream.split('resolveCodingTurnOutcome({').length - 1;
+  const threaded = (stream.match(/runId: qirCoding\?\.run\?\.runId/g) || []).length;
+  assert.equal(
+    threaded,
+    sites,
+    `${sites} terminal outcomes are resolved but only ${threaded} carry the Run id`,
+  );
 });

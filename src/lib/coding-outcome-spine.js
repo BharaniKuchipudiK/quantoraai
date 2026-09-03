@@ -49,6 +49,31 @@ function describeAttemptsSpent(attemptsMade, triedEngines) {
   );
 }
 
+/**
+ * The durable Run this failure belongs to, when there is one.
+ *
+ * WHY THIS LINE EXISTS. Every failure copy here named what broke and what the
+ * loop tried, and gave the person nothing to quote. QIR has minted a durable
+ * `runId` since Phase 2 and the desk renders it — in a tooltip — so the one
+ * moment it is worth having, the terminal failure, was the one place it never
+ * appeared.
+ *
+ * It is also the first thing in the product that READS from QIR rather than
+ * writing to it. The journal has been write-only: `qir-contracts.ts` decides
+ * completion and nothing consults it, this module had no idea a Run existed.
+ * Surfacing the id is small, but it points the right way.
+ *
+ * The id is printed only when the caller has one, which makes its presence
+ * meaningful rather than decorative: a Run id exists precisely when the durable
+ * journal accepted this attempt, so the line cannot promise a record that was
+ * never written. No id, no line — never a placeholder.
+ */
+function describeRunReference(runId) {
+  const id = String(runId || '').trim();
+  if (!id) return '';
+  return `**Run:** \`${id}\` — the durable record of this attempt, with the failure evidence attached.\n`;
+}
+
 function shopChips(shopIntakeAsk) {
   if (!shopIntakeAsk?.oversize || !Array.isArray(shopIntakeAsk.chips)) return null;
   return {
@@ -75,6 +100,8 @@ export function resolveCodingTurnOutcome({
   attemptsMade = 1,
   /** Engine names those attempts ran on, in order. */
   triedEngines = [],
+  /** The durable QIR Run id for this attempt, when the journal accepted one. */
+  runId = '',
   /** The next untried engine ({ id, name }) the retry chip should pin, or
    *  null when the catalog is exhausted. The chip only names an engine it
    *  will actually use — same law as the recovery notice. */
@@ -164,6 +191,7 @@ export function resolveCodingTurnOutcome({
         `That turn hit the ${Math.round(turnDeadlineSec)}s limit before Preview had a runnable page.\n\n`
         + `**What failed:** the model did not finish writing files in time.\n`
         + describeAttemptsSpent(attemptsMade, triedEngines)
+        + describeRunReference(runId)
         + `**Your move:** tap **Retry a smaller build** — one working page first, instead of sitting on a dead spinner.`
       ),
       isError: true,
@@ -218,6 +246,7 @@ export function resolveCodingTurnOutcome({
           : `The connection to the model died before Preview was ready.\n\n`)
         + `**What failed:** ${detail || 'the AI gateway closed the stream without a runnable result.'}\n`
         + describeAttemptsSpent(attemptsMade, triedEngines)
+        + describeRunReference(runId)
         + `**Your move:** pick a chip below — retry on the next engine, or shrink the job `
         + `(about ${SHOP_INTAKE_CATALOG_SIZE} catalog photos if this is a shop).`
       ),

@@ -1547,6 +1547,7 @@ export function useChatStream({
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                runId: qirCoding?.run?.runId || '',
                 fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('provider-dead', {
@@ -1615,6 +1616,7 @@ export function useChatStream({
                 shopIntakeAsk,
                 attemptsMade: attempt,
                 triedEngines,
+                runId: qirCoding?.run?.runId || '',
                 fallbackEngine: nextFallbackEngine(),
               });
               recordTurnLesson('stream-ended', {
@@ -1733,6 +1735,7 @@ export function useChatStream({
                   shopIntakeAsk,
                   attemptsMade: attempt,
                   triedEngines,
+                  runId: qirCoding?.run?.runId || '',
                 });
                 recordTurnLesson('no-preview', {
                   shopIntakeAsk,
@@ -1999,6 +2002,7 @@ export function useChatStream({
               isShopPhotoTurn,
               attemptsMade: attempt,
               triedEngines,
+              runId: qirCoding?.run?.runId || '',
               fallbackEngine: nextFallbackEngine(),
             });
             if (!stopped) {
