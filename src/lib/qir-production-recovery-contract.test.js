@@ -57,11 +57,27 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
   const intent = fs.readFileSync(new URL('../../shared/build-intent.js', import.meta.url), 'utf8');
 
   assert.match(intent, /codingFailureSpineOwnsTurn/);
-  assert.match(stream, /codingFailureSpineOwnsTurn/);
   assert.match(stream, /codingSpineOwns/);
   assert.match(stream, /qirFail/);
-  assert.match(stream, /qirCoding\?\.beginModelAttempt/);
-  assert.match(stream, /qirCoding\?\.reportModelFailure/);
+  /*
+   * Whether the journal actually fires is proved behaviourally in
+   * qir-turn-journal.test.js, by driving the seam with a spy. Matching source
+   * text for it here was worse than nothing: `false && codingFailureSpineOwnsTurn(...)`
+   * switched QIR off for every production Coding turn and these regexes all
+   * still matched (CLAUDE.md §4).
+   *
+   * What survives here is the one thing a unit test cannot see - that the hook
+   * hands the seam the REAL turn variables instead of constants that would make
+   * the behavioural gate green over a lie.
+   */
+  assert.match(stream, /createQirTurnJournal\(\{ isCodingRequest, studioDomain: turnDomain, qirCoding \}\)/);
+  assert.match(stream, /const codingSpineOwns = qirTurn\.owns;/);
+  assert.match(stream, /qirTurn\.beginAttempt\(/);
+  assert.doesNotMatch(
+    stream,
+    /createQirTurnJournal\(\{[^}]*isCodingRequest:\s*(?:true|false)/,
+    'ownership must be decided from the turn, never hardcoded at the call site',
+  );
   assert.match(studio, /qirCoding,/);
   assert.match(studio, /useQirCodingRun/);
   /*

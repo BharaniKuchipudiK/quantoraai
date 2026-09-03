@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { planTurnEscalation } from './turn-escalation.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { getChatDisplayText } from './build-communication.js';
@@ -175,8 +176,31 @@ test('build timeout and deployed canary credentials honor the release contract',
     /clearTimeout\(timeoutId\);\s*\n\s*timeoutId = setTimeout\(\(\) => controller\.abort\('timeout'\), attemptBudgetMs\);/,
     'the turn deadline must be re-armed when response headers arrive, so upload time is not charged to the server budget',
   );
-  // A self-healing retry must spend what is left of the turn deadline, never a fresh one.
-  assert.match(stream, /turnDeadlineMs - \(Date\.now\(\) - turnStartedAt\)/);
+  /*
+   * A self-healing retry must spend what is left of the turn deadline, never a
+   * fresh one.
+   *
+   * This arithmetic used to be inline here as
+   * `Math.max(MIN_ATTEMPT_BUDGET_MS, turnDeadlineMs - (Date.now() - turnStartedAt))`
+   * and was asserted by matching that text. It has moved into
+   * `turn-escalation.js`, which owns the turn-level EVIDENCE-BASED STOP, and the
+   * `Math.max` floor is gone on purpose: padding a spent budget up to 20s did not
+   * buy an attempt, it started one that could not finish and billed the tokens.
+   *
+   * The law is unchanged and now stronger, so assert it by RUNNING it rather than
+   * by matching a string that only records where the arithmetic used to live.
+   */
+  const retryBudget = planTurnEscalation({ elapsedMs: 40_000, turnDeadlineMs: 175_000, engineCount: 3 });
+  assert.equal(
+    retryBudget.attemptBudgetMs,
+    135_000,
+    'a retry must inherit the remainder of the turn deadline, never a fresh clock',
+  );
+  const spent = planTurnEscalation({ elapsedMs: 174_000, turnDeadlineMs: 175_000, engineCount: 3 });
+  assert.equal(spent.attemptBudgetMs, 0, 'a spent budget is never padded back up into a doomed attempt');
+  assert.equal(spent.mayAttempt, false);
+  // ...and the stream must feed it this turn's real elapsed time, not a fresh one.
+  assert.match(stream, /elapsedMs: Date\.now\(\) - turnStartedAt/);
   assert.match(stream, /buildMode: isCodingRequest/);
   assert.match(stream, /resolveIsCodingRequest/);
   assert.match(stream, /advisorBlocksPreviewBuild\(turnDomain\)/);
