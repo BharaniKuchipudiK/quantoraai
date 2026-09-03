@@ -510,11 +510,41 @@ try {
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
 
-  const sessionsBeforeFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
+  const readSessions = () => page.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'); } catch { return []; }
+  });
+  const sessionsBeforeFork = await readSessions();
   await fork.click();
   await page.waitForLoadState('domcontentloaded');
-  const sessionsAfterFork = await page.evaluate(() => JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'));
-  if (sessionsAfterFork.length <= sessionsBeforeFork.length) throw new Error('Footer Fork Chat did not create an independent session.');
+
+  /*
+   * WAIT FOR THE WRITE, DO NOT SNAPSHOT IT.
+   *
+   * Forking creates the session in React state and persists it to localStorage
+   * from an effect, so the write lands after the click resolves and after
+   * domcontentloaded. Reading immediately made this assertion a coin flip: it
+   * failed once in CI on 2026-09-03 and passed on the identical commit, with no
+   * code change between the runs.
+   *
+   * Same defect and same fix as the QIR journal check in
+   * qir-production-recovery-browser-gate.mjs (#522). A fork that never happens
+   * still fails here, with the counts named; only the timing assumption
+   * changes, never the claim.
+   */
+  let sessionsAfterFork = sessionsBeforeFork;
+  const forkDeadline = Date.now() + 10_000;
+  for (;;) {
+    sessionsAfterFork = await readSessions();
+    if (sessionsAfterFork.length > sessionsBeforeFork.length) break;
+    if (Date.now() >= forkDeadline) {
+      throw new Error(
+        `Footer Fork Chat did not create an independent session: quantora_chat_sessions held `
+        + `${sessionsBeforeFork.length} before the click and still holds ${sessionsAfterFork.length} `
+        + 'after 10s.',
+      );
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+  }
 
   console.log('Studio regression recovery browser gate passed with self-hosted compiler runtime.');
 } catch (error) {

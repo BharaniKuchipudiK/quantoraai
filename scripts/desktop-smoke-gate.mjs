@@ -140,6 +140,40 @@ try {
       await window.waitForSelector(`[data-qd-screen="${name}"]`, { timeout });
       return true;
     } catch {
+      /*
+       * WHY THIS CAPTURES MORE THAN THE DOM.
+       *
+       * On 2026-09-03 this gate failed with the sign-in screen PRESENT in the
+       * DOM dump taken at the moment waitForSelector timed out. waitForSelector
+       * defaults to state:'visible', so the element was attached and not
+       * visible — for sixty seconds — and the dump alone could not say why.
+       *
+       * The failure then reported "renderer mounted on the sign-in screen" as
+       * the failed check, which reads like the mount never happened and sends
+       * the next reader hunting in the wrong place under pressure (§8).
+       *
+       * These five facts separate the candidates that a DOM dump cannot:
+       * an element with an empty box, a zero-sized window (Electron can hand a
+       * renderer a 0x0 viewport before the window is shown, and Playwright calls
+       * everything in it invisible), a stylesheet that never loaded, or a
+       * genuinely absent screen.
+       */
+      const probe = await window.evaluate((screenName) => {
+        const el = document.querySelector(`[data-qd-screen="${screenName}"]`);
+        const box = el ? el.getBoundingClientRect() : null;
+        const style = el ? getComputedStyle(el) : null;
+        return {
+          attached: Boolean(el),
+          box: box ? { w: Math.round(box.width), h: Math.round(box.height) } : null,
+          display: style?.display || null,
+          visibility: style?.visibility || null,
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          stylesheets: document.styleSheets.length,
+          readyState: document.readyState,
+        };
+      }, name).catch((e) => ({ probeFailed: e.message }));
+      diagnostics.push(`why screen ${name} was not visible: ${JSON.stringify(probe)}`);
+
       const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 2000)).catch((e) => `evaluate failed: ${e.message}`);
       diagnostics.push(`DOM while waiting for screen ${name}:\n${dom}`);
       return false;
@@ -147,7 +181,12 @@ try {
   };
 
   // 1. the shell boots on its own origin and shows the sign-in screen
-  check(await waitScreen('signin'), 'renderer mounted on the sign-in screen (signed out)');
+  /*
+   * "rendered AND visible", not "mounted". The old wording said the renderer
+   * never mounted, while the diagnostic beside it showed the sign-in markup
+   * present — an unactionable message is one the next person mutes (§8).
+   */
+  check(await waitScreen('signin'), 'sign-in screen rendered AND visible (signed out)');
   // Ask the renderer where it thinks it is, rather than reading Playwright's
   // window.url(). That property is a cached mirror of the last main-frame
   // navigation Playwright observed, and for a custom scheme it can still be
