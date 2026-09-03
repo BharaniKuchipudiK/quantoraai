@@ -22,6 +22,14 @@ test('the landing page publishes the durable Studio entry hook', () => {
   assert.match(landing, /data-quantora-enter-studio="true"/);
 });
 
+test('the hero Try Quantora CTA opens auth, not a guest Building animation', () => {
+  const landing = read('src/components/LandingPage.jsx');
+  assert.match(landing, /landing-hero__submit[\s\S]*?data-quantora-login=\{user \? undefined : 'true'\}/);
+  assert.match(landing, /landing-hero__submit[\s\S]*?onClick=\{\(\) => startBuild\(\)\}/);
+  assert.doesNotMatch(landing, /setGuestRun\('running'\)/);
+  assert.doesNotMatch(landing, /Building…/);
+});
+
 test('the deployed golden gate anchors on that hook, never on button copy', () => {
   const gate = read('scripts/deployed-golden-transactions.mjs');
   assert.match(gate, /\[data-quantora-enter-studio="true"\]/);

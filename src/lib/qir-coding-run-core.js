@@ -67,17 +67,36 @@ function queuedRun(runId, goal) {
   };
 }
 
+function currentArtifact(run) {
+  return run?.artifacts?.find((artifact) => artifact.artifactId === 'coding-desk-vfs') || null;
+}
+
+/**
+ * Candidate bytes may arrive in either of two legitimate states:
+ *
+ * - legacy/skills-first path: Run is still QUEUED;
+ * - QIR-owned model path: `coding.attempt` already created the action, so the Run
+ *   is EXECUTING but no artifact exists yet.
+ *
+ * In both cases the artifact is attached exactly once. A late callback cannot
+ * replace an existing generation.
+ */
 export function qirCodingRunCanStart(run, artifactRef, code) {
+  const preArtifactExecution = run?.status === 'EXECUTING' && !currentArtifact(run) && Boolean(run?.cursor?.actionId);
   return Boolean(
     run
-    && run.status === 'QUEUED'
+    && (run.status === 'QUEUED' || preArtifactExecution)
+    && !currentArtifact(run)
     && String(artifactRef || '').trim()
     && String(code || '').trim(),
   );
 }
 
-function currentArtifact(run) {
-  return run?.artifacts?.find((artifact) => artifact.artifactId === 'coding-desk-vfs') || null;
+function failureCode(kind) {
+  if (kind === 'timeout') return 'PROVIDER_TIMEOUT';
+  if (kind === 'quota' || kind === 'capacity') return 'PROVIDER_QUOTA';
+  if (kind === 'contract') return 'MODEL_CONTRACT';
+  return 'PROVIDER_TRANSPORT';
 }
 
 async function observePreview(run, failure) {
@@ -152,10 +171,14 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * Boot owns only goal durability. It intentionally does NOT require files.
    * The first worker may time out before producing any artifact; that must not
    * erase the mission or prevent another worker from finding the same runId.
+   *
+   * `force` exists for the explicit model-attempt API: that caller has already
+   * proved this is a Coding turn, so it must be able to persist the goal before
+   * React has had a chance to render an `enabled` prop change.
    */
-  const boot = async () => {
+  const boot = async (goalOverride = '', force = false) => {
     const { enabled, sessionId, goal } = readOptions();
-    if (!enabled || !sessionId) return null;
+    if ((!enabled && !force) || !sessionId) return null;
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
       const existingId = readPointer(sessionId);
@@ -168,7 +191,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
       }
 
       const runId = id('coding-run');
-      const created = await requestQir({ run: queuedRun(runId, goal) });
+      const created = await requestQir({ run: queuedRun(runId, goalOverride || goal) });
       writePointer(sessionId, runId);
       return accept(created);
     })().finally(() => { bootPromise = null; });
@@ -176,9 +199,66 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   };
 
   /*
-   * Boot/resume first. Only once runnable candidate bytes exist do we begin the
-   * Coding execution step. This makes artifact creation a step result rather
-   * than a prerequisite for the Run to exist.
+   * Persist the model action BEFORE the request to /api/chat starts. The action
+   * carries only a bounded strategy label/model id — never the whole prompt or
+   * credentials. If the browser disappears after this call, another worker can
+   * see an EXECUTING action with the same goal/runId and continue from it.
+   */
+  const beginModelAttempt = (goal, strategy = '') => enqueue(async () => {
+    let current = await boot(goal, true);
+    if (!current) return null;
+    if (!['QUEUED', 'REPLANNING'].includes(current.status)) return current;
+    return accept(await requestQir({
+      action: 'coding.attempt',
+      runId: current.runId,
+      strategy: String(strategy || '').slice(0, 240),
+    }));
+  });
+
+  /*
+   * Provider/model failure is durable evidence even when zero candidate bytes
+   * exist. It is action-bound, so a late failure from an older attempt is a
+   * stale no-op at the server transition guard.
+   */
+  const reportModelFailure = (failure = {}) => enqueue(async () => {
+    const current = runNow || await boot('', true);
+    if (!current?.cursor?.actionId || current.status !== 'EXECUTING') return current;
+    const observedAt = new Date().toISOString();
+    const observationId = id('model-failure');
+    return accept(await requestQir({
+      action: 'coding.observe',
+      runId: current.runId,
+      observation: {
+        observationId,
+        runId: current.runId,
+        actionId: current.cursor.actionId,
+        artifactId: null,
+        artifactGeneration: null,
+        kind: 'model',
+        status: 'failure',
+        evidence: [{
+          evidenceId: `${observationId}-evidence`,
+          source: 'provider',
+          kind: `provider.${String(failure.kind || 'transport').slice(0, 40)}`,
+          actionId: current.cursor.actionId,
+          ref: failure.modelId ? `model:${String(failure.modelId).slice(0, 160)}` : null,
+          observedAt,
+        }],
+        error: {
+          code: failureCode(failure.kind),
+          message: String(failure.message || 'Model execution did not produce a usable result.').slice(0, 500),
+          retryable: failure.retryable !== false,
+          recoveryExhausted: failure.recoveryExhausted === true,
+        },
+        observedAt,
+      },
+    }));
+  });
+
+  /*
+   * Boot/resume first. Once runnable candidate bytes exist, attach them to the
+   * current model action when one already exists; otherwise retain the legacy
+   * QUEUED -> EXECUTING path for deterministic/skills-first artifacts.
    */
   const sync = () => enqueue(async () => {
     let current = await boot();
@@ -257,5 +337,11 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     return current;
   });
 
-  return { sync, reportHealedArtifact, reportPreviewStatus };
+  return {
+    sync,
+    beginModelAttempt,
+    reportModelFailure,
+    reportHealedArtifact,
+    reportPreviewStatus,
+  };
 }

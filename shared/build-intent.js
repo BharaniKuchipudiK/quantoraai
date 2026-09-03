@@ -30,6 +30,20 @@ const BUILD_VERB = /\b(build|create|make|generate|design|develop|code|prototype|
 const BUILD_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|page|ui|interface|component|dashboard|game|tool|calculator|form|portfolio|site|widget|animation|simulator|editor|tracker|generator|clone|agent|bot|crawler|automation|organizer|script|service|workflow|extension|plugin|macos|ios|desktop|board|scheduler|schedule|planner|system|screen|portal|console|admin|panel|crm|erp|inventory|roster|rota|timeline|kanban|gantt|booking|checkout|catalogue|catalog|directory|wizard|viewer|table|chart|map|feed|inbox|queue|pipeline|report|invoice|quote|ledger|calendar|marketplace|storefront|builder|manager|monitor|analyzer|analyser)\b/i;
 
 const SPECIFIED_TOOL = /\b(calculator|calc\b|todo(?:s| list)?|to-do list|timer|stopwatch|pomodoro|counter|unit converter|tip calculator|bmi(?: calculator)?|quiz|flash ?cards?|notepad|markdown editor|tic-?tac-?toe|snake(?: game)?|pong|weather (?:app|widget)|password generator|color picker|habit tracker|kanban|clock|alarm|notes app|drawing (?:app|pad)|whiteboard|kanban board)\b/i;
+/*
+ * "quiz" and "flashcards" are ambiguous product words: in Coding, "build a
+ * flashcard app" is software; in Study, "make a few flashcards for Newton's
+ * laws" is a teaching activity. The legacy classifier used SPECIFIED_TOOL as an
+ * unconditional shortcut, so the Study ask above became a Coding turn before
+ * the education-domain guard had a chance to protect it. Provider exhaustion
+ * then rendered Preview/catalog recovery copy inside Study Tutor.
+ *
+ * Keep learning activities conversational unless the same sentence also names
+ * an actual software artifact. This is deliberately semantic, not
+ * domain-hardcoded: a learner can ask for flashcards anywhere, while "build a
+ * quiz app" still reaches Coding.
+ */
+const LEARNING_ACTIVITY = /\b(quiz|flash ?cards?)\b/i;
 
 const WEBSITE_INTAKE = /\b(website|web ?site|landing page|online shop|storefront|e-?commerce|brochure|web ?page for|site for)\b/i;
 const BUSINESS_INTAKE = /\b(coffee shop|caf[eé]|bakery|restaurant|salon|clinic|boutique|real estate|tuition|agency|my business|our company)\b/i;
@@ -51,7 +65,11 @@ export function resolveIsCodingRequest(text, {
   refineDesk = false,
 } = {}) {
   if (refineDesk) return true;
-  if (isSpecifiedRunnableTool(text)) return true;
+  if (isSpecifiedRunnableTool(text)) {
+    const explicitSoftwareBuild = detectBuildIntent(text);
+    if (LEARNING_ACTIVITY.test(String(text || '')) && !explicitSoftwareBuild && !codingDeskOpen) return false;
+    return true;
+  }
   /*
    * A request for judgement is not a request for software.
    *
@@ -84,6 +102,14 @@ export function advisorBlocksPreviewBuild(studioDomain) {
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
+}
+
+/** Advisor rooms own their failure even if a coding noun matched. */
+export function codingFailureSpineOwnsTurn({
+  isCodingRequest = false,
+  studioDomain = null,
+} = {}) {
+  return Boolean(isCodingRequest) && !advisorBlocksPreviewBuild(studioDomain);
 }
 
 /**

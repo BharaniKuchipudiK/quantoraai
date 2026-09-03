@@ -483,9 +483,7 @@ function SelfHealConsole({ isLight }) {
 export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, user, themeMode, setThemeMode, isLight: isLightProp }) {
   const [heroPrompt, setHeroPrompt] = useState('');
   const [ghost, setGhost] = useState('');
-  const [guestRun, setGuestRun] = useState('idle');
   const promptRef = useRef(null);
-  const previewRef = useRef(null);
 
   useEffect(() => {
     if (heroPrompt) return undefined;
@@ -523,22 +521,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
   const cardBg = isLight ? '#ffffff' : '#0a0a0a';
   const navBg = isLight ? '#ffffff' : '#0a0a0a';
 
+  // Hero / final CTAs must open the real auth gate for signed-out visitors
+  // (Google + GitHub). A guest animation is not a substitute for sign-in.
   const startBuild = (prompt) => {
     const text = (prompt ?? heroPrompt ?? '').toString().trim() || GUEST_DEMO_PROMPT;
+    if (!heroPrompt) setHeroPrompt(text);
     if (onStartBuild) onStartBuild(text);
     else if (user) onLaunchStudio();
     else onOpenAuth();
-  };
-
-  const startGuestOrBuild = (prompt) => {
-    const text = (prompt ?? heroPrompt ?? '').toString().trim() || GUEST_DEMO_PROMPT;
-    if (user) {
-      startBuild(text);
-      return;
-    }
-    setHeroPrompt(text);
-    setGuestRun('running');
-    previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const openStudio = () => (user ? onLaunchStudio() : onOpenAuth());
@@ -611,7 +601,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
                   aria-label="Describe what you want to build"
                   value={heroPrompt}
                   onChange={(e) => setHeroPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startGuestOrBuild(); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startBuild(); } }}
                   rows={2}
                   placeholder=""
                   style={{ color: textColor, caretColor: heroPrompt ? ORANGE : 'transparent' }}
@@ -626,20 +616,19 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               <button
                 type="button"
                 className="landing-hero__submit"
-                disabled={guestRun === 'running'}
-                onClick={() => startGuestOrBuild()}
+                data-quantora-login={user ? undefined : 'true'}
+                onClick={() => startBuild()}
               >
-                {guestRun === 'running' ? 'Building…' : 'Try Quantora'} <ArrowRight size={16} />
+                Try Quantora <ArrowRight size={16} />
               </button>
             </div>
-            <p className="landing-hero__free" style={{ color: subtextColor }}>Try Quantora for free. See it work before you sign in.</p>
-            <div ref={previewRef} className="landing-hero__preview">
+            <p className="landing-hero__free" style={{ color: subtextColor }}>Free to start. Sign in with Google or GitHub to keep the work.</p>
+            <div className="landing-hero__preview">
               <GuestBuildPreview
                 isLight={isLight}
                 prompt={heroPrompt || GUEST_DEMO_PROMPT}
-                running={guestRun === 'running'}
-                done={guestRun === 'done'}
-                onReady={() => setGuestRun('done')}
+                running={false}
+                done={false}
                 onContinue={() => startBuild(heroPrompt || GUEST_DEMO_PROMPT)}
               />
             </div>
@@ -790,7 +779,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               <p style={{ color: subtextColor }}>
                 Apps, research, study, travel, finance — measured by completion, not prompt volume. Try Quantora for free.
               </p>
-              <TryCta large onClick={() => startGuestOrBuild()} />
+              <TryCta large login onClick={() => startBuild()} />
             </div>
           </Reveal>
         </div>
