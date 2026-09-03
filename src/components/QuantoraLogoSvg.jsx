@@ -23,7 +23,7 @@ function OrangeO() {
 export function QuantoraBrandText({
   isDark = true,
   fontSize = '1.25rem',
-  tagline = 'SHAPING TOMORROW',
+  tagline = 'IDEA TO OUTCOME',
   align = 'left',
 }) {
   const letter = isDark ? '#ffffff' : '#0a0a0a';
@@ -49,7 +49,7 @@ export function QuantoraBrandText({
   );
 }
 
-export function QuantoraEmblemSvg({ size = 220, isDark = true, showText = true, tagline = 'SHAPING TOMORROW' }) {
+export function QuantoraEmblemSvg({ size = 220, isDark = true, showText = true, tagline = 'IDEA TO OUTCOME' }) {
   return (
     <div className="quantora-emblem">
       <QuantoraIconSvg size={size} isDark={isDark} />
@@ -60,7 +60,7 @@ export function QuantoraEmblemSvg({ size = 220, isDark = true, showText = true, 
   );
 }
 
-export function QuantoraFullLogoSvg({ height = 36, isDark = true, tagline = 'SHAPING TOMORROW' }) {
+export function QuantoraFullLogoSvg({ height = 36, isDark = true, tagline = 'IDEA TO OUTCOME' }) {
   const nameSize = Math.max(15, height * 0.5);
 
   return (
