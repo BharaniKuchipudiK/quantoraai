@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { findBrokenLinks } from './build-truth.js';
-import { MISSING_FILE_REFUSAL, UNINTERPOLATED_TEMPLATE_REFUSAL, repairFileLinks } from './build-repair.js';
+import { MISSING_FILE_REFUSAL, UNINTERPOLATED_TEMPLATE_REFUSAL, describeRepair, repairFileLinks } from './build-repair.js';
 
 const SHIPPED = ['index.html', 'app.js', 'styles.css'];
 const findingsFor = (html) => findBrokenLinks(html, { files: SHIPPED }).findings;
@@ -49,12 +49,42 @@ test('[was-red] the account names the real defect and where the fix belongs', ()
     /placeholder/i,
     `the account must say this is an uninterpolated placeholder, not a missing asset. Got: ${finding.what}`,
   );
-  assert.match(
-    finding.what,
-    /backtick/i,
-    `the account must name the concrete fix (quotes -> backticks), or the reader is told a problem with no move. Got: ${finding.what}`,
-  );
   assert.equal(finding.data.expression, 'product.image', 'carries the expression structurally, so a retry brief need not regex the English back out');
+});
+
+/*
+ * ASSERT THE SENTENCE THE USER READS, NOT THE HALVES.
+ *
+ * describeRepair renders a refused finding as
+ * `${finding.what} I didn't change it because ${why}.` — so `what` and `why` are
+ * one sentence in the product even though they are two strings in the code.
+ * Checking them separately let a bullet ship that said "not interpolated" three
+ * times and named the fix twice; each half looked fine alone. This is the same
+ * lesson as the preview-proxy regression: assert the composed output the real
+ * pipeline produces.
+ */
+test('[was-red] the composed bullet names the fix once and repeats nothing', () => {
+  const html = '<img src="${p.image}">';
+  const message = describeRepair(repairFileLinks(html, findingsFor(html), SHIPPED));
+  const bullet = message.split('\n').find((line) => line.startsWith('- '));
+  assert.ok(bullet, `no bullet was rendered. Got: ${message}`);
+
+  assert.match(
+    bullet,
+    /backtick/i,
+    `the bullet must name the concrete fix, or the reader is told a problem with no move. Got: ${bullet}`,
+  );
+  assert.equal(
+    (bullet.match(/interpolat/gi) || []).length,
+    1,
+    `the defect must be stated once, not restated by the refusal. Got: ${bullet}`,
+  );
+  assert.equal(
+    (bullet.match(/backtick/gi) || []).length,
+    1,
+    `the fix must be named once. Got: ${bullet}`,
+  );
+  assert.doesNotMatch(bullet, /points at a file/i, 'and never as a missing asset');
 });
 
 test('[was-red] it is refused for the true reason, not the missing-file one', () => {

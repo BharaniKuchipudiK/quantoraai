@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { planCodingTurn } from './coding-turn-planner.js';
+import { findBrokenLinks } from './build-truth.js';
+import { repairBuild } from './build-repair.js';
 import {
   proveCodingTurn,
   evaluateProofEvidence,
@@ -286,4 +288,54 @@ test('every verdict carries a repair field, so no caller has to guard for it', (
   const nonCoding = proveCodingTurn({ plan: { isCodingTurn: false }, vfs: {} });
   assert.deepEqual(nonCoding.repair.fixes, []);
   assert.equal(buildTruthNote(nonCoding), '');
+});
+
+/*
+ * THE DOUBLE REPORT (2026-09-04, boutique storefront).
+ *
+ * buildTruthNote composes two accounts: describeRepair (fixes and refusals) then
+ * describeBuildTruth (findings). Its own comment states the design — "the repair
+ * account carries its own refusals so nothing goes unmentioned" — but
+ * describeBuildTruth was handed EVERY finding, so a refused one was printed
+ * twice, verbatim: once under "things I can't fix for you" and again under
+ * "things on this page don't work yet".
+ *
+ * A user saw two template placeholders listed under both headings and read it as
+ * four problems. A report that repeats itself teaches people to skim it, which is
+ * the one thing an exhaustive account cannot afford.
+ */
+test('[was-red] a refused finding is reported once, not under both headings', () => {
+  const html = '<img src="${p.image}"><a href="#story">Story</a>';
+  const findings = findBrokenLinks(html, { files: ['index.html'] }).findings;
+  const repair = repairBuild(html, findings, { files: ['index.html'] });
+
+  const note = buildTruthNote({ repair, truth: { findings, skipped: [] } });
+
+  assert.match(note, /can't fix for you/, 'guard: the refusal account must still render');
+  assert.doesNotMatch(
+    note,
+    /don't work yet/,
+    `every finding here was refused, so the "remaining" section has nothing left to say. Got:\n${note}`,
+  );
+  for (const finding of findings) {
+    const shown = note.split(finding.what).length - 1;
+    assert.equal(shown, 1, `"${finding.what.slice(0, 60)}…" appears ${shown} times; it must appear once`);
+  }
+});
+
+test('a finding the repair never touched is still reported', () => {
+  /*
+   * Narrowing the second section must not silence it. A finding no pass claims
+   * belongs under "things on this page don't work yet" — dropping it would trade
+   * a duplicate for a disappearance, which is worse.
+   */
+  const findings = [
+    { kind: 'broken-link', data: {}, what: 'Something nothing repaired is wrong.', where: '' },
+  ];
+  const note = buildTruthNote({
+    repair: { html: '', fixes: [], refusals: [] },
+    truth: { findings, skipped: [] },
+  });
+  assert.match(note, /don't work yet|doesn't work yet/);
+  assert.match(note, /Something nothing repaired is wrong\./);
 });
