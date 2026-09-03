@@ -74,4 +74,11 @@ test('[was-red] shared chat path journals Coding attempts and never lets Study o
     stream,
     /if \(isCodingRequest\) \{\s*[\s\S]{0,180}resolveCodingTurnOutcome/,
   );
+
+  const gate = fs.readFileSync(new URL('../../scripts/qir-production-recovery-browser-gate.mjs', import.meta.url), 'utf8');
+  const ci = fs.readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.match(gate, /Make a few flashcards for Newton's laws/);
+  assert.match(gate, /Retry a smaller build/);
+  assert.match(ci, /qir-production-recovery-browser-gate\.mjs/);
+  assert.match(ci, /QIR_PRODUCTION_RECOVERY_OUTCOME/);
 });

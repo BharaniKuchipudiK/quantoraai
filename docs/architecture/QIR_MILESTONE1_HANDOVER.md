@@ -64,9 +64,10 @@ Do these in order. Do not start Phase 4 / 5 / token UI from this branch.
 
 1. **Prove CI green** on the exact PR head. The previous red check was `user stop remains terminal for the turn, but a step deadline auto-replans once`.
 2. **Do not merge `main` blindly.** `main` has moved (Study H3.5, chrome, more QIR files). Rebase only with a human, file-by-file. This PR must stay a cutover, not a Study merge.
-3. **Browser was-red journeys** (still the merge bar, not done here because they need the live harness, not more injected UI):
-   - Boutique refine hits the 175s **step** deadline → automatic smaller-slice retry → user never taps "Retry a smaller build" unless attempts are exhausted.
-   - Study "Make a few flashcards for Newton's laws" + forced route death → no Preview / shop / Coding language. Same Run / lesson state stays Study.
+3. **Browser was-red journeys** live in `scripts/qir-production-recovery-browser-gate.mjs` and are a required CI gate.
+   - Study flashcards + fatal route death → no Preview / shop / Retry-smaller copy, and no QIR Coding attempt.
+   - Coding first-route death → automatic second attempt, QIR journals the attempt, no Retry chip.
+   - The 175s step-deadline *decision* stays in the unit contract. Do not add a production deadline backdoor to wait it out in Playwright.
 4. Close **#485** and **#487** only after those two journeys pass on the exact head.
 5. Later, not this PR: Phase 3.3 proving slice (#475), Tool Fabric (#471), Outcome Engine (#472), token / usage meter, Temporal.
 
