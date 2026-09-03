@@ -75,18 +75,24 @@ export function createQirTurnJournal({
      * reported here as exhaustion seals the Run for the whole browser session
      * (see mission-continuation.js for the measurement).
      *
-     * `engineId` is what makes the evidence usable rather than merely durable.
+     * `engineIds` is what makes the evidence usable rather than merely durable.
      * The field has always existed at the other end of this call — the
      * observation's `ref: model:<id>` — and nothing ever filled it, so the Run
      * recorded that an attempt failed without recording what it failed on.
      * Nothing downstream could then avoid repeating it.
      *
+     * It is a LIST because one browser attempt is up to four server ones: the
+     * inference ladder in api/_lib/chat-handler.ts works down its own rungs
+     * behind a single request, and an engine it burned there is just as spent as
+     * one the browser chose. Recording only the browser's primary told the
+     * mission the others were still untried.
+     *
      * @returns {boolean} whether the failure was actually journaled
      */
-    reportFailure: ({ kind, message, engineId = '', recoveryExhausted = false } = {}) => send('reportModelFailure', [{
+    reportFailure: ({ kind, message, engineIds = [], recoveryExhausted = false } = {}) => send('reportModelFailure', [{
       kind,
       message,
-      ...(engineId ? { modelId: engineId } : {}),
+      ...(engineIds?.length ? { modelIds: [...engineIds] } : {}),
       retryable: !recoveryExhausted,
       recoveryExhausted,
     }]),

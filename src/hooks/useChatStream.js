@@ -37,7 +37,13 @@ import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-de
 import { resolveTurnRecovery } from '../lib/turn-recovery.js';
 import { MIN_VIABLE_ATTEMPT_MS, mayRunAttempt, planTurnEscalation } from '../lib/turn-escalation.js';
 import { orderEnginesForMission, planMissionContinuation, rerouteBurnedEngine } from '../lib/mission-continuation.js';
-import { attemptEngineId, attemptEngineName, repeatsSpentEngine } from '../lib/turn-engine-identity.js';
+import {
+  attemptEngineId,
+  attemptEngineName,
+  engineDisplayName,
+  repeatsSpentEngine,
+  unrecordedServerEngines,
+} from '../lib/turn-engine-identity.js';
 import { describeTurnFailure } from '../lib/turn-failure-sentence.js';
 import {
   assessShopBuildAsk,
@@ -852,12 +858,19 @@ export function useChatStream({
      * reads it as FAILED_TERMINAL, which seals the Run for the rest of the
      * session; a spent turn budget is not that. See mission-continuation.js.
      */
-    const qirFail = (kind, message, done) => qirTurn.reportFailure({
-      kind,
-      message,
-      engineId: attemptEngineId(targetModel),
-      recoveryExhausted: done,
-    });
+    const journaledEngineIds = new Set();
+    const qirFail = (kind, message, done) => {
+      /*
+       * Every engine burned so far that the journal has not been told about —
+       * the browser's current one AND the server rungs absorbed since the last
+       * call. Reporting only what is new keeps each engine's recorded failure
+       * count meaningful instead of re-listing the whole set every time.
+       */
+      const engineIds = [attemptEngineId(targetModel), ...spentEngineIds]
+        .filter((engineId) => engineId && !journaledEngineIds.has(engineId));
+      for (const engineId of engineIds) journaledEngineIds.add(engineId);
+      return qirTurn.reportFailure({ kind, message, engineIds, recoveryExhausted: done });
+    };
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
@@ -1254,8 +1267,23 @@ export function useChatStream({
      * promising what never will.
      */
     const triedEngines = [];
-    const triedEngineIds = new Set();
+    const spentEngineIds = new Set();
     let retryBrief = '';
+    /*
+     * Take the server at its word about what it actually ran.
+     *
+     * The inference ladder burns its own rungs behind one request. Before this,
+     * the desk knew only the engine IT chose, so a build that quietly cost two
+     * engines was reported as one attempt and the mission was told the second
+     * was still fresh.
+     */
+    const absorbServerEngines = (reported) => {
+      for (const engineId of unrecordedServerEngines(reported, spentEngineIds)) {
+        spentEngineIds.add(engineId);
+        const name = engineDisplayName(engineId, availableModels);
+        if (name && triedEngines[triedEngines.length - 1] !== name) triedEngines.push(name);
+      }
+    };
     /*
      * The next engine to escalate to.
      *
@@ -1271,8 +1299,8 @@ export function useChatStream({
     const nextFallbackEngine = () => orderEnginesForMission(
       availableModels,
       qirCoding?.run || null,
-      triedEngineIds,
-    ).find((model) => !repeatsSpentEngine(model, targetModel, triedEngineIds)) || null;
+      spentEngineIds,
+    ).find((model) => !repeatsSpentEngine(model, targetModel, spentEngineIds)) || null;
     /*
      * The turn's escalation ceiling, measured fresh each time it is asked for:
      * how many further attempts the remaining wall clock and the live engine
@@ -1295,7 +1323,7 @@ export function useChatStream({
     const missionSpent = () => planMissionContinuation({
       run: qirCoding?.run || null,
       availableModels: availableModels || [],
-      spentEngineIds: triedEngineIds,
+      spentEngineIds,
     }).missionExhausted;
     const applyRecoveryRepairs = (recovery) => {
       qirFail(
@@ -1338,7 +1366,7 @@ export function useChatStream({
          */
         const runningEngineId = attemptEngineId(targetModel);
         const runningEngineName = attemptEngineName(targetModel);
-        if (runningEngineId) triedEngineIds.add(runningEngineId);
+        if (runningEngineId) spentEngineIds.add(runningEngineId);
         if (runningEngineName && triedEngines[triedEngines.length - 1] !== runningEngineName) {
           triedEngines.push(runningEngineName);
         }
@@ -1407,6 +1435,8 @@ export function useChatStream({
 
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
+            // A turn that died before the stream started still burned rungs.
+            absorbServerEngines(errData?.spentEngineIds);
             const recovery = resolveTurnRecovery({
               attempt,
               maxAttempts: escalation.maxAttempts,
@@ -1463,10 +1493,14 @@ export function useChatStream({
 
               if (parsed.error?.message) {
                 streamedError = parsed.error;
+                absorbServerEngines(parsed.error.spentEngineIds);
                 continue;
               }
               if (parsed.travelDegraded === true) travelDegraded = true;
               if (parsed.status) {
+                // A live failover names the rung it just left. Record it now:
+                // the stream may die before any terminal payload arrives.
+                absorbServerEngines(parsed.status.spentEngineIds);
                 if (!stillCurrent()) return;
                 const nextStatus = sanitizePartnerBuildStatus(parsed.status, {
                   catalogTarget: intakeAccept.catalogTarget || shopIntakeAsk.catalogTarget || 10,
@@ -1625,7 +1659,7 @@ export function useChatStream({
                     ? 'provider handoff failed after a partial reply'
                     : 'no healthy AI route'),
                 shopIntakeAsk,
-                attemptsMade: attempt,
+                attemptsMade: Math.max(attempt, spentEngineIds.size),
                 triedEngines,
                 runId: qirCoding?.run?.runId || '',
                 missionExhausted: missionSpent(),
@@ -1695,7 +1729,7 @@ export function useChatStream({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
                 shopIntakeAsk,
-                attemptsMade: attempt,
+                attemptsMade: Math.max(attempt, spentEngineIds.size),
                 triedEngines,
                 runId: qirCoding?.run?.runId || '',
                 missionExhausted: missionSpent(),
@@ -1815,7 +1849,7 @@ export function useChatStream({
                 const outcome = resolveCodingTurnOutcome({
                   kind: 'no-preview',
                   shopIntakeAsk,
-                  attemptsMade: attempt,
+                  attemptsMade: Math.max(attempt, spentEngineIds.size),
                   triedEngines,
                   runId: qirCoding?.run?.runId || '',
                   missionExhausted: missionSpent(),
@@ -2083,7 +2117,7 @@ export function useChatStream({
               errorMessage: error.message || 'Unable to reach the AI gateway.',
               shopIntakeAsk,
               isShopPhotoTurn,
-              attemptsMade: attempt,
+              attemptsMade: Math.max(attempt, spentEngineIds.size),
               triedEngines,
               runId: qirCoding?.run?.runId || '',
               missionExhausted: missionSpent(),

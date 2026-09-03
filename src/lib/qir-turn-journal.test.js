@@ -132,13 +132,13 @@ test('[was-red] failure evidence names the engine that failed', () => {
   const journal = codingTurn(client);
 
   assert.equal(journal.reportFailure({
-    kind: 'transport', message: 'no healthy AI route', engineId: 'gemini-flash-latest',
+    kind: 'transport', message: 'no healthy AI route', engineIds: ['gemini-flash-latest'],
   }), true);
 
   const [[, payload]] = client.calls;
-  assert.equal(
-    payload.modelId,
-    'gemini-flash-latest',
+  assert.deepEqual(
+    payload.modelIds,
+    ['gemini-flash-latest'],
     'the engine is the one field that makes this evidence actionable rather than merely durable',
   );
 });
@@ -153,7 +153,7 @@ test('an unattributed failure claims no engine rather than guessing at one', () 
   codingTurn(client).reportFailure({ kind: 'timeout', message: '175s step deadline' });
 
   const [[, payload]] = client.calls;
-  assert.equal('modelId' in payload, false, 'no engine known, no engine claimed');
+  assert.equal('modelIds' in payload, false, 'no engine known, no engine claimed');
 });
 
 test('[was-red] the terminal signal is the MISSION’s, and a spent turn is not it', () => {
@@ -167,19 +167,19 @@ test('[was-red] the terminal signal is the MISSION’s, and a spent turn is not 
   const client = spyClient();
   const journal = codingTurn(client);
 
-  journal.reportFailure({ kind: 'transport', message: 'turn budget spent', engineId: 'gemini-flash-latest' });
+  journal.reportFailure({ kind: 'transport', message: 'turn budget spent', engineIds: ['gemini-flash-latest'] });
   journal.reportFailure({
     kind: 'transport', message: 'every engine failed on this mission',
-    engineId: 'anthropic/claude-sonnet', recoveryExhausted: true,
+    engineIds: ['anthropic/claude-sonnet'], recoveryExhausted: true,
   });
 
   assert.deepEqual(client.calls.map(([, payload]) => payload), [
     {
-      kind: 'transport', message: 'turn budget spent', modelId: 'gemini-flash-latest',
+      kind: 'transport', message: 'turn budget spent', modelIds: ['gemini-flash-latest'],
       retryable: true, recoveryExhausted: false,
     },
     {
-      kind: 'transport', message: 'every engine failed on this mission', modelId: 'anthropic/claude-sonnet',
+      kind: 'transport', message: 'every engine failed on this mission', modelIds: ['anthropic/claude-sonnet'],
       retryable: false, recoveryExhausted: true,
     },
   ], 'a default of true here is what bricked the durable Run after one failed turn');

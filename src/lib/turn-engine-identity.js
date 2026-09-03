@@ -80,3 +80,43 @@ export function repeatsSpentEngine(candidate, current, spentEngineIds) {
   if (id === attemptEngineId(current)) return true;
   return Boolean(spentEngineIds?.has?.(id));
 }
+
+/**
+ * Engines the SERVER reports it burned that this turn has not recorded yet.
+ *
+ * api/_lib/chat-handler.ts plans an inference ladder and works down its own
+ * rungs behind a single request, so one browser attempt is up to four real
+ * model attempts. Until now which rungs burned was stated only inside a
+ * human-readable failover label — and prose is invisible to routing, the exact
+ * lesson coding-outcome-spine.js records for its retry chip. The desk therefore
+ * counted one attempt, said so, and told the durable mission the other rungs
+ * were still untried.
+ *
+ * @param {string[]|undefined} spentEngineIds ids reported by the server
+ * @param {Set<string>|null|undefined} recordedEngineIds what this turn already has
+ * @returns {string[]} new ids, in the order the server gave them
+ */
+export function unrecordedServerEngines(spentEngineIds, recordedEngineIds) {
+  const seen = new Set();
+  return (Array.isArray(spentEngineIds) ? spentEngineIds : [])
+    .map((engineId) => String(engineId || '').trim())
+    .filter((engineId) => {
+      if (!engineId || seen.has(engineId) || recordedEngineIds?.has?.(engineId)) return false;
+      seen.add(engineId);
+      return true;
+    });
+}
+
+/**
+ * The name to show for an engine id. Falls back to the id, which is still
+ * something the person can quote, rather than to a placeholder that is not.
+ *
+ * @param {string} engineId
+ * @param {Array<{id?: string, name?: string}>|null|undefined} availableModels
+ */
+export function engineDisplayName(engineId, availableModels) {
+  const id = String(engineId || '').trim();
+  if (!id) return '';
+  const match = (Array.isArray(availableModels) ? availableModels : []).find((model) => model?.id === id);
+  return String(match?.name || '').trim() || id;
+}
