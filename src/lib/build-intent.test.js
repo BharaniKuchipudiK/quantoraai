@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  codingFailureSpineOwnsTurn,
   detectBuildIntent,
   isSpecifiedRunnableTool,
   needsGuidedWebsiteIntake,
@@ -11,9 +12,12 @@ import {
 } from './build-intent.js';
 
 test('Study flashcards are a tutor move, not an iOS app to preview', () => {
-  assert.equal(isSpecifiedRunnableTool("Make 6 flashcards for Newton's laws"), true);
+  const studyAsk = "Make a few flashcards for Newton's laws";
+  assert.equal(isSpecifiedRunnableTool(studyAsk), true);
+  assert.equal(resolveIsCodingRequest(studyAsk, { codingDeskOpen: false }), false,
+    'a learning activity must not enter the legacy Coding failure spine');
   assert.equal(resolveEffectiveBuildMode({
-    message: "Make 6 flashcards for Newton's laws",
+    message: studyAsk,
     studioDomain: 'education',
     studioMode: 'ask',
     studioModeExplicit: true,
@@ -23,6 +27,38 @@ test('Study flashcards are a tutor move, not an iOS app to preview', () => {
     studioDomain: null,
     studioMode: 'ask',
     studioModeExplicit: true,
+  }), true);
+});
+
+test('Study owns its own failure even if the coding classifier misfires', () => {
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'education',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'travel',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'finance',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'research',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: null,
+  }), true);
+});
+
+test('explicit flashcard software still reaches Coding', () => {
+  assert.equal(resolveIsCodingRequest('Build a flashcard app for iOS', {
+    codingDeskOpen: false,
+  }), true);
+  assert.equal(resolveIsCodingRequest('Create a quiz application for my students', {
+    codingDeskOpen: false,
   }), true);
 });
 
