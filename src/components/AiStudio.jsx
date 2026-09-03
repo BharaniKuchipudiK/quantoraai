@@ -58,6 +58,7 @@ import {
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
 import { useQirCodingRun } from '../hooks/useQirCodingRun.js';
+import { describeQirDurability } from '../lib/qir-durability.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
@@ -5199,15 +5200,31 @@ Paused — ${autoPauseRef.current}.`
                   {previewRunLabel}
                 </span>
               ) : null}
-              {qirCoding.run ? (
-                <span
-                  data-quantora-qir-run="true"
-                  title={`Durable Run ${qirCoding.run.runId}`}
-                  style={{ fontSize: '0.66rem', fontWeight: 700, color: subtextColor, whiteSpace: 'nowrap' }}
-                >
-                  Run · {qirCoding.run.status}
-                </span>
-              ) : null}
+              {(() => {
+                /*
+                 * An absent chip used to mean two different things: no build yet,
+                 * or a durable runtime that is switched off and recording nothing.
+                 * describeQirDurability tells them apart, and says nothing when the
+                 * evidence is ambiguous.
+                 */
+                const durability = describeQirDurability(qirCoding);
+                if (!durability) return null;
+                return (
+                  <span
+                    data-quantora-qir-run="true"
+                    data-quantora-qir-recording={durability.recording ? 'true' : 'false'}
+                    title={durability.detail}
+                    style={{
+                      fontSize: '0.66rem',
+                      fontWeight: 700,
+                      color: durability.recording ? subtextColor : '#b45309',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {durability.label}
+                  </span>
+                );
+              })()}
             </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
               {canOfferVercelPublish({
