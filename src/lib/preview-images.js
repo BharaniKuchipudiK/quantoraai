@@ -98,6 +98,59 @@ export function previewImageProxyUrl(href, origin = '') {
   return `${base}${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(String(href))}`;
 }
 
+/**
+ * Make the same-origin image proxy reachable from the OPAQUE-ORIGIN preview.
+ *
+ * preview-utils.js states the constraint already: "Opaque-origin preview has no
+ * HTTP server. Local CSS/JS/images must be inlined." Proxied photos are the one
+ * asset class that cannot be inlined - they are remote bytes fetched on demand -
+ * so they must be reachable by an ABSOLUTE url instead.
+ *
+ * They were not. Two paths write the relative form:
+ *   - proxyRemoteShopImages / proxyRemoteCatalogImages emit `/api/preview-image?u=...`
+ *   - and the model writes it directly, because the platform's own brief tells it
+ *     to (outcome-gap-detection.js: "Put real <img src=...> or /api/preview-image
+ *     photos on every product card"), after which proxyRemoteCatalogImages SKIPS
+ *     it, since the src already contains the proxy path.
+ *
+ * The preview shell is loaded from a blob url and sandboxed WITHOUT
+ * allow-same-origin (the Phase 0.1 security invariant, which does not change).
+ * Its document therefore has an opaque origin and a `blob:` base url, and a
+ * path-absolute reference has nothing to resolve against: the request never
+ * reaches the proxy, and every catalog photo renders as a broken image with its
+ * alt text. That is the boutique screenshot exactly.
+ *
+ * So the relative form is kept in the VFS - it is what the user downloads, and
+ * rewriting their files to embed a Quantora origin would be wrong - and it is
+ * absolutised here, at the last moment, where the preview origin is known.
+ *
+ * The `u` parameter is re-encoded on the way through. A model obeying the brief
+ * writes the inner url unencoded, so an Unsplash link carrying its own
+ * `?w=800&q=80` split into extra query parameters and arrived at the proxy
+ * truncated.
+ */
+export function absolutizePreviewProxyUrls(text, origin = '') {
+  const base = String(origin || '').replace(/\/$/, '');
+  const source = String(text || '');
+  if (!base || !source) return source;
+  /*
+   * The leading guard is what makes this idempotent: an already-absolute
+   * `https://host/api/preview-image?u=` has a url character before the path, so
+   * it is skipped, while a bare `"/api/preview-image?u=` is preceded by a quote,
+   * whitespace, `=` or `(` and is rewritten.
+   */
+  const pattern = new RegExp(
+    `(^|["'\\s(=])${PREVIEW_IMAGE_PROXY_PATH}\\?u=([^"'\\s<>)]+)`,
+    'gi',
+  );
+  return source.replace(pattern, (whole, pre, rest) => {
+    const raw = String(rest).replace(/&amp;/gi, '&');
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch { decoded = raw; }
+    return `${pre}${base}${PREVIEW_IMAGE_PROXY_PATH}?u=${encodeURIComponent(decoded)}`;
+  });
+}
+
 export function rewritePreviewImageUrls(html, origin = '') {
   const base = String(origin || '').replace(/\/$/, '');
   const source = String(html || '');

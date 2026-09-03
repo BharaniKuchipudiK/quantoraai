@@ -5177,22 +5177,6 @@ Paused — ${autoPauseRef.current}.`
               ) : null}
             </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
-              <Suspense fallback={<div aria-hidden="true" style={{ width: deskChromeCompact ? '150px' : '330px', height: '28px' }} />}>
-              <StudioActivityRail
-                activeTab={workspaceActiveTab}
-                onOpenTab={setWorkspaceActiveTab}
-                filesOpen={deskFilesOpen}
-                onToggleFiles={() => setDeskFilesOpen((open) => !open)}
-                changedCount={deskChangedCount}
-                addedLines={deskAddedLines}
-                removedLines={deskRemovedLines}
-                isLight={isLight}
-                textColor={textColor}
-                subtextColor={subtextColor}
-                compact={deskChromeCompact}
-              />
-              </Suspense>
-              <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.12)' }} />
               {canOfferVercelPublish({
                 messages,
                 vfs,
@@ -5297,6 +5281,24 @@ Paused — ${autoPauseRef.current}.`
               </button>
             </div>
           </div>
+
+          <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+          <Suspense fallback={<div aria-hidden="true" style={{ width: '40px', flexShrink: 0, height: '100%', background: isLight ? '#f8fafc' : '#070913', borderRight: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.08)' }} />}>
+          <StudioActivityRail
+            activeTab={workspaceActiveTab}
+            onOpenTab={setWorkspaceActiveTab}
+            filesOpen={deskFilesOpen}
+            onToggleFiles={() => setDeskFilesOpen((open) => !open)}
+            changedCount={deskChangedCount}
+            addedLines={deskAddedLines}
+            removedLines={deskRemovedLines}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            orientation="vertical"
+          />
+          </Suspense>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
 
           <Suspense fallback={<div style={{ minHeight: '36px', flexShrink: 0, background: isLight ? '#f5f5f5' : '#0a0a0a', borderBottom: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.08)' }} />}>
           <StudioTabBar
@@ -5439,6 +5441,8 @@ Paused — ${autoPauseRef.current}.`
                  githubDestination={githubDestination}
                  projectName={activeProject?.name || ''}
                  githubBaseBranch={importedGithubBaseBranch}
+                 review={deskReview}
+                 onSelectFile={setWorkspaceActiveTab}
                  isLight={isLight}
                  textColor={textColor}
                />
@@ -5454,6 +5458,8 @@ Paused — ${autoPauseRef.current}.`
                </Suspense>
              )}
             </div>
+          </div>
+          </div>
           </div>
         </div>
       )}

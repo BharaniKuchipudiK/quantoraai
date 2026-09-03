@@ -17,7 +17,7 @@ import {
 import { describeRefinementStop, planRefinementRound } from '../../shared/refinement-loop.js';
 import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js';
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
-import { rewritePreviewImageUrls } from '../lib/preview-images.js';
+import { absolutizePreviewProxyUrls, rewritePreviewImageUrls } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { byokRequestHeaders } from '../lib/client-secrets.js';
@@ -293,7 +293,16 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     if (!frame?.contentWindow || !html) return;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const files = vfsRef.current;
-    let preparedHtml = rewritePreviewImageUrls(prepareCodeForPreview(html, files), origin);
+    /*
+     * Absolutise LAST. rewritePreviewImageUrls turns the model's remote urls into
+     * proxy urls; this then makes every proxy url - those, plus the relative ones
+     * the model wrote because our own brief told it to - reachable from the
+     * opaque-origin sandbox, which has no base to resolve a path against.
+     */
+    let preparedHtml = absolutizePreviewProxyUrls(
+      rewritePreviewImageUrls(prepareCodeForPreview(html, files), origin),
+      origin,
+    );
     if (looksLikeShopDesk({ html: preparedHtml, vfs: files, job: jobCardRef.current }) || /add[\s-]?to[\s-]?(?:bag|cart)/i.test(preparedHtml)) {
       preparedHtml = injectShopCommerceUi(preparedHtml).html;
     }

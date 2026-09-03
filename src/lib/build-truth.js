@@ -225,6 +225,44 @@ export function findDeadControls(html, { scripts = null } = {}) {
  * has not contacted is exactly the kind of confident wrongness it exists to
  * stop.
  */
+/**
+ * A reference that is not a reference at all: a template placeholder that was
+ * never filled in.
+ *
+ * THE INCIDENT (boutique storefront). The model shipped `<img src="${item.image}">`
+ * - a template literal written inside quotes instead of backticks, so the browser
+ * received the seven literal characters `${item` and so on. Every product card
+ * rendered broken.
+ *
+ * The scanners below then read that raw attribute, found no shipped file of that
+ * name, and reported: `"${item.image}" points at a file that wasn't built.`
+ * repairFileLinks refused it with MISSING_FILE_REFUSAL - "it points at a file,
+ * and creating a page nobody asked for is not a repair" - and the desk told the
+ * user it could not fix it.
+ *
+ * Every word of that was wrong. There is no file. Creating a page would not help.
+ * The defect is in the code that BUILT the markup, and a person reading the
+ * refusal is sent to look for a missing asset that never existed.
+ *
+ * A literal `${` inside a src or href of a BUILT artifact is unambiguous - there
+ * is no correct build in which the browser should receive it - so it is its own
+ * class, with its own true sentence. Kept precise per CLAUDE.md §5: only `${`,
+ * not `{{ }}`, which a page shipping a client-side template engine may legitimately
+ * serve.
+ */
+function uninterpolatedTemplate(target, where) {
+  if (!/\$\{/.test(target)) return null;
+  const expression = (target.match(/\$\{([^}]*)\}/) || [, ''])[1].trim();
+  return {
+    kind: 'uninterpolated-template',
+    data: { target, expression },
+    what: `"${target}" is a template placeholder that never got filled in`
+      + `${expression ? ` - \`${expression}\` was not interpolated` : ''}`
+      + ', so the browser receives it as literal text. The quotes around it need to be backticks.',
+    where,
+  };
+}
+
 export function findBrokenLinks(html, { files = [] } = {}) {
   const source = String(html || '');
   const ids = new Set([...source.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]));
@@ -263,6 +301,9 @@ export function findBrokenLinks(html, { files = [] } = {}) {
       }
       continue;
     }
+    const placeholder = uninterpolatedTemplate(target, match[0].slice(0, 120));
+    if (placeholder) { findings.push(placeholder); continue; }
+
     // A same-build file reference, but only judged when we know what shipped.
     if (known.size) {
       const path = target.split(/[?#]/)[0].replace(/^\.?\//, '');
@@ -303,6 +344,9 @@ export function findBrokenLinks(html, { files = [] } = {}) {
       if (/^(?:https?:|mailto:|tel:|data:|blob:|\/\/)/i.test(target)) continue;
       // Absolute paths are routes, not build outputs. See above.
       if (target.startsWith('/')) continue;
+
+      const placeholder = uninterpolatedTemplate(target, match[0].slice(0, 120));
+      if (placeholder) { findings.push(placeholder); continue; }
 
       const path = target.split(/[?#]/)[0].replace(/^\.\//, '');
       if (!path || known.has(path)) continue;

@@ -52,6 +52,26 @@ function escapeForRegExp(value) {
  */
 export const MISSING_FILE_REFUSAL = 'it points at a file, and creating a page nobody asked for is not a repair';
 
+/**
+ * A template placeholder is refused for a DIFFERENT reason than a missing file,
+ * and saying so is the whole point.
+ *
+ * `<img src="${item.image}">` used to be classified as a broken file link and
+ * refused with MISSING_FILE_REFUSAL, which sent the reader hunting for an asset
+ * that never existed. There is no file here. The defect is in the code that
+ * built the markup - quotes where backticks belong - and the built HTML is its
+ * symptom, not its location.
+ *
+ * It stays REFUSED rather than repaired, deliberately. Rewriting it would mean
+ * inferring the source expression from the output and guessing at the enclosing
+ * string's delimiters - exactly the guess this module refuses everywhere else
+ * ("style.css" against "styles.css" is the same shape of temptation). What
+ * changes is that the account is now true, and specific enough that the retry
+ * brief can name the real defect to the model, which is where the actual repair
+ * happens.
+ */
+export const UNINTERPOLATED_TEMPLATE_REFUSAL = 'the placeholder was never interpolated, so the fix belongs in the code that builds this markup, not in the markup';
+
 function slug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -170,6 +190,15 @@ export function repairFileLinks(html, findings, files = []) {
   let out = source;
 
   for (const finding of findings) {
+    /*
+     * Reported here rather than skipped. A finding that no stage claims is a
+     * finding the user never sees, which would trade a wrong explanation for no
+     * explanation - the quieter half of the same defect.
+     */
+    if (finding.kind === 'uninterpolated-template') {
+      refusals.push({ finding, why: UNINTERPOLATED_TEMPLATE_REFUSAL });
+      continue;
+    }
     if (finding.kind !== 'broken-link') continue;
     const { file, target } = finding.data || {};
     if (!file || !target) continue;
