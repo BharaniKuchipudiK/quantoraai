@@ -1,8 +1,9 @@
+import type { StudyLearnerModel } from './study-learner-model.js';
 import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.8';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.9';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -101,7 +102,13 @@ function capabilitiesFor(intent: StudyIntent, hasImages: boolean): StudyCapabili
 }
 
 /** Strict feature gate: null means exact pass-through outside Study Tutor. */
-export function interpretStudyTurn(input: { studioDomain?: string | null; message?: string; history?: HistoryItem[]; hasImages?: boolean }): StudyCognitiveInterpretation | null {
+export function interpretStudyTurn(input: {
+  studioDomain?: string | null;
+  message?: string;
+  history?: HistoryItem[];
+  hasImages?: boolean;
+  learnerModel?: StudyLearnerModel | null;
+}): StudyCognitiveInterpretation | null {
   if (input.studioDomain !== 'education') return null;
   const message = String(input.message || '').trim();
   const history = Array.isArray(input.history) ? input.history : [];
@@ -117,7 +124,13 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
         : intent === 'plan' ? 'sequenced' : 'direct';
   const contextText = representationContextFor(message, history);
   const intervention = evaluateStudyLearningIntervention({ message, history });
-  const representation = planStudyTeachingRepresentation({ message, contextText, history, intervention });
+  const representation = planStudyTeachingRepresentation({
+    message,
+    contextText,
+    history,
+    intervention,
+    learnerModel: input.learnerModel,
+  });
   const lessonLoop = planStudyAdaptiveLessonLoop({ intent, representation, intervention });
   return {
     version: STUDY_COGNITIVE_ROUTING_VERSION,
