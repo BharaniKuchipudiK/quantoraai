@@ -495,7 +495,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * the session rather than shared by all of them, so the spinner stops
    * following the user into a chat where nothing is happening.
    */
-  const [workingSessions, setWorkingSessions] = useState(() => new Set());
+  const [workingSessions, setWorkingSessions] = useState(() => new Map());
   const isGenerating = isSessionWorking(workingSessions, activeSessionId);
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
