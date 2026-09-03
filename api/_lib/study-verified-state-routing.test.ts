@@ -45,33 +45,34 @@ function learnerModel(nextLearningMove: StudyNextLearningMove): StudyLearnerMode
   };
 }
 
+const electricityPrompt = 'EMF versus terminal potential difference in a battery circuit with internal resistance.';
 const electricityHistory = [
-  { role: 'user', text: 'Explain EMF versus terminal potential difference in a battery circuit with internal resistance.' },
+  { role: 'user', text: `Explain ${electricityPrompt}` },
   { role: 'assistant', text: 'EMF is the energy supplied per coulomb by the source.' },
 ];
 
 test('production Study cognitive route changes representation for the same concept from verified learner state', () => {
   const retrieval = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'Next',
+    message: electricityPrompt,
     history: electricityHistory,
     learnerModel: learnerModel('independent_retrieval'),
   });
   const repair = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'Next',
+    message: electricityPrompt,
     history: electricityHistory,
     learnerModel: learnerModel('guided_repair'),
   });
   const retention = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'Next',
+    message: electricityPrompt,
     history: electricityHistory,
     learnerModel: learnerModel('retention_probe'),
   });
   const transfer = interpretStudyTurn({
     studioDomain: 'education',
-    message: 'Next',
+    message: electricityPrompt,
     history: electricityHistory,
     learnerModel: learnerModel('transfer_task'),
   });
