@@ -41,6 +41,7 @@ import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
+import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/session-desks.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
@@ -576,13 +577,53 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [deskCheckpoints, setDeskCheckpoints] = useState([]);
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
-  const commitDeskVfs = useCallback((nextVfs) => {
+
+  /*
+   * Every chat's live desk, keyed by session.
+   *
+   * `vfs` above stays the desk ON SCREEN, so the hundred-odd readers of it are
+   * untouched. This ref is the store behind that: a build running in a chat you
+   * are not looking at writes here, and the visible state only moves when the
+   * write belongs to the visible chat.
+   *
+   * A ref rather than state because a background write must not re-render the
+   * whole studio — the sidebar dot is the only thing that should move.
+   */
+  const desksRef = useRef(new Map());
+
+  /**
+   * Accept a desk write for the session that OWNS it.
+   *
+   * `owningSessionId` is required, and resolveWriteTarget refuses a write
+   * without one. That refusal is the point: the regression guard below compares
+   * against a baseline, and judging a background build's files against the desk
+   * currently on screen produces a nonsense verdict — either a spurious
+   * rejection that silently drops real work, or an accepted write that
+   * overwrites the wrong project. Neither raises an error.
+   */
+  const commitDeskVfs = useCallback((nextVfs, owningSessionId = null) => {
     if (!nextVfs || typeof nextVfs !== 'object') return false;
-    const before = vfsRef.current || {};
+    const owner = owningSessionId || activeSessionIdRef.current;
+    const target = resolveWriteTarget({
+      desks: desksRef.current,
+      owningSessionId: owner,
+      activeSessionId: activeSessionIdRef.current,
+    });
+    if (!target.ok) return false;
+
+    // The baseline is THAT session's desk. For the visible chat this is the
+    // same object the panes are rendering; for a background build it is its
+    // own, which is the whole reason this store exists.
+    const before = target.isVisible ? (vfsRef.current || {}) : (target.desk.vfs || {});
+
     // Never let a broken/truncated turn overwrite a working preview. A failed
     // edit must leave the last working page intact, not destroy it. Returns
     // whether the commit was accepted so callers can gate their follow-up state.
     if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
+
+    desksRef.current = updateDesk(desksRef.current, target.sessionId, { vfs: nextVfs });
+    if (!target.isVisible) return true;
+
     setDeskReview((prev) => mergeDeskReview(prev, before, nextVfs));
     setDeskCheckpoints((prev) => recordDeskCheckpoint(prev, nextVfs, { label: 'Build update' }));
     vfsRef.current = nextVfs;
@@ -1031,6 +1072,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       return;
     }
     const session = chatSessions.find((item) => item.id === activeSessionId);
+
+    /*
+     * A live desk beats a saved snapshot.
+     *
+     * If a build ran in this chat while you were reading another one, its files
+     * are in the store and the persisted snapshot is older. Restoring the
+     * snapshot here would silently discard a finished build — the user comes
+     * back to the chat whose dot was pulsing and finds the work gone, with no
+     * error to explain it.
+     */
+    const liveDesk = deskFor(desksRef.current, activeSessionId);
+    if (Object.keys(liveDesk.vfs || {}).length > 0) {
+      vfsRef.current = liveDesk.vfs;
+      setVfs(liveDesk.vfs);
+      setWorkspaceCode(liveDesk.workspaceCode || pickPreviewEntry(liveDesk.vfs) || '');
+      setDeskCheckpoints(recordDeskCheckpoint([], liveDesk.vfs, { label: 'Session opened', origin: 'baseline' }));
+      setDeskReview(liveDesk.review || []);
+      setDeskJob(liveDesk.job || null);
+      setCodingDeskOpen(true);
+      return;
+    }
+
     const restored = restoreStudioDeskSnapshot(session);
     if (!restored) {
       setVfs({});
@@ -1588,20 +1651,32 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * message over an unchanged desk is the exact class of claim this codebase
    * keeps having to delete.
    */
-  const onDeskRename = useCallback((nextVfs) => {
+  /*
+   * Both of these now receive the session that OWNED the turn, because the hook
+   * knows it and this component does not: by the time a background build's
+   * files arrive, `activeSessionId` is whatever chat the user wandered to.
+   *
+   * The panes are only moved when the write is for the visible chat. A build
+   * finishing elsewhere updates its own desk and the sidebar dot, and nothing
+   * jumps under the reader's hands — which is the difference between
+   * concurrency and chaos.
+   */
+  const onDeskRename = useCallback((nextVfs, owningSessionId = null) => {
     if (!nextVfs || !Object.keys(nextVfs).length) return false;
-    if (!commitDeskVfs(nextVfs)) return false;
+    if (!commitDeskVfs(nextVfs, owningSessionId)) return false;
+    if (owningSessionId && owningSessionId !== activeSessionIdRef.current) return true;
     const entry = pickPreviewEntry(nextVfs);
     if (entry) setWorkspaceCode(entry);
     setWorkspaceActiveTab('preview');
     return true;
   }, [commitDeskVfs]);
 
-  const onCodingTurnProved = useCallback((verdict) => {
+  const onCodingTurnProved = useCallback((verdict, _plan = null, owningSessionId = null) => {
     if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
     // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
     // open) — only when the commit was actually accepted.
-    if (!commitDeskVfs(verdict.vfs)) return;
+    if (!commitDeskVfs(verdict.vfs, owningSessionId)) return;
+    if (owningSessionId && owningSessionId !== activeSessionIdRef.current) return;
     const entry = pickPreviewEntry(verdict.vfs);
     if (entry) {
       setWorkspaceCode(entry);
@@ -3278,7 +3353,13 @@ Paused — ${autoPauseRef.current}.`
             </select>
           ) : null}
           <button
-            onClick={(e) => handleDeleteChat(e, session.id)}
+            onClick={(e) => {
+              // Drop this chat's desk with the chat. Leaving it behind is a
+              // leak that grows with every deleted build, and the desk of a
+              // session that no longer exists can never be shown again.
+              desksRef.current = forgetDesk(desksRef.current, session.id);
+              handleDeleteChat(e, session.id);
+            }}
             title="Delete chat"
             style={{
               background: 'transparent',
