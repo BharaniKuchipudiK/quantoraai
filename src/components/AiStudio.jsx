@@ -1161,6 +1161,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   };
 
   const fileInputRef = useRef(null);
+  const qirCodingApiRef = useRef(null);
   const previewCanvasRef = useRef(null);
   const inBarModelRef = useRef(null);
   const textareaRef = useRef(null);
@@ -1496,6 +1497,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     updateActiveSession,
     onCodingTurnExecute,
     onCodingTurnProved,
+    onCodingModelAttempt: (goal, strategy) => {
+      void qirCodingApiRef.current?.beginModelAttempt?.(goal, strategy);
+    },
+    onCodingModelFailure: (failure) => {
+      void qirCodingApiRef.current?.reportModelFailure?.(failure);
+    },
     onDeskRename,
     buildJob,
   });
@@ -1791,6 +1798,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     vfs,
     job: deskJob,
   });
+  qirCodingApiRef.current = qirCoding;
   const shellVfs = useMemo(() => deskShellVfs(vfs, previewRunCode), [vfs, previewRunCode]);
   const deskPacket = useMemo(() => mergeLiveDeskProbe(buildDeskContextPacket({
     vfs,

@@ -21,7 +21,7 @@ import {
   setPclSessionMemoryConsent,
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
-import { advisorBlocksPreviewBuild, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { advisorBlocksPreviewBuild, codingFailureSpineOwnsTurn, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
@@ -268,6 +268,8 @@ export function useChatStream({
   updateActiveSession,
   onCodingTurnExecute = null,
   onCodingTurnProved = null,
+  onCodingModelAttempt = null,
+  onCodingModelFailure = null,
   onDeskRename = null,
   buildJob = null,
 }) {
@@ -789,6 +791,24 @@ export function useChatStream({
       isCodingRequest,
       hasCodingWorkspace,
     }) || studioDomain;
+    /*
+     * Failure-spine ownership is a second gate, not a synonym for
+     * isCodingRequest. Advisor rooms keep their own recovery copy even if a
+     * noun matched a tool. QIR attempt journals use the same gate so Study
+     * never starts a Coding Run.
+     */
+    const codingSpineOwns = codingFailureSpineOwnsTurn({
+      isCodingRequest,
+      studioDomain: turnDomain,
+    });
+    const notifyCodingAttempt = (strategy) => {
+      if (!codingSpineOwns || typeof onCodingModelAttempt !== 'function') return;
+      try { void onCodingModelAttempt(visibleUserText || text, strategy); } catch { /* journal must not block the turn */ }
+    };
+    const notifyCodingFailure = (failure) => {
+      if (!codingSpineOwns || typeof onCodingModelFailure !== 'function') return;
+      try { void onCodingModelFailure(failure); } catch { /* journal must not block the turn */ }
+    };
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
@@ -1189,6 +1209,15 @@ export function useChatStream({
       && !triedEngineIds.has(model.id)
     )) || null;
     const applyRecoveryRepairs = (recovery) => {
+      notifyCodingFailure({
+        kind: recovery.reason === 'step-deadline' ? 'timeout'
+          : recovery.reason === 'build-contract' ? 'contract'
+          : 'transport',
+        message: recovery.notice || recovery.reason || '',
+        retryable: true,
+        recoveryExhausted: false,
+        modelId: targetModel?.resolvedModelId || targetModel?.id || '',
+      });
       if (recovery.retryBrief) retryBrief = recovery.retryBrief;
       if (recovery.switchModel) {
         const fallback = nextFallbackEngine();
@@ -1208,6 +1237,7 @@ export function useChatStream({
     try {
       for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
         if (!stillCurrent()) return;
+        notifyCodingAttempt(targetModel?.resolvedModelId || targetModel?.id || '');
         // Record the engine this attempt actually runs on, for honest terminal copy.
         if (targetModel?.id) triedEngineIds.add(targetModel.id);
         if (targetModel?.name && triedEngines[triedEngines.length - 1] !== targetModel.name) {
@@ -1422,7 +1452,7 @@ export function useChatStream({
             // failure paths below instead. The flag is still read by those paths
             // to word the real error.
             const artifactFailed = streamedError.code === 'BUILD_ARTIFACT_CONTRACT';
-            if (isCodingRequest) {
+            if (codingSpineOwns) {
               // Model route died mid-stream — still prove skills-seeded desk.
               if (turnPlan?.isCodingTurn) {
                 const deskProof = proveCodingTurn({
@@ -1480,6 +1510,13 @@ export function useChatStream({
                   return;
                 }
               }
+              notifyCodingFailure({
+                kind: 'transport',
+                message: streamedError?.message || 'no healthy AI route',
+                retryable: false,
+                recoveryExhausted: true,
+                modelId: targetModel?.resolvedModelId || targetModel?.id || '',
+              });
               const providerOutcome = resolveCodingTurnOutcome({
                 kind: 'provider-dead',
                 errorMessage: artifactFailed
@@ -1550,7 +1587,14 @@ export function useChatStream({
             return;
           }
           if (!receivedDone) {
-            if (isCodingRequest) {
+            if (codingSpineOwns) {
+              notifyCodingFailure({
+                kind: 'transport',
+                message: 'the response stream ended unexpectedly',
+                retryable: false,
+                recoveryExhausted: true,
+                modelId: targetModel?.resolvedModelId || targetModel?.id || '',
+              });
               const streamOutcome = resolveCodingTurnOutcome({
                 kind: 'stream-ended',
                 errorMessage: 'the response stream ended unexpectedly',
@@ -1592,8 +1636,7 @@ export function useChatStream({
           // question (see guidedIntakeTurn above), and demanding files from it is
           // the contradiction that burned the 2026-09-01 boutique build.
           if (
-            isCodingRequest
-            && !advisorBlocksPreviewBuild(turnDomain)
+            codingSpineOwns
             && !guidedIntakeTurn
             && !assembleStudioPreview(currentText).code
           ) {
@@ -1657,6 +1700,13 @@ export function useChatStream({
             }
             // No authored scaffold here either: a build that produced no files is
             // reported as the failure it is, via resolveCodingTurnOutcome below.
+            notifyCodingFailure({
+              kind: 'contract',
+              message: 'the reply was a chat plan with no runnable files',
+              retryable: false,
+              recoveryExhausted: true,
+              modelId: targetModel?.resolvedModelId || targetModel?.id || '',
+            });
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
@@ -1866,7 +1916,7 @@ export function useChatStream({
             announceRecovery(recovery.notice);
             continue;
           }
-          if (isCodingRequest) {
+          if (codingSpineOwns) {
             const isShopPhotoTurn = Boolean(
               shopIntakeAsk.oversize
               || (messageLooksLikeShopBuild(visibleUserText) && /\b(?:image|photo|catalog)\b/i.test(visibleUserText)),
@@ -1916,6 +1966,15 @@ export function useChatStream({
                 } : m));
                 return;
               }
+            }
+            if (!stopped) {
+              notifyCodingFailure({
+                kind: timedOut ? 'timeout' : 'transport',
+                message: error.message || (timedOut ? 'step deadline' : 'Unable to reach the AI gateway.'),
+                retryable: false,
+                recoveryExhausted: true,
+                modelId: targetModel?.resolvedModelId || targetModel?.id || '',
+              });
             }
             const outcome = resolveCodingTurnOutcome({
               kind: stopped ? 'stopped' : timedOut ? 'timeout' : 'provider-dead',

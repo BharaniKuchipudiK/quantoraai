@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  codingFailureSpineOwnsTurn,
   detectBuildIntent,
   isSpecifiedRunnableTool,
   needsGuidedWebsiteIntake,
@@ -26,6 +27,29 @@ test('Study flashcards are a tutor move, not an iOS app to preview', () => {
     studioDomain: null,
     studioMode: 'ask',
     studioModeExplicit: true,
+  }), true);
+});
+
+test('Study owns its own failure even if the coding classifier misfires', () => {
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'education',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'travel',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'finance',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'research',
+  }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: null,
   }), true);
 });
 

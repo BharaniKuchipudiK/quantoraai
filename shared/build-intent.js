@@ -105,6 +105,21 @@ export function advisorBlocksPreviewBuild(studioDomain) {
 }
 
 /**
+ * Who may speak Coding Preview recovery, or journal a QIR model attempt.
+ *
+ * `isCodingRequest` is necessary but not sufficient. Study "make flashcards"
+ * once classified as a runnable tool, then provider death rendered
+ * "the model died before Preview was ready" inside Study Tutor. The advisor
+ * room owns that failure even if the classifier misfires.
+ */
+export function codingFailureSpineOwnsTurn({
+  isCodingRequest = false,
+  studioDomain = null,
+} = {}) {
+  return Boolean(isCodingRequest) && !advisorBlocksPreviewBuild(studioDomain);
+}
+
+/**
  * Whether this turn must emit a runnable web artifact.
  * Study "make flashcards" is a tutor move, not a quiz app to preview.
  */

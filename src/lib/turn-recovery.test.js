@@ -59,7 +59,7 @@ test('user stop remains terminal for the turn, but a step deadline auto-replans 
   assert.equal(timedOut.retry, true);
   assert.equal(timedOut.switchModel, true);
   assert.equal(timedOut.reason, 'step-deadline');
-  assert.match(timedOut.retryBrief, /smaller independently useful runnable slice/i);
+  assert.match(timedOut.retryBrief, /smallest independently useful runnable slice/i);
   assert.match(timedOut.notice, /Gemini Flash/);
 });
 

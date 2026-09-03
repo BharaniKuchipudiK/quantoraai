@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-import { resolveIsCodingRequest } from './build-intent.js';
+import { codingFailureSpineOwnsTurn, resolveIsCodingRequest } from './build-intent.js';
 import { resolveTurnRecovery } from './turn-recovery.js';
 
 /*
@@ -17,6 +17,10 @@ test('[was-red] Study learning activity never enters Coding recovery ownership',
   assert.equal(resolveIsCodingRequest("Make a few flashcards for Newton's laws", {
     codingDeskOpen: false,
   }), false);
+  assert.equal(codingFailureSpineOwnsTurn({
+    isCodingRequest: true,
+    studioDomain: 'education',
+  }), false, 'classifier misfire must still not give Study the Preview spine');
 });
 
 test('[was-red] a Coding step deadline selects a materially different automatic recovery', () => {
@@ -45,4 +49,29 @@ test('QIR exposes pre-artifact model attempt and durable model failure seams', (
   assert.match(api, /preArtifactExecution/);
   assert.match(hook, /beginModelAttempt/);
   assert.match(hook, /reportModelFailure/);
+});
+
+test('[was-red] shared chat path journals Coding attempts and never lets Study own Preview recovery', () => {
+  const stream = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  const intent = fs.readFileSync(new URL('../../shared/build-intent.js', import.meta.url), 'utf8');
+
+  assert.match(intent, /codingFailureSpineOwnsTurn/);
+  assert.match(stream, /codingFailureSpineOwnsTurn/);
+  assert.match(stream, /notifyCodingAttempt/);
+  assert.match(stream, /notifyCodingFailure/);
+  assert.match(stream, /onCodingModelAttempt/);
+  assert.match(stream, /onCodingModelFailure/);
+  assert.match(studio, /onCodingModelAttempt/);
+  assert.match(studio, /beginModelAttempt/);
+  assert.match(studio, /reportModelFailure/);
+  /*
+   * The leak was a bare `if (isCodingRequest)` around resolveCodingTurnOutcome.
+   * Advisor rooms must pass the second ownership gate before that copy can render.
+   */
+  assert.match(stream, /if \(codingSpineOwns\) \{/);
+  assert.doesNotMatch(
+    stream,
+    /if \(isCodingRequest\) \{\s*[\s\S]{0,180}resolveCodingTurnOutcome/,
+  );
 });
