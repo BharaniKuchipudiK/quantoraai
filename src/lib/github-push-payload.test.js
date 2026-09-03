@@ -8,7 +8,12 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deskFilesForPush, pushOutcomeMessage, suggestRepositoryName } from './github-workspace.js';
+import {
+  checkoutFilesToVfs,
+  deskFilesForPush,
+  pushOutcomeMessage,
+  suggestRepositoryName,
+} from './github-workspace.js';
 
 test('generated and vendored directories are left behind', () => {
   const files = deskFilesForPush([
@@ -69,4 +74,51 @@ test('the outcome message distinguishes creating a branch from adding to one', (
   assert.match(pushOutcomeMessage({ fileCount: 3, branch: 'main', createdBranch: false }), /Pushed 3 files to "main"/);
   // One file is not "1 files".
   assert.match(pushOutcomeMessage({ fileCount: 1, branch: 'main', createdBranch: false }), /1 file to/);
+});
+
+/* ------------------------------------------------------------------ *
+ * Files coming back in
+ * ------------------------------------------------------------------ */
+
+/**
+ * The desk stores each file as `{ content, language }`, not as a bare string.
+ *
+ * The first version of checkoutFilesToVfs wrote strings. Nothing threw: every
+ * consumer read an entry with no `content`, so a checkout loaded and the desk
+ * reported "the shell is empty while Preview has files" with no error anywhere
+ * pointing at the cause. A shape mismatch across a boundary fails silently,
+ * which is exactly why it gets a test rather than a careful reading.
+ */
+test('a checkout becomes desk entries, not bare strings', () => {
+  const vfs = checkoutFilesToVfs([
+    { path: 'index.html', content: '<h1>hi</h1>' },
+    { path: 'src/app.tsx', content: 'export const a = 1;' },
+  ]);
+
+  assert.equal(typeof vfs['index.html'], 'object', 'a string here loads a desk that reads as empty');
+  assert.equal(vfs['index.html'].content, '<h1>hi</h1>');
+  assert.equal(vfs['index.html'].language, 'html');
+  assert.equal(vfs['src/app.tsx'].language, 'tsx');
+});
+
+test('an unknown extension still loads, as plain text', () => {
+  const vfs = checkoutFilesToVfs([{ path: 'LICENSE', content: 'MIT' }]);
+  assert.equal(vfs.LICENSE.content, 'MIT');
+  assert.equal(vfs.LICENSE.language, 'plaintext', 'an unrecognised file is still a file');
+});
+
+test('malformed entries are skipped rather than loaded as undefined', () => {
+  const vfs = checkoutFilesToVfs([
+    { path: 'good.js', content: 'ok' },
+    { path: 'no-content.js' },
+    { content: 'no path' },
+    null,
+  ]);
+  assert.deepEqual(Object.keys(vfs), ['good.js']);
+});
+
+test('an empty checkout produces an empty map the caller must check', () => {
+  // Callers treat this as a failure to read, never as "replace the desk with
+  // nothing" — the files on the desk may be the only copy that exists.
+  assert.deepEqual(checkoutFilesToVfs([]), {});
 });

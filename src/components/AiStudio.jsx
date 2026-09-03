@@ -107,6 +107,7 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
+import { seedDeskRepoFromCheckout } from '../lib/studio-git.js';
 import {
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
@@ -638,13 +639,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         return;
       }
       setVfs(nextVfs);
+      // Seed desk git from the commit we opened, so status immediately after
+      // reports a clean tree rather than calling the whole project untracked.
+      seedDeskRepoFromCheckout(activeSessionId || '', data.files, {
+        commitSha: data.commitSha,
+        branch: data.branch,
+        repository: `${data.owner}/${data.repo}`,
+      });
       setIsWorkspaceMode(true);
       setWorkspaceActiveTab('preview');
       setGithubCheckout({ status: 'ready', message: checkoutOutcomeMessage(data), commitSha: data.commitSha });
     } catch (error) {
       setGithubCheckout({ status: 'error', message: error?.message || 'Could not open that repository.' });
     }
-  }, [vfs]);
+  }, [vfs, activeSessionId]);
   /*
    * The tab strip.
    *

@@ -221,17 +221,38 @@ export function githubDestinationBlocker(destination) {
 /**
  * A checkout, as the desk's file map.
  *
- * The desk keeps files as a flat path→content object, so this is the whole
- * conversion. It is a named function rather than an inline reduce because the
- * empty case matters: replacing the desk with {} would silently wipe whatever
- * the user had, and that is a data-loss bug wearing the clothes of a no-op.
+ * The desk stores each file as `{ content, language }`, NOT as a bare string.
+ * A first version of this wrote strings, which every part of the desk then read
+ * as an entry with no content — so a checkout loaded and the pane reported "the
+ * shell is empty while Preview has files", with no error anywhere. The shape is
+ * the whole job of this function, which is why it is named and tested.
+ *
+ * The empty case matters too: replacing the desk with {} would silently wipe
+ * whatever the user had, which is a data-loss bug wearing the clothes of a
+ * no-op. Callers check the result before setting state.
  */
+const LANGUAGE_BY_EXTENSION = {
+  js: 'jsx', jsx: 'jsx', mjs: 'jsx', cjs: 'jsx',
+  ts: 'tsx', tsx: 'tsx',
+  html: 'html', htm: 'html',
+  css: 'css', scss: 'css', sass: 'css', less: 'css',
+  json: 'json', md: 'markdown', mdx: 'markdown',
+  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java',
+  sh: 'shell', bash: 'shell', yml: 'yaml', yaml: 'yaml', sql: 'sql',
+};
+
+export function languageForPath(path = '') {
+  const extension = String(path).split('.').pop()?.toLowerCase() || '';
+  return LANGUAGE_BY_EXTENSION[extension] || 'plaintext';
+}
+
 export function checkoutFilesToVfs(files = []) {
   const vfs = {};
   for (const file of files) {
     if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') continue;
     const path = file.path.replace(/^\/+/, '');
-    if (path) vfs[path] = file.content;
+    if (!path) continue;
+    vfs[path] = { content: file.content, language: languageForPath(path) };
   }
   return vfs;
 }
