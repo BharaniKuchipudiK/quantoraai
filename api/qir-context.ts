@@ -22,7 +22,7 @@ export default async function handler(req: any, res: any) {
 
   const auth = await requireActiveSession(req, res);
   if (!auth.ok) return;
-  if (!isQirRunStoreConfigured()) return res.status(503).json({ error: "Durable QIR runtime storage is not configured." });
+  if (!isQirRunStoreConfigured()) return res.status(503).json({ error: "Durable QIR runtime storage is not configured.", reason: "storage-unconfigured" });
 
   const userSub = auth.value.sessionUser.sub;
   const runId = safeRunId(req.method === "GET" ? req.query?.runId : req.body?.runId);
@@ -71,7 +71,7 @@ export default async function handler(req: any, res: any) {
 
   if (result.status === "conflict") return res.status(409).json({ error: "Run changed; reload the durable Run and compact again.", conflict: true });
   if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
-  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist compacted working context." });
+  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist compacted working context.", reason: "persist-failed" });
 
   return res.status(200).json({
     runId,
