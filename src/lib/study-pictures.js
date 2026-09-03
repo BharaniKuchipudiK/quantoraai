@@ -16,6 +16,8 @@ export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
  */
 const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
 
+const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
+
 function compactLabel(value = '', max = 34) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
@@ -93,6 +95,7 @@ export function studyVisualKind(caption = '') {
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
   if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
   if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
+  if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
@@ -110,6 +113,12 @@ export function studyPhysicsVisualVariant(caption = '') {
   return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(String(caption || ''))
     ? 'braking-inertia'
     : 'free-body';
+}
+
+export function studyElectricityVisualVariant(caption = '') {
+  return /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?|energy per coulomb)\b/i.test(String(caption || ''))
+    ? 'emf-terminal-voltage'
+    : 'simple-circuit';
 }
 
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
@@ -132,6 +141,10 @@ function lessonAsksForMechanicsLab(hay = '') {
   return /\bnewton|\binertia\b|free-?body|\bfbd\b|kinematics|\bf\s*=\s*ma\b|first law of motion|third law/i.test(hay);
 }
 
+function lessonAsksForElectricity(hay = '') {
+  return ELECTRICITY_VISUAL.test(String(hay || ''));
+}
+
 /**
  * A picture stays only when its caption is about this conversation.
  * Empty captions and leftover stock Newton lines are dropped.
@@ -140,8 +153,9 @@ export function pictureCaptionFitsLesson(caption = '', topic = '', body = '') {
   const cap = String(caption || '').trim();
   if (!cap) return false;
   const hay = contextHay(topic, body);
-  if (!STOCK_SCENE_CAPTION.test(cap)) return true;
-  return lessonAsksForMechanicsLab(hay);
+  if (STOCK_SCENE_CAPTION.test(cap) && !lessonAsksForMechanicsLab(hay)) return false;
+  if (ELECTRICITY_VISUAL.test(cap) && !lessonAsksForElectricity(hay)) return false;
+  return true;
 }
 
 export function studyPictureCaption(caption = '', topic = '', body = '') {
@@ -221,6 +235,7 @@ export function decorateStudyMessage(text = '', topic = '') {
 
 const TEACHING_CAPTIONS = Object.freeze({
   'physics-motion': 'Free-body diagram of a moving block: normal force up, weight down, applied force forward, and friction backward',
+  'electricity-circuit': 'Battery circuit: the cell drives conventional current through a resistor and back to the cell',
   'algebra-balance': 'An equation balance showing the same operation applied to both sides',
   'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',
   'chemistry-bond': 'Two atoms sharing electrons in a covalent bond',
@@ -247,6 +262,9 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   if (kind === 'physics-motion' && /\b(?:inertia|brak(?:e|es|ing)|seatbelt)\b/i.test(hay)) {
     caption = 'Passenger motion when a vehicle brakes: velocity continues forward while the braking force acts backward';
   }
+  if (kind === 'electricity-circuit' && /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?)\b/i.test(hay)) {
+    caption = 'EMF and terminal potential difference: energy per coulomb supplied by the battery splits into useful energy per coulomb in the external circuit and energy per coulomb lost in internal resistance';
+  }
   if (!caption) return source;
   return `<quantora-study-picture caption="${caption}" />\n\n${source}`;
 }
@@ -256,6 +274,7 @@ export function studyPicturePromptHint(topic = '') {
   return [
     `If a picture helps ${label}, put this tag on its own line: <quantora-study-picture caption="one sentence about this idea" />`,
     'The caption must come from THIS conversation — the idea the learner just asked about.',
+    'For an electric circuit, name the battery/cell, current, resistor/load, or the EMF/terminal-voltage relationship that the diagram should teach.',
     'For a process, make the caption explicit, for example: “Process: input -> change -> result”.',
     'For a timeline, include at least two real years, for example: “Timeline: 1914 -> 1918 -> 1939”.',
     'For a number line, use the exact form “Number line from -3 to 5, mark 2”.',

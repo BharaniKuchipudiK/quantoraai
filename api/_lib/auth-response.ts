@@ -8,8 +8,61 @@ export type AuthIdentity = {
   name: string;
   picture?: string;
   authProvider: string;
+  /**
+   * The provider proved this address belongs to whoever is signing in. Only a
+   * verified email may open an account another provider created; otherwise
+   * registering a provider account on somebody else's address would inherit it.
+   */
+  emailVerified?: boolean;
   geo?: { countryCode: string; region?: string | null; city?: string | null } | null;
 };
+
+export type SignInAccountDecision =
+  | { ok: true; accountSub: string; linked: boolean }
+  | { ok: false; status: number; error: string };
+
+/*
+ * One account per email, reachable by every provider that can prove the email.
+ *
+ * This used to refuse outright: an account created with Google could only ever
+ * be opened with Google. When that Google OAuth client was deleted in the Cloud
+ * Console, the owner had no way back in — GitHub returned 409, the account had
+ * no password to sign in with, and password reset only replied "sign in with
+ * Google". Four doors, every one of them pointing at the broken one.
+ *
+ * A provider-verified email now opens the account it already owns, and the
+ * session is issued for the EXISTING account so sites, usage and outcome state
+ * stay attached. A caller whose email is not provider-verified is still
+ * refused, because that is the case that would let someone claim an address.
+ */
+export function resolveSignInAccount(input: {
+  existing: Pick<StoredUser, "google_sub" | "auth_provider" | "blocked_at" | "blocked_reason"> | null;
+  identity: Pick<AuthIdentity, "sub" | "emailVerified">;
+}): SignInAccountDecision {
+  const { existing, identity } = input;
+
+  if (!existing || existing.google_sub === identity.sub) {
+    return { ok: true, accountSub: identity.sub, linked: false };
+  }
+
+  if (existing.blocked_at) {
+    return {
+      ok: false,
+      status: 403,
+      error: existing.blocked_reason || "This account has been suspended.",
+    };
+  }
+
+  if (identity.emailVerified !== true) {
+    return {
+      ok: false,
+      status: 409,
+      error: `An account already exists for this email. Sign in with ${providerLabel(existing.auth_provider)} instead.`,
+    };
+  }
+
+  return { ok: true, accountSub: existing.google_sub, linked: true };
+}
 
 export function formatClientUser(input: {
   name: string;
@@ -45,23 +98,14 @@ export async function issueSessionResponse(
   }
 
   const existing = await findUserByEmail(email);
-  if (existing && existing.google_sub !== identity.sub) {
-    if (existing.blocked_at) {
-      return {
-        ok: false,
-        status: 403,
-        error: existing.blocked_reason || "This account has been suspended.",
-      };
-    }
-    return {
-      ok: false,
-      status: 409,
-      error: `An account already exists for this email. Sign in with ${providerLabel(existing.auth_provider)} instead.`,
-    };
+  const decision = resolveSignInAccount({ existing, identity });
+  if (decision.ok === false) {
+    return { ok: false, status: decision.status, error: decision.error };
   }
+  const accountSub = decision.accountSub;
 
   const stored: StoredUser | null = await recordSignIn({
-    sub: identity.sub,
+    sub: accountSub,
     email,
     name: identity.name,
     picture: identity.picture || "",
@@ -77,7 +121,7 @@ export async function issueSessionResponse(
   }
 
   const token = createSessionToken({
-    sub: identity.sub,
+    sub: accountSub,
     email,
     name: identity.name,
     picture: identity.picture || "",
@@ -87,7 +131,7 @@ export async function issueSessionResponse(
   }
 
   setSessionCookie(res, token);
-  const isAdmin = await isAdminUser(identity.sub);
+  const isAdmin = await isAdminUser(accountSub);
   return {
     ok: true,
     body: formatClientUser({
