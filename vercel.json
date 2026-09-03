@@ -266,6 +266,14 @@
       "destination": "/api/auth?route=providers"
     },
     {
+      "source": "/api/auth/desktop/grant",
+      "destination": "/api/auth?route=desktop-grant"
+    },
+    {
+      "source": "/api/auth/desktop/exchange",
+      "destination": "/api/auth?route=desktop-exchange"
+    },
+    {
       "source": "/api/admin/feedback",
       "destination": "/api/admin?route=feedback"
     },

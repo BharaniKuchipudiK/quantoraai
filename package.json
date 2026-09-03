@@ -34,7 +34,9 @@
     "test:dead-controls": "node scripts/platform-dead-control-gate.mjs",
     "test:judgment": "tsx scripts/finance-judgment-gate.mjs",
     "test:github-writes": "node scripts/github-write-seam-gate.mjs",
-    "test:imports": "node scripts/runtime-import-gate.mjs"
+    "test:imports": "node scripts/runtime-import-gate.mjs",
+    "desktop:build": "npm --prefix desktop run build",
+    "test:desktop": "xvfb-run -a node scripts/desktop-smoke-gate.mjs"
   },
   "dependencies": {
     "@duffel/api": "^4.28.0",
