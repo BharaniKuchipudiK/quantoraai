@@ -3,6 +3,8 @@ import {
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
   deskFilesForPush,
+  githubDestinationRepoUrl,
+  normalizeGithubDestination,
   pushOutcomeMessage,
   suggestRepositoryName,
 } from '../lib/github-workspace.js';
@@ -70,10 +72,24 @@ async function postStage(endpoint, payload) {
   return { ok: true, data, error: '' };
 }
 
-export default function GithubPushPanel({ vfs = {}, githubRepoUrl = '', projectName = '' }) {
-  const [mode, setMode] = useState(githubRepoUrl ? 'existing' : 'new');
+export default function GithubPushPanel({
+  vfs = {},
+  githubRepoUrl = '',
+  githubDestination = null,
+  projectName = '',
+}) {
+  /*
+   * A destination chosen above the composer wins over the imported repository
+   * URL: it is the more recent and more deliberate statement of intent, and
+   * asking the same question twice in one product is how the two answers end up
+   * disagreeing.
+   */
+  const chosen = normalizeGithubDestination(githubDestination);
+  const targetRepoUrl = chosen ? githubDestinationRepoUrl(chosen) : githubRepoUrl;
+
+  const [mode, setMode] = useState(targetRepoUrl ? 'existing' : 'new');
   const [repoName, setRepoName] = useState(() => suggestRepositoryName(projectName));
-  const [branch, setBranch] = useState('main');
+  const [branch, setBranch] = useState(chosen?.branch || 'main');
   const [message, setMessage] = useState('Initial commit from Quantora');
   const [isPrivate, setIsPrivate] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -91,7 +107,7 @@ export default function GithubPushPanel({ vfs = {}, githubRepoUrl = '', projectN
     setCreatedUrl('');
 
     try {
-      let repoUrl = githubRepoUrl;
+      let repoUrl = targetRepoUrl;
 
       if (mode === 'new') {
         setStatus('Creating the repository…');
@@ -154,11 +170,11 @@ export default function GithubPushPanel({ vfs = {}, githubRepoUrl = '', projectN
           type="button"
           data-quantora-github-push-mode="existing"
           onClick={() => setMode('existing')}
-          disabled={!githubRepoUrl}
-          title={githubRepoUrl ? undefined : 'Import a repository first to push into an existing one.'}
-          style={{ ...buttonStyle, opacity: mode === 'existing' && githubRepoUrl ? 1 : 0.55 }}
+          disabled={!targetRepoUrl}
+          title={targetRepoUrl ? undefined : 'Choose a repository above the composer, or import one, to push into an existing repository.'}
+          style={{ ...buttonStyle, opacity: mode === 'existing' && targetRepoUrl ? 1 : 0.55 }}
         >
-          Imported repository
+          {chosen ? 'Chosen repository' : 'Imported repository'}
         </button>
       </div>
 
@@ -183,7 +199,9 @@ export default function GithubPushPanel({ vfs = {}, githubRepoUrl = '', projectN
           </label>
         </div>
       ) : (
-        <div style={{ color: '#cbd5f5' }}>{githubRepoUrl || 'No repository imported.'}</div>
+        <div style={{ color: '#cbd5f5' }}>
+          {targetRepoUrl || 'No repository chosen. Pick one above the composer, or import one.'}
+        </div>
       )}
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
