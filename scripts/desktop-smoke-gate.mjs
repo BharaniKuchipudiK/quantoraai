@@ -148,7 +148,16 @@ try {
 
   // 1. the shell boots on its own origin and shows the sign-in screen
   check(await waitScreen('signin'), 'renderer mounted on the sign-in screen (signed out)');
-  check(window.url().startsWith('quantora://app/'), `window is on quantora://app (got ${window.url()})`);
+  // Ask the renderer where it thinks it is, rather than reading Playwright's
+  // window.url(). That property is a cached mirror of the last main-frame
+  // navigation Playwright observed, and for a custom scheme it can still be
+  // empty at this point: CI run 1992 printed "got " here with the sign-in
+  // screen already rendered and all 30 other checks green. location.href is
+  // the page's own truth and is populated by the time the DOM exists, so the
+  // check is deterministic — and it still fails if the shell ever boots on a
+  // remote origin, which is the whole point of asking.
+  const origin = await window.evaluate(() => location.href);
+  check(origin.startsWith('quantora://app/'), `window is on quantora://app (got ${origin})`);
   const policy = await window.evaluate(async () => {
     const response = await fetch('/');
     return { csp: response.headers.get('content-security-policy') || '' };
