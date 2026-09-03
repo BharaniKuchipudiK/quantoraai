@@ -15,6 +15,18 @@ export type StreamFailure = {
   provider?: string;
   requestId?: string;
   correlationId?: string;
+  /*
+   * Every engine this turn actually ran, as DATA.
+   *
+   * One browser attempt is up to four server ones: the inference ladder works
+   * down its own rungs behind a single request. Which rungs burned was reported
+   * only inside a human-readable status label — and prose is invisible to
+   * routing, the lesson coding-outcome-spine.js already records for its retry
+   * chip. So the desk counted one attempt, the terminal copy under-reported
+   * what was tried, and the durable mission believed the other rungs were still
+   * untried and routed the next turn straight into one.
+   */
+  spentEngineIds?: string[];
 };
 
 /**
@@ -83,6 +95,7 @@ export class SseWriter {
         provider: failure.provider || null,
         requestId: failure.requestId || null,
         correlationId: failure.correlationId || null,
+        ...(failure.spentEngineIds?.length ? { spentEngineIds: [...failure.spentEngineIds] } : {}),
       },
     });
     this.done();

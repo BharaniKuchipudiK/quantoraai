@@ -52,6 +52,32 @@ async function visible(locator, message, timeout = 8000) {
   if (!(await locator.isVisible().catch(() => false))) throw new Error(message);
 }
 
+/**
+ * Wait for something the PAGE causes to happen in THIS process.
+ *
+ * The QIR journal is fire-and-forget by design: src/lib/qir-turn-journal.js
+ * must never block a user's turn on /api/qir-runs, so `beginAttempt` returns
+ * before the POST lands. The counters below are incremented when that POST
+ * ARRIVES at the intercepted route, which races the rendered page.
+ *
+ * Asserting such a counter the instant the text appears makes this gate a coin
+ * flip under load. Observed on 2026-09-03: red in CI on a markdown-only diff,
+ * with the identical code green on the previous commit, on `main`, and six
+ * times out of six locally on the failing commit itself.
+ *
+ * This waits for the write instead of snapshotting it. A journal that never
+ * happens still fails, with the same sentence — only the timing assumption
+ * changes, never the claim.
+ */
+async function waitForState(check, message, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (check()) return;
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+  }
+}
+
 const browser = await chromium.launch({ headless: true });
 
 async function runJourney(name, script) {
@@ -193,9 +219,10 @@ try {
       if (state.chatCalls < 2) {
         throw new Error('Coding first-route death did not auto-recover onto a second attempt.');
       }
-      if (state.qirAttempts < 1) {
-        throw new Error('Coding recovery never journaled a QIR model attempt.');
-      }
+      await waitForState(
+        () => state.qirAttempts >= 1,
+        'Coding recovery never journaled a QIR model attempt.',
+      );
       const text = await page.locator('body').innerText();
       if (/Retry a smaller build/i.test(text)) {
         throw new Error('Coding auto-recovery still asked the person to tap Retry a smaller build.');
