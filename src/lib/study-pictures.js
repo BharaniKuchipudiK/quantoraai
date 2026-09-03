@@ -17,6 +17,7 @@ export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
 
 const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
+const FIELD_VISUAL = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
 
 function compactLabel(value = '', max = 34) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -94,12 +95,13 @@ export function studyVisualKind(caption = '') {
   if (studyNumberLineSpec(raw)) return 'number-line';
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
   if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
-  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
+  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body|vector|components?|resultant/.test(text)) return 'physics-motion';
+  if (FIELD_VISUAL.test(text)) return 'field-lines';
   if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
-  if (/graph|slope|axis|curve|plot|trend|correlation|distribution/.test(text)) return 'graph';
+  if (/graph|slope|axis|curve|plot|trend|correlation|distribution|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?/.test(text)) return 'graph';
   /*
    * The relationship diagram is real, but only for a caption that actually
    * describes a relationship. Requiring the words keeps it from becoming the
@@ -110,7 +112,9 @@ export function studyVisualKind(caption = '') {
 }
 
 export function studyPhysicsVisualVariant(caption = '') {
-  return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(String(caption || ''))
+  const label = String(caption || '');
+  if (/\b(?:vector|components?|x-?axis|y-?axis|resultant)\b/i.test(label)) return 'vector-components';
+  return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(label)
     ? 'braking-inertia'
     : 'free-body';
 }
@@ -235,6 +239,7 @@ export function decorateStudyMessage(text = '', topic = '') {
 
 const TEACHING_CAPTIONS = Object.freeze({
   'physics-motion': 'Free-body diagram of a moving block: normal force up, weight down, applied force forward, and friction backward',
+  'field-lines': 'Electric field lines point from positive to negative and their density shows field strength',
   'electricity-circuit': 'Battery circuit: the cell drives conventional current through a resistor and back to the cell',
   'algebra-balance': 'An equation balance showing the same operation applied to both sides',
   'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',

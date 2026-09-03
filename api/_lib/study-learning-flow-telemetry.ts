@@ -6,7 +6,8 @@ export type StudyLearningFlowMetric =
   | 'assessment_availability'
   | 'evidence_guard'
   | 'prerequisite_graph'
-  | 'retention';
+  | 'retention'
+  | 'representation_coverage';
 
 export type StudyLearningFlowOutcome =
   | 'assessment_issued'
@@ -21,7 +22,9 @@ export type StudyLearningFlowOutcome =
   | 'prerequisite_graph_unavailable'
   | 'retention_due'
   | 'retention_not_due'
-  | 'retention_completed';
+  | 'retention_completed'
+  | 'renderer_available'
+  | 'renderer_unavailable';
 
 export type StudyLearningFlowEvidenceKind =
   | 'assessment_item'

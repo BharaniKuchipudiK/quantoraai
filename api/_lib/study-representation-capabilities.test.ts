@@ -12,9 +12,17 @@ test('selects only existing subject-native renderer families', () => {
 
 test('selects graph, process, timeline, and number-line capabilities from semantics', () => {
   assert.equal(resolveStudyRepresentationCapability('velocity-time graph and slope')?.rendererKind, 'graph');
+  assert.equal(resolveStudyRepresentationCapability('plot this on a coordinate plane by quadrant')?.rendererKind, 'graph');
+  assert.equal(resolveStudyRepresentationCapability('show sine and cosine on the unit circle graph')?.rendererKind, 'graph');
+  assert.equal(resolveStudyRepresentationCapability('resolve vector components on x and y axes')?.rendererKind, 'graph');
   assert.equal(resolveStudyRepresentationCapability('process: input -> change -> result')?.rendererKind, 'process-flow');
   assert.equal(resolveStudyRepresentationCapability('timeline of events in 1914 and 1918')?.rendererKind, 'timeline');
   assert.equal(resolveStudyRepresentationCapability('number line from -3 to 5, mark 2')?.rendererKind, 'number-line');
+});
+
+test('selects field-lines renderer for electric or magnetic field concepts', () => {
+  assert.equal(resolveStudyRepresentationCapability('show electric field lines around a positive charge')?.rendererKind, 'field-lines');
+  assert.equal(resolveStudyRepresentationCapability('explain magnetic field direction with right-hand rule')?.rendererKind, 'field-lines');
 });
 
 test('keeps electricity separate from chemistry even when charge carriers are mentioned', () => {

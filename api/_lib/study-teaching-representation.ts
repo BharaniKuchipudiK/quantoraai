@@ -1,11 +1,12 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
+import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import {
   resolveStudyRepresentationCapability,
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-03.9';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-04.1';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -161,6 +162,12 @@ export function planStudyTeachingRepresentation(input: {
   const context = `${contextText}\n${message}`.trim();
   const requested = requestedMode(message);
   const capability = resolveStudyRepresentationCapability(context);
+  const emitCoverage = (available: boolean) => {
+    emitStudyLearningFlowMetric({
+      metric: 'representation_coverage',
+      outcome: available ? 'renderer_available' : 'renderer_unavailable',
+    });
+  };
 
   if (requested === 'graph') {
     // The request word "graph" is not evidence that a graph is semantically
@@ -169,6 +176,7 @@ export function planStudyTeachingRepresentation(input: {
     const contextCapability = resolveStudyRepresentationCapability(contextText);
     const graphCapability = contextCapability?.representation === 'graph' ? contextCapability : null;
     const graphAvailable = Boolean(graphCapability) || GRAPH_SEMANTICS.test(message);
+    emitCoverage(graphAvailable);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
@@ -182,6 +190,7 @@ export function planStudyTeachingRepresentation(input: {
   }
 
   if (requested === 'visual') {
+    emitCoverage(Boolean(capability));
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
@@ -304,7 +313,11 @@ export function planStudyTeachingRepresentation(input: {
   }
 
   if (input.learnerModel) {
-    return planForVerifiedLearnerState(input.learnerModel, capability);
+    const verified = planForVerifiedLearnerState(input.learnerModel, capability);
+    if (verified.rendererRequired || verified.fallback === 'renderer_unavailable') {
+      emitCoverage(verified.rendererRequired);
+    }
+    return verified;
   }
 
   return {
