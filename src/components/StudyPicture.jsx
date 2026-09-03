@@ -82,6 +82,18 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="16" textAnchor="middle" fill={muted} fontSize="11">every force acts from the same point</text>
         </>
       ) : null}
+      {kind === 'physics-motion' && physicsVariant === 'vector-components' ? (
+        <>
+          <line x1="58" y1="140" x2="310" y2="140" stroke={muted} strokeWidth="2.5" />
+          <line x1="58" y1="140" x2="58" y2="34" stroke={muted} strokeWidth="2.5" />
+          <Arrow x1="58" y1="140" x2="240" y2="62" label="R" color="#f97316" />
+          <Arrow x1="58" y1="140" x2="240" y2="140" label="Rx" color="#0ea5e9" />
+          <Arrow x1="240" y1="140" x2="240" y2="62" label="Ry" color="#22c55e" />
+          <path d="M220 140 L220 120 L240 120" fill="none" stroke={muted} strokeWidth="2" />
+          <text x="248" y="56" fill="#f97316" fontSize="12" fontWeight="700">resultant vector</text>
+          <text x="180" y="162" textAnchor="middle" fill={muted} fontSize="11">resolve the resultant into x and y components</text>
+        </>
+      ) : null}
       {kind === 'electricity-circuit' && electricityVariant === 'simple-circuit' ? (
         <>
           <path d="M76 54 H145 M235 54 H294 V132 H76 V104" fill="none" stroke={ink} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -96,6 +108,23 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="157" textAnchor="middle" fill={muted} fontSize="11">conventional current completes the circuit</text>
           <text x="59" y="75" fill="#f97316" fontSize="11" fontWeight="800">+</text>
           <text x="58" y="96" fill="#0ea5e9" fontSize="13" fontWeight="800">−</text>
+        </>
+      ) : null}
+      {kind === 'field-lines' ? (
+        <>
+          <circle cx="104" cy="90" r="19" fill={isLight ? '#fff7ed' : '#7c2d12'} stroke="#f97316" strokeWidth="3" />
+          <text x="104" y="95" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="800">+</text>
+          <circle cx="256" cy="90" r="19" fill={isLight ? '#eff6ff' : '#1e3a8a'} stroke="#0ea5e9" strokeWidth="3" />
+          <text x="256" y="95" textAnchor="middle" fill="#0ea5e9" fontSize="14" fontWeight="800">−</text>
+          {[58, 76, 104, 132].map((offset) => (
+            <path key={offset} d={`M${120} ${offset} C 165 ${offset - 14}, 195 ${offset - 14}, 240 ${offset}`} fill="none" stroke={muted} strokeWidth="2" />
+          ))}
+          {[122, 104, 86, 68].map((offset) => (
+            <path key={offset} d={`M120 ${offset} C 165 ${offset + 14}, 195 ${offset + 14}, 240 ${offset}`} fill="none" stroke={muted} strokeWidth="2" />
+          ))}
+          <Arrow x1="146" y1="58" x2="174" y2="52" label="" color={muted} />
+          <Arrow x1="174" y1="52" x2="202" y2="58" label="" color={muted} />
+          <text x="180" y="160" textAnchor="middle" fill={muted} fontSize="11">field lines point from positive to negative; denser spacing means stronger field</text>
         </>
       ) : null}
       {kind === 'electricity-circuit' && electricityVariant === 'emf-terminal-voltage' ? (
