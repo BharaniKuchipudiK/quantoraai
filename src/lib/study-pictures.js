@@ -16,7 +16,7 @@ export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
  */
 const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
 
-const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|current|ampere|voltage|volt|ohm(?:'s)? law)\b/i;
+const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
 
 function compactLabel(value = '', max = 34) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
