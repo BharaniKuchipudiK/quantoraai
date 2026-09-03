@@ -19,7 +19,13 @@ test('selects graph, process, timeline, and number-line capabilities from semant
 
 test('keeps electricity separate from chemistry even when charge carriers are mentioned', () => {
   assert.equal(resolveStudyRepresentationCapability('electrons moving through a battery circuit with current')?.rendererKind, 'electricity-circuit');
+  assert.equal(resolveStudyRepresentationCapability('electric current flows through a wire')?.rendererKind, 'electricity-circuit');
   assert.equal(resolveStudyRepresentationCapability('electrons shared in a covalent bond between atoms')?.rendererKind, 'chemistry-bond');
+});
+
+test('bare current is ordinary language, not enough evidence for an Electricity renderer', () => {
+  assert.equal(resolveStudyRepresentationCapability('There is no current renderer family for this concept'), null);
+  assert.equal(resolveStudyRepresentationCapability('Use the current explanation and continue'), null);
 });
 
 test('does not turn arbitrary content into a decorative visual', () => {
