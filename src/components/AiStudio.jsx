@@ -106,6 +106,7 @@ import {
 const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
+const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -585,6 +586,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('preview');
+  /*
+   * Where this build is going to sit, chosen before it starts. null means "not
+   * saved to GitHub", which is the default and a real answer — see
+   * normalizeGithubDestination.
+   */
+  const [githubDestination, setGithubDestination] = useState(null);
   /*
    * The tab strip.
    *
@@ -4279,6 +4286,14 @@ Paused — ${autoPauseRef.current}.`
 
 
 
+          <Suspense fallback={null}>
+            <GithubDestinationBar
+              destination={githubDestination}
+              onChange={setGithubDestination}
+              isLight={isLight}
+            />
+          </Suspense>
+
           {/* Text Area Input */}
           <div style={{ position: 'relative', padding: '0' }}>
             <textarea
@@ -5256,6 +5271,7 @@ Paused — ${autoPauseRef.current}.`
                  vfs={shellVfs}
                  workspaceKey={activeSessionId || ''}
                  githubRepoUrl={importedGithubRepoUrl}
+                 githubDestination={githubDestination}
                  projectName={activeProject?.name || ''}
                  githubBaseBranch={importedGithubBaseBranch}
                  isLight={isLight}

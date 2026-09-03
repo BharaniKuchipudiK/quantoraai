@@ -24,6 +24,8 @@ export const GITHUB_ENDPOINTS = Object.freeze({
   mergePullRequest: '/api/github/merge-pr',
   push: '/api/github/push',
   createRepository: '/api/github/create-repo',
+  listRepositories: '/api/github/list-repos',
+  listBranches: '/api/github/list-branches',
 });
 
 const STAGE_BY_ENDPOINT = Object.freeze({
@@ -37,6 +39,8 @@ const STAGE_BY_ENDPOINT = Object.freeze({
   [GITHUB_ENDPOINTS.mergePullRequest]: 'github-merge-pr',
   [GITHUB_ENDPOINTS.push]: 'github-push',
   [GITHUB_ENDPOINTS.createRepository]: 'github-create-repo',
+  [GITHUB_ENDPOINTS.listRepositories]: 'github-list-repos',
+  [GITHUB_ENDPOINTS.listBranches]: 'github-list-branches',
 });
 
 /**
@@ -142,4 +146,72 @@ export function pushOutcomeMessage(result = {}) {
   return result.createdBranch
     ? `Pushed ${files} ${noun} and created "${branch}".`
     : `Pushed ${files} ${noun} to "${branch}".`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Where the work is going to sit
+ * ------------------------------------------------------------------ */
+
+/**
+ * The destination chosen before a build starts: which repository, which branch.
+ *
+ * `null` is a real, supported answer and the default one — most builds never
+ * want a repository, and a picker that insists on one before you can type is a
+ * worse product than no picker. "Not saved to GitHub" is a state the bar shows
+ * plainly rather than an empty slot that looks broken.
+ */
+export function normalizeGithubDestination(value) {
+  if (!value || typeof value !== 'object') return null;
+  const owner = String(value.owner || '').trim();
+  const repo = String(value.repo || '').trim();
+  if (!owner || !repo) return null;
+  const defaultBranch = String(value.defaultBranch || '').trim() || 'main';
+  return {
+    owner,
+    repo,
+    defaultBranch,
+    branch: String(value.branch || '').trim() || defaultBranch,
+    canPush: value.canPush !== false,
+    isPrivate: value.isPrivate === true,
+  };
+}
+
+export function githubDestinationRepoUrl(destination) {
+  const target = normalizeGithubDestination(destination);
+  return target ? `https://github.com/${target.owner}/${target.repo}` : '';
+}
+
+/** The three chips, in the order they are read: owner, repository, branch. */
+export function githubDestinationChips(destination, connection) {
+  const target = normalizeGithubDestination(destination);
+  if (!connection || connection.connected !== true) {
+    return [{ id: 'connect', label: 'Connect GitHub', tone: 'invite' }];
+  }
+  if (!target) {
+    return [
+      { id: 'owner', label: connection.login || 'GitHub', tone: 'muted' },
+      { id: 'repo', label: 'No repository', tone: 'invite' },
+    ];
+  }
+  return [
+    { id: 'owner', label: target.owner, tone: 'muted' },
+    { id: 'repo', label: target.repo, tone: target.canPush ? 'set' : 'warn' },
+    { id: 'branch', label: target.branch, tone: 'set' },
+  ];
+}
+
+/**
+ * Why a chosen destination cannot receive this build, or '' when it can.
+ *
+ * Answered here, before the build, because the alternative is discovering it at
+ * the push — after the work is done, which is the most expensive moment to find
+ * out you were never allowed to write there.
+ */
+export function githubDestinationBlocker(destination) {
+  const target = normalizeGithubDestination(destination);
+  if (!target) return '';
+  if (!target.canPush) {
+    return `You have read access to ${target.owner}/${target.repo}, not write. Quantora could build here but never save it. Pick another repository.`;
+  }
+  return '';
 }

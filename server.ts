@@ -232,7 +232,7 @@ async function startServer() {
   });
   // Every principal-bound GitHub stage, mirroring the vercel.json rewrites so
   // dev and production disagree about nothing here.
-  for (const alias of ["connection", "disconnect", "list-prs", "read-pr", "list-issues", "comment", "create-pr", "merge-pr", "push", "create-repo"]) {
+  for (const alias of ["connection", "disconnect", "list-prs", "read-pr", "list-issues", "comment", "create-pr", "merge-pr", "push", "create-repo", "list-repos", "list-branches"]) {
     route("post", `/api/github/${alias}`, (req, res) => {
       req.body = { ...(req.body || {}), targetStage: `github-${alias}` };
       return pipeline(req, res);
