@@ -22,6 +22,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, codingFailureSpineOwnsTurn, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { createQirTurnJournal } from '../lib/qir-turn-journal.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
@@ -790,11 +791,9 @@ export function useChatStream({
       isCodingRequest,
       hasCodingWorkspace,
     }) || studioDomain;
-    const codingSpineOwns = codingFailureSpineOwnsTurn({ isCodingRequest, studioDomain: turnDomain });
-    const qirFail = (kind, message, done) => {
-      if (!codingSpineOwns) return;
-      try { void qirCoding?.reportModelFailure?.({ kind, message, retryable: !done, recoveryExhausted: done }); } catch { /* journal must not block */ }
-    };
+    const qirTurn = createQirTurnJournal({ isCodingRequest, studioDomain: turnDomain, qirCoding });
+    const codingSpineOwns = qirTurn.owns;
+    const qirFail = (kind, message, done) => qirTurn.reportFailure({ kind, message, recoveryExhausted: done });
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
@@ -1219,9 +1218,7 @@ export function useChatStream({
     try {
       for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
         if (!stillCurrent()) return;
-        if (codingSpineOwns) {
-          try { void qirCoding?.beginModelAttempt?.(visibleUserText || text, targetModel?.id || ''); } catch { /* journal must not block */ }
-        }
+        qirTurn.beginAttempt(visibleUserText || text, targetModel?.id || '');
         // Record the engine this attempt actually runs on, for honest terminal copy.
         if (targetModel?.id) triedEngineIds.add(targetModel.id);
         if (targetModel?.name && triedEngines[triedEngines.length - 1] !== targetModel.name) {
