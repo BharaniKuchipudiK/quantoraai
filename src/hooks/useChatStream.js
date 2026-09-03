@@ -1487,6 +1487,21 @@ export function useChatStream({
               // experiment rather than the same one billed twice.
               message: retryBrief ? `${messageForModel}\n\n${retryBrief}` : messageForModel,
               turnAttempt: attempt,
+              /*
+               * What this turn actually has left, so the server plans inside it
+               * rather than against its own constant.
+               *
+               * Taken from planTurnEscalation — the same function that decides
+               * how many attempts fit — so there is ONE remainder, not a second
+               * calculation that can drift from it. Without this the server
+               * restarts a full 165s budget on every retry and funds rungs this
+               * loop will already have abandoned.
+               *
+               * Measured before fetch, so it is conservative: the server's true
+               * remainder is a little less, and it may only shorten its budget
+               * with this, never extend it.
+               */
+              turnRemainingMs: escalationNow().remainingMs,
             })
           });
           /*
