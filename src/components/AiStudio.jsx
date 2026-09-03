@@ -5277,6 +5277,8 @@ Paused — ${autoPauseRef.current}.`
                  githubDestination={githubDestination}
                  projectName={activeProject?.name || ''}
                  githubBaseBranch={importedGithubBaseBranch}
+                 review={deskReview}
+                 onSelectFile={setWorkspaceActiveTab}
                  isLight={isLight}
                  textColor={textColor}
                />
