@@ -378,3 +378,50 @@ jobs:
             exit 1
           fi
           echo "All browser release gates passed."
+
+  desktop-smoke:
+    name: Desktop smoke gate
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      # Root dependencies are needed: the desktop renderer resolves React,
+      # Vite and Monaco from the repository's node_modules.
+      - name: Install locked application dependencies
+        run: npm ci
+
+      # The Electron binary is ~100 MB; cache it by the exact pinned version so
+      # the download happens once per version, not once per run.
+      - name: Restore Electron binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+
+      - name: Install locked desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Typecheck and bundle the desktop shell
+        run: npm run typecheck && npm run build
+        working-directory: desktop
+
+      # Drives the real desktop app: sign-in screen, PKCE deep-link sign-in
+      # against a local API mirror, launcher, open folder, explorer, Monaco
+      # edit saved to disk, shell and git in the folder, chat reporting the
+      # mirror's error honestly, sign-out from the native menu. No network.
+      - name: Execute desktop smoke gate
+        run: xvfb-run -a node scripts/desktop-smoke-gate.mjs
