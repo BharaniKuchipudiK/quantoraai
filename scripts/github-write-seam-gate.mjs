@@ -42,7 +42,27 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
 const CODE = new Set(['.ts', '.js', '.mjs']);
 const TEST_FILE = 'api/_lib/github-write-authorization.test.ts';
 
-const AUTHORIZERS = ['authorizeWrite(', 'assertRepositoryPermission('];
+/*
+ * Three authorizers, because there are two genuinely different questions.
+ *
+ * `authorizeWrite` / `assertRepositoryPermission` ask what a user may do to a
+ * repository that EXISTS. Creating a repository has none to ask about, so those
+ * calls cannot apply — and this is exactly the moment a gate gets quietly
+ * widened into uselessness, by whoever needs to ship the create button today.
+ *
+ * `assertRepositoryCreationAllowed` is admitted here because it is the same
+ * kind of thing, not an exemption from it: it asks GitHub, before any write,
+ * whether THIS principal may create a repository under THIS owner — resolving
+ * the viewer, then the org membership and that org's own
+ * members_can_create_repositories setting, and failing closed when GitHub does
+ * not say yes. A helper that merely proves a session exists must never be added
+ * to this list; the test is whether GitHub was asked about the acting user.
+ */
+const AUTHORIZERS = [
+  'authorizeWrite(',
+  'assertRepositoryPermission(',
+  'assertRepositoryCreationAllowed(',
+];
 const MUTATING_METHODS = ['"POST"', '"PUT"', '"PATCH"', '"DELETE"', "'POST'", "'PUT'", "'PATCH'", "'DELETE'"];
 
 /**
@@ -232,7 +252,9 @@ nothing but the existence of a session — which is security issue #452.
 
 Fix either by:
   1. calling authorizeWrite(context, "write") at the top of the function, before
-     any argument parsing and before any request leaves; or
+     any argument parsing and before any request leaves — or, for a write that
+     acts on an account rather than an existing repository,
+     assertRepositoryCreationAllowed({ principal, owner }); or
   2. adding the operation to ${TEST_FILE}
      with both directions covered: refused without push access (and zero
      mutating calls sent), allowed with it.

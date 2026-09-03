@@ -22,6 +22,8 @@ export const GITHUB_ENDPOINTS = Object.freeze({
   comment: '/api/github/comment',
   createPullRequest: '/api/github/create-pr',
   mergePullRequest: '/api/github/merge-pr',
+  push: '/api/github/push',
+  createRepository: '/api/github/create-repo',
 });
 
 const STAGE_BY_ENDPOINT = Object.freeze({
@@ -33,6 +35,8 @@ const STAGE_BY_ENDPOINT = Object.freeze({
   [GITHUB_ENDPOINTS.comment]: 'github-comment',
   [GITHUB_ENDPOINTS.createPullRequest]: 'github-create-pr',
   [GITHUB_ENDPOINTS.mergePullRequest]: 'github-merge-pr',
+  [GITHUB_ENDPOINTS.push]: 'github-push',
+  [GITHUB_ENDPOINTS.createRepository]: 'github-create-repo',
 });
 
 /**
@@ -93,4 +97,49 @@ export function mergeBlockedReason(brief) {
   if (brief.summary.mergeable === false) return 'GitHub reports this branch conflicts with its base.';
   if (brief.checks?.state === 'failing') return 'CI is failing on this commit.';
   return '';
+}
+
+/**
+ * The desk's files, shaped for a push.
+ *
+ * Binary-ish and generated paths are dropped rather than sent: node_modules and
+ * dist are the two that would blow the size budget without adding anything a
+ * reader of the repository wants, and a lockfile-sized diff is how a first
+ * commit stops being reviewable.
+ */
+const PUSH_SKIP = /(^|\/)(node_modules|dist|build|coverage|\.git)(\/|$)/;
+
+export function deskFilesForPush(entries = []) {
+  return entries
+    .filter((entry) => entry && typeof entry.path === 'string' && typeof entry.content === 'string')
+    .filter((entry) => !PUSH_SKIP.test(entry.path))
+    .map((entry) => ({ path: entry.path.replace(/^\/+/, ''), content: entry.content }));
+}
+
+/**
+ * A repository name from whatever the user called this build.
+ *
+ * Falls back to a dated name rather than something generic: two builds called
+ * "quantora-project" collide on the second push, and GitHub's error for that
+ * ("name already exists") reads as a bug rather than a naming clash.
+ */
+export function suggestRepositoryName(seed = '') {
+  const slug = String(seed || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  if (slug) return slug;
+  const today = new Date().toISOString().slice(0, 10);
+  return `quantora-build-${today}`;
+}
+
+/** What a completed push should say, without overclaiming what happened. */
+export function pushOutcomeMessage(result = {}) {
+  const files = Number(result.fileCount) || 0;
+  const branch = String(result.branch || 'main');
+  const noun = files === 1 ? 'file' : 'files';
+  return result.createdBranch
+    ? `Pushed ${files} ${noun} and created "${branch}".`
+    : `Pushed ${files} ${noun} to "${branch}".`;
 }

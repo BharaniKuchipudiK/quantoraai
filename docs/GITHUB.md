@@ -22,8 +22,9 @@ That sentence is the whole design, and it is the resolution of security issue
 | Comment on a pull request | Needs **push** access | `POST /api/github/comment` |
 | Open a pull request | Needs **push** access | `POST /api/github/create-pr` |
 | Merge a pull request | Needs **push** access **and** the reviewed head SHA | `POST /api/github/merge-pr` |
-| Desk git status / diff / commit | Local WebContainer only | — |
-| Desk **push** | **No** | — |
+| **Push desk files to a repository** | Needs **push** access | `POST /api/github/push` |
+| **Create a repository** | Must be your account, or an org that permits it | `POST /api/github/create-repo` |
+| Desk git status / diff / commit | Local only (browser VFS or, on desktop, real git on disk) | — |
 
 Every route above resolves to `api/pipeline.ts` through a `vercel.json` rewrite,
 so the serverless function budget is unchanged.
@@ -171,6 +172,49 @@ claim and the log is the evidence:
 
 ---
 
+## Putting files into a repository
+
+Two routes turn a desk build into something the user owns. Both act on the
+signed-in user's own connected credential.
+
+```http
+POST /api/github/create-repo
+{ "name": "my-coffee-shop", "isPrivate": true, "owner": "octocat" }
+```
+
+`owner` defaults to the connected account. **Private is the default**, and the
+default is deliberate: a repository cannot be un-published once it exists — it
+can be cloned, cached and indexed the moment it appears — so the reversible
+option is the one that happens when nobody chooses. `isPrivate: false` is
+honoured when asked for.
+
+Authorization here cannot be `assertRepositoryPermission`, because there is no
+repository yet to ask about. `assertRepositoryCreationAllowed` asks the question
+that does apply — may this principal create a repository under this owner —
+resolving the viewer, then org membership, then that org's own
+`members_can_create_repositories` setting, and failing closed when GitHub does
+not positively say yes.
+
+```http
+POST /api/github/push
+{ "repoUrl": "https://github.com/octocat/my-coffee-shop",
+  "files": [{ "path": "index.html", "content": "<h1>hi</h1>" }],
+  "message": "Initial commit from Quantora",
+  "branch": "main" }
+```
+
+One commit, through the git data API: every blob and the tree are staged first
+and the branch moves exactly once, at the end. A failure partway leaves
+unreferenced objects that GitHub garbage-collects, so the branch is either where
+it was or where the whole push put it — never halfway. A repository with no
+commits yet is the ordinary first-push case and creates the branch; an existing
+branch is fast-forwarded with `force: false`, so a branch someone else moved is
+refused rather than overwritten.
+
+Paths are rejected rather than repaired: `..` anywhere, anything under `.git/`,
+control characters, and the same path twice. Bounds are 400 files, 1MB per file
+and 8MB per push, chosen to fit one serverless invocation.
+
 ## The gates that hold this
 
 | command | what only it can catch |
@@ -190,8 +234,13 @@ is deleted and when a new unguarded write helper is added.
 ## Honest limits
 
 1. Repository import is **context only**, not a writable clone in the VFS.
-2. The desk **cannot push**. A head branch must already exist on GitHub before a
-   pull request can open against it.
+   Push sends the desk's files; it does not make the desk a checkout of the
+   repository, so it can create or add to a branch but cannot merge histories.
+2. Push writes **one commit** through the git data API — blobs, then a tree,
+   then a commit, then the branch moves once, last. `force` is never set, so a
+   branch that moved on GitHub since Quantora read it is refused rather than
+   overwritten. Deletions are not expressed: a push adds and updates files, and
+   a file removed on the desk stays in the repository until removed there.
 3. Quantora cannot exceed the acting user's own GitHub permissions, by design.
    A refusal here usually means GitHub said no, not that Quantora is broken.
 4. Review threads come from the REST endpoint, which carries no resolved flag;

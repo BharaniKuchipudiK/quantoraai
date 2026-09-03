@@ -313,6 +313,90 @@ export async function assertRepositoryPermission(input: {
   return permission;
 }
 
+export type RepositoryCreationTarget = {
+  owner: string;
+  /** Personal accounts and organizations use different creation endpoints. */
+  isOrganization: boolean;
+};
+
+/**
+ * Ask GitHub whether this principal may create a repository under `owner`.
+ *
+ * WHY THIS IS A SEPARATE CHECK, NOT A MISSING ONE
+ *
+ * `assertRepositoryPermission` asks what a user may do to a repository that
+ * exists. Creation has no repository to ask about yet, so that call cannot
+ * apply — but "cannot apply" must not become "unauthorized". The equivalent
+ * question is *may this principal create a repository in this account*, and
+ * GitHub can answer it before anything is written.
+ *
+ * Answering it up front rather than letting the POST fail is what keeps the
+ * refusal legible: a 403 from the create endpoint says only "Resource not
+ * accessible", which is indistinguishable from a revoked token, an org that
+ * forbids member repository creation, and a typo in the owner name.
+ *
+ * Fails closed on anything it cannot positively confirm, matching
+ * `repositoryPermissionFromPayload`: an org whose settings cannot be read is
+ * refused rather than attempted.
+ */
+export async function assertRepositoryCreationAllowed(input: {
+  principal: GithubPrincipal;
+  owner: string;
+  fetchImpl?: FetchLike;
+}): Promise<RepositoryCreationTarget> {
+  const { principal } = input;
+  const owner = String(input.owner || "").trim();
+  if (!principal?.token) {
+    throw new Error("Connect your GitHub account in Quantora before creating a repository.");
+  }
+  if (!owner) {
+    throw new Error("A repository needs an owner — your GitHub account or an organization you belong to.");
+  }
+
+  const viewer = await githubRequest("/user", { token: principal.token, fetchImpl: input.fetchImpl });
+  if (viewer.status === 401) {
+    throw new Error("GitHub rejected your connected token. Reconnect your GitHub account in Quantora.");
+  }
+  if (!viewer.ok || typeof viewer.data?.login !== "string") {
+    throw new Error(`GitHub could not confirm who your connected account is (HTTP ${viewer.status}). No repository was created.`);
+  }
+
+  const login = String(viewer.data.login);
+  if (login.toLowerCase() === owner.toLowerCase()) {
+    // A user may always create repositories in their own account; the `repo`
+    // scope this connection requests is what GitHub checks, and a token lacking
+    // it fails the /user call above.
+    return { owner: login, isOrganization: false };
+  }
+
+  const membership = await githubRequest(`/user/memberships/orgs/${encodeURIComponent(owner)}`, {
+    token: principal.token,
+    fetchImpl: input.fetchImpl,
+  });
+  if (membership.status === 404) {
+    throw new Error(`Your connected GitHub account is not a member of "${owner}", and it is not your username. No repository was created.`);
+  }
+  if (!membership.ok || membership.data?.state !== "active") {
+    throw new Error(`GitHub could not confirm active membership of "${owner}" for your account. No repository was created.`);
+  }
+
+  const role = String(membership.data?.role || "");
+  if (role === "admin") return { owner, isOrganization: true };
+
+  const organization = await githubRequest(`/orgs/${encodeURIComponent(owner)}`, {
+    token: principal.token,
+    fetchImpl: input.fetchImpl,
+  });
+  if (!organization.ok || typeof organization.data?.members_can_create_repositories !== "boolean") {
+    throw new Error(`GitHub did not report whether members of "${owner}" may create repositories, so Quantora did not try. An organization owner can create it, or grant that permission.`);
+  }
+  if (!organization.data.members_can_create_repositories) {
+    throw new Error(`"${owner}" does not allow members to create repositories. Ask an organization owner to create it, or choose your own account.`);
+  }
+
+  return { owner, isOrganization: true };
+}
+
 /* ------------------------------------------------------------------ *
  * Optional deployment boundary
  * ------------------------------------------------------------------ */
