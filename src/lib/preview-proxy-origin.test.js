@@ -31,6 +31,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { absolutizePreviewProxyUrls } from './preview-images.js';
+import { prepareCodeForPreview } from './preview-utils.js';
 
 const ORIGIN = 'https://quantoraai.app';
 
@@ -106,5 +107,95 @@ test('the security invariant this works around is still in force', () => {
     body.replace(/if \(trustedRuntimeUrl\)[^\n]*\n/, ''),
     /'allow-same-origin'/,
     'untrusted preview must never get allow-same-origin; only a trusted runtime url may',
+  );
+});
+
+/*
+ * THE REGRESSION THIS FILE SHIPPED (2026-09-04).
+ *
+ * The first version of this gate exercised clean HTML and clean JSON. The real
+ * pipeline produces neither: inlineVfsAssets embeds products.json with
+ * `JSON.stringify(catalogText)`, so the catalog arrives DOUBLE-encoded inside a
+ * JS string — `new Response("[{\\"image\\":\\"/api/preview-image?u=…\\"}]")`.
+ *
+ * The capture class `[^"'\\s<>)]+` does not stop at a backslash, so it swallowed
+ * the JSON escape before the closing quote. encodeURIComponent turned it into
+ * `%5C`, the proxy fetched `…?w=800\\`, and the photo host 404'd it. Every
+ * catalog photo in a real shop broke — while this gate stayed green, because its
+ * corpus contained only the shapes that motivated the fix.
+ *
+ * That is the law CLAUDE.md records for travel-comprehension, met the hard way:
+ * "The corpus cannot only contain the cases that motivated the fix. One that
+ * does will read 100% for a parser that got far more dangerous."
+ *
+ * So these run the REAL inliner, not a hand-written approximation.
+ */
+const PHOTO = 'https://images.unsplash.com/photo-1520975916090-3105956dac38?w=800&q=80';
+
+/** The production shape: the model obeyed our brief and wrote the relative proxy
+ *  path itself, so proxyRemoteCatalogImages skipped it and it reached the inliner
+ *  still relative. */
+function inlinedShopHtml(imageValue) {
+  const vfs = {
+    'products.json': { content: JSON.stringify([{ image: imageValue, name: 'Raw Silk Camisole' }]) },
+    'index.html': { content: "<html><body><script>fetch('products.json').then(r=>r.json())</script></body></html>" },
+  };
+  return prepareCodeForPreview(vfs['index.html'].content, vfs);
+}
+
+test('[was-red] the inlined catalog survives absolutising with its url intact', () => {
+  const relative = `/api/preview-image?u=${encodeURIComponent(PHOTO)}`;
+  const inlined = inlinedShopHtml(relative);
+  assert.match(inlined, /new Response\("/, 'guard: the real inliner must still double-encode, or this test is checking nothing');
+
+  const out = absolutizePreviewProxyUrls(inlined, ORIGIN);
+  const match = out.match(/https:\/\/quantoraai\.app\/api\/preview-image\?u=([^"'\\\s<>)]+)/);
+  assert.ok(match, `the inlined catalog url was never absolutised. Got: ${out.slice(0, 300)}`);
+
+  assert.doesNotMatch(
+    match[1],
+    /%5C/,
+    'a JSON escape was swallowed into the photo url; the proxy will fetch it with a trailing backslash and the host will 404 it',
+  );
+  assert.equal(
+    decodeURIComponent(match[1]),
+    PHOTO,
+    'the proxy must be asked for exactly the photo the model chose, byte for byte',
+  );
+});
+
+test('[was-red] absolutising never breaks the surrounding JS string', () => {
+  /*
+   * Consuming the escape does not just corrupt the url — it turns the closing
+   * \\" of the image value into a bare ", which ENDS the inlined catalog string
+   * early and takes the rest of the script with it. Asserting on an escape near
+   * the START of the payload misses this entirely, which is how the first version
+   * of this test passed against the broken capture. Parse the payload instead:
+   * a swallowed escape makes it unparseable, which is the actual damage.
+   */
+  const relative = `/api/preview-image?u=${encodeURIComponent(PHOTO)}`;
+  const out = absolutizePreviewProxyUrls(inlinedShopHtml(relative), ORIGIN);
+
+  const payload = out.match(/new Response\((".*?"),\s*\{headers/);
+  assert.ok(payload, `the inlined catalog string is no longer a well-formed JS literal. Got: ${out.slice(0, 300)}`);
+
+  /*
+   * Parsed inside a try so a swallowed escape reports WHAT broke rather than
+   * "Unexpected non-whitespace character after JSON at position 149" (§8).
+   */
+  let catalog;
+  try {
+    catalog = JSON.parse(JSON.parse(payload[1]));
+  } catch (err) {
+    assert.fail(
+      'the inlined catalog no longer parses: an escape was consumed, so the image value\'s closing quote '
+      + `ended the string early and the rest of the script with it. Parser said: ${err.message}. Payload: ${payload[1].slice(0, 200)}`,
+    );
+  }
+  assert.equal(catalog[0].name, 'Raw Silk Camisole', 'the catalog must still parse after the rewrite');
+  assert.equal(
+    decodeURIComponent(catalog[0].image.split('u=')[1]),
+    PHOTO,
+    'and the image it hands the card must be the photo the model chose',
   );
 });

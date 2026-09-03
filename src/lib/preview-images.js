@@ -139,8 +139,24 @@ export function absolutizePreviewProxyUrls(text, origin = '') {
    * it is skipped, while a bare `"/api/preview-image?u=` is preceded by a quote,
    * whitespace, `=` or `(` and is rewritten.
    */
+  /*
+   * The capture must stop at a BACKSLASH as well as a quote.
+   *
+   * inlineVfsAssets embeds products.json inside a JS string, so the catalog
+   * arrives as `\"image\":\"/api/preview-image?u=...\"` — the character before
+   * the closing quote is an escape, not part of the url. Without `\\` in this
+   * class the capture swallowed it, `encodeURIComponent` turned it into `%5C`,
+   * and the proxy fetched `…?w=800\` — which the photo host 404s. Every catalog
+   * photo broke, and consuming the escape also ended the surrounding JS string
+   * early.
+   *
+   * The first fix shipped with that defect because its gate only exercised clean
+   * HTML and clean JSON — never the escaped form the real pipeline produces.
+   * A corpus containing only the cases that motivated the fix reads 100% for
+   * something that got worse.
+   */
   const pattern = new RegExp(
-    `(^|["'\\s(=])${PREVIEW_IMAGE_PROXY_PATH}\\?u=([^"'\\s<>)]+)`,
+    `(^|["'\\s(=])${PREVIEW_IMAGE_PROXY_PATH}\\?u=([^"'\\\\\\s<>)]+)`,
     'gi',
   );
   return source.replace(pattern, (whole, pre, rest) => {
