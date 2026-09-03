@@ -150,6 +150,10 @@
       "destination": "/api/pipeline?github=list-repos"
     },
     {
+      "source": "/api/github/checkout",
+      "destination": "/api/pipeline?github=checkout"
+    },
+    {
       "source": "/api/github/list-branches",
       "destination": "/api/pipeline?github=list-branches"
     },
