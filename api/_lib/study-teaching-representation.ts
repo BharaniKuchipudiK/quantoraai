@@ -1,6 +1,10 @@
-import { evaluateStudyLearningIntervention } from './study-learning-intervention.js';
+import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
+import {
+  resolveStudyRepresentationCapability,
+  type StudyRepresentationRendererKind,
+} from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-02.4';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-03.8';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -38,9 +42,12 @@ export type StudyTeachingRepresentationPlan = {
   primaryRepresentation: StudyTeachingRepresentation;
   learnerAction: 'predict' | 'calculate' | 'explain' | 'compare' | 'retrieve';
   rendererRequired: boolean;
+  rendererKind: StudyRepresentationRendererKind | null;
   fallback: StudyTeachingRepresentationFallback;
   reason: 'explicit_request' | 'struggle_repair' | 'default_teaching';
 };
+
+type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
 
 const VISUAL_REQUEST = /\b(?:image|images|picture|pictures|diagram|diagrams|visual|visually|show me|draw|sketch)\b/i;
 const GRAPH_REQUEST = /\b(?:graph|plot|chart)\b/i;
@@ -49,15 +56,7 @@ const STORY_REQUEST = /\b(?:story|storytelling|analogy|metaphor)\b/i;
 const COMPARISON_REQUEST = /\b(?:compare|comparison|difference between|versus|\bvs\b)\b/i;
 const CONCISE_REQUEST = /\b(?:make it easy|simplify|simple|simply|short|concise|in plain english)\b/i;
 const STRUGGLE = /\b(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|confused|lost|not getting it)\b/i;
-
-const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
-const ALGEBRA = /\b(?:algebra|equation|variable|unknown|polynomial|quadratic|factoris(?:e|ation)|factoriz(?:e|ation))\b|\bx\b/i;
-const BIOLOGY = /\b(?:biology|cell|nucleus|membrane|organelle|mitosis|meiosis|photosynthesis|respiration|genetics?|dna|chromosome)\b/i;
-const CHEMISTRY = /\b(?:chemistry|chemical|atom|molecule|bond|electron|reaction|reactant|product|acid|base|salt|periodic)\b/i;
-const EXPLICIT_GRAPH = /\b(?:graph|slope|axis|axes|plot|trend|correlation|distribution)\b/i;
 const GRAPH_SEMANTICS = /\b(?:slope|axis|axes|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?)\b/i;
-const PROCESS = /\b(?:process|cycle|flow|pathway|sequence|step|stage)\b/i;
-const TIMELINE = /\b(?:timeline|chronolog|year|era|history)\b/i;
 
 function requestedMode(message: string): StudyTeachingRequestedMode {
   if (GRAPH_REQUEST.test(message)) return 'graph';
@@ -69,47 +68,46 @@ function requestedMode(message: string): StudyTeachingRequestedMode {
   return null;
 }
 
-function supportedVisual(context: string): StudyTeachingRepresentation | null {
-  if (EXPLICIT_GRAPH.test(context)) return 'graph';
-  if (MECHANICS.test(context) || ALGEBRA.test(context) || BIOLOGY.test(context) || CHEMISTRY.test(context)) {
-    return 'annotated_diagram';
-  }
-  if (PROCESS.test(context)) return 'process_flow';
-  if (TIMELINE.test(context)) return 'timeline';
-  return null;
-}
-
 export function planStudyTeachingRepresentation(input: {
   message?: string | null;
   contextText?: string | null;
+  history?: HistoryItem[];
+  intervention?: StudyLearningIntervention | null;
 }): StudyTeachingRepresentationPlan {
   const message = String(input.message || '').trim();
   const contextText = String(input.contextText || '').trim();
   const context = `${contextText}\n${message}`.trim();
   const requested = requestedMode(message);
+  const capability = resolveStudyRepresentationCapability(context);
 
   if (requested === 'graph') {
-    const graphAvailable = EXPLICIT_GRAPH.test(contextText) || GRAPH_SEMANTICS.test(message);
+    // The request word "graph" is not evidence that a graph is semantically
+    // appropriate. Require graph semantics from established lesson context or
+    // from additional semantic words in the current learner message.
+    const contextCapability = resolveStudyRepresentationCapability(contextText);
+    const graphCapability = contextCapability?.representation === 'graph' ? contextCapability : null;
+    const graphAvailable = Boolean(graphCapability) || GRAPH_SEMANTICS.test(message);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
       primaryRepresentation: graphAvailable ? 'graph' : 'concise_text',
       learnerAction: 'explain',
       rendererRequired: graphAvailable,
+      rendererKind: graphCapability?.rendererKind || (graphAvailable ? 'graph' : null),
       fallback: graphAvailable ? 'none' : 'renderer_unavailable',
       reason: 'explicit_request',
     };
   }
 
   if (requested === 'visual') {
-    const visual = supportedVisual(context);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
-      primaryRepresentation: visual || 'concise_text',
+      primaryRepresentation: capability?.representation || 'concise_text',
       learnerAction: 'predict',
-      rendererRequired: Boolean(visual),
-      fallback: visual ? 'none' : (context ? 'renderer_unavailable' : 'concept_ambiguous'),
+      rendererRequired: Boolean(capability),
+      rendererKind: capability?.rendererKind || null,
+      fallback: capability ? 'none' : (context ? 'renderer_unavailable' : 'concept_ambiguous'),
       reason: 'explicit_request',
     };
   }
@@ -121,6 +119,7 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'worked_example',
       learnerAction: 'calculate',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'explicit_request',
     };
@@ -133,6 +132,7 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'story_analogy',
       learnerAction: 'explain',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'explicit_request',
     };
@@ -145,6 +145,7 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'comparison',
       learnerAction: 'compare',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'explicit_request',
     };
@@ -157,14 +158,15 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'concise_text',
       learnerAction: 'explain',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'explicit_request',
     };
   }
 
-  const intervention = evaluateStudyLearningIntervention({
+  const intervention = input.intervention || evaluateStudyLearningIntervention({
     message,
-    history: contextText.split('\n').filter(Boolean).map((text) => ({ text })),
+    history: Array.isArray(input.history) ? input.history : [],
   });
 
   if (intervention.action === 'guided_reconstruction') {
@@ -174,19 +176,20 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'interactive_probe',
       learnerAction: 'predict',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'struggle_repair',
     };
   }
 
   if (intervention.action === 'change_representation') {
-    const visual = supportedVisual(context);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: null,
-      primaryRepresentation: visual || 'worked_example',
-      learnerAction: visual ? 'predict' : 'calculate',
-      rendererRequired: Boolean(visual),
+      primaryRepresentation: capability?.representation || 'worked_example',
+      learnerAction: capability ? 'predict' : 'calculate',
+      rendererRequired: Boolean(capability),
+      rendererKind: capability?.rendererKind || null,
       fallback: 'none',
       reason: 'struggle_repair',
     };
@@ -199,6 +202,7 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'reference',
       learnerAction: 'retrieve',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'struggle_repair',
     };
@@ -211,6 +215,7 @@ export function planStudyTeachingRepresentation(input: {
       primaryRepresentation: 'concise_text',
       learnerAction: 'explain',
       rendererRequired: false,
+      rendererKind: null,
       fallback: 'none',
       reason: 'struggle_repair',
     };
@@ -222,6 +227,7 @@ export function planStudyTeachingRepresentation(input: {
     primaryRepresentation: 'concise_text',
     learnerAction: 'retrieve',
     rendererRequired: false,
+    rendererKind: null,
     fallback: 'none',
     reason: 'default_teaching',
   };
