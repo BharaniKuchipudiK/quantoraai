@@ -53,3 +53,12 @@ test('open desk tabs are labelled, not painted in brand orange', () => {
   assert.match(tabs, /deskTabLabel\(tab\)/);
   assert.match(tabs, /PINNED_DESK_TAB/);
 });
+
+test('a proven Preview check is ticked and struck through, not restated as ok', () => {
+  const tree = fs.readFileSync(new URL('../components/StudioFileTree.jsx', import.meta.url), 'utf8');
+  assert.match(tree, /ok: '✓'/);
+  assert.match(tree, /textDecoration: 'line-through'/);
+  assert.match(tree, /data-quantora-desk-probe-ok/);
+  assert.match(tree, /data-quantora-desk-probe-state/);
+  assert.doesNotMatch(tree, /data-quantora-desk-plan|Plan\/Build/);
+});
