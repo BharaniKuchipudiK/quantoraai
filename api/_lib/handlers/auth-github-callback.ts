@@ -113,6 +113,8 @@ export default async function handler(req: any, res: any) {
       name: identity.name,
       picture: identity.picture,
       authProvider: "GitHub",
+      // exchangeCode keeps only addresses GitHub reports as verified.
+      emailVerified: true,
       geo: getRequestGeo(req),
     });
     if (session.ok === false) {
