@@ -242,7 +242,7 @@
       "destination": "/api/admin?route=models"
     },
     {
-      "source": "/((?!api/.*|preview/.*|monaco/.*|robots.txt|sitemap.xml).*)",
+      "source": "/((?!api/.*|preview/.*|monaco/.*|robots.txt|sitemap.xml|manifest.webmanifest).*)",
       "destination": "/index.html"
     }
   ]

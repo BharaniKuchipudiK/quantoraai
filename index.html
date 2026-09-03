@@ -3,8 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text x='32' y='48' text-anchor='middle' font-family='Georgia,serif' font-size='52' font-weight='700' fill='%23e8bc3a'>Q</text></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover lets the page paint under the notch and home indicator.
+      It is only safe together with the safe-area padding in src/index.css — on
+      its own it puts the header under the notch on every iPhone since the X.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Quantora | Idea to Outcome</title>
+
+    <!--
+      Home-screen install. Deliberately NO service worker: iOS installs from the
+      manifest plus the apple-* tags alone, while a service worker persists in
+      the browser after it is removed from the site and is the one piece here
+      that is genuinely hard to undo. Offline caching is a separate decision.
+
+      iOS reads almost none of the manifest for Add to Home Screen — it wants
+      apple-touch-icon and the apple-mobile-web-app-* tags — so both sets exist
+      on purpose, not by duplication.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#131314" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- black-translucent draws the app under the status bar; the safe-area
+         padding is what keeps the header out from under the clock. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Quantora" />
     <meta name="description" content="Free outcomes studio. Models answer — Quantora builds, researches, tutors, plans, and proves it before calling it done." />
     <link rel="canonical" href="https://quantoraai.app/" />
     <meta name="robots" content="index,follow" />
