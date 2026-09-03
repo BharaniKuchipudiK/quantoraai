@@ -11,11 +11,19 @@ import {
   Sparkles,
   Plus,
   CreditCard,
-  HelpCircle,
   Layers,
   Globe,
   PieChart,
   CheckCircle2,
+  Eye,
+  Zap,
+  ShieldCheck,
+  Network,
+  Atom,
+  Calendar,
+  ClipboardCheck,
+  User,
+  Rocket,
 } from 'lucide-react';
 import './LandingPage.css';
 
@@ -57,31 +65,109 @@ function Reveal({ children, delay = 0, style, className }) {
 
 function StudyTutorMock({ isLight }) {
   const { surface, panel, border, muted, ink } = mockTokens(isLight);
-  const tools = [
-    { id: 'ice', icon: Sparkles, title: 'Icebreaker', subtitle: 'One true hook. Then we wait.' },
-    { id: 'explain', icon: BookOpen, title: 'Explain', subtitle: 'One idea. Then a picture.' },
-    { id: 'cards', icon: CreditCard, title: 'Flashcards', subtitle: 'Front. Flip. Recall.' },
-    { id: 'quiz', icon: HelpCircle, title: 'Quiz', subtitle: 'A check. Then we wait.' },
+  const [phase, setPhase] = useState(0);
+  const [flashBack, setFlashBack] = useState(false);
+
+  const modes = [
+    { id: 'schedule', icon: Calendar, title: 'Study schedule', subtitle: 'Plan the week. You set the pace.' },
+    { id: 'flash', icon: CreditCard, title: 'Flashcards', subtitle: 'Recall first. Tutor waits.' },
+    { id: 'assess', icon: ClipboardCheck, title: 'Assessment', subtitle: 'Server-graded evidence.' },
+    { id: 'tutor', icon: Sparkles, title: 'AI Tutor', subtitle: 'One beat. Then your turn.' },
+  ];
+
+  const activeMode = modes[phase]?.id || 'schedule';
+
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return undefined;
+    const id = setInterval(() => {
+      setPhase((p) => {
+        const next = (p + 1) % modes.length;
+        if (next === 1) setFlashBack(false);
+        return next;
+      });
+    }, 3400);
+    return () => clearInterval(id);
+  }, [modes.length]);
+
+  useEffect(() => {
+    if (activeMode !== 'flash') return undefined;
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      setFlashBack(true);
+      return undefined;
+    }
+    const flip = setTimeout(() => setFlashBack(true), 1400);
+    return () => clearTimeout(flip);
+  }, [activeMode, phase]);
+
+  const scheduleRows = [
+    { day: 'Mon', topic: 'Light & chlorophyll', done: true },
+    { day: 'Wed', topic: 'Calvin cycle', done: false, active: true },
+    { day: 'Fri', topic: 'Verified check', done: false },
+  ];
+
+  const assessOptions = [
+    { id: 'a', text: 'Light becomes chemical energy in the chloroplast', picked: true },
+    { id: 'b', text: 'Roots absorb sunlight directly', picked: false },
+    { id: 'c', text: 'Oxygen is the main product of the light reaction', picked: false },
   ];
 
   return (
-    <div className="workspace-mock workspace-mock--study workspace-mock--rich" style={{ background: surface, borderColor: border }}>
-      <div className="workspace-mock__titlebar" style={{ borderColor: border }}>
-        <Lightbulb size={14} color={ORANGE} />
-        <span className="workspace-mock__title">Study Tutor · Photosynthesis</span>
+    <div className="workspace-mock workspace-mock--study workspace-mock--rich study-mock" style={{ background: surface, borderColor: border }}>
+      <div className="workspace-mock__titlebar study-mock__titlebar" style={{ borderColor: border }}>
+        <div className="study-mock__title-left">
+          <Lightbulb size={14} color={ORANGE} />
+          <span className="workspace-mock__title">Study Tutor · Photosynthesis</span>
+        </div>
+        <span className="study-mock__human-pill">
+          <User size={12} color={ORANGE} />
+          Human in the loop
+        </span>
       </div>
+
+      <div className="study-mock__toolbar" style={{ borderColor: border, background: panel }}>
+        <div className="study-mock__progress">
+          <div className="study-mock__progress-label">
+            <span style={{ color: muted }}>Your tutor board</span>
+            <span style={{ color: ORANGE }}>35% verified</span>
+          </div>
+          <div className="study-mock__progress-track" aria-hidden="true">
+            <span className="study-mock__progress-fill" style={{ width: '35%' }} />
+          </div>
+          <p className="study-mock__progress-caption" style={{ color: muted }}>
+            Mastery moves only after verified evidence — not self-report.
+          </p>
+        </div>
+        <div className="study-mock__chips" aria-label="Study tutor actions">
+          {['Explain', 'Schedule', 'Flashcards', 'Test me'].map((label) => (
+            <span
+              key={label}
+              className={`study-mock__chip${(
+                (label === 'Schedule' && activeMode === 'schedule')
+                || (label === 'Flashcards' && activeMode === 'flash')
+                || (label === 'Test me' && activeMode === 'assess')
+                || (label === 'Explain' && activeMode === 'tutor')
+              ) ? ' is-active' : ''}`}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="study-desk">
         <aside className="study-plus" style={{ borderColor: border, background: panel }}>
           <div className="study-plus__head">
             <span className="study-plus__mark" aria-hidden="true"><Plus size={14} color="#ffffff" strokeWidth={3} /></span>
             <div>
-              <span className="workspace-mock__lab-label">This topic</span>
-              <strong style={{ color: ink }}>The next beat</strong>
+              <span className="workspace-mock__lab-label">This session</span>
+              <strong style={{ color: ink }}>Pick the next beat</strong>
             </div>
           </div>
-          {tools.map((tool) => {
+          {modes.map((tool) => {
             const Icon = tool.icon;
-            const on = tool.id === 'ice';
+            const on = tool.id === activeMode;
             return (
               <div
                 key={tool.id}
@@ -97,19 +183,78 @@ function StudyTutorMock({ isLight }) {
             );
           })}
         </aside>
-        <div className="study-desk__stage">
-          <div className="study-beat">
-            <div className="study-beat__frame" style={{ borderColor: ORANGE, background: panel }}>
-              <span style={{ color: ORANGE }}>light → sugar</span>
+
+        <div className="study-desk__stage study-mock__stage">
+          <div className="study-mock__panel-stack" aria-live="polite">
+            <div className={`study-mock__panel${activeMode === 'schedule' ? ' is-active' : ''}`} aria-hidden={activeMode !== 'schedule'}>
+              <p className="study-mock__panel-kicker" style={{ color: ORANGE }}>Study schedule</p>
+              <p className="study-mock__panel-lead" style={{ color: ink }}>Three beats this week — you choose when to show up.</p>
+              <ul className="study-mock__schedule">
+                {scheduleRows.map((row) => (
+                  <li
+                    key={row.day}
+                    className={`study-mock__schedule-row${row.active ? ' is-active' : ''}${row.done ? ' is-done' : ''}`}
+                    style={{ borderColor: border, background: row.active ? (isLight ? '#fff7ed' : 'rgba(234,88,12,0.08)') : panel }}
+                  >
+                    <span className="study-mock__schedule-day" style={{ color: row.active ? ORANGE : muted }}>{row.day}</span>
+                    <span style={{ color: ink }}>{row.topic}</span>
+                    {row.done && <CheckCircle2 size={14} color={ORANGE} />}
+                    {row.active && <span className="study-mock__schedule-now" style={{ color: ORANGE }}>Tonight</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="study-mock__wait" style={{ color: ORANGE }}>Tap a beat when you&apos;re ready — the tutor waits.</p>
             </div>
-            <p className="workspace-mock__chat-bubble is-ai" style={{ background: panel, borderColor: border, color: ink }}>
-              Every green leaf is a quiet factory. Light goes in. Sugar comes out.
-            </p>
-            <p className="study-beat__wait" style={{ color: ORANGE }}>Say I’m with you — then we begin.</p>
+
+            <div className={`study-mock__panel${activeMode === 'flash' ? ' is-active' : ''}`} aria-hidden={activeMode !== 'flash'}>
+              <p className="study-mock__panel-kicker" style={{ color: ORANGE }}>Flashcard 2 / 6</p>
+              <button type="button" className={`study-flash study-mock__flash${flashBack ? ' is-back' : ''}`} style={{ borderColor: ORANGE, background: panel }}>
+                <em style={{ color: muted }}>{flashBack ? 'Answer' : 'Prompt'}</em>
+                <strong style={{ color: ink }}>
+                  {flashBack ? 'Light energy → chemical energy in the chloroplast' : 'What converts light into sugar?'}
+                </strong>
+              </button>
+              <p className="study-mock__wait" style={{ color: ORANGE }}>
+                {flashBack ? 'Recall logged. Next card when you say go.' : 'Try it in your head first — then tap to reveal.'}
+              </p>
+            </div>
+
+            <div className={`study-mock__panel${activeMode === 'assess' ? ' is-active' : ''}`} aria-hidden={activeMode !== 'assess'}>
+              <p className="study-mock__panel-kicker" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>Server-graded check</p>
+              <p className="study-mock__assess-q" style={{ color: ink }}>Where does photosynthesis store chemical energy first?</p>
+              <div className="study-mock__assess-options">
+                {assessOptions.map((opt) => (
+                  <div
+                    key={opt.id}
+                    className={`study-mock__assess-opt${opt.picked ? ' is-picked' : ''}`}
+                    style={{ borderColor: opt.picked ? ORANGE : border, background: opt.picked ? (isLight ? '#fff7ed' : 'rgba(234,88,12,0.1)') : panel }}
+                  >
+                    {opt.text}
+                  </div>
+                ))}
+              </div>
+              <p className="study-mock__assess-result" style={{ color: isLight ? '#047857' : '#6ee7b7' }}>
+                <strong>Verified.</strong> Evidence added to your mastery ledger — not a chat guess.
+              </p>
+            </div>
+
+            <div className={`study-mock__panel${activeMode === 'tutor' ? ' is-active' : ''}`} aria-hidden={activeMode !== 'tutor'}>
+              <div className="study-beat__frame" style={{ borderColor: ORANGE, background: panel }}>
+                <span style={{ color: ORANGE }}>light → ATP → sugar</span>
+              </div>
+              <p className="workspace-mock__chat-bubble is-ai" style={{ background: panel, borderColor: border, color: ink }}>
+                Every green leaf is a quiet factory. One idea — then I wait for your words, not a multiple-choice guess.
+              </p>
+              <p className="workspace-mock__chat-bubble is-user study-mock__user-bubble" style={{ borderColor: border, color: ink }}>
+                I think the chloroplast catches the light first?
+              </p>
+              <p className="study-mock__wait" style={{ color: ORANGE }}>Good start. Write your attempt — I&apos;ll debrief, not lecture.</p>
+            </div>
           </div>
+
           <div className="study-composer" style={{ borderColor: border, background: panel }}>
             <span className="study-plus__mark is-composer" aria-hidden="true"><Plus size={14} color="#ffffff" strokeWidth={3} /></span>
-            <span style={{ color: muted }}>Message Study Tutor…</span>
+            <span style={{ color: muted }}>Your turn — message Study Tutor…</span>
           </div>
         </div>
       </div>
@@ -150,12 +295,37 @@ function AdvisorMock({ isLight, type }) {
   );
 }
 
+const OUTCOME_LOOP = [
+  { icon: Eye, title: 'Understand', body: 'The mission, the context, what done means.' },
+  { icon: Zap, title: 'Act', body: 'Build, research, study, plan, advise.' },
+  { icon: ShieldCheck, title: 'Verify', body: 'Proof before anyone says “done.”' },
+  { icon: Layers, title: 'Remember', body: 'Outcome state picks up next session.' },
+];
+
+const OUTCOME_PILLARS = [
+  {
+    n: '01',
+    title: 'Proof of Done',
+    body: 'The Coding Desk won’t claim success or open preview until the proof control plane passes.',
+  },
+  {
+    n: '02',
+    title: 'Grounded research',
+    body: 'When facts matter, Quantora searches the web and cites sources — no invented numbers.',
+  },
+  {
+    n: '03',
+    title: 'Publish the win',
+    body: 'Live preview → Vercel when the build is ready. A link you can share, not a screenshot.',
+  },
+];
+
 const ROOMS = [
   {
     id: 'research',
     tag: 'Research',
     title: 'Research Analyst',
-    body: 'The question, the sources, the conclusion — held in the same place you left them.',
+    body: 'Compare sources, map evidence, draft the call — grounded and still open when you return.',
     icon: BookOpen,
     mock: 'research',
   },
@@ -163,7 +333,7 @@ const ROOMS = [
     id: 'travel',
     tag: 'Travel',
     title: 'Travel Advisor',
-    body: 'Destination, dates, the itinerary you can still open next week.',
+    body: 'Clarify first, then flights, hotels, and an itinerary that stays on your desk.',
     icon: Globe,
     mock: 'travel',
   },
@@ -171,9 +341,30 @@ const ROOMS = [
     id: 'finance',
     tag: 'Finance',
     title: 'Finance Advisor',
-    body: 'The numbers, the trade-off, the decision taking shape.',
+    body: 'Portfolio, cash flow, trade-offs — a board that holds the numbers while you decide.',
     icon: PieChart,
     mock: 'finance',
+  },
+];
+
+const PLATFORM_MODULES = [
+  {
+    icon: Sparkles,
+    tag: 'Studio',
+    title: 'AI Studio',
+    body: 'Approved frontier models, choice cards, and session memory in one conversation.',
+  },
+  {
+    icon: Network,
+    tag: 'Canvas',
+    title: 'Dream-to-Action',
+    body: 'Map architecture and decisions from abstract intent to executable nodes.',
+  },
+  {
+    icon: Atom,
+    tag: 'Quantum',
+    title: 'Quantum Playground',
+    body: 'Simulate Qiskit circuits and inspect quantum states in the browser.',
   },
 ];
 
@@ -189,11 +380,11 @@ function SelfHealConsole({ isLight }) {
   }, []);
 
   const status = [
-    'Writing checkout.js…',
-    'Reviewing the total…',
-    'Writing the tax patch…',
-    'Patch applied. Running tests…',
-    'Ready. Tests passed.',
+    'Planning the turn…',
+    'Assembling checkout.js…',
+    'Running proof control plane…',
+    'Patch applied. Re-proving…',
+    'Verified. Preview ready.',
   ][phase];
 
   const lines = [
@@ -223,27 +414,39 @@ function SelfHealConsole({ isLight }) {
               <span>{line.text}</span>
             </div>
           ))}
-          {phase < 3 ? (
-            <div className={`heal-console__line${phase >= 1 ? ' is-bug' : ''}`}>
-              <span className="heal-console__ln" style={{ color: muted }}>10</span>
-              <span>  const total = subtotal;</span>
-            </div>
-          ) : (
-            <>
-              <div className="heal-console__line is-del">
-                <span className="heal-console__ln" style={{ color: muted }}>—</span>
-                <span>  const total = subtotal;</span>
-              </div>
-              <div className="heal-console__line is-add">
-                <span className="heal-console__ln" style={{ color: muted }}>+</span>
-                <span>  const tax = await calculateTax(cart.address);</span>
-              </div>
-              <div className="heal-console__line is-add">
-                <span className="heal-console__ln" style={{ color: muted }}>+</span>
-                <span>  const total = Math.round(subtotal * (1 + tax));</span>
-              </div>
-            </>
-          )}
+          <div className="heal-console__patch-block">
+            {phase < 3 ? (
+              <>
+                <div className={`heal-console__line${phase >= 1 ? ' is-bug' : ''}`}>
+                  <span className="heal-console__ln" style={{ color: muted }}>10</span>
+                  <span>  const total = subtotal;</span>
+                </div>
+                <div className="heal-console__line is-reserved" aria-hidden="true">
+                  <span className="heal-console__ln" style={{ color: muted }}>&nbsp;</span>
+                  <span>&nbsp;</span>
+                </div>
+                <div className="heal-console__line is-reserved" aria-hidden="true">
+                  <span className="heal-console__ln" style={{ color: muted }}>&nbsp;</span>
+                  <span>&nbsp;</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="heal-console__line is-del">
+                  <span className="heal-console__ln" style={{ color: muted }}>—</span>
+                  <span>  const total = subtotal;</span>
+                </div>
+                <div className="heal-console__line is-add">
+                  <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                  <span>  const tax = await calculateTax(cart.address);</span>
+                </div>
+                <div className="heal-console__line is-add">
+                  <span className="heal-console__ln" style={{ color: muted }}>+</span>
+                  <span>  const total = Math.round(subtotal * (1 + tax));</span>
+                </div>
+              </>
+            )}
+          </div>
           {[
             { n: 15, text: '' },
             { n: 16, text: '  const charge = await stripe.charges.create({' },
@@ -262,22 +465,14 @@ function SelfHealConsole({ isLight }) {
           ))}
         </div>
         <div className="heal-console__term" style={{ borderColor: border, color: muted }}>
-          <p>$ quantora heal checkout.js</p>
-          {phase >= 1 && <p>[agent] Reading 23 lines · refining the total</p>}
-          {phase >= 2 && <p>[agent] Writing patch…</p>}
-          {phase >= 3 && (
-            <>
-              <p className="heal-console__del-line">− const total = subtotal;</p>
-              <p className="heal-console__add-line">+ const tax = await calculateTax(cart.address);</p>
-              <p className="heal-console__add-line">+ const total = Math.round(subtotal * (1 + tax));</p>
-            </>
-          )}
-          {phase >= 4 && (
-            <>
-              <p>$ vitest run checkout.test.js</p>
-              <p style={{ color: ORANGE }}>✓ tax is applied  ·  ✓ integer rounding</p>
-            </>
-          )}
+          <p>$ quantora prove checkout.js</p>
+          <p className={phase >= 1 ? '' : 'is-reserved'}>[proof] Reading 23 lines · gap: tax not applied</p>
+          <p className={phase >= 2 ? '' : 'is-reserved'}>[agent] Writing patch…</p>
+          <p className={phase >= 3 ? 'heal-console__del-line' : 'is-reserved'}>− const total = subtotal;</p>
+          <p className={phase >= 3 ? 'heal-console__add-line' : 'is-reserved'}>+ const tax = await calculateTax(cart.address);</p>
+          <p className={phase >= 3 ? 'heal-console__add-line' : 'is-reserved'}>+ const total = Math.round(subtotal * (1 + tax));</p>
+          <p className={phase >= 4 ? '' : 'is-reserved'}>$ vitest run checkout.test.js</p>
+          <p className={phase >= 4 ? '' : 'is-reserved'} style={{ color: phase >= 4 ? ORANGE : undefined }}>✓ tax is applied  ·  ✓ integer rounding</p>
           <span className="heal-console__caret" aria-hidden="true" />
         </div>
       </div>
@@ -364,7 +559,7 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <header className="landing-header" style={{ background: navBg, borderBottom: cardBorder }}>
         <div className="landing-header__inner">
           <button type="button" className="landing-header__brand" aria-label="Open Quantora AI Studio" onClick={openStudio}>
-            <QuantoraFullLogoSvg height={44} isDark={!isLight} />
+            <QuantoraFullLogoSvg height={44} isDark={!isLight} tagline="IDEA TO OUTCOME" />
           </button>
           <div className="landing-header__actions">
             <button
@@ -394,13 +589,18 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
       <section className="landing-hero">
         <div className="landing-container">
           <div className="landing-hero__inner">
-            <p className="landing-hero__eyebrow">The Citizen AI Lab</p>
             <h1 className="landing-hero__title" style={{ color: textColor }}>
-              An AI coding desk.<br />From idea to <span className="landing-accent">outcome.</span>
+              Type the idea.<br />Own the <span className="landing-accent">outcome.</span>
             </h1>
             <p className="landing-hero__subtitle" style={{ color: subtextColor }}>
-              You bring the idea. Quantora writes the files, shows the live preview, and the outcome stays on the desk.
+              Free outcomes studio. Models answer — Quantora builds, researches, tutors, plans, and proves it before calling it done.
             </p>
+            <ol className="landing-hero__beats" aria-label="Outcome runtime">
+              <li>Intent</li>
+              <li>Act</li>
+              <li>Verify</li>
+              <li>Yours</li>
+            </ol>
             <div
               className={`landing-hero__prompt${isLight ? ' is-light' : ' is-dark'}`}
               onClick={() => promptRef.current?.focus()}
@@ -447,13 +647,56 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
+      <section className={`landing-section landing-outcomes${isLight ? ' is-light' : ' is-dark'}`}>
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <p className="landing-section__eyebrow">Outcome Runtime</p>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Models answer. Quantora finishes.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                Not another chatbot. The PCL judges the mission, acts, verifies the result, and remembers where you left off — across every workspace.
+              </p>
+            </div>
+          </Reveal>
+          <Reveal>
+            <div className="landing-agentic__pipeline" aria-label="Understand, act, verify, remember">
+              {OUTCOME_LOOP.map((step, i) => {
+                const Icon = step.icon;
+                return (
+                  <div key={step.title} className="landing-agentic__step" style={{ color: subtextColor }}>
+                    {i < OUTCOME_LOOP.length - 1 && <span className="landing-agentic__connector" aria-hidden="true" />}
+                    <div className="landing-agentic__icon" style={{ border: cardBorder }}>
+                      <Icon size={22} color={ORANGE} />
+                    </div>
+                    <strong style={{ color: textColor }}>{step.title}</strong>
+                    <span>{step.body}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Reveal>
+          <div className="landing-outcomes__grid">
+            {OUTCOME_PILLARS.map((pillar, i) => (
+              <Reveal key={pillar.title} delay={i * 50}>
+                <article className="landing-outcome-card">
+                  <em>{pillar.n}</em>
+                  <strong>{pillar.title}</strong>
+                  <span>{pillar.body}</span>
+                </article>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="landing-section landing-proof">
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <h2 className="landing-section__title" style={{ color: textColor }}>The work stays on the desk.</h2>
+              <p className="landing-section__eyebrow">Coding Desk</p>
+              <h2 className="landing-section__title" style={{ color: textColor }}>Build it. Prove it. Ship it.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Files. Preview. The patch. Leave. Come back. They are still yours.
+                Files write. Preview goes live. Self-heal patches the gap. Nothing opens as “done” until proof passes — then publish to Vercel when you’re ready.
               </p>
             </div>
           </Reveal>
@@ -467,9 +710,10 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         <div className="landing-container">
           <Reveal>
             <div className="landing-section__header is-center">
-              <h2 className="landing-section__title" style={{ color: textColor }}>Same assistant. Another room.</h2>
+              <p className="landing-section__eyebrow">Domain workspaces</p>
+              <h2 className="landing-section__title" style={{ color: textColor }}>One studio. Every ambition.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Study opens from +. Icebreaker first — one true hook. Flashcards and a quiz wait until you are ready.
+                An AI tutor with schedules, flashcards, and server-graded checks — plus research, travel, and finance. Same outcome memory when you return.
               </p>
             </div>
           </Reveal>
@@ -499,12 +743,53 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
         </div>
       </section>
 
+      <section className="landing-section">
+        <div className="landing-container">
+          <Reveal>
+            <div className="landing-section__header is-center">
+              <p className="landing-section__eyebrow">Platform</p>
+              <h2 className="landing-section__title" style={{ color: textColor }}>More than a prompt box.</h2>
+              <p className="landing-section__lead" style={{ color: subtextColor }}>
+                Studio for everyday outcomes. Canvas for architecture. Quantum for exploration. All free to start.
+              </p>
+            </div>
+          </Reveal>
+          <div className="landing-features__grid">
+            {PLATFORM_MODULES.map((mod, i) => {
+              const Icon = mod.icon;
+              return (
+                <Reveal key={mod.title} delay={i * 50}>
+                  <article
+                    className={`landing-feature-card${isLight ? ' is-light' : ' is-dark'}`}
+                    style={{ border: cardBorder, background: cardBg }}
+                  >
+                    <div className="landing-feature-card__body">
+                      <span className="landing-feature-card__tag" style={{ color: ORANGE }}>{mod.tag}</span>
+                      <div className="landing-feature-card__title-row">
+                        <Icon size={16} color={ORANGE} />
+                        <h3 style={{ color: textColor }}>{mod.title}</h3>
+                      </div>
+                      <p style={{ color: subtextColor, margin: 0, fontSize: '0.9rem', lineHeight: 1.6 }}>{mod.body}</p>
+                    </div>
+                  </article>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
       <section className="landing-section landing-final-cta">
         <div className="landing-container">
           <Reveal>
             <div className="landing-final-cta__inner">
-              <h2 style={{ color: textColor }}>The desk is waiting.</h2>
-              <p style={{ color: subtextColor }}>Bring an idea. Leave with the outcome. Try Quantora for free.</p>
+              <div className="landing-final-cta__head">
+                <Rocket size={24} color={ORANGE} aria-hidden="true" />
+                <h2 style={{ color: textColor }}>Bring the idea. Leave with the outcome.</h2>
+              </div>
+              <p style={{ color: subtextColor }}>
+                Apps, research, study, travel, finance — measured by completion, not prompt volume. Try Quantora for free.
+              </p>
               <TryCta large onClick={() => startGuestOrBuild()} />
             </div>
           </Reveal>

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   executeToolCall,
   isTransactionalTravelTool,
@@ -32,6 +33,30 @@ function isoDaysFromNow(days: number): string {
 /** Far enough out that no grace window or timezone offset can make it past. */
 const DEPARTURE_DATE = isoDaysFromNow(30);
 const RETURN_DATE = isoDaysFromNow(32);
+
+test('no travel date fixture in this file is a literal — the bomb cannot be re-armed', () => {
+  /*
+   * The instance fix for this class is to bump the literal to a date further
+   * out, and that is what happened on main: 2026-09-01 became 2026-12-01 and
+   * 2026-12-15, which re-arms the same failure for 2026-12-02. Bumping is the
+   * intuitive repair, so the only thing that closes the class is a check that
+   * rejects it (CLAUDE.md §7).
+   *
+   * Precise on purpose (§5): it fires only on a literal YYYY-MM-DD in a travel
+   * date ARGUMENT, never on prose, comments, or dates used as data elsewhere —
+   * an ambiguous version of this gets muted the first time it cries wolf.
+   */
+  const source = readFileSync(new URL(import.meta.url), 'utf8');
+  const literalDateArgs = source.match(
+    /(?:dates|departureDate|returnDate|checkInDate|checkOutDate):\s*'\d{4}-\d{2}-\d{2}'/g,
+  );
+  assert.equal(
+    literalDateArgs,
+    null,
+    `Hardcoded travel dates will fail validateTravelToolArgs once they pass. `
+    + `Use DEPARTURE_DATE / RETURN_DATE (or isoDaysFromNow) instead of: ${literalDateArgs?.join(', ')}`,
+  );
+});
 
 test('travel tools are scoped only to the travel domain', () => {
   assert.equal(shouldEnableTravelTools('travel'), true);
@@ -325,8 +350,8 @@ test('Google provider errors fail closed and terminate the interactive agent ste
 
   const hotel = await executeToolCall('search_hotels', {
     location: 'Tokyo',
-    checkInDate: '2026-10-01',
-    checkOutDate: '2026-10-03',
+    checkInDate: DEPARTURE_DATE,
+    checkOutDate: RETURN_DATE,
   }, {
     googleMapsApiKey: 'bad-key',
     fetchFn,
@@ -455,7 +480,7 @@ test('flight provider failure retries on an alternate Duffel client when configu
   const result = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: primary as any,
     duffelFallbackClient: fallback as any,
@@ -480,7 +505,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const first = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
@@ -495,7 +520,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const second = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
