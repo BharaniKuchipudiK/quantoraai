@@ -15,7 +15,7 @@ import { requireActiveSession } from "./authz.js";
 import { isRateLimited } from "./rate-limit.js";
 import { parseGithubRepositoryUrl } from "./repository-preview.js";
 import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection } from "./github-connection-store.js";
-import { listIssues, listPullRequests, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
+import { listBranches, listIssues, listPullRequests, listRepositories, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
 import {
   commentOnPullRequest,
   createPullRequest,
@@ -36,6 +36,8 @@ export const GITHUB_STAGES = Object.freeze([
   "github-merge-pr",
   "github-push",
   "github-create-repo",
+  "github-list-repos",
+  "github-list-branches",
 ]);
 
 /** Stages that change something on GitHub. Reads are not in this set. */
@@ -52,7 +54,7 @@ export const GITHUB_WRITE_STAGES = Object.freeze([
  * cannot go through the repoUrl parse every other stage depends on.
  */
 export function isRepositorylessGithubStage(stage: unknown): boolean {
-  return stage === "github-create-repo";
+  return stage === "github-create-repo" || stage === "github-list-repos";
 }
 
 export function isGithubWriteStage(stage: unknown): boolean {
@@ -105,6 +107,16 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
   const principal = await readGithubPrincipal(sessionUser.sub);
   if (!principal) {
     res.status(412).json({ error: NOT_CONNECTED, needsGithubConnection: true });
+    return;
+  }
+
+  if (stage === "github-list-repos") {
+    try {
+      const repositories = await listRepositories({ principal, limit: Number(req.body?.limit) || 50 });
+      res.status(200).json({ repositories, actedAs: principal.login });
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Could not list your repositories." });
+    }
     return;
   }
 
@@ -176,6 +188,17 @@ async function dispatch(input: {
   if (stage === "github-list-issues") {
     const issues = await listIssues({ principal, owner, repo, limit: Number(req.body?.limit) || 20 });
     res.status(200).json({ repository: `${owner}/${repo}`, issues });
+    return;
+  }
+
+  if (stage === "github-list-branches") {
+    const branches = await listBranches({
+      principal,
+      owner,
+      repo,
+      defaultBranch: String(req.body?.defaultBranch || ""),
+    });
+    res.status(200).json({ repository: `${owner}/${repo}`, branches });
     return;
   }
 

@@ -23,6 +23,7 @@ export default function StudioGit({
   vfs = {},
   workspaceKey = '',
   githubRepoUrl = '',
+  githubDestination = null,
   projectName = '',
   githubBaseBranch = 'main',
   isLight,
@@ -167,7 +168,7 @@ export default function StudioGit({
         </div>
       ) : null}
       <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading GitHub…</div>}>
-        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} projectName={projectName} />
+        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} githubDestination={githubDestination} projectName={projectName} />
         <GithubPullRequests
           repoUrl={githubRepoUrl}
           headBranch={prHead || 'quantora-desk'}
