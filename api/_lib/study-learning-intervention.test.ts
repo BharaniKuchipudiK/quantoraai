@@ -49,6 +49,20 @@ test('recognises repeated modality switching as a failed representation trajecto
   assert.ok(result.representationRequests >= 2);
 });
 
+test('visually counts as a real learner representation request', () => {
+  const result = evaluateStudyLearningIntervention({
+    message: 'Can you show me visually?',
+    history: [
+      { role: 'user', text: "I don't understand" },
+      { role: 'user', text: 'Tell me with a story instead.' },
+      { role: 'user', text: 'Still difficult to understand.' },
+    ],
+  });
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.action, 'guided_reconstruction');
+  assert.ok(result.representationRequests >= 2);
+});
+
 test('representation preferences alone never label the learner blocked', () => {
   const result = evaluateStudyLearningIntervention({
     message: 'Now show me an example',

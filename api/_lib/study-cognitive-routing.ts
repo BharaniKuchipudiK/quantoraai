@@ -1,6 +1,8 @@
 import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
+import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
+import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-02.2';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.8';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -16,6 +18,8 @@ export type StudyCognitiveInterpretation = {
   requiresVerification: boolean;
   temperatureCeiling: number;
   representation: StudyTeachingRepresentationPlan;
+  intervention: StudyLearningIntervention;
+  lessonLoop: StudyAdaptiveLessonLoopPlan;
 };
 
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
@@ -33,10 +37,35 @@ const CONTINUE_RE = /^(?:continue|go on|next|keep going|do it|try again|more)\W*
 const ADVANCED_RE = /\b(?:derive|proof|prove|theorem|rigorous|formalism|asymptotic|eigenvalue|tensor|quantum|lagrangian|hamiltonian|differential equation|organic mechanism|graduate|postgraduate|research level|olympiad)\b/i;
 const FOUNDATIONAL_RE = /\b(?:basics?|beginner|simple terms?|eli5|fundamentals?|introduction|what is|define|meaning of|from scratch)\b/i;
 const STUDY_FAST_WORKHORSE_ID = 'deepseek/deepseek-v4-flash-0731';
+const REPRESENTATION_CONTROL_ONLY_RE = /^\s*(?:(?:can|could|would|will|please)\s+)?(?:you\s+)?(?:show|draw|sketch|teach|tell|explain)\s+(?:me\s+)?(?:it\s+)?(?:(?:using|with|as|in)\s+)?(?:(?:a|an)\s+)?(?:images?|pictures?|diagrams?|visual(?:ly)?|graphs?|story|analogy|example|step[- ]by[- ]step)(?:\s+instead)?[?.!]*\s*$/i;
+const STRUGGLE_CONTROL_ONLY_RE = /^\s*(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|i\s+don'?t\s+know|(?:i\s+am\s+)?confused|(?:i\s+am\s+)?lost|not getting it|too hard|still difficult to understand|doesn['’]?t make sense|make it (?:easy|easier)(?: for me)?|simplify(?: it)?|explain again|another way)\W*$/i;
 
 function textOf(item: HistoryItem): string { return String(item?.text || item?.content || '').trim(); }
 function isAssistant(item: HistoryItem): boolean { return item?.sender === 'ai' || item?.role === 'assistant' || item?.role === 'model'; }
 function recentConversationExists(history: HistoryItem[]): boolean { return Array.isArray(history) && history.slice(-8).some((item) => textOf(item).length > 0); }
+function isRepresentationControlOnly(text: string): boolean {
+  return CONTINUE_RE.test(text) || REPRESENTATION_CONTROL_ONLY_RE.test(text) || STRUGGLE_CONTROL_ONLY_RE.test(text);
+}
+
+/**
+ * Representation capability must be anchored to the current learner-owned
+ * concept, never to an arbitrary mixed transcript window. Otherwise an older
+ * mechanics turn can leak "force" into a later unsupported Electricity lesson
+ * and make the server request the wrong visual. The nearest substantive learner
+ * turn is the safe fallback when the current message is only a teaching-control
+ * utterance such as "show me visually" or "make it easier".
+ */
+function representationContextFor(message: string, history: HistoryItem[]): string {
+  if (message && !isRepresentationControlOnly(message)) return message;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index];
+    if (isAssistant(item)) continue;
+    const text = textOf(item);
+    if (!text || isRepresentationControlOnly(text)) continue;
+    return text;
+  }
+  return message;
+}
 
 function studyIntent(message: string): StudyIntent {
   if (DIAGNOSE_RE.test(message)) return 'diagnose';
@@ -86,10 +115,10 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
     : intent === 'diagnose' ? 'diagnostic'
       : intent === 'practice' || intent === 'continue' ? 'guided'
         : intent === 'plan' ? 'sequenced' : 'direct';
-  const representation = planStudyTeachingRepresentation({
-    message,
-    contextText: history.slice(-6).map(textOf).filter(Boolean).join('\n'),
-  });
+  const contextText = representationContextFor(message, history);
+  const intervention = evaluateStudyLearningIntervention({ message, history });
+  const representation = planStudyTeachingRepresentation({ message, contextText, history, intervention });
+  const lessonLoop = planStudyAdaptiveLessonLoop({ intent, representation, intervention });
   return {
     version: STUDY_COGNITIVE_ROUTING_VERSION,
     intent,
@@ -100,6 +129,8 @@ export function interpretStudyTurn(input: { studioDomain?: string | null; messag
     requiresVerification,
     temperatureCeiling: requiresVerification ? 0.2 : difficulty === 'advanced' ? 0.3 : 0.5,
     representation,
+    intervention,
+    lessonLoop,
   };
 }
 
@@ -108,6 +139,15 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
   const representationFallback = interpretation.representation.fallback === 'none'
     ? 'none'
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
+  const rendererInstruction = interpretation.representation.rendererRequired
+    ? `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
+    : 'no';
+  const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
+    ? `YES — ask at most ${interpretation.lessonLoop.maxLearnerQuestions} learner question, end on that question, and do not reveal the next beat or its answer in the same response`
+    : 'no forced wait — answer the current request directly and do not invent a question merely to create interactivity';
+  const teachingBeatsInstruction = interpretation.lessonLoop.reason === 'continuation_policy'
+    ? 'defer to the authoritative Study teaching-turn policy: choose the next useful SEE, EXPLAIN, TRY, or VERIFY beat for the established concept; do not restart the hook'
+    : `${interpretation.lessonLoop.beats.join(' -> ')}. Do not continue into later beats.`;
   return `\n\nSTUDY COGNITIVE ROUTE (${interpretation.version})
 This directive applies only because the active workspace is Study Tutor.
 - Learner intent: ${interpretation.intent}
@@ -118,10 +158,13 @@ This directive applies only because the active workspace is Study Tutor.
 - Teaching representation: ${interpretation.representation.primaryRepresentation}
 - Representation reason: ${interpretation.representation.reason}
 - Learner action: ${interpretation.representation.learnerAction}
-- Renderer required: ${interpretation.representation.rendererRequired ? 'yes — the response must use the supported representation rather than silently falling back to prose' : 'no'}
+- Renderer required: ${rendererInstruction}
 - Representation fallback: ${representationFallback}
+- Current teaching-path state: ${interpretation.intervention.state}; intervention: ${interpretation.intervention.action}. This is a teaching-strategy signal, NOT mastery evidence.
+- Teaching beats for THIS response only: ${teachingBeatsInstruction}
+- Wait boundary: ${waitInstruction}
 - Verification: ${interpretation.requiresVerification ? 'required — check the learner\'s reasoning before agreeing, distinguish verified facts from inference, and explain the first material error' : 'not mandatory — remain accurate and do not invent learner understanding'}
-Honor the representation inside the existing Study teaching-turn policy. Keep one concept and one learner action in the turn. Do not expose routing or representation labels to the learner. Do not claim mastery or persistent learner knowledge from this routing signal.`;
+Honor this route inside the existing Study teaching-turn policy. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, or beat labels to the learner. Do not claim mastery or persistent learner knowledge from these conversational signals.`;
 }
 
 function isUnmeteredFreeEndpoint(model: ModelLike): boolean {
@@ -141,18 +184,8 @@ function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpre
   if (/reason|deepseek|nemotron|gpt-oss|qwen/.test(haystack)) score += 30;
   if (/gemini|flash/.test(haystack)) score += interpretation.difficulty === 'foundational' ? 22 : 8;
   if (/coder/.test(haystack)) score -= 10;
-
-  /*
-   * A free endpoint does not become the Study verification primary merely
-   * because its NAME contains "reasoning". We have already seen those rungs
-   * rate-limit and time out in production, while the direct Gemini route keeps
-   * finishing. Keep an unproven :free endpoint as fallback until real outcome
-   * evidence earns it back. This does not remove or add a model; it only orders
-   * the ladder that the authoritative selector already declared eligible.
-   */
   if (/gemini/.test(haystack)) score += 18;
   if (isUnmeteredFreeEndpoint(model) && !hasStrongObservedQuality(model)) score -= 28;
-
   if (model.quality?.sampleSize && model.quality.sampleSize >= 5 && Number.isFinite(model.quality.score)) {
     score += Math.max(0, Math.min(15, Number(model.quality.score) / 7));
   }
@@ -165,9 +198,6 @@ export function applyStudyCapabilityRouting(input: { interpretation: StudyCognit
   if (!interpretation || input.explicitModelSelected || input.hasImages) return baseDecision;
   const ladder = [baseDecision.primaryModelId, ...(baseDecision.fallbackModelIds || [])];
   if (interpretation.difficulty !== 'advanced' && !interpretation.requiresVerification) {
-    // Prefer the low-cost Study workhorse when it is already an eligible rung;
-    // otherwise use the direct Gemini route. No model is introduced here, so
-    // the spend/approval gate remains authoritative.
     const fastModelId = ladder.find((id) => id === STUDY_FAST_WORKHORSE_ID)
       || ladder.find((id) => id.startsWith('gemini'));
     if (!fastModelId || fastModelId === baseDecision.primaryModelId) return baseDecision;
@@ -191,18 +221,6 @@ export function applyStudyCapabilityRouting(input: { interpretation: StudyCognit
     primaryModelId,
     fallbackModelIds: ordered.slice(1),
     provider: primaryModelId.startsWith('gemini') ? 'gemini' : 'openrouter',
-    /*
-     * Recomputed from the NEW primary, like `provider` directly above and like
-     * every site in select-models.ts that builds a decision.
-     *
-     * Spreading baseDecision carried the old primary's vision flag through a
-     * swap that changed the primary, leaving one object whose `provider`
-     * described the new model and whose `hasVisionSupport` described the old
-     * one. Nothing can act on it today — a turn carrying images returns early
-     * and never reroutes — but a decision that contradicts itself is one
-     * careless reader away from being wrong, and chat-handler already reads
-     * and writes this field.
-     */
     hasVisionSupport: primaryModelId.startsWith('gemini'),
     reason: interpretation.requiresVerification ? 'study_verification' : 'study_depth',
     selectionSource: 'study_capability_route',
