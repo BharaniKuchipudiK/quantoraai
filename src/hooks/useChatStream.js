@@ -32,6 +32,7 @@ import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallba
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../lib/studio-mode.js';
+import { endSessionWork, sendBlockedReason, startSessionWork } from '../lib/session-activity.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { resolveTurnRecovery } from '../lib/turn-recovery.js';
@@ -250,7 +251,8 @@ export function useChatStream({
   attachments,
   setAttachments,
   isGenerating,
-  setIsGenerating,
+  workingSessions,
+  setWorkingSessions,
   updateActiveMessages,
   chatSessions,
   activeSessionId,
@@ -279,6 +281,25 @@ export function useChatStream({
 }) {
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(null);
+
+  /*
+   * The busy flag belongs to the session the turn STARTED in.
+   *
+   * `owningSessionId` is captured per render, and a running async flow keeps the
+   * closure from the render it was called in — the same mechanism that already
+   * lands the reply back in the right chat. So a turn finishing after the user
+   * navigated away clears the chat it belonged to, not the one on screen.
+   *
+   * Declaring the local `setIsGenerating` here rather than renaming its thirteen
+   * call sites is deliberate: the behaviour change is in ONE place, and a
+   * reviewer can see all of it without reading the rest of the file.
+   */
+  const owningSessionId = activeSessionId;
+  const setIsGenerating = (value) => {
+    setWorkingSessions?.((previous) => (value
+      ? startSessionWork(previous, owningSessionId)
+      : endSessionWork(previous, owningSessionId)));
+  };
   const { getLearnedBehaviors } = useModelExperienceMemory();
 
   const recordTurnLesson = (outcomeKind, extras = {}) => {
@@ -317,7 +338,32 @@ export function useChatStream({
   const handleSendMessage = async (textToSend, targetModelOverride = null, sendOptions = null) => {
     let text = textToSend || inputText;
     if (!text.trim() && !attachments.length) return;
-    if (isGenerating) return;
+    /*
+     * A refused send now SAYS SO.
+     *
+     * This was `if (isGenerating) return;` — the message was discarded with no
+     * error, no notice, nothing. The user retyped it, pressed send again, and
+     * watched nothing happen a second time. And because the flag was global, it
+     * fired in a chat that looked completely idle.
+     *
+     * One build at a time is still the rule (the hook keeps a single generation
+     * token, so a second turn would silently kill the first). What changes is
+     * that the rule is now stated, and names the chat actually working.
+     */
+    const blockedReason = sendBlockedReason(
+      workingSessions,
+      activeSessionId,
+      (id) => (chatSessions || []).find((session) => session.id === id)?.title || '',
+    );
+    if (blockedReason) {
+      updateActiveMessages((prev) => [...prev, {
+        id: createMessageId('ai'),
+        sender: 'ai',
+        text: blockedReason,
+        isError: true,
+      }]);
+      return;
+    }
 
     const generationToken = createGenerationToken();
     generationTokenRef.current = generationToken;

@@ -40,6 +40,7 @@ import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
+import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
@@ -485,7 +486,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [localInputText, setLocalInputText] = useState('');
   const inputText = externalInputText !== undefined ? externalInputText : localInputText;
   const setInputText = setExternalInputText || setLocalInputText;
-  const [isGenerating, setIsGenerating] = useState(false);
+  /*
+   * Which chats are working — not one boolean for the whole studio.
+   *
+   * `isGenerating` stays a boolean about the CHAT ON SCREEN, so every consumer
+   * below reads exactly as before. What changes is that it is now derived from
+   * the session rather than shared by all of them, so the spinner stops
+   * following the user into a chat where nothing is happening.
+   */
+  const [workingSessions, setWorkingSessions] = useState(() => new Set());
+  const isGenerating = isSessionWorking(workingSessions, activeSessionId);
   const [showCodeMap, setShowCodeMap] = useState({});
   const [cognitiveLevel, setCognitiveLevel] = useState('Balanced');
   const [suggestedModel, setSuggestedModel] = useState(null);
@@ -1617,7 +1627,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const { handleSendMessage: streamSendMessage, cancelStream } = useChatStream({
     inputText, setInputText,
     attachments, setAttachments,
-    isGenerating, setIsGenerating,
+    isGenerating, workingSessions, setWorkingSessions,
     updateActiveMessages,
     chatSessions, activeSessionId,
     selectedModel,
@@ -3150,7 +3160,30 @@ Paused — ${autoPauseRef.current}.`
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: '1 1 120px', minWidth: 0 }}>
-          <MessageSquare size={15} color={isActive ? textColor : subtextColor} style={{ flexShrink: 0 }} />
+          {/*
+            A chat that is working says so, in the list, whichever chat you are
+            reading. Without this the only signal was a spinner in the composer
+            — which, while the busy flag was global, appeared in every chat
+            including the idle ones. A build you cannot see is a build you start
+            twice.
+          */}
+          {sessionActivityLabel(workingSessions, session.id) ? (
+            <span
+              data-quantora-session-working="true"
+              title="Quantora is working in this chat"
+              aria-label="working"
+              style={{
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                background: '#f97316',
+                flexShrink: 0,
+                animation: 'pulse 2s infinite',
+              }}
+            />
+          ) : (
+            <MessageSquare size={15} color={isActive ? textColor : subtextColor} style={{ flexShrink: 0 }} />
+          )}
           <div style={{ minWidth: 0, overflow: 'hidden', flex: 1 }}>
             <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
