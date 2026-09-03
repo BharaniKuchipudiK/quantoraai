@@ -1,0 +1,33 @@
+{
+  "name": "quantora-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Quantora Desktop — the web app plus a local runtime",
+  "main": "dist/main.cjs",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs && vite build --config vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p renderer/tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "test": "cd .. && npx tsx --test desktop/main/*.test.ts",
+    "smoke": "cd .. && xvfb-run -a node scripts/desktop-smoke-gate.mjs",
+    "package": "npm run build && electron-builder --config build/electron-builder.json",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "electron": "44.1.1",
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.8.2"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "chokidar": "^5.0.0",
+    "electron-updater": "6.6.4",
+    "node-pty": "^1.1.0"
+  }
+}

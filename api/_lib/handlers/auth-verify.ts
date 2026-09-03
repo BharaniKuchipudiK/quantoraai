@@ -76,6 +76,8 @@ export default async function handler(req: any, res: any) {
       name: payload.name || payload.email.split('@')[0],
       picture: payload.picture || '',
       authProvider: 'Google',
+      // Rejected above unless Google confirmed the address.
+      emailVerified: true,
       geo: getRequestGeo(req),
     });
     if (session.ok === false) {

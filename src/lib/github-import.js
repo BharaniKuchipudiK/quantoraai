@@ -1,10 +1,12 @@
 /**
  * Client helpers for Studio "Import Repository" and Git pane GitHub links.
  * Import loads read-only context via /api/github/preview — it is not a full clone.
+ *
+ * Pull request requests live in github-workspace.js, because they need the
+ * user's own connected GitHub principal and this module does not.
  */
 
 export const GITHUB_IMPORT_ENDPOINT = '/api/github/preview';
-export const GITHUB_CREATE_PR_ENDPOINT = '/api/github/create-pr';
 
 export const DEFAULT_REPOSITORY_IMPORT_TASK =
   'Load key source files as coding context for AI Studio. Prefer README, package manifests, and primary application entrypoints.';
@@ -116,21 +118,4 @@ export function githubCompareUrl(repoUrl, headBranch = 'quantora-desk', baseBran
   } catch {
     return '';
   }
-}
-
-export function buildGithubCreatePrRequestBody({
-  repoUrl,
-  title,
-  head,
-  base = 'main',
-  body = '',
-} = {}) {
-  return {
-    targetStage: 'github-create-pr',
-    repoUrl: String(repoUrl || '').trim(),
-    title: String(title || '').trim(),
-    head: String(head || '').trim(),
-    base: String(base || 'main').trim() || 'main',
-    body: String(body || '').trim(),
-  };
 }

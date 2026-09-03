@@ -13,7 +13,7 @@ import { getSessionUser } from "./_lib/session.js";
 import { requireActiveSession } from "./_lib/authz.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
 import { buildRepositoryPreview } from "./_lib/repository-preview.js";
-import { createGithubPullRequest, mergeGithubPullRequest, resolveGithubToken, githubWriteAuthMessage, assertGithubWriteAllowed } from "./_lib/github-pr.js";
+import { githubStageForRouteAlias, handleGithubStage, isGithubStage } from "./_lib/github-workspace.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { appendExplicitHumanLedgerEvent, reconcileOutcomeCognitiveLedger } from "./_lib/cognitive-ledger-transitions.js";
 import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
@@ -180,13 +180,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const githubRoute = typeof req.query?.github === 'string' ? req.query.github : '';
-    if (githubRoute === 'preview' && !req.body?.targetStage) {
-      req.body = { ...(req.body || {}), targetStage: 'repository-preview' };
-    } else if (githubRoute === 'create-pr' && !req.body?.targetStage) {
-      req.body = { ...(req.body || {}), targetStage: 'github-create-pr' };
-    } else if (githubRoute === 'merge-pr' && !req.body?.targetStage) {
-      req.body = { ...(req.body || {}), targetStage: 'github-merge-pr' };
+    const githubStage = githubStageForRouteAlias(req.query?.github);
+    if (githubStage && !req.body?.targetStage) {
+      req.body = { ...(req.body || {}), targetStage: githubStage };
     }
 
     const { node, targetStage, repoUrl, task } = req.body || {};
@@ -423,77 +419,17 @@ export default async function handler(req: any, res: any) {
     }
 
     /*
-     * Thin write path: create a PR when GITHUB_TOKEN exists and the head branch
-     * already lives on GitHub. Desk git does not push; merge requires the same token.
+     * Every other GitHub capability — list pull requests, read one with its
+     * diff, checks and review threads, comment, open a pull request, merge —
+     * enters through one dispatcher that resolves the acting user's own GitHub
+     * principal first. See api/_lib/github-workspace.ts.
+     *
+     * This replaces the shared-token adapter that was fail-closed under #452.
+     * Quantora no longer has a platform credential that can write to GitHub at
+     * all, so there is nothing left for a signed-in user to borrow.
      */
-    if (targetStage === 'github-create-pr') {
-      const auth = await requireActiveSession(req, res);
-      if (!auth.ok) return;
-      if (!resolveGithubToken()) {
-        return res.status(503).json({
-          error: githubWriteAuthMessage(),
-          needsGithubToken: true,
-          canMerge: false,
-        });
-      }
-      try {
-        assertGithubWriteAllowed(repoUrl);
-      } catch (error: any) {
-        return res.status(503).json({
-          error: error?.message || githubWriteAuthMessage(),
-          needsGithubToken: false,
-          needsAllowedRepos: true,
-          canMerge: false,
-        });
-      }
-      try {
-        const pullRequest = await createGithubPullRequest({
-          repoUrl,
-          title: req.body?.title,
-          head: req.body?.head,
-          base: req.body?.base,
-          body: req.body?.body,
-        });
-        return res.status(201).json({
-          ...pullRequest,
-          canMerge: Boolean(resolveGithubToken()),
-          note: 'Merge is available via targetStage github-merge-pr when GITHUB_TOKEN has repo scope. Desk git still cannot push.',
-        });
-      } catch (error: any) {
-        return res.status(400).json({ error: error?.message || 'Could not create the pull request.' });
-      }
-    }
-
-    if (targetStage === 'github-merge-pr') {
-      const auth = await requireActiveSession(req, res);
-      if (!auth.ok) return;
-      if (!resolveGithubToken()) {
-        return res.status(503).json({
-          error: githubWriteAuthMessage(),
-          needsGithubToken: true,
-          canMerge: false,
-        });
-      }
-      try {
-        assertGithubWriteAllowed(repoUrl);
-      } catch (error: any) {
-        return res.status(503).json({
-          error: error?.message || githubWriteAuthMessage(),
-          needsGithubToken: false,
-          needsAllowedRepos: true,
-          canMerge: false,
-        });
-      }
-      try {
-        const result = await mergeGithubPullRequest({
-          repoUrl,
-          number: Number(req.body?.number),
-          mergeMethod: req.body?.mergeMethod,
-        });
-        return res.status(200).json(result);
-      } catch (error: any) {
-        return res.status(400).json({ error: error?.message || 'Could not merge the pull request.' });
-      }
+    if (isGithubStage(targetStage)) {
+      return handleGithubStage(targetStage, req, res);
     }
 
     // Auth Check — server keys need an *active* session, not just a valid

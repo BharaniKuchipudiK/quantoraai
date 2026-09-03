@@ -23,16 +23,16 @@ test('explicit visual request selects an existing subject-native visual when one
   assert.equal(plan.reason, 'explicit_request');
 });
 
-test('explicit visual request fails honestly when the current renderer family is unavailable', () => {
+test('explicit Electricity visual request selects the native circuit renderer', () => {
   const plan = planStudyTeachingRepresentation({
     message: 'Teach me using images',
     contextText: 'EMF versus terminal potential difference in a battery circuit',
   });
   assert.equal(plan.requestedMode, 'visual');
-  assert.equal(plan.primaryRepresentation, 'concise_text');
-  assert.equal(plan.rendererRequired, false);
-  assert.equal(plan.rendererKind, null);
-  assert.equal(plan.fallback, 'renderer_unavailable');
+  assert.equal(plan.primaryRepresentation, 'annotated_diagram');
+  assert.equal(plan.rendererRequired, true);
+  assert.equal(plan.rendererKind, 'electricity-circuit');
+  assert.equal(plan.fallback, 'none');
   assert.equal(plan.reason, 'explicit_request');
 });
 
@@ -89,6 +89,17 @@ test('repeated struggle changes representation and chooses a visual only when th
   assert.equal(visualRepair.primaryRepresentation, 'annotated_diagram');
   assert.equal(visualRepair.rendererRequired, true);
   assert.equal(visualRepair.rendererKind, 'physics-motion');
+
+  const electricityContext = 'EMF and terminal voltage in a battery circuit\nMake it easier for me';
+  const electricityRepair = planStudyTeachingRepresentation({
+    message: "I still don't understand",
+    contextText: electricityContext,
+    history: learnerHistory(electricityContext),
+  });
+  assert.equal(electricityRepair.reason, 'struggle_repair');
+  assert.equal(electricityRepair.primaryRepresentation, 'annotated_diagram');
+  assert.equal(electricityRepair.rendererRequired, true);
+  assert.equal(electricityRepair.rendererKind, 'electricity-circuit');
 
   const nonVisualContext = 'a concept with no current renderer family\nMake it easier for me';
   const nonVisualRepair = planStudyTeachingRepresentation({

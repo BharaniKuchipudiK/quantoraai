@@ -4,7 +4,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import StudyPicture from './StudyPicture.jsx';
 import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
@@ -17,6 +16,14 @@ import {
   studyPictureFitsTopic,
 } from '../lib/study-concept-visual.js';
 import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presentation.js';
+
+// Subject-native teaching art (circuits, free-body diagrams, cells, number lines).
+// Split out of the desk entry chunk: only a Study lesson that actually renders a
+// picture segment needs it, but a static import put every renderer family in the
+// bundle each Coding-desk visitor downloads. The code payload gate caps that chunk
+// at 300 KB and it was within ~70 bytes of the cap, so each new renderer family
+// (H3.5.4 adds more) was spending budget every visitor paid for and few used.
+const StudyPicture = React.lazy(() => import('./StudyPicture.jsx'));
 
 const STUDY_READING_FONT = 'Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
 
@@ -75,7 +82,11 @@ export default function StudyMarkdown({ text = '', topic = '', isLight = false, 
         }
         if (segment.type === 'picture') {
           if (!studyPictureFitsTopic(segment.caption, activeTopic)) return null;
-          return <StudyPicture key={`pic-${index}-${segment.caption}`} caption={segment.caption} isLight={isLight} />;
+          return (
+            <React.Suspense key={`pic-${index}-${segment.caption}`} fallback={null}>
+              <StudyPicture caption={segment.caption} isLight={isLight} />
+            </React.Suspense>
+          );
         }
         if (segment.type === 'lab') {
           return <StudyVisualLab key={`lab-${index}-${segment.kind}`} kind={segment.kind} isLight={isLight} />;

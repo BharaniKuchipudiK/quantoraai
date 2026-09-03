@@ -2,8 +2,12 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/generate-office.ts": { "maxDuration": 300 },
-    "api/pipeline.ts": { "maxDuration": 180 },
+    "api/generate-office.ts": {
+      "maxDuration": 300
+    },
+    "api/pipeline.ts": {
+      "maxDuration": 180
+    },
     "api/preview-compile.js": {
       "includeFiles": "node_modules/{react,react-dom,scheduler,lucide-react}/**"
     }
@@ -118,6 +122,30 @@
   ],
   "rewrites": [
     {
+      "source": "/api/github/connection",
+      "destination": "/api/pipeline?github=connection"
+    },
+    {
+      "source": "/api/github/disconnect",
+      "destination": "/api/pipeline?github=disconnect"
+    },
+    {
+      "source": "/api/github/list-prs",
+      "destination": "/api/pipeline?github=list-prs"
+    },
+    {
+      "source": "/api/github/read-pr",
+      "destination": "/api/pipeline?github=read-pr"
+    },
+    {
+      "source": "/api/github/list-issues",
+      "destination": "/api/pipeline?github=list-issues"
+    },
+    {
+      "source": "/api/github/comment",
+      "destination": "/api/pipeline?github=comment"
+    },
+    {
       "source": "/api/github/preview",
       "destination": "/api/pipeline?github=preview"
     },
@@ -218,6 +246,14 @@
       "destination": "/api/auth?route=password-reset-confirm"
     },
     {
+      "source": "/api/auth/github/connect",
+      "destination": "/api/auth?route=github-connect"
+    },
+    {
+      "source": "/api/auth/github/connect/callback",
+      "destination": "/api/auth?route=github-connect-callback"
+    },
+    {
       "source": "/api/auth/github",
       "destination": "/api/auth?route=github"
     },
@@ -228,6 +264,14 @@
     {
       "source": "/api/auth/providers",
       "destination": "/api/auth?route=providers"
+    },
+    {
+      "source": "/api/auth/desktop/grant",
+      "destination": "/api/auth?route=desktop-grant"
+    },
+    {
+      "source": "/api/auth/desktop/exchange",
+      "destination": "/api/auth?route=desktop-exchange"
     },
     {
       "source": "/api/admin/feedback",

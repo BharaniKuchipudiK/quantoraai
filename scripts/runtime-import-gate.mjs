@@ -47,7 +47,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const ROOTS = ['api', 'shared'];
+const ROOTS = ['api', 'shared', 'desktop'];
 const EXTRA_FILES = ['server.ts'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
 const CODE = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs']);
