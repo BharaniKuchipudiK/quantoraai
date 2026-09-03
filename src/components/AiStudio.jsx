@@ -107,14 +107,6 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
-import { seedDeskRepoFromCheckout } from '../lib/studio-git.js';
-import {
-  GITHUB_ENDPOINTS,
-  buildGithubStageBody,
-  checkoutFilesToVfs,
-  checkoutOutcomeMessage,
-  githubDestinationRepoUrl,
-} from '../lib/github-workspace.js';
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
 const DeskRewindMenu = lazy(() => import('./DeskRewindMenu.jsx'));
 const StudioActivityRail = lazy(() => import('./StudioActivityRail.jsx'));
@@ -617,6 +609,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 
     setGithubCheckout({ status: 'loading', message: `Opening ${target.owner}/${target.repo}…` });
     try {
+      /*
+       * Imported here rather than at module scope on purpose. A static import
+       * puts both libraries in the desk's entry chunk, which the code payload
+       * gate caps: adding them took AiStudio from under budget to 301,933
+       * bytes. Nothing below runs until someone clicks Open in desk, so nothing
+       * below belongs in the bundle everyone downloads.
+       */
+      const [
+        { GITHUB_ENDPOINTS, buildGithubStageBody, checkoutFilesToVfs, checkoutOutcomeMessage, githubDestinationRepoUrl },
+        { seedDeskRepoFromCheckout },
+      ] = await Promise.all([
+        import('../lib/github-workspace.js'),
+        import('../lib/studio-git.js'),
+      ]);
+
       const response = await fetch(GITHUB_ENDPOINTS.checkout, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
