@@ -22,6 +22,7 @@ import {
   updatePclSessionOutcomeVersion,
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, codingFailureSpineOwnsTurn, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
+import { createQirTurnJournal } from '../lib/qir-turn-journal.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
@@ -32,7 +33,8 @@ import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
-import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from '../lib/turn-recovery.js';
+import { resolveTurnRecovery } from '../lib/turn-recovery.js';
+import { MIN_VIABLE_ATTEMPT_MS, mayRunAttempt, planTurnEscalation } from '../lib/turn-escalation.js';
 import { describeTurnFailure } from '../lib/turn-failure-sentence.js';
 import {
   assessShopBuildAsk,
@@ -71,7 +73,6 @@ import {
   withTravelDegradedNotice,
 } from '../lib/chat-turn-safety.js';
 
-const MIN_ATTEMPT_BUDGET_MS = 20_000;
 /*
  * Both client deadlines must OUTLAST the server's own budget
  * (TOTAL_CHAT_BUDGET_MS, 165s), so a slow turn ends with the server's specific
@@ -790,11 +791,9 @@ export function useChatStream({
       isCodingRequest,
       hasCodingWorkspace,
     }) || studioDomain;
-    const codingSpineOwns = codingFailureSpineOwnsTurn({ isCodingRequest, studioDomain: turnDomain });
-    const qirFail = (kind, message, done) => {
-      if (!codingSpineOwns) return;
-      try { void qirCoding?.reportModelFailure?.({ kind, message, retryable: !done, recoveryExhausted: done }); } catch { /* journal must not block */ }
-    };
+    const qirTurn = createQirTurnJournal({ isCodingRequest, studioDomain: turnDomain, qirCoding });
+    const codingSpineOwns = qirTurn.owns;
+    const qirFail = (kind, message, done) => qirTurn.reportFailure({ kind, message, recoveryExhausted: done });
     if (briefingKind || isCodingRequest || turnDomain === 'travel') effectiveArenaMode = false;
 
     const answerFact = captureUserAnswerAsContext(visibleUserText, messages);
@@ -1194,6 +1193,18 @@ export function useChatStream({
       && model.id !== targetModel?.id
       && !triedEngineIds.has(model.id)
     )) || null;
+    /*
+     * The turn's escalation ceiling, measured fresh each time it is asked for:
+     * how many further attempts the remaining wall clock and the live engine
+     * catalogue can actually fund. This is the EVIDENCE-BASED STOP the
+     * self-healing standard requires, replacing a constant that stopped the
+     * loop "merely because it tried once".
+     */
+    const escalationNow = () => planTurnEscalation({
+      elapsedMs: Date.now() - turnStartedAt,
+      turnDeadlineMs,
+      engineCount: (availableModels || []).filter((m) => m && m.available !== false && m.id).length,
+    });
     const applyRecoveryRepairs = (recovery) => {
       qirFail(
         recovery.reason === 'step-deadline' ? 'timeout' : recovery.reason === 'build-contract' ? 'contract' : 'transport',
@@ -1217,11 +1228,16 @@ export function useChatStream({
     };
 
     try {
-      for (let attempt = 1; attempt <= MAX_TURN_ATTEMPTS; attempt += 1) {
+      for (let attempt = 1; ; attempt += 1) {
         if (!stillCurrent()) return;
-        if (codingSpineOwns) {
-          try { void qirCoding?.beginModelAttempt?.(visibleUserText || text, targetModel?.id || ''); } catch { /* journal must not block */ }
-        }
+        /*
+         * Attempt 1 always runs. Every later one must be affordable, so the
+         * loop can never start work it already knows cannot land, and can never
+         * climb past what the clock and the catalogue can pay for.
+         */
+        const escalation = escalationNow();
+        if (attempt > 1 && !mayRunAttempt(attempt, escalation)) break;
+        qirTurn.beginAttempt(visibleUserText || text, targetModel?.id || '');
         // Record the engine this attempt actually runs on, for honest terminal copy.
         if (targetModel?.id) triedEngineIds.add(targetModel.id);
         if (targetModel?.name && triedEngines[triedEngines.length - 1] !== targetModel.name) {
@@ -1241,12 +1257,17 @@ export function useChatStream({
          * for want of a variable in the right scope.
          */
         let streamedSoFar = '';
-        // The deadline covers the whole turn, so a second attempt inherits what
-        // is left of it rather than doubling how long the person waits.
-        const attemptBudgetMs = Math.max(
-          MIN_ATTEMPT_BUDGET_MS,
-          turnDeadlineMs - (Date.now() - turnStartedAt),
-        );
+        /*
+         * The deadline covers the whole turn, so a later attempt inherits what
+         * is left of it rather than doubling how long the person waits. What is
+         * left is now reported honestly: the old `Math.max(MIN, remaining)` was
+         * a FLOOR, so with 3s left it still started a 20s attempt that could not
+         * finish and billed the tokens. The floor only ever applies to attempt
+         * 1, which always runs.
+         */
+        const attemptBudgetMs = escalation.attemptBudgetMs > 0
+          ? escalation.attemptBudgetMs
+          : MIN_VIABLE_ATTEMPT_MS;
         /*
          * Phase 1 - TRANSPORT. Armed before fetch so a request that cannot even
          * reach the server still ends.
@@ -1289,6 +1310,7 @@ export function useChatStream({
             const errData = await res.json().catch(() => ({}));
             const recovery = resolveTurnRecovery({
               attempt,
+              maxAttempts: escalation.maxAttempts,
               status: res.status,
               code: errData.code,
               retryable: errData.retryable === true,
@@ -1411,6 +1433,7 @@ export function useChatStream({
           if (streamedError || !receivedDone) {
             const recovery = resolveTurnRecovery({
               attempt,
+              maxAttempts: escalation.maxAttempts,
               code: streamedError?.code,
               retryable: streamedError ? streamedError.retryable === true : true,
               hasPartialText: Boolean(currentText),
@@ -1661,6 +1684,7 @@ export function useChatStream({
             }
             const recovery = resolveTurnRecovery({
               attempt,
+              maxAttempts: escalation.maxAttempts,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
               failureDetail: 'the reply was a chat plan with no runnable files',
@@ -1872,6 +1896,7 @@ export function useChatStream({
           const stopped = controller.signal.aborted && controller.signal.reason === 'user';
           const recovery = resolveTurnRecovery({
             attempt,
+            maxAttempts: escalation.maxAttempts,
             networkError: true,
             timedOut,
             stoppedByUser: stopped,

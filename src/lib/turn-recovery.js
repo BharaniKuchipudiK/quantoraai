@@ -66,6 +66,19 @@ function deadlineRecoveryBrief(failureDetail) {
 
 export function resolveTurnRecovery({
   attempt = 1,
+  /**
+   * The evidence-derived ceiling for THIS turn, from `planTurnEscalation`:
+   * how many attempts the remaining wall clock and the live engine catalogue
+   * can actually fund. Defaults to the old constant so a caller that has not
+   * measured anything still gets a bounded loop.
+   *
+   * This parameter is the whole correction. The standard
+   * (docs/engineering/DETECT_DIAGNOSE_VERIFY_APPLY.md) requires the loop to end
+   * on "a pass, a plateau, an unchanged repair, or a spent budget, never merely
+   * because it tried once" — and a constant 2 is exactly stopping because it
+   * tried once. The bound stays; it just gets measured instead of assumed.
+   */
+  maxAttempts = MAX_TURN_ATTEMPTS,
   status = 0,
   code = '',
   retryable = false,
@@ -83,7 +96,7 @@ export function resolveTurnRecovery({
   const no = (reason) => ({ retry: false, resume: false, notice: '', reason });
 
   if (stoppedByUser) return no('stopped');
-  if (Number(attempt) >= MAX_TURN_ATTEMPTS) return no('attempts-exhausted');
+  if (Number(attempt) >= Math.max(1, Number(maxAttempts) || MAX_TURN_ATTEMPTS)) return no('attempts-exhausted');
 
   /*
    * A deadline ends one execution step, not the user's mission. The caller has
