@@ -28,7 +28,12 @@ export default function StudioFileTree({
   width = 212,
 }) {
   const files = listStudioFiles(vfs);
-  const jobPurpose = typeof job?.purpose === 'string' ? job.purpose : '';
+  /*
+   * Job name belongs in the desk title (`data-quantora-desk-job`). Repeating it
+   * here as a JOB card ate the file list and duplicated the header. Callers may
+   * still pass `job`; do not render it in the tree.
+   */
+  void job;
   const paneWidth = Math.max(120, Number(width) || 212);
 
   return (
@@ -55,38 +60,6 @@ export default function StudioFileTree({
       >
         Files
       </div>
-      {jobPurpose ? (
-        <div
-          data-quantora-desk-job-panel="true"
-          style={{
-            margin: '0 4px 8px',
-            padding: '8px',
-            borderRadius: '8px',
-            background: isLight ? '#fff7ed' : 'rgba(249,115,22,0.08)',
-            border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.25)',
-          }}
-        >
-          <div style={{
-            fontSize: '0.62rem',
-            fontWeight: 800,
-            letterSpacing: '0.06em',
-            color: subtextColor,
-            textTransform: 'uppercase',
-            marginBottom: '4px',
-          }}
-          >
-            Job
-          </div>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textColor, lineHeight: 1.35 }}>
-            {jobPurpose}
-          </div>
-          {Array.isArray(job?.mustWork) && job.mustWork[0] ? (
-            <div style={{ fontSize: '0.65rem', color: subtextColor, marginTop: '4px', lineHeight: 1.35 }}>
-              {job.mustWork[0]}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {Array.isArray(review) && review.length > 0 ? (
         <div data-quantora-desk-review="true" style={{ padding: '8px 4px 6px' }}>
           <div style={{

@@ -3313,6 +3313,7 @@ Paused — ${autoPauseRef.current}.`
     : '';
   const previewRunLabel = studioPreviewRunLabel(previewRunStatus);
   const deskJobLabel = studioJobCardLabel(deskJob);
+  const deskChromeCompact = deskFullscreen || (deskWidthPx > 0 && deskWidthPx < 1060);
   const isIdeLayout = isCodingDesk;
 
   return (
@@ -5053,7 +5054,9 @@ Paused — ${autoPauseRef.current}.`
             flexShrink: 0
           }}>
             <div style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
-              <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Coding desk</span>
+              {deskJobLabel ? null : (
+                <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Coding desk</span>
+              )}
               {deskLadder ? (
                 <span
                   data-quantora-desk-ladder="true"
@@ -5073,14 +5076,14 @@ Paused — ${autoPauseRef.current}.`
                   }}
                 >
                   <Layers size={10} />
-                  {deskLadderChipLabel(deskLadder)}
+                  {deskChromeCompact ? null : deskLadderChipLabel(deskLadder)}
                 </span>
               ) : null}
               {deskJobLabel ? (
                 <span
                   data-quantora-desk-job="true"
                   title={deskJob?.mustWork?.join(' • ') || deskJobLabel}
-                  style={{ fontSize: '0.68rem', fontWeight: 600, color: subtextColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  style={{ fontSize: '0.82rem', fontWeight: 800, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
                   {deskJobLabel}
                 </span>
@@ -5104,7 +5107,7 @@ Paused — ${autoPauseRef.current}.`
               ) : null}
             </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto' }}>
-              <Suspense fallback={<div aria-hidden="true" style={{ width: (!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060) ? '150px' : '330px', height: '28px' }} />}>
+              <Suspense fallback={<div aria-hidden="true" style={{ width: deskChromeCompact ? '150px' : '330px', height: '28px' }} />}>
               <StudioActivityRail
                 activeTab={workspaceActiveTab}
                 onOpenTab={setWorkspaceActiveTab}
@@ -5116,7 +5119,7 @@ Paused — ${autoPauseRef.current}.`
                 isLight={isLight}
                 textColor={textColor}
                 subtextColor={subtextColor}
-                compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+                compact={deskChromeCompact}
               />
               </Suspense>
               <span aria-hidden="true" style={{ width: '1px', height: '18px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.12)' }} />
@@ -5169,7 +5172,7 @@ Paused — ${autoPauseRef.current}.`
                     isLight={isLight}
                     textColor={textColor}
                     subtextColor={subtextColor}
-                    compact={!deskFullscreen && deskWidthPx > 0 && deskWidthPx < 1060}
+                    compact={deskChromeCompact}
                   />
                 </Suspense>
               ) : null}
