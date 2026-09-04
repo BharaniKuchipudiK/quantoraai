@@ -46,6 +46,7 @@ import {
   listIssues,
   listPullRequests,
   readPullRequest,
+  readRepositoryFile,
   renderPullRequestBrief,
 } from "./github-intelligence.js";
 import type { FetchLike, GithubPrincipal } from "./github-principal.js";
@@ -54,6 +55,7 @@ export const GITHUB_TOOL_NAMES = new Set([
   "read_pull_request",
   "list_pull_requests",
   "list_issues",
+  "read_repo_file",
 ]);
 
 export function isGithubToolName(name: unknown): boolean {
@@ -134,6 +136,22 @@ export const githubFunctionDeclarations: any[] = [
         repo: { type: "string", description: "Repository name, without the owner prefix." },
       },
       required: ["owner", "repo"],
+    },
+  },
+  {
+    name: "read_repo_file",
+    description:
+      "Read the text of ONE file in a repository on the signed-in user's GitHub account. REQUIRED before making any claim about what code does — a hardcoded secret, a missing check, whether something is secure, robust, or well tested. The desk shows file NAMES; reviewing names is not reviewing code, so call this for each file you intend to describe. Returns: the file's path, its blob SHA, its size in bytes, a truncated flag, and its text content (64KB by default, 128KB maximum). A file over that cap comes back with truncated=true and you MUST say so rather than concluding anything about the part you were not shown. Reads ONE file per call: it does NOT list a directory, does NOT search, and does NOT return the whole repository. A directory path, a binary file, or a file you cannot see is an error, never empty content. This tool only reads; it cannot push, comment, merge, or change anything.",
+    parameters: {
+      type: "object",
+      properties: {
+        owner: { type: "string", description: "Repository owner: the user or organisation login." },
+        repo: { type: "string", description: "Repository name." },
+        path: { type: "string", description: "Path to one file inside the repository. Not a directory and not a glob." },
+        ref: { type: "string", description: "Optional branch, tag or commit SHA. Defaults to the repository's default branch." },
+        maxBytes: { type: "number", description: "Optional cap on bytes returned, 1000 to 128000. Defaults to 64000." },
+      },
+      required: ["owner", "repo", "path"],
     },
   },
 ];
@@ -219,6 +237,34 @@ export async function executeGithubToolCall(
           fetchImpl,
         });
         return { ok: true, status: "read", count: pullRequests.length, pullRequests };
+      }
+
+      case "read_repo_file": {
+        const owner = requireText(args?.owner, "owner");
+        const repo = requireText(args?.repo, "repo");
+        const path = requireText(args?.path, "path");
+        const file = await readRepositoryFile({
+          principal,
+          owner,
+          repo,
+          path,
+          ref: typeof args?.ref === "string" ? args.ref : undefined,
+          maxBytes: Number(args?.maxBytes) || undefined,
+          fetchImpl,
+        });
+        return {
+          ok: true,
+          status: "read",
+          file,
+          /*
+           * Said in the payload, not only in the description. A truncated file
+           * that reads as complete is how "there is no auth check in this file"
+           * gets stated about a file whose auth check sits past the cut.
+           */
+          note: file.truncated
+            ? `Only the first ${file.content.length} of ${file.bytes} bytes of ${file.path} are here. Say so before drawing any conclusion about the rest.`
+            : undefined,
+        };
       }
 
       case "list_issues": {

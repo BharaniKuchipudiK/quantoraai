@@ -135,10 +135,71 @@ export function resolveEffectiveBuildMode({
   return Boolean(buildMode);
 }
 
+/*
+ * SCOPE, NOT VOCABULARY.
+ *
+ * WEBSITE_INTAKE and BUSINESS_INTAKE are an allowlist of small-business
+ * website nouns. They work for "a website for my coffee shop" and they miss
+ * everything else, which turns out to be backwards: the allowlist is made of
+ * SIMPLE things, so the requests that most need scoping are the ones least
+ * likely to match it.
+ *
+ * Observed 2026-09-04. "Please build CRM platform for IT consulting business
+ * includes modules like Sales, Delivery, HR, Recruitment, Revenue vs Margin,
+ * Business Pipeline and any other relevant modules I would have missed" — seven
+ * subsystems and an explicit admission the list is incomplete — matched neither
+ * regex, so the platform asked nothing and started building. A cafe landing
+ * page got a conversation; a CRM did not.
+ *
+ * These two signals are about the SHAPE of the ask, so a noun nobody has
+ * thought of yet still reaches them:
+ *
+ *   1. It enumerates three or more parts. One list of subsystems is a sketch of
+ *      a system, not a specification of one.
+ *   2. It asks us to supply what the user left out. Nobody who wants a build
+ *      immediately also asks what they forgot.
+ *
+ * Both are deliberately narrow. A miss here costs a question that should have
+ * been asked; a false positive costs an interrogation nobody wanted, and that
+ * is the failure that makes people stop using the product. Length alone is not
+ * a signal — people write long, specific briefs.
+ */
+const LIST_CUE = /\b(modules?|features?|sections?|screens?|dashboards?|workflows?|capabilities|including|include[sd]?|such as|like)\b/i;
+const FILL_THE_GAPS = /\b(any(?:thing)? (?:other|else)|other relevant|i (?:would have |may have |might have )?missed|what(?:ever)?(?:'s| is) missing|you think|suggest(?: any)? more)\b/i;
+
+/** How many distinct parts the brief lists after a cue like "modules like". */
+function enumeratedParts(text) {
+  const cue = LIST_CUE.exec(text);
+  if (!cue) return 0;
+  const tail = text.slice(cue.index + cue[0].length);
+  return tail
+    .split(/,| and | plus |\band\b/i)
+    .map((part) => part.replace(/[^a-z0-9 &/-]/gi, ' ').trim())
+    // Two characters rules out the debris of splitting ("&", "-"), and a part
+    // longer than a short phrase is prose, not a list item.
+    .filter((part) => part.length >= 2 && part.split(/\s+/).length <= 5)
+    .length;
+}
+
+/**
+ * True when the ask is too big or too open to build without asking first.
+ * Exported so a test can drive it directly rather than through the whole hook.
+ */
+export function requestScopeNeedsIntake(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (isSpecifiedRunnableTool(t)) return false;
+  if (FILL_THE_GAPS.test(t)) return true;
+  return enumeratedParts(t) >= 3;
+}
+
 export function needsGuidedWebsiteIntake(text) {
   if (!text || typeof text !== 'string') return false;
   if (isSpecifiedRunnableTool(text)) return false;
-  return WEBSITE_INTAKE.test(text) || BUSINESS_INTAKE.test(text);
+  // The allowlist stays: it is what guided-intake-browser-gate drives, and a
+  // cafe must keep its conversation. Scope is an ADDITIONAL door, not a
+  // replacement for that one.
+  return WEBSITE_INTAKE.test(text) || BUSINESS_INTAKE.test(text) || requestScopeNeedsIntake(text);
 }
 
 /**
