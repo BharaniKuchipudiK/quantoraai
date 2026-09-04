@@ -32,6 +32,8 @@ test('the representation browser gate anchors on durable Study hooks, not prose 
   assert.match(gate, /data-quantora-advisor="finance"/);
   assert.match(gate, /data-quantora-assistant-prose="true"/);
   assert.match(gate, /svg\[role="img"\]/);
+  assert.match(gate, /data-quantora-study-reading-copy="true"/);
+  assert.match(gate, /assertStudyTeachingBeat/);
   assert.doesNotMatch(gate, /data-quantora-chat-message/);
 });
 
