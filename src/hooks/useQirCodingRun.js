@@ -60,6 +60,17 @@ export function useQirCodingRun(options) {
     void withClient((client) => client.sync());
   }, [enabled, sessionId, artifactRef, code, withClient]);
 
+  /*
+   * Resolves true whenever the governor cannot answer — no Run, storage
+   * unconfigured, network error. A budget nobody can read must never be the
+   * reason a build does not run.
+   */
+  const requestPremiumEscalation = useCallback(() => (
+    withClient((client) => client.requestPremiumEscalation())
+      ?.then?.((verdict) => verdict || { allowed: true, reason: 'no-verdict' })
+      ?? Promise.resolve({ allowed: true, reason: 'no-client' })
+  ), [withClient]);
+
   const beginModelAttempt = useCallback((goal, strategy) => (
     withClient((client) => client.beginModelAttempt(goal, strategy))
   ), [withClient]);
@@ -80,6 +91,7 @@ export function useQirCodingRun(options) {
     run,
     error,
     beginModelAttempt,
+    requestPremiumEscalation,
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,

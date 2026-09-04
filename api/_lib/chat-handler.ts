@@ -53,6 +53,7 @@ import {
   inferenceAttemptBudgetMs,
   MIN_VIABLE_BUILD_ATTEMPT_MS,
   maxViableBuildAttempts,
+  resolveTurnBudgetMs,
   planInferenceRoutes,
   recordInferenceRouteFailure,
   recordInferenceRouteSuccess,
@@ -486,6 +487,20 @@ export default async function handler(req: any, res: any) {
   }
 
   const startTime = Date.now();
+  /*
+   * ONE budget for the turn, not two.
+   *
+   * The browser plans its escalation against a 175s turn deadline that does NOT
+   * restart between attempts; this handler used a constant that DID. So a retry
+   * after a long first attempt had the server funding rungs the browser would
+   * never wait for — tokens billed for work nobody reads.
+   *
+   * turnRemainingMs is what the browser has left, measured before fetch, so it
+   * is conservative: the server's true remainder is slightly less, and clamping
+   * to the smaller of the two errs in the safe direction. The client can only
+   * shorten this, never extend it (see resolveTurnBudgetMs).
+   */
+  const turnBudgetMs = resolveTurnBudgetMs(req.body?.turnRemainingMs, TOTAL_CHAT_BUDGET_MS);
   const requestId = randomUUID();
   /*
    * Every engine THIS request actually ran on. The inference ladder below works
@@ -1204,7 +1219,7 @@ export default async function handler(req: any, res: any) {
     // spends wall-clock the earlier rungs needed. Keep the ladder to the rungs
     // this turn's budget can actually fund at build size.
     if (effectiveBuildMode && attempts.length > 1) {
-      const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS));
+      const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, turnBudgetMs));
       if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
     }
 
@@ -1324,11 +1339,11 @@ export default async function handler(req: any, res: any) {
         const attemptStartedAt = Date.now();
         const attemptBudgetMs = effectiveBuildMode
           ? inferenceAttemptBudgetMs(
-              remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS),
+              remainingBudgetMs(startTime, turnBudgetMs),
               attempts.length - index,
               { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
             )
-          : remainingBudgetMs(startTime, TOTAL_CHAT_BUDGET_MS);
+          : remainingBudgetMs(startTime, turnBudgetMs);
         traceBoundary({
           correlationId,
           boundary: 'inference.provider',
@@ -1385,7 +1400,7 @@ export default async function handler(req: any, res: any) {
             }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
-              assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await iterator.return?.(undefined);
@@ -1437,7 +1452,7 @@ export default async function handler(req: any, res: any) {
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
             while (true) {
-              assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await reader.cancel().catch(() => {});
@@ -1704,7 +1719,7 @@ export default async function handler(req: any, res: any) {
       let travelPlaces: any[] = [];
 
       while (continueAgent && loopCount < MAX_AGENT_STEPS) {
-        assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+        assertBudget(startTime, turnBudgetMs, 'chat turn');
         loopCount += 1;
         continueAgent = false;
 
@@ -1763,7 +1778,7 @@ export default async function handler(req: any, res: any) {
         let signedFunctionTurn: ReturnType<typeof extractSignedFunctionTurn> = null;
 
         while (true) {
-          assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+          assertBudget(startTime, turnBudgetMs, 'chat turn');
           const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
           if (next.done) break;
           const chunk = next.value;
@@ -1945,7 +1960,7 @@ export default async function handler(req: any, res: any) {
     let lastError: any = null;
 
     for (let index = 0; index < openRouterAttempts.length; index += 1) {
-      assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+      assertBudget(startTime, turnBudgetMs, 'chat turn');
       const attempt = openRouterAttempts[index];
       const resolved = resolveOpenRouterModelId(attempt.id);
       if (resolved.error) {
@@ -1984,7 +1999,7 @@ export default async function handler(req: any, res: any) {
     let fullReply = '';
     let buffer = '';
     while (true) {
-      assertBudget(startTime, TOTAL_CHAT_BUDGET_MS, 'chat turn');
+      assertBudget(startTime, turnBudgetMs, 'chat turn');
       const { done, value } = await readWithIdleTimeout(reader, PROVIDER_STREAM_IDLE_MS, 'OpenRouter stream');
       if (done) break;
       buffer += decoder.decode(value, { stream: true });

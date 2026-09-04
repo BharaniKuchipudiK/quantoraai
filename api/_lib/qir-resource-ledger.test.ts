@@ -127,7 +127,19 @@ test("capacity resume preserves same Run, cursor, attempt, checkpoint and verifi
   });
   assert.equal(resumed.accepted, true);
   assert.equal(resumed.run.runId, "run-budget-1");
-  assert.equal(resumed.run.status, "EXECUTING");
+  /*
+   * REPLANNING, changed from EXECUTING on 2026-09-04.
+   *
+   * This assertion recorded what the reducer did, not what the Run could then
+   * do. EXECUTING left a resumed mission unable to start a Coding attempt
+   * (api/qir-runs.ts requires QUEUED|REPLANNING) and unable to enter recovery
+   * (qir-coding-runtime.ts requires REPAIRING|REPLANNING) — so a capacity wait
+   * had no exit at all. qir-capacity-roundtrip.test.ts proves the round trip;
+   * this line is the old expectation corrected, not a gate relaxed. Everything
+   * else this test guards — Run identity, cursor, attempt, checkpoint, the
+   * verified artifact, the active step — is unchanged and still asserted below.
+   */
+  assert.equal(resumed.run.status, "REPLANNING");
   assert.equal(resumed.run.cursor.actionId, "action-7");
   assert.equal(resumed.run.cursor.attempt, 2);
   assert.equal(resumed.run.checkpoints.length, 1);
