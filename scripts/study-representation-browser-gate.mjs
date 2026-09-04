@@ -39,6 +39,21 @@ async function assertLessonBeat(lesson, label) {
   assertStudyTeachingBeat(await lessonReadingCopy(lesson), label);
 }
 
+async function assertPictureAccessibility(picture, prompt) {
+  const caption = picture.locator('[data-quantora-study-picture-caption="true"]').first();
+  await visible(caption, 'Study picture is missing an equivalent text caption for the instructional relationship.');
+  if (!String(await caption.textContent() || '').trim()) {
+    throw new Error('Study picture caption is empty, so a screen reader would get only the SVG.');
+  }
+  if (!(await prompt.isEnabled().catch(() => false))) {
+    throw new Error('Learner action is not keyboard-reachable: the prompt is disabled after the visual.');
+  }
+  const animationName = await picture.evaluate((node) => getComputedStyle(node).animationName);
+  if (animationName && animationName !== 'none') {
+    throw new Error(`Study picture uses animation (${animationName}); reduced-motion has no safe alternative.`);
+  }
+}
+
 async function enterStudio() {
   try {
     await enterSignedInStudio(page);
@@ -207,6 +222,7 @@ try {
   if (!/vector|component/i.test(pictureLabel)) {
     throw new Error('Vector visual aria-label does not describe the instructional relationship.');
   }
+  await assertPictureAccessibility(vectorPicture, textarea);
 
   await assertLessonBeat(vectorLesson, 'vector');
 
