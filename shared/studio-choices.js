@@ -124,13 +124,51 @@ export function shouldShowAssistantDecisionCard({
   ));
 }
 
+/*
+ * The first-turn carve-out, named so a gate can assert it without matching prose.
+ *
+ * GUIDED_BUILD_DIRECTIVE says the opening build turn MUST append a modal. The
+ * rules below say to omit it for open-ended questions. Both reached the model in
+ * ONE prompt, and on 2026-09-04 it resolved them the only way it could — it
+ * judged "sell online or showcase?" open-ended, asked in prose, and the blocking
+ * deployed golden failed the turn for having no modal. The platform punished the
+ * model for obeying it, the same shape as the intake modal discarded over a
+ * newline and the image url wrapped twice.
+ *
+ * Appended by conversation-policy ONLY when guided intake is active — never
+ * folded into CHOICES_DIRECTIVE, which also ships in build mode, where the
+ * FIRST-TURN RULE must not appear at all (it forbids the HTML build mode
+ * exists to produce). conversation-policy.test.ts holds that line.
+ *
+ * Reword this freely; intake-modal-contract.test.ts asserts the CONSTANT is in
+ * the assembled prompt wherever the omission rules are, never these words (§6).
+ */
+export const FIRST_TURN_MODAL_EXEMPTION = `GUIDED BUILD, FIRST TURN — the two escape hatches above do not apply.
+The FIRST-TURN RULE governs there and the modal is REQUIRED. That turn's question
+is always a direction the user picks between, never an essay: "sell online, or a
+showcase?", "brochure, shop, or portfolio?", "dine-in, takeaway, or both?". Offer
+those as options. Judging it open-ended and asking in prose leaves the user typing
+an answer the desk could have handed them, and is the one case where omitting the
+modal is wrong.`;
+
+/**
+ * The escape hatches the exemption above must always accompany — the SOURCE of
+ * those two lines, not a copy of them. A copy would let the directive be
+ * reworded while the gate went on matching text no prompt contains any more,
+ * which is a gate that cannot fail (§4). Composed into CHOICES_DIRECTIVE below.
+ */
+export const MODAL_OMISSION_RULES = [
+  'Use ONLY when options are genuinely discrete; never for open-ended questions.',
+  'Omit the modal if a free-text answer is better.',
+];
+
 export const CHOICES_DIRECTIVE = `STRUCTURED FOLLOW-UP OPTIONS
 When you need the user to pick among 2–5 concrete options (guided build intake, travel dates/budget, site type, payment preference, strategic framework, etc.), keep your visible reply to one short natural question, then append this XML block as the last line:
 <quantora-modal>
 {"question":"Short heading (e.g. 'What should I do here?')","options":[{"id":"unique_id","title":"Button label","description":"Optional subtitle explaining the choice"}]}
 </quantora-modal>
 Rules:
-- Use ONLY when options are genuinely discrete; never for open-ended questions.
+- ${MODAL_OMISSION_RULES[0]}
 - Max 5 choices; the title of the selected choice is the precise next message the user would send.
-- Omit the modal if a free-text answer is better.
+- ${MODAL_OMISSION_RULES[1]}
 - Do not repeat the same options in prose and in the JSON.`;

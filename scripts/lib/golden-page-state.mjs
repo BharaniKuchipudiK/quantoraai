@@ -45,6 +45,9 @@ export async function pageStateSnapshot(page, consoleErrors = []) {
       previewError: await preview.getAttribute('data-quantora-preview-error', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       previewCorrelationId: await preview.getAttribute('data-quantora-correlation-id', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       lastTurnFailed: (await count('[data-quantora-last-turn-failed="true"]')) > 0,
+      // Separates "the desk asked in prose" from "the desk wrote a modal it
+      // could not read" — opposite defects that used to produce one message.
+      modalUnreadable: (await count('[data-quantora-modal-unreadable="true"]')) > 0,
       buildJobs: await count('[data-quantora-build-job]'),
       storageFault: await textOf(page.locator('[data-quantora-storage-fault]').first()),
       alert: await textOf(page.locator('[role="alert"]').first()),

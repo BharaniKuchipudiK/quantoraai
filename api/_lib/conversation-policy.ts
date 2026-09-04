@@ -1,7 +1,7 @@
 import type { SessionContext } from "./session-context.js";
 import { formatSessionContextForPrompt, formatListeningSignalsForPrompt, type ListeningSignal } from "./session-context.js";
 import { buildDomainDirective } from "./studio-domains.js";
-import { CHOICES_DIRECTIVE } from "./studio-choices.js";
+import { CHOICES_DIRECTIVE, FIRST_TURN_MODAL_EXEMPTION } from "./studio-choices.js";
 import { buildChoiceTemplateDirective } from "./studio-choice-templates.js";
 import { CONTINUE_DIRECTIVE, buildDomainContinueHint } from "./studio-continues.js";
 
@@ -394,8 +394,21 @@ export function buildConversationSystemPrompt(options: {
     buildMode: options.buildMode,
     officeOutcome,
   });
+  /*
+   * The carve-out rides with GUIDED intake only.
+   *
+   * CHOICES_DIRECTIVE tells the model it may omit the modal for an open-ended
+   * question. GUIDED_BUILD_DIRECTIVE tells it the first build turn MUST carry
+   * one. Both shipped in one prompt, so on 2026-09-04 the desk asked "sell
+   * online, or a showcase?" in prose — obeying one rule — and the blocking
+   * deployed golden failed the turn for obeying it.
+   *
+   * It cannot simply live inside CHOICES_DIRECTIVE: those rules also ship in
+   * build mode, and naming the FIRST-TURN RULE there would tell a build-mode
+   * turn not to output the HTML it exists to output.
+   */
   const choices = shouldOfferChoices
-    ? `\n\n${CHOICES_DIRECTIVE}${choiceTemplates}`
+    ? `\n\n${CHOICES_DIRECTIVE}${options.guided ? `\n\n${FIRST_TURN_MODAL_EXEMPTION}` : ""}${choiceTemplates}`
     : "";
 
   const continueHint = buildDomainContinueHint(options.studioDomain ?? null);

@@ -2125,10 +2125,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * marker either way.
        */
       let modalData = null;
+      /*
+       * And when it CANNOT be read, say so. readAssistantModal reports a
+       * failure precisely so an unreadable modal is not silent, and this call
+       * site dropped it on the floor — so on 2026-09-04 the deployed golden
+       * could not tell "the model asked in prose" from "the model wrote a
+       * modal we could not parse", which are opposite defects with opposite
+       * owners. One hook is the difference between a diagnosis and a guess.
+       */
+      let modalUnreadable = false;
       if (cleanText) {
         const modal = readAssistantModal(cleanText);
         modalData = modal.modalData;
         cleanText = modal.cleanText;
+        modalUnreadable = Boolean(modal.failure);
       }
       if (modalData && !shouldShowAssistantDecisionCard({
         choiceUsed: msg.choiceUsed,
@@ -2345,6 +2355,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         className="markdown-prose"
                         data-quantora-assistant-prose={msg.sender === 'ai' ? 'true' : undefined}
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
+                        data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
