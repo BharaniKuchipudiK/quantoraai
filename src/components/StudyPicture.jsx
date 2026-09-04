@@ -396,14 +396,17 @@ export default function StudyPicture({ caption = '', isLight = false }) {
       }}>
         <PictureArt isLight={isLight} caption={label} kind={kind} />
       </div>
-      <figcaption style={{
+      <figcaption
+        data-quantora-study-picture-caption="true"
+        style={{
         marginTop: '7px',
         paddingLeft: '2px',
         fontSize: '0.78rem',
         lineHeight: 1.45,
         fontFamily: 'var(--font-body)',
         color: isLight ? '#64748b' : '#94a3b8',
-      }}>
+      }}
+      >
         {label}
       </figcaption>
     </figure>
