@@ -224,6 +224,66 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   });
 
   /*
+   * Ask the durable governor whether this mission may spend a premium
+   * escalation, and debit it if so.
+   *
+   * This is the seam the Phase 0 re-audit named: the Resource & Budget Governor
+   * was complete — lanes, ledger, debit, capacity resume, its own route — and
+   * nothing called it, so premium escalation turned on whether a credential
+   * existed rather than whether the mission could afford one.
+   *
+   * IT FAILS OPEN, DELIBERATELY. No Run, storage unconfigured, a network error,
+   * a stale action — every one of those resolves to `true`. Mission memory must
+   * never be the reason a request goes unanswered (the invariant #516 added when
+   * a spent turn budget was sealing whole Runs). The governor may say "you have
+   * spent your premium reserve"; it may never say "I could not tell, so no".
+   *
+   * A refusal parks the Run at WAITING_FOR_CAPACITY, which is a real state with
+   * a real exit — reduceQirCapacityResume returns REPLANNING, and
+   * qir-capacity-roundtrip.test.ts proves a Coding attempt can start from there.
+   * Before that fix this call would have stalled the mission permanently.
+   */
+  const requestPremiumEscalation = () => enqueue(async () => {
+    const current = runNow;
+    const actionId = current?.cursor?.actionId;
+    if (!current?.runId || !actionId) return { allowed: true, reason: 'no-durable-run' };
+
+    let data = null;
+    try {
+      const response = await fetch('/api/qir-resources', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation: 'request',
+          runId: current.runId,
+          actionId,
+          lane: 'premium',
+          units: 1,
+        }),
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) return { allowed: true, reason: `governor-unavailable-${response.status}` };
+    } catch {
+      return { allowed: true, reason: 'governor-unreachable' };
+    }
+
+    /*
+     * A stale action means a newer attempt has moved on; the 202 carries the
+     * current Run and changes no budget. Treat it as "not my call to make"
+     * rather than a refusal.
+     */
+    if (data?.stale) return { allowed: true, reason: 'stale-action' };
+
+    const next = data?.run || null;
+    if (next) accept(data);
+    if (next?.status === 'WAITING_FOR_CAPACITY') {
+      return { allowed: false, reason: 'premium-reserve-spent', run: next };
+    }
+    return { allowed: true, reason: 'debited', run: next };
+  });
+
+  /*
    * Provider/model failure is durable evidence even when zero candidate bytes
    * exist. It is action-bound, so a late failure from an older attempt is a
    * stale no-op at the server transition guard.
@@ -364,6 +424,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   return {
     sync,
     beginModelAttempt,
+    requestPremiumEscalation,
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,

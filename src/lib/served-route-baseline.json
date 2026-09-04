@@ -1,0 +1,4 @@
+{
+  "/api/qir-context": "QIR Phase 3 Context Manager. Complete, typed, tested and deployed; nothing in the product calls it. Recorded by the 2026-09-03 Phase 0 re-audit as a known gap, not an accepted exception — this entry should disappear when the context manager is wired.",
+  "/api/study-evidence": "No caller found in src/shared/desktop. NOT confirmed dead: the similarly named api/_lib/study-evidence.ts library IS used, and src/lib/study-evidence-client.js calls /api/study-assessment instead. Outside QIR scope; verify before deleting (CLAUDE.md §9)."
+}

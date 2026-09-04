@@ -67,6 +67,31 @@ export function createQirTurnJournal({
     beginAttempt: (goal, engineId) => send('beginModelAttempt', [goal || '', engineId || '']),
 
     /**
+     * Charge the mission's premium reserve for an escalation that is actually
+     * starting.
+     *
+     * Debited HERE rather than at engine selection, on purpose. Selection is
+     * synchronous and speculative — the resolver may pick a paid engine that
+     * never runs, and a reserve charged for attempts that did not happen is a
+     * budget that lies in the expensive direction. An attempt that has begun is
+     * the first moment the spend is real.
+     *
+     * Resolves true whenever the governor cannot answer. Same rule as
+     * premium-escalation.js: it may refuse on evidence, never on ignorance.
+     */
+    chargePremium: async () => {
+      if (!owns) return true;
+      const fn = qirCoding?.requestPremiumEscalation;
+      if (typeof fn !== 'function') return true;
+      try {
+        const verdict = await fn.call(qirCoding);
+        return verdict?.allowed !== false;
+      } catch {
+        return true;
+      }
+    },
+
+    /**
      * Record failure evidence against the running action.
      *
      * `recoveryExhausted` is the terminal signal: it is the difference between

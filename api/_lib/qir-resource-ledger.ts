@@ -168,7 +168,21 @@ export function reduceQirCapacityResume(input: {
     eventType: "resource.resumed",
     run: {
       ...run,
-      status: "EXECUTING",
+      /*
+       * REPLANNING, not EXECUTING.
+       *
+       * A capacity wait is left by choosing what to do next, not by pretending
+       * the parked action is still running. EXECUTING closed both doors out:
+       * api/qir-runs.ts starts a Coding attempt only from QUEUED|REPLANNING,
+       * and qir-coding-runtime.ts requires REPAIRING|REPLANNING for recovery —
+       * so a resumed Run answered 409 to everything and the mission was parked
+       * for good. Nothing had ever driven the pair, because nothing calls the
+       * governor.
+       *
+       * This is the contract's own word for the state: failureStatus() in
+       * qir-contracts.ts returns REPLANNING for exactly this shape.
+       */
+      status: "REPLANNING",
       steps: run.steps.map((step) => step.stepId === run.cursor.stepId ? { ...step, status: "active" as const } : step),
       updatedAt: input.now,
     },
