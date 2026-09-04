@@ -25,6 +25,11 @@ test('selects field-lines renderer for electric or magnetic field concepts', () 
   assert.equal(resolveStudyRepresentationCapability('explain magnetic field direction with right-hand rule')?.rendererKind, 'field-lines');
 });
 
+test('selects geometry-construction for Pythagoras even when the unknown is named x', () => {
+  assert.equal(resolveStudyRepresentationCapability('Find side x in this right triangle using Pythagoras')?.rendererKind, 'geometry-construction');
+  assert.equal(resolveStudyRepresentationCapability('hypotenuse of a right triangle')?.rendererKind, 'geometry-construction');
+});
+
 test('keeps electricity separate from chemistry even when charge carriers are mentioned', () => {
   assert.equal(resolveStudyRepresentationCapability('electrons moving through a battery circuit with current')?.rendererKind, 'electricity-circuit');
   assert.equal(resolveStudyRepresentationCapability('electric current flows through a wire')?.rendererKind, 'electricity-circuit');

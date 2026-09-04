@@ -8,6 +8,7 @@ import {
   studyAlgebraVisualVariant,
   studyElectricityVisualVariant,
   studyFieldVisualVariant,
+  studyGeometryVisualVariant,
   studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
@@ -166,6 +167,22 @@ test('motion-graph captions are graphs, not free-body diagrams, and name what th
   assert.equal(studyGraphVisualVariant(displacement), 'displacement-time');
   assert.equal(studyGraphVisualVariant(velocity), 'velocity-time');
   assert.equal(studyGraphVisualVariant('A labelled graph showing axes, slope, and change between two points'), 'slope');
+});
+
+test('a Pythagoras lesson with side x is a right triangle, not an algebra scale', () => {
+  const caption = 'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared';
+  assert.equal(studyVisualKind('Find side x in this right triangle using Pythagoras'), 'geometry-construction');
+  assert.equal(studyVisualKind(caption), 'geometry-construction');
+  assert.equal(studyGeometryVisualVariant(caption), 'right-triangle');
+  assert.notEqual(studyVisualKind('Find side x in this right triangle using Pythagoras'), 'algebra-balance');
+});
+
+test('a substantial Pythagoras lesson receives the right-triangle diagram when the model omits its tag', () => {
+  const explanation = 'In a right triangle the square on the hypotenuse equals the squares on the other two sides. Legs a and b meet at the right angle; side c is opposite that angle. If a is 3 and b is 4, what is c?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Teach me Pythagoras to find side x on a right triangle visually.');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /hypotenuse c/);
+  assert.equal(studyGeometryVisualVariant(splitStudySegments(illustrated, 'Teach me Pythagoras to find side x on a right triangle visually.')[0].caption), 'right-triangle');
 });
 
 test('algebra visuals distinguish a static scale from a both-sides transformation', () => {

@@ -4,6 +4,7 @@ const TOPIC_SELECTION_RE = /\b(?:suggest|recommend|choose|pick)\b[\s\S]{0,48}\b(
 const BROAD_TOPIC_RE = /^\s*(?:science|math(?:ematics)?|maths|physics|chemistry|biology|study)\s*[?.!]*\s*$/i;
 const OPTICS_TOPIC_RE = /\b(?:light|reflection|refraction|mirror|lens|optics|concave|convex)\b/i;
 const MECHANICS_TOPIC_RE = /\b(?:newton(?:ian)?|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free-?body|momentum)\b/i;
+const GEOMETRY_TOPIC_RE = /\b(?:pythagoras|pythagorean|right[- ]angled triangle|right triangle|hypotenuse|geometry)\b/i;
 const ALGEBRA_TOPIC_RE = /\b(?:algebra|equation|variable|unknown|polynomial|quadratic|factoris(?:e|ation)|factoriz(?:e|ation))\b|\bx\b/i;
 const BIOLOGY_TOPIC_RE = /\b(?:biology|cell|nucleus|membrane|organelle|mitosis|meiosis|photosynthesis|respiration|genetics?|dna|chromosome)\b/i;
 const CHEMISTRY_TOPIC_RE = /\b(?:chemistry|chemical|atom|molecule|bond|electron|reaction|reactant|product|acid|base|salt|periodic)\b/i;
@@ -17,6 +18,7 @@ const STRUCTURED_VISUAL_KINDS = new Set(['process-flow', 'timeline', 'number-lin
 const KIND_SUBJECT = Object.freeze({
   'physics-motion': 'mechanics',
   'algebra-balance': 'algebra',
+  'geometry-construction': 'geometry',
   'biology-cell': 'biology',
   'chemistry-bond': 'chemistry',
 });
@@ -42,6 +44,7 @@ export function studySubjectFamily(value = '') {
   if (!text) return null;
   if (OPTICS_TOPIC_RE.test(text)) return 'optics';
   if (MECHANICS_TOPIC_RE.test(text)) return 'mechanics';
+  if (GEOMETRY_TOPIC_RE.test(text)) return 'geometry';
   if (ALGEBRA_TOPIC_RE.test(text)) return 'algebra';
   if (BIOLOGY_TOPIC_RE.test(text)) return 'biology';
   if (CHEMISTRY_TOPIC_RE.test(text)) return 'chemistry';
@@ -53,6 +56,7 @@ function subjectFamilies(value = '') {
   const families = [];
   if (OPTICS_TOPIC_RE.test(text)) families.push('optics');
   if (MECHANICS_TOPIC_RE.test(text)) families.push('mechanics');
+  if (GEOMETRY_TOPIC_RE.test(text)) families.push('geometry');
   if (ALGEBRA_TOPIC_RE.test(text)) families.push('algebra');
   if (BIOLOGY_TOPIC_RE.test(text)) families.push('biology');
   if (CHEMISTRY_TOPIC_RE.test(text)) families.push('chemistry');
@@ -109,6 +113,7 @@ export function studyTopicVisualFamily(topic = '') {
   const subject = studySubjectFamily(label);
   if (subject === 'optics') return 'optics';
   if (subject === 'mechanics') return 'physics-motion';
+  if (subject === 'geometry') return 'geometry-construction';
   if (subject === 'algebra') return 'algebra-balance';
   if (subject === 'biology') return 'biology-cell';
   if (subject === 'chemistry') return 'chemistry-bond';
