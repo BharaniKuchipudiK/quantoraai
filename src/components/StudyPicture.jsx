@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   studyElectricityVisualVariant,
+  studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
   studyPhysicsVisualVariant,
@@ -41,6 +42,7 @@ function PictureArt({ isLight, caption, kind }) {
   const muted = isLight ? '#64748b' : '#94a3b8';
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(caption) : null;
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(caption) : null;
+  const graphVariant = kind === 'graph' ? studyGraphVisualVariant(caption) : null;
   const processSteps = kind === 'process-flow' ? studyProcessSteps(caption) : [];
   const timelinePoints = kind === 'timeline' ? studyTimelinePoints(caption) : [];
   const numberLine = kind === 'number-line' ? studyNumberLineSpec(caption) : null;
@@ -82,6 +84,18 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="16" textAnchor="middle" fill={muted} fontSize="11">every force acts from the same point</text>
         </>
       ) : null}
+      {kind === 'physics-motion' && physicsVariant === 'vector-components' ? (
+        <>
+          <line x1="58" y1="140" x2="310" y2="140" stroke={muted} strokeWidth="2.5" />
+          <line x1="58" y1="140" x2="58" y2="34" stroke={muted} strokeWidth="2.5" />
+          <Arrow x1="58" y1="140" x2="240" y2="62" label="R" color="#f97316" />
+          <Arrow x1="58" y1="140" x2="240" y2="140" label="Rx" color="#0ea5e9" />
+          <Arrow x1="240" y1="140" x2="240" y2="62" label="Ry" color="#22c55e" />
+          <path d="M220 140 L220 120 L240 120" fill="none" stroke={muted} strokeWidth="2" />
+          <text x="248" y="56" fill="#f97316" fontSize="12" fontWeight="700">resultant vector</text>
+          <text x="180" y="162" textAnchor="middle" fill={muted} fontSize="11">resolve the resultant into x and y components</text>
+        </>
+      ) : null}
       {kind === 'electricity-circuit' && electricityVariant === 'simple-circuit' ? (
         <>
           <path d="M76 54 H145 M235 54 H294 V132 H76 V104" fill="none" stroke={ink} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -96,6 +110,23 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="157" textAnchor="middle" fill={muted} fontSize="11">conventional current completes the circuit</text>
           <text x="59" y="75" fill="#f97316" fontSize="11" fontWeight="800">+</text>
           <text x="58" y="96" fill="#0ea5e9" fontSize="13" fontWeight="800">−</text>
+        </>
+      ) : null}
+      {kind === 'field-lines' ? (
+        <>
+          <circle cx="104" cy="90" r="19" fill={isLight ? '#fff7ed' : '#7c2d12'} stroke="#f97316" strokeWidth="3" />
+          <text x="104" y="95" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="800">+</text>
+          <circle cx="256" cy="90" r="19" fill={isLight ? '#eff6ff' : '#1e3a8a'} stroke="#0ea5e9" strokeWidth="3" />
+          <text x="256" y="95" textAnchor="middle" fill="#0ea5e9" fontSize="14" fontWeight="800">−</text>
+          {[58, 76, 104, 132].map((offset) => (
+            <path key={offset} d={`M${120} ${offset} C 165 ${offset - 14}, 195 ${offset - 14}, 240 ${offset}`} fill="none" stroke={muted} strokeWidth="2" />
+          ))}
+          {[122, 104, 86, 68].map((offset) => (
+            <path key={offset} d={`M120 ${offset} C 165 ${offset + 14}, 195 ${offset + 14}, 240 ${offset}`} fill="none" stroke={muted} strokeWidth="2" />
+          ))}
+          <Arrow x1="146" y1="58" x2="174" y2="52" label="" color={muted} />
+          <Arrow x1="174" y1="52" x2="202" y2="58" label="" color={muted} />
+          <text x="180" y="160" textAnchor="middle" fill={muted} fontSize="11">field lines point from positive to negative; denser spacing means stronger field</text>
         </>
       ) : null}
       {kind === 'electricity-circuit' && electricityVariant === 'emf-terminal-voltage' ? (
@@ -145,13 +176,62 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="148" textAnchor="middle" fill={muted} fontSize="12">atoms connected by bonds</text>
         </>
       ) : null}
-      {kind === 'graph' ? (
+      {kind === 'graph' && graphVariant === 'slope' ? (
         <>
           <Arrow x1="58" y1="140" x2="310" y2="140" label="time / x" color={muted} />
           <Arrow x1="58" y1="140" x2="58" y2="30" label="value / y" color={muted} />
           <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
           <path d="M190 84 L240 84 L240 65" fill="none" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="5 4" />
           <text x="245" y="79" fill="#0ea5e9" fontSize="12" fontWeight="700">slope = Δy / Δx</text>
+        </>
+      ) : null}
+      {kind === 'graph' && graphVariant === 'quadrant' ? (
+        <>
+          <line x1="36" y1="90" x2="324" y2="90" stroke={ink} strokeWidth="2.5" />
+          <line x1="180" y1="22" x2="180" y2="150" stroke={ink} strokeWidth="2.5" />
+          <text x="314" y="84" fill={muted} fontSize="12" fontWeight="700">x</text>
+          <text x="188" y="32" fill={muted} fontSize="12" fontWeight="700">y</text>
+          <rect x="40" y="26" width="136" height="60" fill={isLight ? '#fff7ed' : '#431407'} opacity="0.55" />
+          <text x="250" y="56" textAnchor="middle" fill={muted} fontSize="13" fontWeight="800">I  x+ y+</text>
+          <text x="108" y="56" textAnchor="middle" fill="#f97316" fontSize="13" fontWeight="800">II  x− y+</text>
+          <text x="108" y="128" textAnchor="middle" fill={muted} fontSize="13" fontWeight="800">III  x− y−</text>
+          <text x="250" y="128" textAnchor="middle" fill={muted} fontSize="13" fontWeight="800">IV  x+ y−</text>
+          <circle cx="118" cy="58" r="5" fill="#f97316" />
+          <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">in quadrant II sine is positive and cosine is negative</text>
+        </>
+      ) : null}
+      {kind === 'graph' && graphVariant === 'displacement-time' ? (
+        <>
+          <Arrow x1="58" y1="140" x2="310" y2="140" label="time" color={muted} />
+          <Arrow x1="58" y1="140" x2="58" y2="30" label="displacement" color={muted} />
+          <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
+          <path d="M190 84 L240 84 L240 65" fill="none" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="5 4" />
+          <text x="248" y="79" fill="#0ea5e9" fontSize="12" fontWeight="700">slope = velocity</text>
+          <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">Δs / Δt at a point is instantaneous velocity</text>
+        </>
+      ) : null}
+      {kind === 'graph' && graphVariant === 'velocity-time' ? (
+        <>
+          <Arrow x1="58" y1="140" x2="310" y2="140" label="time" color={muted} />
+          <Arrow x1="58" y1="140" x2="58" y2="30" label="velocity" color={muted} />
+          <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
+          <path d="M190 84 L240 84 L240 65" fill="none" stroke="#22c55e" strokeWidth="3" strokeDasharray="5 4" />
+          <text x="248" y="79" fill="#22c55e" fontSize="12" fontWeight="700">slope = acceleration</text>
+          <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">Δv / Δt at a point is instantaneous acceleration</text>
+        </>
+      ) : null}
+      {kind === 'graph' && graphVariant === 'unit-circle' ? (
+        <>
+          <line x1="48" y1="90" x2="312" y2="90" stroke={ink} strokeWidth="2" />
+          <line x1="180" y1="24" x2="180" y2="156" stroke={ink} strokeWidth="2" />
+          <circle cx="180" cy="90" r="52" fill="none" stroke={muted} strokeWidth="2.5" />
+          <Arrow x1="180" y1="90" x2="217" y2="53" label="" color="#f97316" />
+          <line x1="217" y1="53" x2="217" y2="90" stroke="#22c55e" strokeWidth="3" strokeDasharray="4 3" />
+          <line x1="180" y1="90" x2="217" y2="90" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="4 3" />
+          <circle cx="217" cy="53" r="5" fill="#f97316" />
+          <text x="236" y="48" fill="#22c55e" fontSize="12" fontWeight="700">sin θ = y</text>
+          <text x="236" y="104" fill="#0ea5e9" fontSize="12" fontWeight="700">cos θ = x</text>
+          <text x="180" y="172" textAnchor="middle" fill={muted} fontSize="11">angle from the positive x-axis; coordinates are cosine and sine</text>
         </>
       ) : null}
       {kind === 'process-flow' && processSteps.length >= 2 ? (
@@ -252,11 +332,12 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const kind = studyVisualKind(label);
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(label) : null;
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(label) : null;
+  const graphVariant = kind === 'graph' ? studyGraphVisualVariant(label) : null;
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
-      data-quantora-study-picture-variant={physicsVariant || electricityVariant || undefined}
+      data-quantora-study-picture-variant={physicsVariant || electricityVariant || graphVariant || undefined}
       style={{
         margin: '2px 0 18px',
         maxWidth: '430px',

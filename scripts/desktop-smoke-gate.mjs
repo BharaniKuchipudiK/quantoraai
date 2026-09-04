@@ -135,58 +135,90 @@ try {
   await window.waitForLoadState('domcontentloaded');
 
   const screen = async () => window.evaluate(() => document.querySelector('[data-qd-screen]')?.getAttribute('data-qd-screen') || '');
+  /*
+   * WHY THIS REPORTS SO MUCH ON FAILURE
+   *
+   * This gate went red on two pull requests that could not have caused it
+   * (#509, #520), and both times it printed a 60-second timeout for
+   * [data-qd-signin] next to a DOM dump CONTAINING that button, rendered and
+   * enabled. Those two facts contradict each other, so the only available
+   * reading was "flaky" — and a gate read that way is one the next person mutes
+   * under pressure. Muting one cost this repo three production endpoints on
+   * 2026-08-31.
+   *
+   * The dump was not wrong, it was answering the wrong question. `waitForSelector`
+   * defaults to state 'visible', and so does click(): an element can be present
+   * and still unwaitable if the window has no size, the document never painted,
+   * or an ancestor is hidden. None of that is visible in markup.
+   *
+   * So a failure now reports the state that decides visibility, before the
+   * markup. The file already claimed this standard for itself — "a red run
+   * names its cause instead of a selector (CLAUDE.md §8)" — and did not meet it.
+   *
+   * This is deliberately NOT a claimed fix for those two failures. They were not
+   * reproducible here: the desktop bundle built locally has the same hash CI
+   * builds (index-B9RvVjYW.js), CI runs the same `xvfb-run -a` command, and the
+   * gate passes. Shipping a cure for a cause nobody has observed would be a
+   * guess with a commit message. This makes the NEXT occurrence legible instead.
+   */
+  const failureState = async (selector) => {
+    const state = await window.evaluate((sel) => {
+      const target = document.querySelector(sel);
+      const rect = target?.getBoundingClientRect?.();
+      const styles = target ? getComputedStyle(target) : null;
+      return {
+        windowSize: `${window.innerWidth}x${window.innerHeight}`,
+        outerSize: `${window.outerWidth}x${window.outerHeight}`,
+        readyState: document.readyState,
+        visibilityState: document.visibilityState,
+        screenShowing: document.querySelector('[data-qd-screen]')?.getAttribute('data-qd-screen') ?? '(no screen element)',
+        targetAttached: Boolean(target),
+        targetRect: rect ? `${Math.round(rect.width)}x${Math.round(rect.height)} at ${Math.round(rect.x)},${Math.round(rect.y)}` : '(not attached)',
+        targetDisplay: styles?.display ?? '(n/a)',
+        targetVisibility: styles?.visibility ?? '(n/a)',
+      };
+    }, selector).catch((e) => ({ evaluateFailed: e.message }));
+
+    /*
+     * The line that would have ended both investigations in one read. An
+     * element that is attached but has no box, in a window with no size, is
+     * never going to satisfy a 'visible' wait however long the timeout is.
+     */
+    const verdict = state.evaluateFailed
+      ? `the renderer could not be evaluated at all: ${state.evaluateFailed}`
+      : state.windowSize === '0x0'
+        ? 'the Electron window reported 0x0, so NOTHING is visible to Playwright however long it waits — this is not a missing element'
+        : !state.targetAttached
+          ? 'the element is genuinely not in the DOM'
+          : 'the element IS attached — compare its box and computed styles below against what a "visible" wait requires';
+
+    return [
+      `WHY: ${verdict}`,
+      ...Object.entries(state).map(([key, value]) => `  ${key}: ${value}`),
+    ].join('\n');
+  };
+
   const waitScreen = async (name, timeout = 60_000) => {
+    const selector = `[data-qd-screen="${name}"]`;
     try {
-      await window.waitForSelector(`[data-qd-screen="${name}"]`, { timeout });
+      /*
+       * `attached`, not the default `visible`: this check asserts that the
+       * renderer MOUNTED, which is what attached means. Whether it is painted
+       * at a non-zero size is a different claim, and the checks that need it
+       * (the clicks below) assert it themselves.
+       */
+      await window.waitForSelector(selector, { timeout, state: 'attached' });
       return true;
     } catch {
-      /*
-       * WHY THIS CAPTURES MORE THAN THE DOM.
-       *
-       * On 2026-09-03 this gate failed with the sign-in screen PRESENT in the
-       * DOM dump taken at the moment waitForSelector timed out. waitForSelector
-       * defaults to state:'visible', so the element was attached and not
-       * visible — for sixty seconds — and the dump alone could not say why.
-       *
-       * The failure then reported "renderer mounted on the sign-in screen" as
-       * the failed check, which reads like the mount never happened and sends
-       * the next reader hunting in the wrong place under pressure (§8).
-       *
-       * These five facts separate the candidates that a DOM dump cannot:
-       * an element with an empty box, a zero-sized window (Electron can hand a
-       * renderer a 0x0 viewport before the window is shown, and Playwright calls
-       * everything in it invisible), a stylesheet that never loaded, or a
-       * genuinely absent screen.
-       */
-      const probe = await window.evaluate((screenName) => {
-        const el = document.querySelector(`[data-qd-screen="${screenName}"]`);
-        const box = el ? el.getBoundingClientRect() : null;
-        const style = el ? getComputedStyle(el) : null;
-        return {
-          attached: Boolean(el),
-          box: box ? { w: Math.round(box.width), h: Math.round(box.height) } : null,
-          display: style?.display || null,
-          visibility: style?.visibility || null,
-          viewport: { w: window.innerWidth, h: window.innerHeight },
-          stylesheets: document.styleSheets.length,
-          readyState: document.readyState,
-        };
-      }, name).catch((e) => ({ probeFailed: e.message }));
-      diagnostics.push(`why screen ${name} was not visible: ${JSON.stringify(probe)}`);
-
-      const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 2000)).catch((e) => `evaluate failed: ${e.message}`);
-      diagnostics.push(`DOM while waiting for screen ${name}:\n${dom}`);
+      diagnostics.push(`Waiting for screen ${name} failed.\n${await failureState(selector)}`);
+      const dom = await window.evaluate(() => document.documentElement.outerHTML.slice(0, 1200)).catch((e) => `evaluate failed: ${e.message}`);
+      diagnostics.push(`DOM at that moment (truncated):\n${dom}`);
       return false;
     }
   };
 
   // 1. the shell boots on its own origin and shows the sign-in screen
-  /*
-   * "rendered AND visible", not "mounted". The old wording said the renderer
-   * never mounted, while the diagnostic beside it showed the sign-in markup
-   * present — an unactionable message is one the next person mutes (§8).
-   */
-  check(await waitScreen('signin'), 'sign-in screen rendered AND visible (signed out)');
+  check(await waitScreen('signin'), 'renderer mounted on the sign-in screen (signed out)');
   // Ask the renderer where it thinks it is, rather than reading Playwright's
   // window.url(). That property is a cached mirror of the last main-frame
   // navigation Playwright observed, and for a custom scheme it can still be

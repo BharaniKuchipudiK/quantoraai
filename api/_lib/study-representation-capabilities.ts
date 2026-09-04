@@ -1,8 +1,9 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-03.2';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-04.1';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
   | 'electricity-circuit'
+  | 'field-lines'
   | 'algebra-balance'
   | 'biology-cell'
   | 'chemistry-bond'
@@ -15,15 +16,16 @@ export type StudyRepresentationCapability = {
   version: typeof STUDY_REPRESENTATION_CAPABILITY_VERSION;
   representation: 'annotated_diagram' | 'graph' | 'process_flow' | 'timeline' | 'number_line';
   rendererKind: StudyRepresentationRendererKind;
-  reason: 'mechanics' | 'electricity' | 'algebra' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line';
+  reason: 'mechanics' | 'electricity' | 'field' | 'algebra' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line';
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
 const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
+const FIELD = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
 const ALGEBRA = /\b(?:algebra|equation|variable|unknown|polynomial|quadratic|factoris(?:e|ation)|factoriz(?:e|ation))\b|\bx\b/i;
 const BIOLOGY = /\b(?:biology|cell|nucleus|membrane|organelle|mitosis|meiosis|photosynthesis|respiration|genetics?|dna|chromosome)\b/i;
 const CHEMISTRY = /\b(?:chemistry|chemical|atom|molecule|bond|electron|reaction|reactant|product|acid|base|salt|periodic)\b/i;
-const GRAPH = /\b(?:graph|slope|axis|axes|plot|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?)\b/i;
+const GRAPH = /\b(?:graph|slope|axis|axes|plot|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?)\b/i;
 const PROCESS = /\b(?:process|cycle|flow|pathway|sequence|step|stage)\b/i;
 const TIMELINE = /\b(?:timeline|chronolog|year|era|history)\b/i;
 const NUMBER_LINE = /\bnumber line\b/i;
@@ -48,6 +50,9 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
   }
   if (MECHANICS.test(context)) {
     return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'physics-motion', reason: 'mechanics' };
+  }
+  if (FIELD.test(context)) {
+    return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'field-lines', reason: 'field' };
   }
   if (ELECTRICITY.test(context)) {
     return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation: 'annotated_diagram', rendererKind: 'electricity-circuit', reason: 'electricity' };

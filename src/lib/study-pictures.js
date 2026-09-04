@@ -17,6 +17,7 @@ export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
 const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|one sentence|caption|placeholder|diagram of the (?:idea|concept))\b/i;
 
 const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
+const FIELD_VISUAL = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
 
 function compactLabel(value = '', max = 34) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -94,12 +95,14 @@ export function studyVisualKind(caption = '') {
   if (studyNumberLineSpec(raw)) return 'number-line';
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
   if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
-  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body/.test(text)) return 'physics-motion';
+  if (/\b(?:displacement[- ]time|velocity[- ]time|position[- ]time|acceleration[- ]time|motion graphs?)\b/.test(text)) return 'graph';
+  if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body|vector|components?|resultant/.test(text)) return 'physics-motion';
+  if (FIELD_VISUAL.test(text)) return 'field-lines';
   if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
+  if (/graph|slope|axis|curve|plot|trend|correlation|distribution|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?/.test(text)) return 'graph';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
-  if (/graph|slope|axis|curve|plot|trend|correlation|distribution/.test(text)) return 'graph';
   /*
    * The relationship diagram is real, but only for a caption that actually
    * describes a relationship. Requiring the words keeps it from becoming the
@@ -110,7 +113,9 @@ export function studyVisualKind(caption = '') {
 }
 
 export function studyPhysicsVisualVariant(caption = '') {
-  return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(String(caption || ''))
+  const label = String(caption || '');
+  if (/\b(?:vector|components?|x-?axis|y-?axis|resultant)\b/i.test(label)) return 'vector-components';
+  return /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|\b(?:brak|stop)[\s\S]*\b(?:passenger|vehicle|car|bus)\b/i.test(label)
     ? 'braking-inertia'
     : 'free-body';
 }
@@ -119,6 +124,20 @@ export function studyElectricityVisualVariant(caption = '') {
   return /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?|energy per coulomb)\b/i.test(String(caption || ''))
     ? 'emf-terminal-voltage'
     : 'simple-circuit';
+}
+
+/**
+ * Graph is one renderer family with mutually exclusive teaching variants.
+ * A quadrant-sign or unit-circle lesson must not inherit the generic slope
+ * picture — that is a mismatched diagram, not a fallback.
+ */
+export function studyGraphVisualVariant(caption = '') {
+  const label = String(caption || '');
+  if (/\bquadrant\b|\bcoordinate plane\b/i.test(label)) return 'quadrant';
+  if (/\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(label)) return 'unit-circle';
+  if (/\b(?:displacement[- ]time|position[- ]time)\b/i.test(label)) return 'displacement-time';
+  if (/\bvelocity[- ]time\b/i.test(label)) return 'velocity-time';
+  return 'slope';
 }
 
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
@@ -235,6 +254,7 @@ export function decorateStudyMessage(text = '', topic = '') {
 
 const TEACHING_CAPTIONS = Object.freeze({
   'physics-motion': 'Free-body diagram of a moving block: normal force up, weight down, applied force forward, and friction backward',
+  'field-lines': 'Electric field lines point from positive to negative and their density shows field strength',
   'electricity-circuit': 'Battery circuit: the cell drives conventional current through a resistor and back to the cell',
   'algebra-balance': 'An equation balance showing the same operation applied to both sides',
   'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',
@@ -264,6 +284,15 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   }
   if (kind === 'electricity-circuit' && /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?)\b/i.test(hay)) {
     caption = 'EMF and terminal potential difference: energy per coulomb supplied by the battery splits into useful energy per coulomb in the external circuit and energy per coulomb lost in internal resistance';
+  }
+  if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
+    caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
+  } else if (kind === 'graph' && /\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(hay)) {
+    caption = 'Unit circle: an angle measured from the positive x-axis has cosine as the x-coordinate and sine as the y-coordinate';
+  } else if (kind === 'graph' && /\b(?:displacement[- ]time|position[- ]time)\b/i.test(hay)) {
+    caption = 'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time';
+  } else if (kind === 'graph' && /\bvelocity[- ]time\b/i.test(hay)) {
+    caption = 'Velocity-time graph: the slope at a point is acceleration, change in velocity over change in time';
   }
   if (!caption) return source;
   return `<quantora-study-picture caption="${caption}" />\n\n${source}`;

@@ -35,6 +35,7 @@
     "test:judgment": "tsx scripts/finance-judgment-gate.mjs",
     "test:github-writes": "node scripts/github-write-seam-gate.mjs",
     "test:imports": "node scripts/runtime-import-gate.mjs",
+    "test:study-representation-browser": "node scripts/study-representation-browser-gate.mjs",
     "desktop:build": "npm --prefix desktop run build",
     "test:desktop": "xvfb-run -a node scripts/desktop-smoke-gate.mjs",
     "test:served-routes": "node scripts/served-route-gate.mjs"
