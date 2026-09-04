@@ -166,24 +166,23 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/workspace-contract-browser-gate.mjs
 
-      # NON-BLOCKING, with a stated end condition rather than a shrug — the same
-      # rule the deployed golden was put under.
+      # BLOCKING. It went in red with a stated end condition — "this loses
+      # continue-on-error when the auto-open bug is fixed" — and the bug is
+      # fixed, so it has.
       #
-      # It reproduces an OPEN defect: the second build in one page session does
-      # not auto-open its workspace. The files are extracted, the VFS commits
-      # (measured: committed=true shopFiles=4), setIsWorkspaceMode(true) runs,
-      # and the preview still never mounts until the user clicks Preview. The
-      # deployed golden hits this as its website transaction after the
-      # calculator passes.
+      # What it caught: the second build in any session rendered no preview.
+      # The commit block ended `if (assembled.reopenDesk) setCodingDeskOpen(true)`
+      # and reopenDesk is `hadProject && didUpdate`, so a chat's FIRST build
+      # never opened the desk. New Chat resets codingDeskOpen to false, and the
+      # preview pane is gated on it, so ProjectRuntimePreview was never mounted:
       #
-      # It is wired in RED on purpose. Hiding a reproduction until its fix lands
-      # is how a defect stops being counted, and this one is a real product
-      # fault: every second build in a session silently shows no preview. When
-      # the auto-open bug is fixed this loses continue-on-error and becomes
-      # blocking; that is the end condition.
-      - name: Reproduce the second build in one session (known red)
+      #   bakeryVfs=true wsMode=true runCode=true deskOpen=FALSE
+      #
+      # Everything right except the one flag deciding whether any of it is on
+      # screen. The deployed golden hit this as its website transaction, and no
+      # local gate covered a second build because the first had never passed.
+      - name: Prove a second build in one session still previews
         id: second_transaction
-        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/second-transaction-browser-gate.mjs

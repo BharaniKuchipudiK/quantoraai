@@ -3091,7 +3091,31 @@ Paused — ${autoPauseRef.current}.`
            }
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
-           if (assembled.reopenDesk) setCodingDeskOpen(true);
+           /*
+            * A build that produced a runnable project must SHOW it.
+            *
+            * This was `if (assembled.reopenDesk)`, and reopenDesk is
+            * `hadProject && didUpdate` — it only fires when the desk already
+            * held a project. So the FIRST build in a chat never opened the
+            * desk, and since New Chat resets codingDeskOpen to false, every
+            * second build in a session rendered no preview at all: the pane is
+            * gated on codingDeskOpen, so ProjectRuntimePreview was never
+            * mounted however correct the state behind it was.
+            *
+            * Measured at the moment of the commit, on the second build:
+            *   bakeryVfs=true wsMode=true runCode=true deskOpen=FALSE
+            *
+            * Everything was right except the one flag that decides whether any
+            * of it is on screen. The user saw a chat reply and had to know to
+            * click Preview.
+            *
+            * Unconditional is safe here: this branch runs only when the turn
+            * produced a non-empty, previewable project (parsedVfs > 0 and the
+            * previewable check above), which is exactly when the desk should be
+            * open. `reopenDesk` remains what it always was — a statement about
+            * history, not about whether there is something to show.
+            */
+           setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
               if (code) {
