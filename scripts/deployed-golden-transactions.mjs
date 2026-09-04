@@ -385,6 +385,25 @@ try {
   console.error('Deployed golden transactions FAILED:', error?.stack || error);
   // Whoever reads a failed run has the log; they may not have the artifact.
   console.error('Deployed golden evidence:', JSON.stringify(evidence, null, 2));
+  /*
+   * THE LAST LINE, AND THE SHORTEST ONE.
+   *
+   * The dump above is thousands of characters wide: a single console error can
+   * carry an entire base64 font, and one CSP violation about a data: URI dwarfs
+   * everything else in the run. Reading this failure over the GitHub log API
+   * cost several attempts per diagnosis, every attempt landing in the middle of
+   * that blob instead of on the sentence that matters.
+   *
+   * So the verdict is repeated here, last, in one line and bounded. Rule 8 in
+   * its plainest form: a diagnosis nobody can find is not a diagnosis.
+   */
+  const oneLine = (value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 300);
+  const done = evidence.transactions.map((entry) => entry.name).join(', ') || 'none';
+  console.error(
+    `\nGOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
+    + ` | completed: ${done}`
+    + ` | why: ${oneLine(error?.message || error)}`,
+  );
   process.exitCode = 1;
 } finally {
   await browser.close();
