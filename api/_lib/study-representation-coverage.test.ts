@@ -28,7 +28,7 @@ test('the coverage catalog names every renderer family and keeps unsupported una
   assert.equal(report.source, 'capability_catalog');
   assert.deepEqual(Object.keys(report).sort(), ['capabilityVersion', 'rows', 'source', 'version'].sort());
 
-  const available = new Set(
+  const available = new Set<string | null>(
     report.rows.filter((row) => row.outcome === 'renderer_available').map((row) => row.rendererKind),
   );
   for (const kind of declaredRendererKinds()) {
