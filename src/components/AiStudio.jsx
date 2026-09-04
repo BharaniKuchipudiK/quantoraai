@@ -37,7 +37,7 @@ import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studi
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
-import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { advanceBuildJob, buildJobIsComplete, buildJobOutcome, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
 import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/session-desks.js';
@@ -656,6 +656,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // agent loop can never become an open tap.
   const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
+  /*
+   * The last verification verdict, kept apart from previewRunStatus because it
+   * is evidence rather than a phase: it carries the desk it judged, and
+   * build-job.js refuses it once that desk has moved on.
+   */
+  const [deskVerdict, setDeskVerdict] = useState(null);
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
@@ -2332,19 +2338,40 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           {shopUiMissingNote}
                         </div>
                       ) : null}
-                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (() => {
+                        /*
+                         * GREEN MEANS PROVED, NOT "THE FILES ARRIVED".
+                         *
+                         * This was `buildJobIsComplete(buildJob) ? '#4ade80' : …`,
+                         * and buildJobIsComplete asks only whether every promised
+                         * file exists with content. So a calculator with all four
+                         * files present and its buttons wired to nothing went
+                         * green, while verifyBuild — which had already run and
+                         * returned `passed: false` — was read by nobody here.
+                         * QIR Phase 5: no independent DONE path that bypasses
+                         * verifier evidence.
+                         */
+                        const outcome = buildJobOutcome(buildJob, vfs, deskVerdict);
+                        const outcomeColor = outcome === 'proved'
+                          ? '#4ade80'
+                          : outcome === 'failed'
+                            ? '#f87171'
+                            : subtextColor;
+                        return (
                         <div
                           data-quantora-build-job="true"
-                          style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                          data-quantora-build-outcome={outcome}
+                          style={{ marginTop: '12px', fontSize: '0.82rem', color: outcomeColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
                         >
-                          {describeBuildJob(buildJob)}
+                          {describeBuildJob(buildJob, { vfs, verdict: deskVerdict })}
                           {autoPauseRef.current && !buildJobIsComplete(buildJob)
                             ? `
 
 Paused — ${autoPauseRef.current}.`
                             : ''}
                         </div>
-                      ) : null}
+                        );
+                      })() : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
                         <div
                           data-quantora-preview-honesty="patch"
@@ -5543,6 +5570,7 @@ Paused — ${autoPauseRef.current}.`
                       turnBusy={isGenerating}
                       onVerificationStatusChange={(status) => {
                         setPreviewRunStatus(status);
+                        if (status?.kind === 'quality') setDeskVerdict(status);
                         void qirCoding.reportPreviewStatus(status);
                       }}
                       onChromeChange={setPreviewChrome}

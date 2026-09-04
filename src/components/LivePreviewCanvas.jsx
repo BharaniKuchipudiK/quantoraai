@@ -19,6 +19,7 @@ import { shouldShowPreviewShellTombstone } from '../lib/preview-shell-warming.js
 import { collectLiveDeskFacts } from '../lib/desk-probe-script.js';
 import { absolutizePreviewProxyUrls, rewritePreviewImageUrls } from '../lib/preview-images.js';
 import { looksLikeShopDesk } from '../lib/studio-desk-context.js';
+import { deskFingerprint } from '../lib/build-job.js';
 import { injectShopCommerceUi } from '../lib/shop-preview-ui.js';
 import { byokRequestHeaders } from '../lib/client-secrets.js';
 import { bootWebContainer, syncVFSToWebContainer } from '../lib/webcontainer.js';
@@ -445,7 +446,21 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.score === 'number') {
         setQualityReport(data);
-        onVerificationStatusChange?.({ kind: 'quality', score: data.score, passed: data.passed });
+        /*
+         * The verdict travels with a fingerprint of the desk it judged.
+         *
+         * Without one, a pass earned by the calculator still reads as proof
+         * after the desk has become a bakery, and the build job would paint a
+         * green "done" over an artifact nothing has checked. build-job.js
+         * treats a verdict that cannot name its desk as no verdict at all.
+         */
+        onVerificationStatusChange?.({
+          kind: 'quality',
+          score: data.score,
+          passed: data.passed,
+          desk: deskFingerprint(vfsRef.current),
+          issues: Array.isArray(data.issues) ? data.issues.slice(0, 6) : [],
+        });
         const styledFailed = Array.isArray(data.checks) && data.checks.some((check) => check.id === 'styled' && check.ok === false);
         const trust = decidePreviewTrustStatus({
           assembledHtml: assembled,

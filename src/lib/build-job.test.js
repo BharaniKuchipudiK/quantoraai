@@ -4,8 +4,10 @@ import {
   advanceBuildJob,
   briefNeedsJob,
   buildJobIsComplete,
+  buildJobOutcome,
   completedCount,
   createBuildJob,
+  deskFingerprint,
   describeBuildJob,
   nextStep,
   nextStepBrief,
@@ -170,4 +172,112 @@ const twoStep = () => createBuildJob({
     { title: 'Data', produces: ['src/data.js'] },
     { title: 'Grid', produces: ['src/Grid.jsx'] },
   ],
+});
+
+/* ------------------------------------------------------------------ *
+ * QIR PHASE 5 — the files existing is not the app working.
+ *
+ * buildJobIsComplete answers whether every promised file is on the desk, and
+ * the module note above is right that this is a deliberately falsifiable floor.
+ * The defect was elsewhere: the desk painted that count GREEN, the user read it
+ * as "my app works", and verifyBuild's `passed` — which had already run — was
+ * consulted by nothing here. A calculator with four files present and its
+ * buttons wired to nothing scored 4 of 4 in green.
+ * ------------------------------------------------------------------ */
+
+const provedJob = (vfs) => advanceBuildJob(
+  createBuildJob({ goal: 'A calculator', steps: [{ title: 'App', produces: ['src/App.jsx'] }] }),
+  vfs,
+);
+const deskVfs = { 'src/App.jsx': 'export default function App() { return <button /> }' };
+
+test('the file floor is unchanged: outcome is incomplete while a file is missing', () => {
+  const job = provedJob({});
+  assert.equal(buildJobIsComplete(job), false);
+  assert.equal(buildJobOutcome(job, {}, { passed: true, desk: deskFingerprint({}) }), 'incomplete');
+  // Even a passing verdict cannot make a job with missing files read as done.
+});
+
+test('all files present with no verdict is UNVERIFIED, never done', () => {
+  const job = provedJob(deskVfs);
+  assert.equal(buildJobIsComplete(job), true, 'the files are all there');
+  assert.equal(buildJobOutcome(job, deskVfs, null), 'unverified');
+  assert.match(describeBuildJob(job, { vfs: deskVfs }), /Nothing has checked this build yet/);
+});
+
+test('a failing verdict for THIS desk reads as failed, and names why', () => {
+  const job = provedJob(deskVfs);
+  const verdict = { passed: false, desk: deskFingerprint(deskVfs), issues: ['Buttons are not wired to any handler'] };
+  assert.equal(buildJobOutcome(job, deskVfs, verdict), 'failed');
+  const text = describeBuildJob(job, { vfs: deskVfs, verdict });
+  assert.match(text, /did not pass/);
+  assert.match(text, /Buttons are not wired/, 'a failure the user cannot act on is a failure they will ignore');
+});
+
+test('a passing verdict for THIS desk is the only thing that proves it', () => {
+  const job = provedJob(deskVfs);
+  const verdict = { passed: true, desk: deskFingerprint(deskVfs) };
+  assert.equal(buildJobOutcome(job, deskVfs, verdict), 'proved');
+  assert.match(describeBuildJob(job, { vfs: deskVfs, verdict }), /passed its check/);
+});
+
+test('a verdict earned by a DIFFERENT desk proves nothing', () => {
+  /*
+   * The calculator passes, the user asks for a bakery, every bakery file lands.
+   * Without this the stale pass would paint the bakery green — the artifact-level
+   * version of the stale locator that kept the deployed golden red for weeks
+   * while looking like a flake.
+   */
+  const bakery = { 'src/App.jsx': 'export default function App() { return <main>Sunrise Bakery</main> }' };
+  const job = provedJob(bakery);
+  const calculatorPass = { passed: true, desk: deskFingerprint(deskVfs) };
+  assert.notEqual(deskFingerprint(bakery), deskFingerprint(deskVfs), 'two different desks must fingerprint differently');
+  assert.equal(buildJobOutcome(job, bakery, calculatorPass), 'unverified');
+});
+
+test('a verdict that cannot say which desk it judged counts as no verdict', () => {
+  // Strict on purpose: such a verdict is either stale or from a caller that
+  // does not know what it measured, and both are worse than "not yet checked".
+  const job = provedJob(deskVfs);
+  assert.equal(buildJobOutcome(job, deskVfs, { passed: true }), 'unverified');
+  assert.equal(buildJobOutcome(job, deskVfs, { passed: true, desk: '' }), 'unverified');
+  assert.equal(buildJobOutcome(job, deskVfs, { passed: 'yes', desk: deskFingerprint(deskVfs) }), 'unverified');
+});
+
+test('the fingerprint reads content, not just the shape of the desk', () => {
+  /*
+   * A size-only fingerprint would call these the same desk, and a rename that
+   * preserves lengths is exactly the edit that would slip through it.
+   */
+  const a = { 'src/App.jsx': 'const NAME = "aaaa";' };
+  const b = { 'src/App.jsx': 'const NAME = "bbbb";' };
+  assert.equal(a['src/App.jsx'].length, b['src/App.jsx'].length, 'the fixture only tests what it claims if the lengths match');
+  assert.notEqual(deskFingerprint(a), deskFingerprint(b));
+  // And a path change is a different desk even at identical content.
+  assert.notEqual(deskFingerprint(a), deskFingerprint({ 'src/Main.jsx': a['src/App.jsx'] }));
+  // The empty desk has no fingerprint to compare against, so nothing proves it.
+  assert.equal(deskFingerprint({}), '');
+});
+
+test('the desk renders the outcome, and green is reserved for proved', async () => {
+  /*
+   * The wiring, not the arithmetic. This repository keeps growing functions
+   * that are written, tested and called by nothing, so the seam is asserted:
+   * the studio must ASK for the outcome and colour on it, and the canvas must
+   * send the fingerprint the outcome needs.
+   */
+  const { readFile } = await import('node:fs/promises');
+  const studio = await readFile(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(studio, /buildJobOutcome\(buildJob, vfs, deskVerdict\)/, 'the desk must ask for the outcome');
+  assert.match(studio, /data-quantora-build-outcome=\{outcome\}/, 'the outcome must be observable');
+  assert.match(studio, /outcome === 'proved'\s*\?\s*'#4ade80'/, "green must be reserved for 'proved'");
+  assert.doesNotMatch(
+    studio,
+    /color: buildJobIsComplete\(buildJob\) \? '#4ade80'/,
+    'the desk is colouring "done" by file presence again',
+  );
+  assert.match(studio, /describeBuildJob\(buildJob, \{ vfs, verdict: deskVerdict \}\)/);
+
+  const canvas = await readFile(new URL('../components/LivePreviewCanvas.jsx', import.meta.url), 'utf8');
+  assert.match(canvas, /desk: deskFingerprint\(vfsRef\.current\)/, 'a verdict with no fingerprint proves nothing');
 });
