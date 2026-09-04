@@ -163,6 +163,13 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
   assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
 });
 
+test('a quadrant-sign caption is a real graph, not a dropped decorative picture', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive',
+    'Teach me quadrant II sine signs visually.',
+  ), true);
+});
+
 test('the word curve alone is not enough to justify a graph inside a non-graph topic', () => {
   assert.equal(studyPictureFitsTopic(
     'The curved surface changes the direction of reflected rays',

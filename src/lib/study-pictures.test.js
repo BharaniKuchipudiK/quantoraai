@@ -6,6 +6,7 @@ import {
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyElectricityVisualVariant,
+  studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
   studyPicturePromptHint,
@@ -142,6 +143,22 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
   assert.equal(studyVisualKind('Plot sine and cosine on the unit circle graph by quadrant'), 'graph');
+});
+
+test('graph visuals distinguish slope, quadrant signs, and the unit circle', () => {
+  const quadrantCaption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
+  assert.equal(studyVisualKind(quadrantCaption), 'graph');
+  assert.equal(studyGraphVisualVariant('The slope of a displacement-time graph'), 'slope');
+  assert.equal(studyGraphVisualVariant(quadrantCaption), 'quadrant');
+  assert.equal(studyGraphVisualVariant('Unit circle: cosine is the x-coordinate and sine is the y-coordinate'), 'unit-circle');
+});
+
+test('a substantial quadrant lesson receives the coordinate-sign diagram when the model omits its tag', () => {
+  const explanation = 'An angle in quadrant II has a negative horizontal coordinate and a positive vertical coordinate, so cosine is negative while sine stays positive. Which ratio must be negative there?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Trigonometry quadrant signs');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /Quadrant II on the coordinate plane/);
+  assert.equal(studyGraphVisualVariant(splitStudySegments(illustrated, 'Trigonometry quadrant signs')[0].caption), 'quadrant');
 });
 
 test('electricity visuals distinguish a circuit schematic from EMF energy flow', () => {

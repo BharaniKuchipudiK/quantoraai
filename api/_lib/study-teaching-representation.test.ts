@@ -87,6 +87,13 @@ test('graph request selects graph only when graph semantics are established', ()
   assert.equal(supported.rendererRequired, true);
   assert.equal(supported.rendererKind, 'graph');
 
+  const quadrant = planStudyTeachingRepresentation({
+    message: 'Show me quadrant II sine signs with a graph',
+  });
+  assert.equal(quadrant.primaryRepresentation, 'graph');
+  assert.equal(quadrant.rendererRequired, true);
+  assert.equal(quadrant.rendererKind, 'graph');
+
   const unsupported = planStudyTeachingRepresentation({
     message: 'Show me with a graph',
     contextText: 'define covalent bonding',
