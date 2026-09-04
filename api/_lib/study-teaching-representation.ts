@@ -162,10 +162,11 @@ export function planStudyTeachingRepresentation(input: {
   const context = `${contextText}\n${message}`.trim();
   const requested = requestedMode(message);
   const capability = resolveStudyRepresentationCapability(context);
-  const emitCoverage = (available: boolean) => {
+  const emitCoverage = (available: boolean, rendererKind: StudyRepresentationRendererKind | null = null) => {
     emitStudyLearningFlowMetric({
       metric: 'representation_coverage',
       outcome: available ? 'renderer_available' : 'renderer_unavailable',
+      ...(rendererKind ? { rendererKind } : {}),
     });
   };
 
@@ -176,7 +177,7 @@ export function planStudyTeachingRepresentation(input: {
     const contextCapability = resolveStudyRepresentationCapability(contextText);
     const graphCapability = contextCapability?.representation === 'graph' ? contextCapability : null;
     const graphAvailable = Boolean(graphCapability) || GRAPH_SEMANTICS.test(message);
-    emitCoverage(graphAvailable);
+    emitCoverage(graphAvailable, graphCapability?.rendererKind || (graphAvailable ? 'graph' : null));
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
@@ -190,7 +191,7 @@ export function planStudyTeachingRepresentation(input: {
   }
 
   if (requested === 'visual') {
-    emitCoverage(Boolean(capability));
+    emitCoverage(Boolean(capability), capability?.rendererKind || null);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,
       requestedMode: requested,
@@ -315,7 +316,7 @@ export function planStudyTeachingRepresentation(input: {
   if (input.learnerModel) {
     const verified = planForVerifiedLearnerState(input.learnerModel, capability);
     if (verified.rendererRequired || verified.fallback === 'renderer_unavailable') {
-      emitCoverage(verified.rendererRequired);
+      emitCoverage(verified.rendererRequired, verified.rendererKind);
     }
     return verified;
   }
