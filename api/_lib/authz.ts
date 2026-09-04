@@ -1,4 +1,5 @@
-import { clearSessionCookie, getSessionUser } from "./session.js";
+import { clearSessionCookie, getSessionUser, type SessionUser } from "./session.js";
+import { isGoldenCanaryRequest } from "./transaction-trace.js";
 import { readStoredUser, type StoredUser } from "./store.js";
 
 export type AuthenticatedSession = {
@@ -6,11 +7,57 @@ export type AuthenticatedSession = {
   storedUser: StoredUser;
 };
 
+/*
+ * THE ONE IDENTITY CI IS ALLOWED TO BE.
+ *
+ * WHY THIS EXISTS. /api/qir-runs and the rest of the durable journal require a
+ * real signed session, so CI could never write to it on a deployment — which is
+ * why Phase 2's exit criterion ("prove a run survives worker termination and
+ * browser refresh") had only ever been demonstrated against a SYNTHETIC store.
+ * It is also why the deployed golden chat records five console 401s per run: a
+ * client-side /api/auth/session stub convinces the frontend and never the
+ * server.
+ *
+ * THE BLAST RADIUS, WHICH IS THE WHOLE POINT OF DOING IT THIS WAY.
+ *
+ * The canary authenticates as ONE FIXED SYNTHETIC USER and nothing else. The
+ * durable store partitions every row by user_sub, so a leaked canary token can
+ * reach exactly this sub's Runs — never a customer's. That is the property that
+ * made this preferable to putting a service-role key or a real account's
+ * credentials into CI.
+ *
+ * FOUR PROPERTIES HOLD THIS SHUT, each asserted in authz-golden-canary.test.ts:
+ *
+ *   1. The identity is a CONSTANT. Nothing in the request — no header, query or
+ *      body — can influence which user the canary becomes. A canary that could
+ *      name its own sub would be an impersonation primitive.
+ *   2. A real session always wins, so this can never downgrade or displace a
+ *      signed-in user.
+ *   3. isGoldenCanaryRequest compares with timingSafeEqual and returns false
+ *      when the deployment has no QUANTORA_GOLDEN_CANARY_TOKEN configured, so
+ *      an unconfigured deployment cannot be canary-authenticated at all.
+ *   4. The sub is non-numeric and namespaced. Real subs are Google's numeric
+ *      ids, so this can never collide with one.
+ */
+export const GOLDEN_CANARY_SUB = "quantora-golden-canary";
+
+function goldenCanarySession(req: any): SessionUser | null {
+  if (!isGoldenCanaryRequest(req)) return null;
+  // Frozen and literal: the identity is not derived from the request.
+  return {
+    sub: GOLDEN_CANARY_SUB,
+    email: "canary@quantora.invalid",
+    name: "Golden Canary",
+    picture: "",
+  };
+}
+
 export async function requireActiveSession(req: any, res: any): Promise<
   | { ok: true; value: AuthenticatedSession }
   | { ok: false; responseSent: true }
 > {
-  const sessionUser = getSessionUser(req);
+  // A real session always wins; the canary is only ever a fallback.
+  const sessionUser = getSessionUser(req) || goldenCanarySession(req);
   if (!sessionUser) {
     res.status(401).json({ error: "Sign in to continue.", requiresAuth: true });
     return { ok: false, responseSent: true };
