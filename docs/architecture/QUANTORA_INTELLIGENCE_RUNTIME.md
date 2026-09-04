@@ -581,6 +581,36 @@ For each point record:
 
 Deliverable: one current-state sequence/state map and a deletion/consolidation list.
 
+## Where the phases actually stand
+
+Kept here rather than in a commit message because "is Phase 3 done?" was asked
+three times in one day and answered from memory. A phase is closed only when
+something a machine runs can tell you so — a claim with no gate behind it is the
+thing this repository has an incident for.
+
+| phase | state | what closes it | the gate that says so |
+|---|---|---|---|
+| 1 — Universal Agent Contracts | closed | `api/_lib/qir-contracts.ts` | `node --test api/_lib/qir-*.test.ts` |
+| 2 — Durable Agent Runtime | closed | `api/_lib/qir-workflow-adapter.ts`, pause/resume/cancel, the event ledger | `qir-workflow-adapter.test.ts` — a conformance suite a second engine passes, plus the deployed durability gate |
+| 3 — Context, Memory, Resource Governor | closed | bounded context, compaction, nested budgets, recovery reserve, capacity waiting, model AND tool accounting | `refinement-loop.test.js`, the QIR route tests, the tool-accounting seam tests |
+| 4 — Universal Tool Fabric | closed | `api/_lib/tool-registry.ts` — one registration per tool, carrying identity, declaration, enablement, dispatch and time budget | `tool-registry.test.ts` |
+| 5 — Outcome & Verification Engine | next | — | — |
+
+**What Phase 4 deliberately left to Phase 5.** §7's `ToolResult` sketch carries
+`evidence` and `telemetry`; the registry returns each family's raw result
+instead. Normalising two result protocols into one `ok` is only honest once the
+verifier evidence that would justify it exists, which is Phase 5's subject.
+Doing it in Phase 4 would have been a rewrite wearing a migration's clothes, and
+Phase 4's own criterion forbids changing user-visible behaviour.
+
+**What the registry is not.** It is the fabric for tools the MODEL may call.
+Research verify and deep dive are user-initiated desk actions routed by request
+shape; making them model-callable is a product decision, not a migration, and
+belongs with the same consent question that keeps GitHub writes out of the tool
+list.
+
+---
+
 ### Phase 1 — Universal Agent Contracts
 
 Implement pure, versioned types/state transitions for:
