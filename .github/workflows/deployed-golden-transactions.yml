@@ -4,6 +4,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   deployment_status:
+  # NO workflow_dispatch here, deliberately. It was added alongside ci.yml's and
+  # taken straight back out: this job's own `if:` requires a pull_request or a
+  # successful Production deployment_status, and its checkout resolves the ref
+  # from one of those two events. A dispatch has neither, so the run would be
+  # created and immediately skipped — a trigger that cannot fire, which is the
+  # §4 case dressed as a convenience. This gate already runs on every
+  # production deployment, which is the thing it is actually about.
 
 permissions:
   contents: read

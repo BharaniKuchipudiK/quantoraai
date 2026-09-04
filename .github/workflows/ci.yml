@@ -5,6 +5,14 @@ on:
   push:
     branches:
       - main
+  # Run it on demand against any ref.
+  #
+  # Added on 2026-09-04, when three consecutive pushes to a PR branch produced
+  # NO workflow run at all: Vercel's deployment_status events kept creating
+  # runs while every pull_request synchronize stopped, so the code was pushed
+  # and nothing measured it. Local green is necessary and never sufficient
+  # here, and a suite that cannot be started is the same as no suite.
+  workflow_dispatch:
 
 permissions:
   contents: read
