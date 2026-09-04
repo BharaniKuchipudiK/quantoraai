@@ -18,6 +18,9 @@ test('the representation browser gate anchors on durable Study hooks, not prose 
   const gate = read('scripts/study-representation-browser-gate.mjs');
   assert.match(gate, /data-quantora-study-picture="physics-motion"/);
   assert.match(gate, /data-quantora-study-picture-variant="vector-components"/);
+  assert.match(gate, /data-quantora-study-picture="graph"/);
+  assert.match(gate, /data-quantora-study-picture-variant="quadrant"/);
+  assert.match(gate, /data-quantora-study-picture-variant="displacement-time"/);
   assert.match(gate, /data-quantora-study-lesson="true"/);
   assert.match(gate, /data-quantora-advisor="education"/);
   assert.match(gate, /data-quantora-advisor="finance"/);

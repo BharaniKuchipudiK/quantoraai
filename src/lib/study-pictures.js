@@ -95,13 +95,14 @@ export function studyVisualKind(caption = '') {
   if (studyNumberLineSpec(raw)) return 'number-line';
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
   if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
+  if (/\b(?:displacement[- ]time|velocity[- ]time|position[- ]time|acceleration[- ]time|motion graphs?)\b/.test(text)) return 'graph';
   if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body|vector|components?|resultant/.test(text)) return 'physics-motion';
   if (FIELD_VISUAL.test(text)) return 'field-lines';
   if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
+  if (/graph|slope|axis|curve|plot|trend|correlation|distribution|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?/.test(text)) return 'graph';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
-  if (/graph|slope|axis|curve|plot|trend|correlation|distribution|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?/.test(text)) return 'graph';
   /*
    * The relationship diagram is real, but only for a caption that actually
    * describes a relationship. Requiring the words keeps it from becoming the
@@ -123,6 +124,20 @@ export function studyElectricityVisualVariant(caption = '') {
   return /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?|energy per coulomb)\b/i.test(String(caption || ''))
     ? 'emf-terminal-voltage'
     : 'simple-circuit';
+}
+
+/**
+ * Graph is one renderer family with mutually exclusive teaching variants.
+ * A quadrant-sign or unit-circle lesson must not inherit the generic slope
+ * picture — that is a mismatched diagram, not a fallback.
+ */
+export function studyGraphVisualVariant(caption = '') {
+  const label = String(caption || '');
+  if (/\bquadrant\b|\bcoordinate plane\b/i.test(label)) return 'quadrant';
+  if (/\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(label)) return 'unit-circle';
+  if (/\b(?:displacement[- ]time|position[- ]time)\b/i.test(label)) return 'displacement-time';
+  if (/\bvelocity[- ]time\b/i.test(label)) return 'velocity-time';
+  return 'slope';
 }
 
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
@@ -269,6 +284,15 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   }
   if (kind === 'electricity-circuit' && /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?)\b/i.test(hay)) {
     caption = 'EMF and terminal potential difference: energy per coulomb supplied by the battery splits into useful energy per coulomb in the external circuit and energy per coulomb lost in internal resistance';
+  }
+  if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
+    caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
+  } else if (kind === 'graph' && /\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(hay)) {
+    caption = 'Unit circle: an angle measured from the positive x-axis has cosine as the x-coordinate and sine as the y-coordinate';
+  } else if (kind === 'graph' && /\b(?:displacement[- ]time|position[- ]time)\b/i.test(hay)) {
+    caption = 'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time';
+  } else if (kind === 'graph' && /\bvelocity[- ]time\b/i.test(hay)) {
+    caption = 'Velocity-time graph: the slope at a point is acceleration, change in velocity over change in time';
   }
   if (!caption) return source;
   return `<quantora-study-picture caption="${caption}" />\n\n${source}`;

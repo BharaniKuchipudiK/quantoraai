@@ -59,7 +59,7 @@ const STORY_REQUEST = /\b(?:story|storytelling|analogy|metaphor)\b/i;
 const COMPARISON_REQUEST = /\b(?:compare|comparison|difference between|versus|\bvs\b)\b/i;
 const CONCISE_REQUEST = /\b(?:make it easy|simplify|simple|simply|short|concise|in plain english)\b/i;
 const STRUGGLE = /\b(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|confused|lost|not getting it)\b/i;
-const GRAPH_SEMANTICS = /\b(?:slope|axis|axes|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?)\b/i;
+const GRAPH_SEMANTICS = /\b(?:slope|axis|axes|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent)\b/i;
 
 function requestedMode(message: string): StudyTeachingRequestedMode {
   if (GRAPH_REQUEST.test(message)) return 'graph';

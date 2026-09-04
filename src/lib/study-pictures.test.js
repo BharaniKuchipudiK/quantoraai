@@ -6,6 +6,7 @@ import {
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyElectricityVisualVariant,
+  studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
   studyPicturePromptHint,
@@ -142,6 +143,40 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
   assert.equal(studyVisualKind('The slope of a displacement-time graph'), 'graph');
   assert.equal(studyVisualKind('Plot sine and cosine on the unit circle graph by quadrant'), 'graph');
+});
+
+test('graph visuals distinguish slope, quadrant signs, and the unit circle', () => {
+  const quadrantCaption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
+  assert.equal(studyVisualKind(quadrantCaption), 'graph');
+  assert.equal(studyGraphVisualVariant('The slope of a displacement-time graph'), 'displacement-time');
+  assert.equal(studyGraphVisualVariant(quadrantCaption), 'quadrant');
+  assert.equal(studyGraphVisualVariant('Unit circle: cosine is the x-coordinate and sine is the y-coordinate'), 'unit-circle');
+});
+
+test('motion-graph captions are graphs, not free-body diagrams, and name what the slope means', () => {
+  const displacement = 'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time';
+  const velocity = 'Velocity-time graph: the slope at a point is acceleration, change in velocity over change in time';
+  assert.equal(studyVisualKind(displacement), 'graph');
+  assert.equal(studyVisualKind(velocity), 'graph');
+  assert.equal(studyGraphVisualVariant(displacement), 'displacement-time');
+  assert.equal(studyGraphVisualVariant(velocity), 'velocity-time');
+  assert.equal(studyGraphVisualVariant('A labelled graph showing axes, slope, and change between two points'), 'slope');
+});
+
+test('a substantial displacement-time lesson receives the velocity-slope diagram when the model omits its tag', () => {
+  const explanation = 'On a displacement-time graph the slope at one point is the change in displacement divided by the change in time. That quantity is velocity, not acceleration. What does a steeper line mean?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Motion graphs');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /slope at a point is velocity/);
+  assert.equal(studyGraphVisualVariant(splitStudySegments(illustrated, 'Motion graphs')[0].caption), 'displacement-time');
+});
+
+test('a substantial quadrant lesson receives the coordinate-sign diagram when the model omits its tag', () => {
+  const explanation = 'An angle in quadrant II has a negative horizontal coordinate and a positive vertical coordinate, so cosine is negative while sine stays positive. Which ratio must be negative there?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Trigonometry quadrant signs');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /Quadrant II on the coordinate plane/);
+  assert.equal(studyGraphVisualVariant(splitStudySegments(illustrated, 'Trigonometry quadrant signs')[0].caption), 'quadrant');
 });
 
 test('electricity visuals distinguish a circuit schematic from EMF energy flow', () => {
