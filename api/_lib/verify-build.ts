@@ -220,7 +220,15 @@ function decodeHtmlAttribute(value: string): string {
   ));
 }
 
-export function collectRemoteImageProbes(code: string, limit = 8): string[] {
+/**
+ * Every remote image the page will try to load, normalised the way the browser
+ * sees it: HTML-decoded, and unwrapped from the preview proxy so the host being
+ * judged is the real upstream one.
+ *
+ * Shared by both collectors below so the two cannot drift into disagreeing
+ * about what counts as an image.
+ */
+function scanRemoteImageSrcs(code: string, limit: number): string[] {
   const src = String(code || "");
   const out: string[] = [];
   const seen = new Set<string>();
@@ -238,18 +246,68 @@ export function collectRemoteImageProbes(code: string, limit = 8): string[] {
       }
     }
     if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
-    /*
-     * SSRF guard (Codex P1 on PR #442): this markup is model/user-controlled
-     * and the probe runs server-side, so an unfiltered GET reaches cloud
-     * metadata and internal services. Only the same https allowlist the
-     * preview proxy enforces may be probed; everything else is simply not
-     * checked (the proxy will refuse to serve it anyway).
-     */
-    if (!isAllowedPreviewImageUrl(url)) continue;
     seen.add(url);
     out.push(url);
   }
   return out;
+}
+
+export function collectRemoteImageProbes(code: string, limit = 8): string[] {
+  /*
+   * SSRF guard (Codex P1 on PR #442): this markup is model/user-controlled
+   * and the probe runs server-side, so an unfiltered GET reaches cloud
+   * metadata and internal services. Only the same https allowlist the
+   * preview proxy enforces may be FETCHED.
+   *
+   * What is filtered out here is not thereby fine — see
+   * collectUnservablePreviewImages, which is where those go.
+   */
+  return scanRemoteImageSrcs(code, limit).filter((url) => isAllowedPreviewImageUrl(url));
+}
+
+/**
+ * IMAGES THAT CANNOT LOAD, KNOWN WITHOUT ASKING THE NETWORK.
+ *
+ * The probe above may only fetch allowlisted hosts, and for four months it
+ * SILENTLY DROPPED everything else — so a catalogue built entirely from
+ * unlisted hosts produced zero probes, no img-live check at all, and a clean
+ * verification over five broken product frames. Measured on a page with four
+ * product images:
+ *
+ *   images in the page          4
+ *   URLs the verifier probed    1
+ *
+ * The 2026-09-01 boutique incident named in the comment above had two halves —
+ * "invented Unsplash IDs AND the retired source.unsplash.com" — and only the
+ * first was closed. An invented ID is on an allowed host, so it was probed and
+ * 404'd; source.unsplash.com is not, so it was skipped by the very check
+ * written for it. The comment claimed both; the code caught one.
+ *
+ * No request is made here and none is needed: /api/preview-image answers 400
+ * "That photo host is not allowed in Preview" for exactly these URLs, so the
+ * verdict is already determined by our own policy. Reporting it costs nothing
+ * and reaches no attacker-chosen address — the SSRF guard is untouched.
+ */
+export function collectUnservablePreviewImages(
+  code: string,
+  limit = 8,
+): Array<{ url: string; why: string }> {
+  return scanRemoteImageSrcs(code, limit * 4)
+    .filter((url) => !isAllowedPreviewImageUrl(url))
+    .slice(0, limit)
+    .map((url) => {
+      let host = "";
+      try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { host = "an unparseable host"; }
+      return {
+        url,
+        why: host === "source.unsplash.com"
+          // Named specifically because the model reaches for it constantly and
+          // a generic "not allowed" reads as our restriction rather than a
+          // host that was retired and can never serve an image again.
+          ? "source.unsplash.com was retired and can never return an image"
+          : `${host} is not a photo host Preview can load`,
+      };
+    });
 }
 
 export async function probeImageLiveness(
@@ -383,17 +441,31 @@ export async function verifyBuild(opts: {
   // Photos that actually load — network truth the string checks cannot see.
   // Additive and fail-open: a probe crash never blocks verification.
   try {
+    /*
+     * Two ways a photo fails, and the check has to see BOTH.
+     *
+     * A url on an allowed host is a network question — probe it. A url on a
+     * host Preview cannot serve is already answered by our own policy, and
+     * used to be dropped in silence: a catalogue built entirely from unlisted
+     * hosts produced no probes, so this whole block was skipped and the build
+     * verified clean over five empty product frames.
+     */
     const probes = collectRemoteImageProbes(assembled);
-    if (probes.length) {
-      const live = await probeImageLiveness(probes, { fetchFn: opts.fetchImage });
+    const unservable = collectUnservablePreviewImages(assembled);
+    const live = probes.length
+      ? await probeImageLiveness(probes, { fetchFn: opts.fetchImage })
+      : { checked: 0, dead: [] as Array<{ url: string; why: string }>, indeterminate: 0 };
+    const dead = [...live.dead, ...unservable];
+    const examined = live.checked + unservable.length;
+    if (examined) {
       checks.push({
         id: "img-live",
         label: "Photos actually load",
-        ok: live.dead.length === 0,
+        ok: dead.length === 0,
         weight: 3,
-        critical: live.dead.length > 0 && briefWantsProductCatalog(judgedBrief.toLowerCase()),
-        detail: live.dead.length
-          ? `${live.dead.length} of ${live.checked} checked photo URL(s) are dead — replace them: ${live.dead.slice(0, 3).map((d) => `${d.url} (${d.why})`).join("; ")}`
+        critical: dead.length > 0 && briefWantsProductCatalog(judgedBrief.toLowerCase()),
+        detail: dead.length
+          ? `${dead.length} of ${examined} photo URL(s) cannot load — replace them: ${dead.slice(0, 3).map((d) => `${d.url} (${d.why})`).join("; ")}`
           : undefined,
       });
     }
