@@ -3,6 +3,7 @@ import process from 'node:process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { assertStudyTeachingBeat } from '../src/lib/study-teaching-beat.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
@@ -21,6 +22,21 @@ function sseBody(text) {
 async function visible(locator, message, timeout = 10_000) {
   await locator.waitFor({ state: 'visible', timeout }).catch(() => {});
   if (!(await locator.isVisible().catch(() => false))) throw new Error(message);
+}
+
+async function lessonReadingCopy(lesson) {
+  const blocks = lesson.locator('[data-quantora-study-reading-copy="true"]');
+  const count = await blocks.count();
+  if (!count) throw new Error('Study lesson is missing reading-copy hooks for the one-idea beat.');
+  const parts = [];
+  for (let index = 0; index < count; index += 1) {
+    parts.push(String(await blocks.nth(index).textContent() || ''));
+  }
+  return parts.join('\n');
+}
+
+async function assertLessonBeat(lesson, label) {
+  assertStudyTeachingBeat(await lessonReadingCopy(lesson), label);
 }
 
 async function enterStudio() {
@@ -192,10 +208,7 @@ try {
     throw new Error('Vector visual aria-label does not describe the instructional relationship.');
   }
 
-  const vectorText = (await vectorLesson.textContent()) || '';
-  if ((vectorText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: vector lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(vectorLesson, 'vector');
 
   // 1b) A quadrant-sign request must not inherit the generic slope graph.
   const lessonsBeforeQuadrant = await studyLessons.count();
@@ -214,10 +227,7 @@ try {
   if (!/quadrant|sine|cosine|coordinate/i.test(quadrantLabel)) {
     throw new Error('Quadrant visual aria-label does not describe the sign relationship.');
   }
-  const quadrantText = (await quadrantLesson.textContent()) || '';
-  if ((quadrantText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: quadrant lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(quadrantLesson, 'quadrant');
 
   // 1c) A displacement-time request must teach velocity-as-slope, not a generic graph.
   const lessonsBeforeMotion = await studyLessons.count();
@@ -236,10 +246,7 @@ try {
   if (!/displacement|velocity|slope/i.test(motionLabel)) {
     throw new Error('Displacement-time visual aria-label does not describe the slope relationship.');
   }
-  const motionText = (await motionLesson.textContent()) || '';
-  if ((motionText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: displacement-time lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(motionLesson, 'displacement-time');
 
   // 1d) A magnetic-field request must not inherit the electric +/− picture.
   const lessonsBeforeMagnetic = await studyLessons.count();
@@ -258,10 +265,7 @@ try {
   if (!/magnetic|right-hand|current|thumb/i.test(magneticLabel)) {
     throw new Error('Magnetic-field visual aria-label does not describe the right-hand relationship.');
   }
-  const magneticText = (await magneticLesson.textContent()) || '';
-  if ((magneticText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: magnetic-field lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(magneticLesson, 'magnetic-field');
 
   // 1e) A both-sides request must teach the transformation, not a static scale.
   const lessonsBeforeAlgebra = await studyLessons.count();
@@ -280,10 +284,7 @@ try {
   if (!/both sides|isolate|subtract|transformation/i.test(algebraLabel)) {
     throw new Error('Algebra transformation visual aria-label does not describe the both-sides operation.');
   }
-  const algebraText = (await algebraLesson.textContent()) || '';
-  if ((algebraText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: algebra transformation lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(algebraLesson, 'algebra-transform');
 
   // 1f) A Pythagoras request with side x must not inherit the algebra scale.
   const lessonsBeforeGeometry = await studyLessons.count();
@@ -302,10 +303,7 @@ try {
   if (!/hypotenuse|right triangle|a squared|pythagoras/i.test(geometryLabel)) {
     throw new Error('Pythagoras visual aria-label does not describe the right-triangle relationship.');
   }
-  const geometryText = (await geometryLesson.textContent()) || '';
-  if ((geometryText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: Pythagoras lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(geometryLesson, 'pythagoras');
 
   // 2) Unsupported concept should fail honestly (no fake picture).
   // Wait for a NEW lesson. `.last()` is already visible from the vector turn,
@@ -328,9 +326,7 @@ try {
   if (!/no safe native visual renderer exists/i.test(unsupportedText)) {
     throw new Error('Unsupported concept fallback did not explicitly acknowledge renderer unavailability.');
   }
-  if ((unsupportedText.match(/\?/g) || []).length > 1) {
-    throw new Error('One-action pacing failed: unsupported lesson asked multiple learner questions.');
-  }
+  await assertLessonBeat(unsupportedLesson, 'unsupported');
 
   // 3) Cross-workspace isolation: the newest Finance reply must not use StudyMarkdown.
   const finance = page.locator('[data-quantora-advisor="finance"]').first();
@@ -352,7 +348,7 @@ try {
     throw new Error('Finance isolation reply did not confirm the Finance workspace.');
   }
 
-  console.log('Study representation browser gate passed: visual compliance, honest fallback, one-action pacing, accessibility label, and workspace isolation.');
+  console.log('Study representation browser gate passed: visual compliance, honest fallback, one-idea pacing, accessibility label, and workspace isolation.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/study-representation-browser-gate-failure.png', fullPage: true }).catch(() => {});
