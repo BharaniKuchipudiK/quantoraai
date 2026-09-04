@@ -1,3 +1,5 @@
+import { describeQirPersistDiagnosis } from '../../shared/qir-persist-diagnosis.js';
+
 /**
  * What the desk should say about the durable Run — including when there isn't one.
  *
@@ -43,6 +45,7 @@ export function describeQirDurability({ run = null, error = null } = {}) {
   }
 
   const reason = typeof error?.reason === 'string' ? error.reason : '';
+  const diagnosis = error?.diagnosis || null;
 
   /*
    * Two conditions, deliberately worded differently, because they are different
@@ -61,10 +64,21 @@ export function describeQirDurability({ run = null, error = null } = {}) {
   }
 
   if (reason === QIR_PERSIST_FAILED) {
+    /*
+     * The store classified WHY, when it could. "Rejected the last write" alone
+     * is true and unactionable: a missing table, a policy refusing the service
+     * role and a stale key are three different jobs for three different people,
+     * and this chip is the only place the operator ever sees the difference.
+     *
+     * When the store had nothing certain to say, the generic sentence stands
+     * alone rather than guessing (§5) — an invented cause sends someone to fix
+     * the wrong thing, which is worse than sending them to look.
+     */
+    const because = describeQirPersistDiagnosis(diagnosis);
     return {
       label: 'Run · not saved',
       detail: 'Durable run storage is configured but rejected the last write, so '
-        + 'this build may not be resumable.',
+        + `this build may not be resumable.${because ? ` ${because}` : ''}`,
       recording: false,
     };
   }

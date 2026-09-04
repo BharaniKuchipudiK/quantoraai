@@ -46,6 +46,18 @@ async function requestQir(payload, query = '') {
      * spent-engine set: prose is invisible to code.
      */
     error.reason = typeof data.reason === 'string' ? data.reason : '';
+    /*
+     * The classified verdict, when the store had one. Shaped rather than
+     * trusted: this arrives over the wire, and the desk renders it, so only
+     * the two string fields are carried and anything else is dropped.
+     */
+    const diagnosis = data.diagnosis;
+    if (diagnosis && typeof diagnosis.cause === 'string') {
+      error.diagnosis = {
+        cause: diagnosis.cause,
+        remedy: typeof diagnosis.remedy === 'string' ? diagnosis.remedy : '',
+      };
+    }
     throw error;
   }
   return data;

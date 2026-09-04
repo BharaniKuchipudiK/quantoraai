@@ -9,6 +9,7 @@ import {
   type QirVerificationResult,
 } from "./qir-contracts.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
+import { diagnoseQirPersistFailure } from "../../shared/qir-persist-diagnosis.js";
 
 const REST_TIMEOUT_MS = 5_000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -58,7 +59,20 @@ export type QirRunCommitResult =
   | { status: "committed"; record: QirPersistedRun }
   | { status: "conflict" }
   | { status: "not_found" }
-  | { status: "unavailable" };
+  /*
+   * WHY THIS CARRIES A DIAGNOSIS.
+   *
+   * It used to be a bare marker, so the reason the store refused a write was
+   * console.warn'd into a log nobody reads and then dropped. The route could
+   * only answer "persist-failed" and the desk chip could only say "rejected the
+   * last write" - true, and not actionable. Missing table, blocked policy and
+   * stale key are three different jobs for three different people.
+   *
+   * The verdict is CLASSIFIED here, never forwarded raw: diagnoseQirPersistFailure
+   * emits fixed strings, so Supabase's own text - which names tables, columns and
+   * sometimes the project - never crosses the wire to a browser.
+   */
+  | { status: "unavailable"; diagnosis?: { cause: string; remedy: string } | null };
 
 function finiteNonNegative(value: unknown): boolean {
   return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
@@ -176,7 +190,10 @@ export async function commitQirRunEvent(input: {
     if (detail.includes("qir_run_version_conflict")) return { status: "conflict" };
     if (detail.includes("qir_run_not_found")) return { status: "not_found" };
     console.warn(`QIR commit event -> ${response.status}`, detail);
-    return { status: "unavailable" };
+    return {
+      status: "unavailable",
+      diagnosis: diagnoseQirPersistFailure({ httpStatus: response.status, detail }),
+    };
   }
   try {
     const record = firstRecord(await response.json());

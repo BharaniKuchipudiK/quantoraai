@@ -71,7 +71,7 @@ export default async function handler(req: any, res: any) {
 
   if (result.status === "conflict") return res.status(409).json({ error: "Run changed; reload the durable Run and compact again.", conflict: true });
   if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
-  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist compacted working context.", reason: "persist-failed" });
+  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist compacted working context.", reason: "persist-failed", ...(result.diagnosis ? { diagnosis: result.diagnosis } : {}) });
 
   return res.status(200).json({
     runId,

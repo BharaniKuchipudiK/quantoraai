@@ -49,7 +49,19 @@ function artifactMatchesCode(ref: string, code: string): boolean {
 function sendCommit(res: any, result: Awaited<ReturnType<typeof commitQirRunEvent>>) {
   if (result.status === "conflict") return res.status(409).json({ error: "Run changed; resume the durable snapshot and retry.", conflict: true });
   if (result.status === "not_found") return res.status(404).json({ error: "Run not found." });
-  if (result.status !== "committed") return res.status(503).json({ error: "Unable to persist the durable Run transition.", reason: "persist-failed" });
+  if (result.status !== "committed") {
+    /*
+     * The diagnosis rides along so the desk can say WHICH failure this is.
+     * It is already classified into fixed strings by the store, so nothing
+     * Supabase wrote reaches the browser. Absent when nothing was certain -
+     * the chip then keeps its generic wording rather than inventing a cause.
+     */
+    return res.status(503).json({
+      error: "Unable to persist the durable Run transition.",
+      reason: "persist-failed",
+      ...(result.diagnosis ? { diagnosis: result.diagnosis } : {}),
+    });
+  }
   return res.status(200).json({
     run: result.record.run,
     storageVersion: result.record.storageVersion,
