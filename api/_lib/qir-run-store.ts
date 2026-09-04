@@ -9,6 +9,7 @@ import {
   type QirVerificationResult,
 } from "./qir-contracts.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
+import { diagnoseQirPersistFailure } from "../../shared/qir-persist-diagnosis.js";
 
 const REST_TIMEOUT_MS = 5_000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -58,7 +59,20 @@ export type QirRunCommitResult =
   | { status: "committed"; record: QirPersistedRun }
   | { status: "conflict" }
   | { status: "not_found" }
-  | { status: "unavailable" };
+  /*
+   * WHY THIS CARRIES A DIAGNOSIS.
+   *
+   * It used to be a bare marker, so the reason the store refused a write was
+   * console.warn'd into a log nobody reads and then dropped. The route could
+   * only answer "persist-failed" and the desk chip could only say "rejected the
+   * last write" - true, and not actionable. Missing table, blocked policy and
+   * stale key are three different jobs for three different people.
+   *
+   * The verdict is CLASSIFIED here, never forwarded raw: diagnoseQirPersistFailure
+   * emits fixed strings, so Supabase's own text - which names tables, columns and
+   * sometimes the project - never crosses the wire to a browser.
+   */
+  | { status: "unavailable"; diagnosis?: { cause: string; remedy: string } | null };
 
 function finiteNonNegative(value: unknown): boolean {
   return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
@@ -105,21 +119,40 @@ function firstRecord(payload: any): QirPersistedRun | null {
   return persistedRun(row);
 }
 
-export async function createQirRun(userSub: string, run: QirAgentRun): Promise<QirPersistedRun | null> {
-  if (!userSub || !isValidQirRunSnapshot(run)) return null;
+/*
+ * CREATE IS THE FIRST CALL, SO IT NEEDS THE DIAGNOSIS MOST.
+ *
+ * This returned a bare null and console.warn'd the reason, so the very first
+ * failure a new Run can hit - the one you get when the migration was never
+ * applied to this project - reached the desk with no cause at all. The commit
+ * path was given a verdict first; diagnosing the second failure mode and not
+ * the first is the same dropped-boundary defect, one function over.
+ */
+export type QirRunCreateResult =
+  | { status: "created"; record: QirPersistedRun }
+  | { status: "unavailable"; diagnosis?: { cause: string; remedy: string } | null };
+
+export async function createQirRun(userSub: string, run: QirAgentRun): Promise<QirRunCreateResult> {
+  if (!userSub || !isValidQirRunSnapshot(run)) return { status: "unavailable" };
   const response = await requestRaw("rpc/create_qir_run", {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({ p_user_sub: userSub, p_run_id: run.runId, p_state: run }),
   });
   if (!response?.ok) {
-    if (response) console.warn(`QIR create run -> ${response.status}`, await response.text());
-    return null;
+    if (!response) return { status: "unavailable" };
+    const detail = await response.text();
+    console.warn(`QIR create run -> ${response.status}`, detail);
+    return {
+      status: "unavailable",
+      diagnosis: diagnoseQirPersistFailure({ httpStatus: response.status, detail }),
+    };
   }
   try {
-    return firstRecord(await response.json());
+    const record = firstRecord(await response.json());
+    return record ? { status: "created", record } : { status: "unavailable" };
   } catch {
-    return null;
+    return { status: "unavailable" };
   }
 }
 
@@ -176,7 +209,10 @@ export async function commitQirRunEvent(input: {
     if (detail.includes("qir_run_version_conflict")) return { status: "conflict" };
     if (detail.includes("qir_run_not_found")) return { status: "not_found" };
     console.warn(`QIR commit event -> ${response.status}`, detail);
-    return { status: "unavailable" };
+    return {
+      status: "unavailable",
+      diagnosis: diagnoseQirPersistFailure({ httpStatus: response.status, detail }),
+    };
   }
   try {
     const record = firstRecord(await response.json());

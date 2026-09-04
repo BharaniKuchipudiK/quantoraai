@@ -154,3 +154,48 @@ test('the desk consumes the verdict rather than testing run truthiness', () => {
   );
   assert.match(studio, /data-quantora-qir-recording=/, 'and must expose it for the browser gates');
 });
+
+test('[was-red] the chip says WHICH write failure this is, when the store knew', () => {
+  /*
+   * "Rejected the last write" was true and unactionable. This chip is the only
+   * place the operator ever sees the difference between a migration that never
+   * ran, a policy refusing the service role, and a rotated key.
+   */
+  const described = describeQirDurability({
+    error: Object.assign(new Error('nope'), {
+      reason: QIR_PERSIST_FAILED,
+      diagnosis: {
+        cause: 'a row-level security policy is refusing the service role',
+        remedy: 'grant the service role write access to the QIR tables',
+      },
+    }),
+  });
+
+  assert.equal(described.label, 'Run · not saved');
+  assert.equal(described.recording, false);
+  assert.match(described.detail, /rejected the last write/, 'the generic fact still leads');
+  assert.match(described.detail, /row-level security policy is refusing the service role/, 'and the cause follows');
+  assert.match(described.detail, /grant the service role write access/, 'with what to do about it');
+});
+
+test('[was-red] with no diagnosis the chip states the fact and invents nothing', () => {
+  /*
+   * §5. When the store could not classify, a guessed cause would send someone
+   * to fix the wrong thing — worse than sending them to look.
+   */
+  for (const diagnosis of [undefined, null, {}, { cause: '' }]) {
+    const described = describeQirDurability({
+      error: Object.assign(new Error('nope'), { reason: QIR_PERSIST_FAILED, diagnosis }),
+    });
+    assert.match(described.detail, /rejected the last write/);
+    assert.doesNotMatch(described.detail, /Most likely/, `must not guess a cause for ${JSON.stringify(diagnosis)}`);
+    assert.doesNotMatch(described.detail, /undefined|\[object/, 'and must not leak a placeholder');
+  }
+});
+
+test('a healthy Run is unaffected by any of this', () => {
+  const described = describeQirDurability({ run: { runId: 'run-7', status: 'EXECUTING' } });
+  assert.equal(described.label, 'Run · EXECUTING');
+  assert.equal(described.recording, true);
+  assert.doesNotMatch(described.detail, /Most likely/);
+});

@@ -105,10 +105,34 @@ function ruleBlock(packet, rule, { previewWarming = false } = {}) {
   return '';
 }
 
+/*
+ * Split into sentences WITHOUT losing a character.
+ *
+ * THE DEFECT. The leading `[^\n.!?]+` was required and cannot match a newline,
+ * so after a sentence ended in '.', the following '\n\n' matched nothing — and
+ * String.match(/g) silently drops what it does not match. out.join('') then
+ * glued the paragraphs together, rendering:
+ *
+ *   "...wired them into the nav.Nav clicking and smooth scroll still work..."
+ *   "...for a consulting business.Generated files remain on the Coding desk"
+ *
+ * Both were read from a user's screenshot on 2026-09-04. Every paragraph break
+ * in every coding-desk reply was destroyed whenever any rule was active — which
+ * includes the common case of an absent desk packet, where ruleBlock() returns
+ * 'unverified' for all eight rules.
+ *
+ * A markdown newline would have rendered as a SPACE. These had none, which is
+ * what says the character was deleted rather than collapsed.
+ *
+ * THE RULE. Every alternative must be reachable for every character, so the
+ * split is total: text runs, punctuation runs, and newline runs each have a
+ * branch. splitKeep(x).join('') === x is asserted over a corpus in the tests;
+ * a split that can drop input is the class, not just this one lost newline.
+ */
 function splitKeep(text) {
   const value = String(text || '');
   if (!value) return [];
-  return value.match(/[^\n.!?]+(?:[.!?]+|\n+|$)/g) || [value];
+  return value.match(/[^\n.!?]+(?:[.!?]+|\n+|$)|[.!?]+|\n+/g) || [value];
 }
 
 function clausesOf(sentence) {
