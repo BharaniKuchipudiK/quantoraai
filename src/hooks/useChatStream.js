@@ -71,6 +71,7 @@ import {
   buildTruthNote,
 } from '../lib/proof-control-plane.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
+import { describeSilentTurn, turnIsSilent } from '../lib/turn-never-silent.js';
 import {
   correlationHeaders,
   createCorrelationId,
@@ -2326,6 +2327,28 @@ export function useChatStream({
       if (stillCurrent()) {
         abortControllersRef.current.delete(owningSessionId);
         setIsGenerating(false);
+        /*
+         * A turn may fail. It may not say nothing.
+         *
+         * On 2026-09-04 two consecutive turns rendered as empty bubbles: no
+         * text, no error, no explanation. The desk's honest terminal copy all
+         * lives in HANDLERS - describeTurnFailure, responseErrorMessage,
+         * resolveCodingTurnOutcome - so the guarantee was really "every author
+         * of every exit path remembered to write one", and any path that
+         * returns without doing so leaves the `text: ''` this message was
+         * created with.
+         *
+         * This is the one boundary every turn passes through, so the guarantee
+         * belongs here rather than in one more handler. It only FILLS an empty
+         * message - never replaces - so never-discard-model-output holds by
+         * construction, and it names no cause it cannot prove.
+         */
+        updateActiveMessages(prev => prev.map(m => (m.id === aiMsgId && turnIsSilent(m) ? {
+          ...m,
+          text: describeSilentTurn(m),
+          isError: true,
+          executionStatus: null,
+        } : m)));
       }
     }
   };
