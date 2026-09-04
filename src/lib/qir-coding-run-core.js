@@ -255,6 +255,71 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * qir-capacity-roundtrip.test.ts proves a Coding attempt can start from there.
    * Before that fix this call would have stalled the mission permanently.
    */
+  /*
+   * Compact the working context into durable state, after the Run advances.
+   *
+   * THE GAP THIS CLOSES. The Context Manager — /api/qir-context,
+   * compactQirWorkingContext, the whole bounded-context contract — shipped
+   * complete on 2026-09-02: typed, tested, deployed, and called by NOTHING.
+   * It was the last entry in the served-route baseline, and the twin of the
+   * Resource Governor #523 found the same way.
+   *
+   * WHY THIS IS NOT A NEW EXPORTED METHOD. The obvious wiring is to expose
+   * compactWorkingContext() on the client and have some caller remember to
+   * invoke it. That is exactly how both subsystems came to be unwired in the
+   * first place: a method nobody calls looks identical to a method nobody has
+   * called YET, and the served-route gate would then report /api/qir-context as
+   * reachable while no user action ever reaches it — a false clean, of the kind
+   * that gate exists to prevent.
+   *
+   * So compaction is automatic, and fires where the Run has definitively moved:
+   * reportPreviewStatus is the point at which an observation, and possibly a
+   * promotion, has already been committed. That is when a bounded snapshot is
+   * worth taking and when nextAction is meaningful to a fresh worker.
+   *
+   * IT MAY NEVER COST THE USER A BUILD. Every failure resolves to silence: no
+   * throw, no retry, no change to the Run the caller is holding. Compaction is
+   * an optimisation for a worker that may never arrive — the same fail-open
+   * rule the governor follows, and the invariant #516 added.
+   */
+  const compactWorkingContext = async (current, note) => {
+    if (!current?.runId) return;
+    try {
+      const { vfs, goal, job } = readOptions();
+      const files = Object.keys(vfs || {});
+      const response = await fetch('/api/qir-context', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runId: current.runId,
+          /*
+           * The one thing the durable Run does not already know. The server
+           * compacts goal, cursor, blockers, evidence and artifacts out of the
+           * Run itself; the file inventory lives only in this browser.
+           *
+           * Names, never contents: a VFS can hold megabytes, this has to stay
+           * bounded, and the server sanitises and caps whatever arrives anyway.
+           */
+          projectState: {
+            files: files.sort().slice(0, 100),
+            fileCount: files.length,
+            goal: String(goal || '').slice(0, 500),
+            job: String(job?.title || job?.name || '').slice(0, 200),
+          },
+          recentInteractions: note ? [String(note).slice(0, 500)] : [],
+        }),
+      });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => null);
+      // The compacted context rides on the returned Run; accepting it keeps the
+      // local snapshot and the durable one at the same storageVersion.
+      if (data?.run) accept(data);
+    } catch {
+      /* A build must never fail because a snapshot could not be taken. */
+    }
+  };
+
   const requestPremiumEscalation = () => enqueue(async () => {
     const current = runNow;
     const actionId = current?.cursor?.actionId;
@@ -420,7 +485,9 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         brief: goal,
         job,
       });
-      return accept(promoted);
+      const next = accept(promoted);
+      await compactWorkingContext(next, 'preview quality verified; artifact promoted');
+      return next;
     }
 
     const reported = status && typeof status === 'object' && status.kind === 'runtime'
@@ -430,6 +497,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     const success = reported === 'clean';
     if ((!failure && !success) || current.status !== 'EXECUTING') return current;
     current = accept(await observePreview(current, failure));
+    await compactWorkingContext(current, failure ? 'preview reported a runtime failure' : 'preview ran clean');
     return current;
   });
 
