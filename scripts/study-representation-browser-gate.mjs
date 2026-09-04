@@ -77,9 +77,11 @@ await page.route('**/api/**', async (route) => {
       ? 'isolation'
       : /unsupported-concept/.test(message)
         ? 'unsupported'
-        : /displacement[- ]time/.test(message)
-          ? 'displacement-time'
-          : /quadrant/.test(message)
+        : /magnetic|right[- ]hand/.test(message)
+          ? 'magnetic'
+          : /displacement[- ]time/.test(message)
+            ? 'displacement-time'
+            : /quadrant/.test(message)
             ? 'quadrant'
             : /vector/.test(message)
               ? 'vector'
@@ -91,6 +93,12 @@ await page.route('**/api/**', async (route) => {
         '<quantora-study-picture caption="Resolve a vector into x and y components on the coordinate axes" />',
         '',
         'Split the resultant into horizontal and vertical components first. Predict which component increases when the angle increases, then answer that one check.',
+      ].join('\n');
+    } else if (mode === 'magnetic') {
+      reply = [
+        '<quantora-study-picture caption="Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire" />',
+        '',
+        'Point your thumb along conventional current. Which way do your fingers give the magnetic field around the wire?',
       ].join('\n');
     } else if (mode === 'displacement-time') {
       reply = [
@@ -215,6 +223,28 @@ try {
   const motionText = (await motionLesson.textContent()) || '';
   if ((motionText.match(/\?/g) || []).length > 1) {
     throw new Error('One-action pacing failed: displacement-time lesson asked multiple learner questions.');
+  }
+
+  // 1d) A magnetic-field request must not inherit the electric +/− picture.
+  const lessonsBeforeMagnetic = await studyLessons.count();
+  await textarea.fill('Teach me magnetic field direction with the right-hand rule visually.');
+  await textarea.press('Enter');
+  const magneticLesson = studyLessons.nth(lessonsBeforeMagnetic);
+  await visible(magneticLesson, 'Magnetic field lesson did not render.', 15_000);
+  const magneticPicture = magneticLesson.locator('[data-quantora-study-picture="field-lines"][data-quantora-study-picture-variant="magnetic"]').first();
+  await visible(magneticPicture, 'Magnetic-field request rendered the electric +/− picture instead of the right-hand-rule visual.', 15_000);
+  if (await magneticLesson.locator('[data-quantora-study-picture-variant="electric"]').count()) {
+    throw new Error('Magnetic-field lesson leaked the electric charge-pair picture.');
+  }
+  const magneticSvg = magneticPicture.locator('svg[role="img"]').first();
+  await visible(magneticSvg, 'Magnetic-field visual is missing a screen-reader image role.');
+  const magneticLabel = String(await magneticSvg.getAttribute('aria-label') || '');
+  if (!/magnetic|right-hand|current|thumb/i.test(magneticLabel)) {
+    throw new Error('Magnetic-field visual aria-label does not describe the right-hand relationship.');
+  }
+  const magneticText = (await magneticLesson.textContent()) || '';
+  if ((magneticText.match(/\?/g) || []).length > 1) {
+    throw new Error('One-action pacing failed: magnetic-field lesson asked multiple learner questions.');
   }
 
   // 2) Unsupported concept should fail honestly (no fake picture).

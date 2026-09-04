@@ -163,6 +163,13 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
   assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
 });
 
+test('a magnetic right-hand-rule caption is a real field picture, not a dropped decorative picture', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire',
+    'Teach me magnetic field direction with the right-hand rule visually.',
+  ), true);
+});
+
 test('a displacement-time caption is a real graph, not a dropped decorative picture', () => {
   assert.equal(studyPictureFitsTopic(
     'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time',
