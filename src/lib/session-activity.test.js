@@ -14,7 +14,6 @@ import {
   MAX_CONCURRENT_TURNS,
   TURN_BUILD,
   TURN_CHAT,
-  buildingSession,
   endSessionWork,
     isSessionWorking,
   sendBlockedReason,
@@ -136,9 +135,6 @@ test('the sidebar marks only the working chat', () => {
 });
 
 test('helpers report the set honestly', () => {
-  assert.equal(buildingSession(new Map()), null);
-  assert.equal(buildingSession(startSessionWork(new Map(), 'a', TURN_BUILD)), 'a');
-  assert.equal(buildingSession(startSessionWork(new Map(), 'a', TURN_CHAT)), null, 'a chat turn does not hold the desk');
 });
 
 /* ------------------------------------------------------------------ *
@@ -146,21 +142,26 @@ test('helpers report the set honestly', () => {
  * ------------------------------------------------------------------ */
 
 /**
- * The rule that stops this feature corrupting a project.
+ * Two builds may now run at once — and the history of why they could not.
  *
- * `vfs` in AiStudio is a single state, swapped as you change chats. Two builds
- * running at once would each call setVfs and write their files into whichever
- * desk was on screen — the user would watch one project grow another project's
- * files, with no error anywhere. Concurrency is worth having; it is not worth
- * that.
+ * This test asserted the opposite until src/lib/session-desks.js landed. `vfs`
+ * was a single state swapped as you changed chats, so two builds would each
+ * write their files into whichever desk was on screen: one project quietly
+ * growing another project's code, with no error anywhere. Refusing was right
+ * while that was true.
+ *
+ * Now every chat owns its desk and every write names the session it belongs to,
+ * so the refusal is gone. It is flipped here rather than deleted because the
+ * next person to read this needs to know the restriction existed for a reason
+ * and what removed it — a rule that vanishes without a trace gets reinvented.
  */
-test('a second BUILD is refused while one holds the desk, and says why', () => {
+test('two builds run at once, now that each chat owns its desk', () => {
   const working = startSessionWork(new Map(), 'chat-a', TURN_BUILD);
-  const reason = sendBlockedReason(working, 'chat-b', { isBuild: true, titleFor: () => 'Coffee shop site' });
-
-  assert.match(reason, /Coffee shop site/);
-  assert.match(reason, /share one desk/, 'the reason has to name the real constraint, not just say no');
-  assert.match(reason, /ask questions in other chats/, 'and say what the user CAN still do');
+  assert.equal(
+    sendBlockedReason(working, 'chat-b', { isBuild: true, titleFor: () => 'Coffee shop site' }),
+    '',
+    'the desk is no longer shared, so a second build has nothing to collide with',
+  );
 });
 
 test('a QUESTION runs happily while a build holds the desk', () => {
@@ -175,12 +176,4 @@ test('a build starts freely when only questions are running', () => {
   assert.equal(sendBlockedReason(working, 'chat-c', { isBuild: true, titleFor: () => 'x' }), '');
 });
 
-test('kind is recorded per session, so one build does not mark them all', () => {
-  let working = startSessionWork(new Map(), 'chat-a', TURN_BUILD);
-  working = startSessionWork(working, 'chat-b', TURN_CHAT);
-  assert.equal(buildingSession(working), 'chat-a');
 
-  working = endSessionWork(working, 'chat-a');
-  assert.equal(buildingSession(working), null, 'the desk is released when the build ends');
-  assert.equal(isSessionWorking(working, 'chat-b'), true);
-});

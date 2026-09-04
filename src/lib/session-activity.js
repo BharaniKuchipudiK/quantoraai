@@ -81,13 +81,6 @@ export function isSessionWorking(working, sessionId) {
   return working instanceof Map && Boolean(sessionId) && working.has(sessionId);
 }
 
-/** The session running a desk-writing build, or null. At most one may exist. */
-export function buildingSession(working) {
-  if (!(working instanceof Map)) return null;
-  for (const [id, kind] of working) if (kind === TURN_BUILD) return id;
-  return null;
-}
-
 /**
  * How many turns may run at once.
  *
@@ -123,13 +116,18 @@ export function sendBlockedReason(working, activeSessionId, options = {}) {
     return 'Quantora is still working on this chat. Wait for it to finish, or press Stop.';
   }
 
-  // The desk is one object. A second build would write into the first's files.
-  if (options.isBuild === true) {
-    const builder = buildingSession(working);
-    if (builder) {
-      return `Quantora is building in ${named(builder)}. Builds share one desk, so they run one at a time — wait for that to finish, or stop it there. You can still ask questions in other chats.`;
-    }
-  }
+  /*
+   * Builds no longer share a desk, so they no longer queue.
+   *
+   * This used to refuse a second build outright: `vfs` was one object and two
+   * builds would each write their files into whichever desk was on screen. That
+   * restriction was correct while it was true. src/lib/session-desks.js gives
+   * every chat its own desk and makes each write name the session that owns it,
+   * so the reason for the refusal is gone — and a refusal that outlives its
+   * reason is just a product being slower than it needs to be.
+   *
+   * The spend cap below still applies, and it applies to builds most of all.
+   */
 
   if (working instanceof Map && working.size >= MAX_CONCURRENT_TURNS) {
     const names = [...working.keys()].map((id) => String(titleFor(id) || '').trim()).filter(Boolean);

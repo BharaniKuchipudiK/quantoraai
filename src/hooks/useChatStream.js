@@ -802,7 +802,7 @@ export function useChatStream({
       const renameAsk = detectRenameRequest(visibleUserText);
       if (renameAsk) {
         const plan = planDeskRename({ vfs, html: canvasCode || '', newName: renameAsk.newName });
-        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan)) : false;
+        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan), owningSessionId) : false;
         if (!plan.ok || applied) {
           if (!stillCurrent()) return;
           updateActiveMessages(prev => [...prev, {
@@ -1749,7 +1749,7 @@ export function useChatStream({
                 );
                 if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
                   if (typeof onCodingTurnProved === 'function') {
-                    try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                    try { onCodingTurnProved(deskProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                   }
                   const why = artifactFailed
                     ? (streamedError.message || 'Build artifact failed')
@@ -1937,7 +1937,7 @@ export function useChatStream({
               });
               if (codingTurnMayClaimSuccess(seededProof)) {
                 if (typeof onCodingTurnProved === 'function') {
-                  try { onCodingTurnProved(seededProof, turnPlan); } catch { /* ignore */ }
+                  try { onCodingTurnProved(seededProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
                 const okCopy = shopOwned
                   ? (
@@ -2038,7 +2038,7 @@ export function useChatStream({
             });
             if (typeof onCodingTurnProved === 'function') {
               try {
-                onCodingTurnProved(codingProof, turnPlan);
+                onCodingTurnProved(codingProof, turnPlan, owningSessionId);
               } catch { /* desk apply is best-effort */ }
             }
             /*
@@ -2217,7 +2217,7 @@ export function useChatStream({
               );
               if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
                 if (typeof onCodingTurnProved === 'function') {
-                  try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                  try { onCodingTurnProved(deskProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
                 const why = timedOut
                   ? `The model hit the ${Math.round(turnDeadlineMs / 1000)}s limit`
