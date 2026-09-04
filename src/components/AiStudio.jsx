@@ -40,6 +40,7 @@ import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, buildJobOutcome, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
 import { unprovedClaimNote } from '../lib/unproved-claim-note.js';
+import { readAssistantModal } from '../lib/assistant-modal.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
 import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/session-desks.js';
@@ -2113,17 +2114,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         ? filterDeskChatClaims(displayText, deskPacket, studioDomain, claimFilterOpts)
         : displayText;
       const claimFiltered = msg.sender === 'ai' && deskChatClaimWasFiltered(displayText, cleanText);
+      /*
+       * A bare JSON.parse here threw away the model's decision modal whenever
+       * its question spanned two lines — a raw newline inside a JSON string is
+       * "Bad control character", and models write those constantly. No modal
+       * rendered, the turn looked dead, and because the marker was stripped
+       * only ON SUCCESS the user was left reading raw braces. It reached
+       * production on 2026-09-04 and failed the deployed golden's guided-intake
+       * transaction. readAssistantModal repairs that one case and strips the
+       * marker either way.
+       */
       let modalData = null;
       if (cleanText) {
-        const match = cleanText.match(/<quantora-modal>([\s\S]*?)<\/quantora-modal>/);
-        if (match) {
-          try {
-            modalData = JSON.parse(match[1]);
-            cleanText = cleanText.replace(match[0], '').trim();
-          } catch (e) {
-            console.error("Failed to parse modal data", e);
-          }
-        }
+        const modal = readAssistantModal(cleanText);
+        modalData = modal.modalData;
+        cleanText = modal.cleanText;
       }
       if (modalData && !shouldShowAssistantDecisionCard({
         choiceUsed: msg.choiceUsed,
