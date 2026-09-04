@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   studyElectricityVisualVariant,
+  studyFieldVisualVariant,
   studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
@@ -42,6 +43,7 @@ function PictureArt({ isLight, caption, kind }) {
   const muted = isLight ? '#64748b' : '#94a3b8';
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(caption) : null;
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(caption) : null;
+  const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(caption) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(caption) : null;
   const processSteps = kind === 'process-flow' ? studyProcessSteps(caption) : [];
   const timelinePoints = kind === 'timeline' ? studyTimelinePoints(caption) : [];
@@ -112,7 +114,7 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="58" y="96" fill="#0ea5e9" fontSize="13" fontWeight="800">−</text>
         </>
       ) : null}
-      {kind === 'field-lines' ? (
+      {kind === 'field-lines' && fieldVariant === 'electric' ? (
         <>
           <circle cx="104" cy="90" r="19" fill={isLight ? '#fff7ed' : '#7c2d12'} stroke="#f97316" strokeWidth="3" />
           <text x="104" y="95" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="800">+</text>
@@ -127,6 +129,18 @@ function PictureArt({ isLight, caption, kind }) {
           <Arrow x1="146" y1="58" x2="174" y2="52" label="" color={muted} />
           <Arrow x1="174" y1="52" x2="202" y2="58" label="" color={muted} />
           <text x="180" y="160" textAnchor="middle" fill={muted} fontSize="11">field lines point from positive to negative; denser spacing means stronger field</text>
+        </>
+      ) : null}
+      {kind === 'field-lines' && fieldVariant === 'magnetic' ? (
+        <>
+          <line x1="56" y1="90" x2="304" y2="90" stroke={ink} strokeWidth="6" strokeLinecap="round" />
+          <Arrow x1="88" y1="90" x2="168" y2="90" label="" color="#f97316" />
+          <text x="128" y="78" textAnchor="middle" fill="#f97316" fontSize="12" fontWeight="800">I</text>
+          <ellipse cx="210" cy="90" rx="34" ry="46" fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
+          <ellipse cx="210" cy="90" rx="20" ry="28" fill="none" stroke="#22c55e" strokeWidth="2" />
+          <Arrow x1="244" y1="74" x2="232" y2="54" label="" color="#0ea5e9" />
+          <text x="268" y="48" fill="#0ea5e9" fontSize="12" fontWeight="700">B</text>
+          <text x="180" y="158" textAnchor="middle" fill={muted} fontSize="11">thumb along I; fingers curl in the direction of B</text>
         </>
       ) : null}
       {kind === 'electricity-circuit' && electricityVariant === 'emf-terminal-voltage' ? (
@@ -332,12 +346,13 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const kind = studyVisualKind(label);
   const physicsVariant = kind === 'physics-motion' ? studyPhysicsVisualVariant(label) : null;
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(label) : null;
+  const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(label) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(label) : null;
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
-      data-quantora-study-picture-variant={physicsVariant || electricityVariant || graphVariant || undefined}
+      data-quantora-study-picture-variant={physicsVariant || electricityVariant || fieldVariant || graphVariant || undefined}
       style={{
         margin: '2px 0 18px',
         maxWidth: '430px',

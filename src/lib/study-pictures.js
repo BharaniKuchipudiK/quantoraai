@@ -131,6 +131,16 @@ export function studyElectricityVisualVariant(caption = '') {
  * A quadrant-sign or unit-circle lesson must not inherit the generic slope
  * picture — that is a mismatched diagram, not a fallback.
  */
+/**
+ * Field lines are one renderer family. A magnetic-direction lesson must not
+ * inherit the electric +/− picture — that is a mismatched diagram.
+ */
+export function studyFieldVisualVariant(caption = '') {
+  return /\b(?:magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i.test(String(caption || ''))
+    ? 'magnetic'
+    : 'electric';
+}
+
 export function studyGraphVisualVariant(caption = '') {
   const label = String(caption || '');
   if (/\bquadrant\b|\bcoordinate plane\b/i.test(label)) return 'quadrant';
@@ -284,6 +294,9 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   }
   if (kind === 'electricity-circuit' && /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?)\b/i.test(hay)) {
     caption = 'EMF and terminal potential difference: energy per coulomb supplied by the battery splits into useful energy per coulomb in the external circuit and energy per coulomb lost in internal resistance';
+  }
+  if (kind === 'field-lines' && /\b(?:magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i.test(hay)) {
+    caption = 'Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire';
   }
   if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
     caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
