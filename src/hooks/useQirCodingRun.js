@@ -87,6 +87,14 @@ export function useQirCodingRun(options) {
     withClient((client) => client.reportPreviewStatus(status))
   ), [withClient]);
 
+  /*
+   * Phase 3's tool half. The chat stream announces every completed tool call;
+   * this is what turns that announcement into a debit on the Run.
+   */
+  const reportToolUse = useCallback((tool, units = 1) => (
+    withClient((client) => client.reportToolUse(tool, units))
+  ), [withClient]);
+
   return {
     run,
     error,
@@ -95,5 +103,6 @@ export function useQirCodingRun(options) {
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,
+    reportToolUse,
   };
 }

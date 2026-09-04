@@ -1729,6 +1729,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     conversationContext,
     updateActiveSession,
     onCodingTurnExecute,
+    /*
+     * Phase 3's tool accounting, closed here. The chat stream announces each
+     * completed tool call and the Run charges for it — the two halves have
+     * always existed on opposite sides of this component and were never joined.
+     */
+    onToolInvoked: qirCoding.reportToolUse,
     onCodingTurnProved,
     qirCoding,
     onDeskRename,

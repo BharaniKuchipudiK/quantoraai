@@ -342,6 +342,59 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
 
   /*
    * ---------------------------------------------------------------------------
+   * TOOL ACCOUNTING (QIR Phase 3's last gap).
+   *
+   * Phase 3 asks for "model/tool accounting". Model spend became real when
+   * coding.attempt started debiting the ordinary lane; a TOOL call cost nothing
+   * at all, so a Run that searched hotels twenty times reported the same budget
+   * as one that searched none.
+   *
+   * WHY THIS DID NOT NEED PHASE 4'S REGISTRY, having claimed twice that it did.
+   * Every tool already funnels through ONE seam, executeToolCall in
+   * agent-tools.ts, and the chat handler already announces each completed call
+   * over SSE as `{ phase: 'tool', state: 'completed', tool }`. The desk has
+   * therefore always been told which tools ran; it simply never charged for
+   * one. A typed registry makes tools uniform and discoverable — worth having,
+   * and not a prerequisite for counting them.
+   *
+   * WHY THE SAME LANES AS A MODEL ATTEMPT, rather than a new toolUnits lane.
+   * A new lane is a contract field nobody has calibrated, and an allowance
+   * invented here would be a number with no evidence behind it. Run and step
+   * units already mean "work this Run may do"; a tool call is work. The EVENT
+   * carries the tool name, so model spend and tool spend stay tellable apart in
+   * the journal without inventing a budget for one of them.
+   *
+   * IT DEBITS, IT NEVER REFUSES — the same rule as the ordinary model lane, for
+   * the same reason (#516): a build stopped by an uncalibrated allowance is a
+   * build stopped for a reason no user can act on.
+   * ---------------------------------------------------------------------------
+   */
+  if (action === "coding.tool") {
+    if (qirRunHasStopped(record.run)) {
+      return res.status(409).json({ error: `A ${record.run.status} Run cannot record further tool use.` });
+    }
+    const tool = safeText(req.body?.tool, 120);
+    if (!tool) return res.status(400).json({ error: "A tool name is required to account for the call." });
+    /*
+     * One unit per call, bounded. The client counts completed tool events, so a
+     * confused or hostile caller must not be able to drain a Run's budget in a
+     * single request.
+     */
+    const units = Math.min(10, Math.max(1, Number(req.body?.units) || 1));
+    const run = { ...record.run, budget: spendOrdinaryUnits(record.run.budget, units), updatedAt: now };
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-tool-${randomUUID()}`,
+      eventType: "coding.tool_invoked",
+      run,
+      payload: { tool, units },
+    }));
+  }
+
+  /*
+   * ---------------------------------------------------------------------------
    * THE STOP BUTTON, delivered through the workflow-engine boundary.
    *
    * Phase 2 asks for pause/resume/cancel AND for "a workflow-engine adapter

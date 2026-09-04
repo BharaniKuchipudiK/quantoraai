@@ -529,6 +529,31 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * lies the way "retry once on a fallback engine" lied in a state where
    * nothing would ever run again.
    */
+  /*
+   * TOOL ACCOUNTING, client side.
+   *
+   * The chat stream already announces each completed tool as
+   * `{ phase: 'tool', state: 'completed', tool }`; the desk has always been
+   * told and never charged for one. Reporting it here debits the same lanes a
+   * model attempt does, so a Run that searched hotels twenty times no longer
+   * reports the budget of one that searched none.
+   *
+   * FIRE-AND-FORGET, like compaction and unlike the stop button. Accounting is
+   * observational: the tool has already run and its result is already on screen,
+   * so making the user wait on a bookkeeping round trip would buy nothing — and
+   * an awaited call here would sit on the path the user is waiting for, which
+   * is the regression CI caught in the Context Manager this morning.
+   */
+  const reportToolUse = (tool, units = 1) => {
+    const name = String(tool || '').trim();
+    if (!name) return;
+    void enqueue(async (current) => (
+      current?.runId && !['COMPLETE', 'FAILED_TERMINAL'].includes(current.status)
+        ? accept(await requestQir({ action: 'coding.tool', runId: current.runId, tool: name, units }))
+        : current
+    ));
+  };
+
   const pause = () => enqueue(async (current) => (
     current?.runId ? accept(await requestQir({ action: 'coding.pause', runId: current.runId })) : current
   ));
@@ -550,6 +575,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,
+    reportToolUse,
     pause,
     resume,
     cancel,

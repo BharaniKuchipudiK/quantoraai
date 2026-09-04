@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { qirCodingRunCanStart } from './qir-coding-run-core.js';
 
 const run = (status = 'QUEUED', extras = {}) => ({
@@ -359,4 +360,56 @@ test('[was-red] compaction never overwrites the live Run with its own reply', as
   const source = readFileSync(new URL('./qir-coding-run-core.js', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('const compactWorkingContext'), source.indexOf('const requestPremiumEscalation'));
   assert.doesNotMatch(body, /accept\(/, 'compaction must not feed its response back into the client state');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * TOOL ACCOUNTING IS WIRED, NOT MERELY BUILT.
+ *
+ * This repository keeps deleting subsystems that were written, tested and
+ * called by nothing: the cost meter, the Context Manager, the Resource
+ * Governor. Tool accounting has three parts on three sides of the app — the
+ * server announces a completed tool over SSE, the stream hook forwards it, the
+ * Run charges for it — so the seams are asserted, not just the arithmetic.
+ * ---------------------------------------------------------------------------
+ */
+const readSource = (relative) => readFileSync(path.join(import.meta.dirname, relative), 'utf8');
+
+test('the chat stream forwards a completed tool call to the Run', () => {
+  const stream = readSource('../hooks/useChatStream.js');
+  assert.match(
+    stream,
+    /parsed\.status\.phase === 'tool' && parsed\.status\.state === 'completed'/,
+    'the server already announces each completed tool; the stream must forward it',
+  );
+  assert.match(stream, /onToolInvokedRef\.current\?\./, 'read through a ref, or a stale callback stops accounting mid-turn');
+});
+
+test('the desk hands the Run its tool reporter', () => {
+  // Two halves that lived on opposite sides of AiStudio and were never joined.
+  assert.match(readSource('../components/AiStudio.jsx'), /onToolInvoked: qirCoding\.reportToolUse/);
+  assert.match(readSource('../hooks/useQirCodingRun.js'), /client\.reportToolUse\(tool, units\)/);
+});
+
+test('the Run route can actually charge for a tool', () => {
+  const route = readFileSync(path.join(import.meta.dirname, '..', '..', 'api', 'qir-runs.ts'), 'utf8');
+  assert.match(route, /action === "coding\.tool"/, 'a reporter with no route to call is not accounting');
+  assert.match(route, /spendOrdinaryUnits\(record\.run\.budget, units\)/);
+  assert.match(route, /eventType: "coding\.tool_invoked"/, 'the journal names the tool, or model and tool spend cannot be told apart');
+  /*
+   * The client counts events it received, so a confused or hostile caller must
+   * not be able to drain a Run's budget in one request.
+   */
+  assert.match(route, /Math\.min\(10, Math\.max\(1, Number\(req\.body\?\.units\) \|\| 1\)\)/);
+});
+
+test('accounting never refuses a build, and never outlives the Run', () => {
+  const core = readSource('./qir-coding-run-core.js');
+  // #516: a build stopped by an uncalibrated allowance is stopped for a reason
+  // no user can act on. The route debits; it must not gate.
+  const route = readFileSync(path.join(import.meta.dirname, '..', '..', 'api', 'qir-runs.ts'), 'utf8');
+  const toolBlock = route.slice(route.indexOf('action === "coding.tool"'), route.indexOf('THE STOP BUTTON'));
+  assert.doesNotMatch(toolBlock, /WAITING_FOR_CAPACITY/, 'tool accounting debits, it does not refuse');
+  assert.match(toolBlock, /qirRunHasStopped\(record\.run\)/, 'a finished Run cannot accrue new charges');
+  assert.match(core, /\['COMPLETE', 'FAILED_TERMINAL'\]\.includes\(current\.status\)/);
 });

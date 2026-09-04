@@ -300,12 +300,19 @@ export function useChatStream({
   conversationContext,
   updateActiveSession,
   onCodingTurnExecute = null,
+  onToolInvoked = null,
   onCodingTurnProved = null,
   qirCoding = null,
   onDeskRename = null,
   buildJob = null,
   studioModeChoice = null,
 }) {
+  /*
+   * Through a ref: the stream closure outlives many renders, and a stale
+   * callback would silently stop accounting for tools mid-turn.
+   */
+  const onToolInvokedRef = useRef(onToolInvoked);
+  onToolInvokedRef.current = onToolInvoked;
   /*
    * PER SESSION, not per studio. This is what makes two builds possible.
    *
@@ -1656,6 +1663,19 @@ export function useChatStream({
               }
               if (parsed.travelDegraded === true) travelDegraded = true;
               if (parsed.status) {
+                /*
+                 * A completed tool call is spend. The server already announces
+                 * each one; until Phase 3's tool accounting nothing charged for
+                 * it, so a Run that searched hotels twenty times reported the
+                 * same budget as one that searched none.
+                 *
+                 * Reported per COMPLETED call only: a started-but-failed tool
+                 * did no work worth billing, and counting it would make the
+                 * budget a record of attempts rather than of work done.
+                 */
+                if (parsed.status.phase === 'tool' && parsed.status.state === 'completed' && parsed.status.tool) {
+                  try { onToolInvokedRef.current?.(String(parsed.status.tool)); } catch { /* accounting must never break a turn */ }
+                }
                 // A live failover names the rung it just left. Record it now:
                 // the stream may die before any terminal payload arrives.
                 absorbServerEngines(parsed.status.spentEngineIds);
