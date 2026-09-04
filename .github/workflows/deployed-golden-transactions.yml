@@ -114,6 +114,23 @@ jobs:
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/deployed-readiness-gate.mjs
+      # BLOCKING, and deterministic: no browser, no model, no provider spend.
+      #
+      # Phase 2's criterion is "prove a run survives worker termination and
+      # browser refresh". The browser half is proven over the real reducers by
+      # qir-coding-resume-browser-gate.mjs — but that drives a SYNTHETIC store,
+      # so the journal itself had never been tested. That is how durable
+      # persistence sat as a production no-op for two days with every gate green.
+      #
+      # This writes a Run with one request and reads it back with another that
+      # shares nothing but the run id, against the real database.
+      - name: Deployed QIR durability (a Run outlives the worker that made it)
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/deployed-qir-durability-gate.mjs
+
 
       # Still non-blocking, but for a stated reason with an end date rather than
       # a shrug: its Studio locator was stale (see the script), so it failed on
