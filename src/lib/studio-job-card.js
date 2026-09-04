@@ -165,6 +165,38 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
   };
 }
 
+/**
+ * The job card for a repository that was just opened in the desk.
+ *
+ * WHY A CHECKOUT MUST SET THIS, AND NOT LEAVE THE OLD CARD ALONE.
+ *
+ * `buildStudioJobCard` derives the job from the BRIEF, and keeps the previous
+ * card unless `looksLikeNewJob` sees a named product or a build verb. Opening a
+ * repository is neither: it replaces every file on the desk and says nothing.
+ * So a desk that had built a shop kept "A shop website" — and its must-work
+ * probes — across a checkout of somebody else's application. Observed on
+ * 2026-09-04: a 195-file Next.js career agent was opened, and the desk went on
+ * asking whether "Catalog and bag still work" and warning itself to "Keep this
+ * a shop, not a different app", against a repository with no shop in it.
+ *
+ * Clearing to null is not enough. With no card, the next turn falls through to
+ * `purposeFromVfs`, which checks `vfsLooksLikeShopFiles` FIRST — and that scans
+ * every file for words like "storefront" or "add to cart". In a few hundred
+ * files of somebody else's code those words are a coincidence, not a product,
+ * and the shop card would re-attach itself.
+ *
+ * So the checkout states the job positively: the product is this repository.
+ * A later brief that names a real product still switches it, because
+ * `looksLikeNewJob` compares against this purpose the same as any other.
+ */
+export function jobCardForCheckout({ owner = '', repo = '' } = {}) {
+  const slug = [String(owner || '').trim(), String(repo || '').trim()].filter(Boolean).join('/');
+  return {
+    purpose: (slug || 'An opened repository').slice(0, 120),
+    mustWork: ['Do not replace this with a different product'],
+  };
+}
+
 export function studioJobCardLabel(job) {
   return normalizeStudioJobCard(job)?.purpose || '';
 }

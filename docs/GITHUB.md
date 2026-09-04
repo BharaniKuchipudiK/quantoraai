@@ -263,9 +263,16 @@ nothing is a failure, not an instruction to wipe what the user had.
 | command | what only it can catch |
 |---|---|
 | `npm run test:github-writes` | a GitHub mutation that reaches the network without asking GitHub whether this user may perform it, or one no test proves refuses |
-| `node --test api/_lib/github-write-authorization.test.ts` | a write that refuses *after* the request has already left |
-| `node --test api/_lib/github-principal.test.ts` | a permission payload that defaults to allow; a connect state that is not bound to one account |
-| `node --test api/_lib/github-intelligence.test.ts` | an unverified commit reading as green |
+| `npx tsx --test api/_lib/github-write-authorization.test.ts` | a write that refuses *after* the request has already left |
+| `npx tsx --test api/_lib/github-principal.test.ts` | a permission payload that defaults to allow; a connect state that is not bound to one account |
+| `npx tsx --test api/_lib/github-intelligence.test.ts` | an unverified commit reading as green |
+| `npx tsx --test api/_lib/github-tool-promise.test.ts` | a write tool reaching the model at all, or a tool description promising a field the request never asks for |
+
+These are TypeScript tests, so they need `tsx`. Bare `node --test` on a `.ts`
+file dies with `ERR_MODULE_NOT_FOUND` resolving a sibling `./x.js` that exists
+only after compilation — the same runtime disagreement CLAUDE.md §10 tabulates,
+and the reason this table said `node --test` and could not be run as written
+until 2026-09-04. `npm run test:ts` runs all of them; it takes no file argument.
 
 `scripts/github-write-seam-gate.mjs` was verified in both directions, per
 CLAUDE.md §2: it passes on the correct tree, and it names the file, line,
@@ -288,9 +295,19 @@ is deleted and when a new unguarded write helper is added.
    A refusal here usually means GitHub said no, not that Quantora is broken.
 4. Review threads come from the REST endpoint, which carries no resolved flag;
    `resolved` is reported only when GitHub supplies it and is never inferred.
-5. The model does not yet call these routes as tools. The brief is shaped for a
-   model to read (`renderPullRequestBrief`) and the panel is the human surface;
-   an agent tool is the next slice, and a tool description that over-promises is
-   exactly what `npm run test:claims` exists to prevent.
+5. The model calls the **read** routes as tools — `read_pull_request`,
+   `list_pull_requests`, `list_issues` — and only when the acting user has a
+   GitHub connection (`shouldEnableGithubTools`). It calls **no write tool at
+   all**: not push, not comment, not merge, and not a refusing stub either. A
+   declared-but-refusing write tool is a painted door — the model would offer
+   the capability in prose before discovering it cannot perform it, and the
+   user reads that offer as fact.
+
+   `github-tool-promise.test.ts` holds this structurally rather than by reading
+   prose: it asserts the declared names against an explicit allowlist and
+   inspects the module's own imports for anything that can write. A tool
+   description that over-promises is what `npm run test:claims` exists to
+   prevent, and it now reads the descriptions the model sees, not only the
+   chips a human sees.
 6. No GitHub operation may be treated as mission completion merely because the
    provider returned success.

@@ -368,6 +368,71 @@ export async function readPullRequest(input: {
   };
 }
 
+/**
+ * One file's text, at a ref, as the signed-in user.
+ *
+ * WHY THIS EXISTS. The desk hands the model 24 file PATHS (MAX_FILES in
+ * studio-desk-context.js) plus the single running preview artifact — never the
+ * source of anything else. So on 2026-09-04 a user opened a 195-file repository
+ * and asked "is it secured enough?", and the honest answer the model gave was
+ * that it could see the file list and not the code. It was right, and the
+ * platform was the thing at fault: a review of filenames is not a review.
+ *
+ * Reads only. It is the user's own token asking, so a repository they cannot
+ * see returns 404 from GitHub rather than being refused by our own opinion.
+ *
+ * WHAT IT REFUSES TO DO, AND WHY THE CALLER IS TOLD.
+ *
+ * A file over the byte cap comes back TRUNCATED with `truncated: true` and the
+ * real `bytes`, never silently clipped: a model shown the first half of a file
+ * and not told so will state confidently that a function is absent when it is
+ * merely below the cut. A binary or unreadable file is an error, not empty
+ * text, for the same reason.
+ */
+export async function readRepositoryFile(input: {
+  principal: GithubPrincipal;
+  owner: string;
+  repo: string;
+  path: string;
+  ref?: string;
+  maxBytes?: number;
+  fetchImpl?: FetchLike;
+}): Promise<{ path: string; ref: string; bytes: number; truncated: boolean; content: string }> {
+  const path = String(input.path || "").replace(/^\/+/, "").trim();
+  if (!path) throw new Error("read_repo_file needs a path inside the repository.");
+  const cap = Math.min(Math.max(Number(input.maxBytes) || 64_000, 1_000), 128_000);
+  const ref = String(input.ref || "").trim();
+  const query = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+  const result = await githubRequest(
+    `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/contents/${path.split("/").map(encodeURIComponent).join("/")}${query}`,
+    { token: input.principal.token, fetchImpl: input.fetchImpl },
+  );
+  if (!result.ok) {
+    throw new Error(`GitHub could not read ${input.owner}/${input.repo}/${path}${ref ? ` at ${ref}` : ""} (HTTP ${result.status}).`);
+  }
+  const data: any = result.data;
+  if (Array.isArray(data)) {
+    throw new Error(`"${path}" is a directory, not a file. Ask for a path inside it.`);
+  }
+  if (data?.type !== "file" || typeof data?.content !== "string") {
+    throw new Error(`"${path}" is not a readable text file (type ${text(data?.type, 40) || "unknown"}).`);
+  }
+  const raw = Buffer.from(data.content, String(data.encoding || "base64") as BufferEncoding);
+  // A NUL byte is the cheap, reliable tell that this is not source code. Handing
+  // a model the mojibake of a decoded PNG wastes its context and its judgement.
+  if (raw.includes(0)) {
+    throw new Error(`"${path}" is binary, so there is no source to review.`);
+  }
+  const truncated = raw.length > cap;
+  return {
+    path,
+    ref: text(data?.sha, 60),
+    bytes: raw.length,
+    truncated,
+    content: raw.subarray(0, cap).toString("utf8"),
+  };
+}
+
 export async function readChecks(input: {
   principal: GithubPrincipal;
   owner: string;
