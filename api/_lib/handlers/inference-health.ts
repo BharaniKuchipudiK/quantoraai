@@ -3,7 +3,7 @@ import { isGoldenCanaryRequest } from '../transaction-trace.js';
 import { probeQirRunSchema } from '../qir-run-store.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
-import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
+import { openRouterEnvPublicHint, openRouterPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
 import { duffelEnvPublicHint } from '../duffel-key.js';
 import { defaultSerpApiKey, isSerpApiConfigured, resolveFlightProvider } from '../serpapi-flights.js';
 import { fetchApiGatewayKey } from '../../autocomplete.js';
@@ -167,6 +167,23 @@ export default async function handler(req: any, res: any) {
   // would actually be charged.
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
   const paid = await paidRouteAllowed(spendKey);
+  /*
+   * WHICH KEY, FROM WHICH STORE. Reported because presence was never the
+   * question an operator actually has.
+   *
+   * On 2026-09-04 an operator created a new OpenRouter key, pasted it into the
+   * Supabase gateway row, and asked whether it had taken effect. Nothing here
+   * could answer: openRouterEnvHint describes the ENV var — a store they had
+   * not touched — and openRouterViaGateway says only that the row was reached,
+   * never which key it holds. Two keys, last three characters apart, and the
+   * platform could not tell them apart. They were left comparing an OpenRouter
+   * dashboard's "Last Used" column against a guess.
+   *
+   * The hint is built from spendKey, which is the key the turn would actually
+   * charge — so it cannot describe one store while another one serves.
+   */
+  const openRouterActive = openRouterPublicHint(spendKey);
+  const openRouterKeySource = openRouterEnv ? 'env' : (openRouterViaGateway ? 'gateway' : null);
 
   /*
    * A gateway the provider has REFUSED is not a route, however well-formed its
@@ -244,6 +261,15 @@ export default async function handler(req: any, res: any) {
     openRouterEnvShape: openRouterHint.shape,
     openRouterEnvHint: openRouterHint.hint,
     openRouterViaGateway,
+    /*
+     * The two fields that answer "did my paste take effect?" without anyone
+     * having to know the precedence rule. Source names the store; hint names
+     * the key, by the same last-three-characters convention as the env hint and
+     * with the same refusal to echo an unknown secret.
+     */
+    openRouterKeySource,
+    openRouterKeyShape: openRouterActive.shape,
+    openRouterKeyHint: openRouterActive.hint,
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     /*
      * Flights were the one provider this endpoint could not see. Hotels had

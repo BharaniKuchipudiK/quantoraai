@@ -29,12 +29,20 @@ export function resolveOpenRouterEnvKey(env: NodeJS.ProcessEnv = process.env): s
 /**
  * Safe for public health: family + last 3 chars when it is an OpenRouter key.
  * Never returns the full secret.
+ *
+ * Takes the KEY rather than the environment, because the env is only one of the
+ * two places a key can come from. An operator who has just pasted a key into
+ * the Supabase gateway row needs to know whether THAT key is the one serving,
+ * and an env-only hint cannot tell them: it describes a store they did not
+ * touch. Two keys whose last three characters differ are indistinguishable
+ * without this, which is exactly the position one operator was left in on
+ * 2026-09-04 — two valid-looking keys, no way to see which was live.
  */
-export function openRouterEnvPublicHint(env: NodeJS.ProcessEnv = process.env): {
+export function openRouterPublicHint(value: unknown): {
   shape: OpenRouterKeyShape;
   hint: string | null;
 } {
-  const raw = typeof env.OPENROUTER_API_KEY === 'string' ? env.OPENROUTER_API_KEY.trim() : '';
+  const raw = typeof value === 'string' ? value.trim() : '';
   const shape = openRouterKeyShape(raw);
   if (shape === 'missing') return { shape, hint: null };
   if (shape === 'openrouter' && raw.length >= 10) {
@@ -43,4 +51,12 @@ export function openRouterEnvPublicHint(env: NodeJS.ProcessEnv = process.env): {
   if (shape === 'stripe-like') return { shape, hint: 'sk_live_... (not OpenRouter)' };
   // Never echo characters from an unknown secret on the public health endpoint.
   return { shape, hint: '(unexpected — not OpenRouter)' };
+}
+
+/** The env var's own shape and hint. Unchanged behaviour, one implementation. */
+export function openRouterEnvPublicHint(env: NodeJS.ProcessEnv = process.env): {
+  shape: OpenRouterKeyShape;
+  hint: string | null;
+} {
+  return openRouterPublicHint(env.OPENROUTER_API_KEY);
 }
