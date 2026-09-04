@@ -3,6 +3,7 @@ import { fetchWithTimeout } from "../fetch-timeout.js";
 import { isAllowedPreviewImageUrl } from "../../../src/lib/preview-images.js";
 
 const MAX_BYTES = 1_500_000;
+const PROXY_PATH = "/api/preview-image";
 
 /*
  * CONTRACT: `u` is the LAST query parameter and owns everything after it.
@@ -15,6 +16,52 @@ const MAX_BYTES = 1_500_000;
  * signature params) 404'd upstream and rendered as an empty frame (2026-09-01
  * boutique catalog). Exported for its gate, preview-image-url.test.ts.
  */
+/*
+ * A TARGET THAT IS ITSELF THIS PROXY IS UNWRAPPED, NOT REFUSED.
+ *
+ * The system prompt tells the model, in bold, that "every product and hero
+ * image MUST be a real photograph loaded through Quantora's same-origin proxy:
+ * <img src=\"/api/preview-image?u=https://images.unsplash.com/photo-<id>...\">".
+ *
+ * On a FOLLOW-UP turn the model is looking at markup whose urls were already
+ * absolutised to https://<origin>/api/preview-image?u=..., because that is what
+ * the preview shell needs. It obeys the instruction again and wraps the wrapped
+ * url. absolutizePreviewProxyUrls then percent-encodes the whole thing, and the
+ * proxy is asked to fetch <origin> — not a photo host — so it answers 400 and
+ * every product frame is empty. Observed in production on 2026-09-04:
+ *
+ *   ?u=https%3A%2F%2Fquantoraai.app%2Fapi%2Fpreview-image%3Fu%3Dhttps%3A%2F%2F
+ *      images.unsplash.com%2Fphoto-1559056199-641a0ac8b55e%3Fw%3D1200%26q%3D80
+ *
+ * proxyRemoteShopImages and rewritePreviewImageUrls both guard against OUR code
+ * wrapping twice. Nothing unwrapped a nesting the MODEL wrote, and refusing it
+ * punishes the model for following the brief we gave it — the same shape as the
+ * intake modal discarded over a newline.
+ *
+ * Unwrapping happens HERE, at the proxy, deliberately: it repairs every page
+ * already generated, with no rebuild. The loop is bounded because a hostile
+ * caller could otherwise nest to exhaust it; four is far past anything the
+ * pipeline produces, and what is left after the limit is still put through the
+ * allowlist, so nothing escapes that check.
+ */
+const MAX_PROXY_UNWRAPS = 4;
+
+export function unwrapNestedProxyTarget(value: string): string {
+  let current = String(value || "").trim();
+  for (let depth = 0; depth < MAX_PROXY_UNWRAPS; depth += 1) {
+    const marker = current.indexOf(`${PROXY_PATH}?u=`);
+    if (marker === -1) return current;
+    const inner = current.slice(marker + `${PROXY_PATH}?u=`.length).trim();
+    if (!inner) return current;
+    if (/^https?:\/\//i.test(inner)) { current = inner; continue; }
+    let decoded = inner;
+    try { decoded = decodeURIComponent(inner).trim(); } catch { return current; }
+    if (!/^https?:\/\//i.test(decoded)) return current;
+    current = decoded;
+  }
+  return current;
+}
+
 export function targetUrl(req: { query?: Record<string, unknown>; url?: string }) {
   try {
     const rawUrl = String(req.url || "");
@@ -23,17 +70,17 @@ export function targetUrl(req: { query?: Record<string, unknown>; url?: string }
       const match = rawUrl.slice(q + 1).match(/(?:^|&)u=([\s\S]+)$/);
       if (match) {
         const raw = match[1].trim();
-        if (/^https?:\/\//i.test(raw)) return raw;
+        if (/^https?:\/\//i.test(raw)) return unwrapNestedProxyTarget(raw);
         try {
           const decoded = decodeURIComponent(raw).trim();
-          if (/^https?:\/\//i.test(decoded)) return decoded;
+          if (/^https?:\/\//i.test(decoded)) return unwrapNestedProxyTarget(decoded);
         } catch { /* fall through to the raw value */ }
-        return raw;
+        return unwrapNestedProxyTarget(raw);
       }
     }
   } catch { /* fall through to the parsed query */ }
   const fromQuery = req.query?.u;
-  return typeof fromQuery === "string" ? fromQuery.trim() : "";
+  return typeof fromQuery === "string" ? unwrapNestedProxyTarget(fromQuery.trim()) : "";
 }
 
 export default async function handler(req: any, res: any) {
