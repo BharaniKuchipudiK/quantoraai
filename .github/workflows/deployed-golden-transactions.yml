@@ -132,14 +132,22 @@ jobs:
         run: node scripts/deployed-qir-durability-gate.mjs
 
 
-      # Still non-blocking, but for a stated reason with an end date rather than
-      # a shrug: its Studio locator was stale (see the script), so it failed on
-      # every run and nobody could tell a real regression from the noise. The
-      # locator is fixed here; once a run proves it green this becomes blocking
-      # and continue-on-error comes out.
+      # BLOCKING as of 2026-09-04. It went non-blocking with a stated end
+      # condition — "once a run proves it green this becomes blocking and
+      # continue-on-error comes out" — and that condition is met:
+      #
+      #   933b259  GOLDEN_CHAT_OUTCOME: success   (desk auto-open fix)
+      #   10504cf  GOLDEN_CHAT_OUTCOME: success   (tool accounting)
+      #
+      # Two consecutive greens on two different commits. One pass is not
+      # evidence of stability; the second is what earns this.
+      #
+      # The end condition mattered more than the mute. This step was muted for
+      # "historical flakiness" that turned out to be a permanently stale
+      # locator, and while it was muted three production API functions died
+      # behind a green check. A mute with no way to end is how that happens.
       - name: Prove prompt to rendered calculator and website
         id: golden_chat
-        continue-on-error: true
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
@@ -147,8 +155,12 @@ jobs:
           QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
         run: node scripts/deployed-golden-transactions.mjs
 
+      # if: always() so a failing golden above does not TAKE THIS SIGNAL WITH
+      # IT (§5 — never mute a signal, separate it). Still blocking: always()
+      # forces the step to run, it does not forgive its result.
       - name: Prove deployed shop Preview paints photos and cart increments
         id: shop_act
+        if: always()
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
@@ -165,7 +177,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Report deployed golden chat outcome (non-blocking)
+      - name: Report deployed golden chat outcome
         if: always()
         env:
           GOLDEN_CHAT_OUTCOME: ${{ steps.golden_chat.outcome }}
@@ -182,5 +194,5 @@ jobs:
             cat artifacts/e2e/golden-verdict.txt
           fi
           if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
-            echo "::warning::Deployed calculator/website golden failed. This is NOT 'just flaky' — read the log before dismissing it. Deployment executability is proven separately by the blocking readiness gate above."
+            echo "::error::Deployed calculator/website golden failed and this step is BLOCKING. This is NOT 'just flaky' — read the GOLDEN VERDICT line above before dismissing it."
           fi

@@ -21,12 +21,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  GITHUB_TOOL_NAMES,
   executeGithubToolCall,
   githubFunctionDeclarations,
-  isGithubToolName,
   shouldEnableGithubTools,
 } from "./github-agent-tools.js";
+
+/** What the model is actually told it has. Every gate below anchors here. */
+const declaredNames = new Set(githubFunctionDeclarations.map((tool) => String(tool.name)));
 
 const principal = { token: "gh-test-token", login: "octocat" } as any;
 
@@ -40,10 +41,22 @@ const declaration = (name: string) => {
  * Every declared parameter must reach a real call
  * ------------------------------------------------------------------ */
 
-test("every declared tool is executable, and every executable tool is declared", () => {
-  const declared = new Set(githubFunctionDeclarations.map((tool) => tool.name));
-  assert.deepEqual([...declared].sort(), [...GITHUB_TOOL_NAMES].sort());
-  for (const name of declared) assert.equal(isGithubToolName(name), true);
+test("every declared tool is executable, and every executable tool is declared", async () => {
+  /*
+   * This used to compare the declarations against GITHUB_TOOL_NAMES — one
+   * hand-kept list against another, which proved they matched each other and
+   * nothing about the executor. With the parallel list gone the check is the
+   * one that matters: every name the model is offered has a case in the
+   * executor's switch, and the switch has no case nobody is offered.
+   */
+  const source = await readFile(new URL("./github-agent-tools.ts", import.meta.url), "utf8");
+  const executed = new Set(
+    [...source.matchAll(/case\s+["']([a-z_]+)["']\s*:/g)].map((match) => String(match[1])),
+  );
+  // A parse that finds nothing must fail, not report a clean run over zero
+  // tools — the mistake test:claims was corrected for.
+  assert.ok(executed.size > 0, "found no executor cases at all; this gate has stopped reading the file");
+  assert.deepEqual([...declaredNames].sort(), [...executed].sort());
 });
 
 test("list_issues does not offer a state knob it cannot honour", () => {
@@ -94,7 +107,7 @@ test("a declared state knob IS honoured where one exists", async () => {
 const READ_ONLY_TOOLS = ["read_pull_request", "list_pull_requests", "list_issues"];
 
 test("the declared set is exactly the reviewed read-only set", () => {
-  assert.deepEqual([...GITHUB_TOOL_NAMES].sort(), [...READ_ONLY_TOOLS].sort());
+  assert.deepEqual([...declaredNames].sort(), [...READ_ONLY_TOOLS].sort());
   for (const tool of githubFunctionDeclarations) {
     assert.match(tool.description, /only reads/i, `${tool.name} must tell the model it only reads`);
   }
@@ -105,7 +118,9 @@ test("the tool module imports nothing that can write to GitHub", async () => {
   // added without one of these names appearing in the import list, whatever the
   // description says about it.
   const source = await readFile(new URL("./github-agent-tools.ts", import.meta.url), "utf8");
-  const imports = source.slice(0, source.indexOf("export const GITHUB_TOOL_NAMES"));
+  // Everything before the module's first export is its import list, whatever
+  // that first export happens to be called.
+  const imports = source.slice(0, source.indexOf("\nexport "));
   for (const writer of [
     "pushFilesToRepository",
     "createRepository",
@@ -127,7 +142,7 @@ test("a refusing write tool is not declared either", () => {
   // promised photos, returned none, and invented "I cannot render embedded
   // photo feeds" — which was never true.
   for (const name of ["push_files", "merge_pull_request", "create_pull_request", "comment_on_pull_request"]) {
-    assert.equal(GITHUB_TOOL_NAMES.has(name), false, `${name} must not be declared until consent exists`);
+    assert.equal(declaredNames.has(name), false, `${name} must not be declared until consent exists`);
   }
 });
 
