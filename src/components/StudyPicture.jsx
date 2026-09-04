@@ -200,6 +200,26 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">in quadrant II sine is positive and cosine is negative</text>
         </>
       ) : null}
+      {kind === 'graph' && graphVariant === 'displacement-time' ? (
+        <>
+          <Arrow x1="58" y1="140" x2="310" y2="140" label="time" color={muted} />
+          <Arrow x1="58" y1="140" x2="58" y2="30" label="displacement" color={muted} />
+          <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
+          <path d="M190 84 L240 84 L240 65" fill="none" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="5 4" />
+          <text x="248" y="79" fill="#0ea5e9" fontSize="12" fontWeight="700">slope = velocity</text>
+          <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">Δs / Δt at a point is instantaneous velocity</text>
+        </>
+      ) : null}
+      {kind === 'graph' && graphVariant === 'velocity-time' ? (
+        <>
+          <Arrow x1="58" y1="140" x2="310" y2="140" label="time" color={muted} />
+          <Arrow x1="58" y1="140" x2="58" y2="30" label="velocity" color={muted} />
+          <line x1="78" y1="126" x2="282" y2="50" stroke="#f97316" strokeWidth="5" />
+          <path d="M190 84 L240 84 L240 65" fill="none" stroke="#22c55e" strokeWidth="3" strokeDasharray="5 4" />
+          <text x="248" y="79" fill="#22c55e" fontSize="12" fontWeight="700">slope = acceleration</text>
+          <text x="180" y="168" textAnchor="middle" fill={muted} fontSize="11">Δv / Δt at a point is instantaneous acceleration</text>
+        </>
+      ) : null}
       {kind === 'graph' && graphVariant === 'unit-circle' ? (
         <>
           <line x1="48" y1="90" x2="312" y2="90" stroke={ink} strokeWidth="2" />

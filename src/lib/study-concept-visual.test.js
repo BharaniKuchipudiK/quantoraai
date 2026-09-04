@@ -163,6 +163,13 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
   assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
 });
 
+test('a displacement-time caption is a real graph, not a dropped decorative picture', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time',
+    'Teach me a displacement-time graph visually.',
+  ), true);
+});
+
 test('a quadrant-sign caption is a real graph, not a dropped decorative picture', () => {
   assert.equal(studyPictureFitsTopic(
     'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive',

@@ -95,6 +95,7 @@ export function studyVisualKind(caption = '') {
   if (studyNumberLineSpec(raw)) return 'number-line';
   if (studyTimelinePoints(raw).length >= 2 && /timeline|chronolog|year|era|history|before|after/i.test(raw)) return 'timeline';
   if (studyProcessSteps(raw).length >= 2 && /process|cycle|flow|pathway|sequence|step|stage|changes?|becomes?|produces?|turns? into/i.test(raw)) return 'process-flow';
+  if (/\b(?:displacement[- ]time|velocity[- ]time|position[- ]time|acceleration[- ]time|motion graphs?)\b/.test(text)) return 'graph';
   if (/force|motion|velocity|acceleration|friction|gravity|newton|projectile|free-?body|vector|components?|resultant/.test(text)) return 'physics-motion';
   if (FIELD_VISUAL.test(text)) return 'field-lines';
   if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
@@ -134,6 +135,8 @@ export function studyGraphVisualVariant(caption = '') {
   const label = String(caption || '');
   if (/\bquadrant\b|\bcoordinate plane\b/i.test(label)) return 'quadrant';
   if (/\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(label)) return 'unit-circle';
+  if (/\b(?:displacement[- ]time|position[- ]time)\b/i.test(label)) return 'displacement-time';
+  if (/\bvelocity[- ]time\b/i.test(label)) return 'velocity-time';
   return 'slope';
 }
 
@@ -286,6 +289,10 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
     caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
   } else if (kind === 'graph' && /\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(hay)) {
     caption = 'Unit circle: an angle measured from the positive x-axis has cosine as the x-coordinate and sine as the y-coordinate';
+  } else if (kind === 'graph' && /\b(?:displacement[- ]time|position[- ]time)\b/i.test(hay)) {
+    caption = 'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time';
+  } else if (kind === 'graph' && /\bvelocity[- ]time\b/i.test(hay)) {
+    caption = 'Velocity-time graph: the slope at a point is acceleration, change in velocity over change in time';
   }
   if (!caption) return source;
   return `<quantora-study-picture caption="${caption}" />\n\n${source}`;
