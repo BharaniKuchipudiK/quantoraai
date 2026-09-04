@@ -1,5 +1,6 @@
 import { requireActiveSession } from "./_lib/authz.js";
 import { spendOrdinaryUnits } from "./_lib/qir-resource-ledger.js";
+import { qirWorkflowAdapter, type QirWorkflowSignal } from "./_lib/qir-workflow-adapter.js";
 import {
   commitQirRunEvent,
   createQirRun,
@@ -341,94 +342,66 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
 
   /*
    * ---------------------------------------------------------------------------
-   * THE STOP BUTTON. Phase 2 asks for pause/resume/cancel and the runtime had
-   * none: PAUSED existed as a state in qir-contracts.ts, deriveQirContinuation
-   * already honoured it, and no action could ever reach it. A user with a
-   * runaway build had nothing the durable runtime understood — closing the tab
-   * stopped the browser, not the Run.
+   * THE STOP BUTTON, delivered through the workflow-engine boundary.
    *
-   * PAUSE AND CANCEL ARE NOT THE SAME THING, and an earlier draft of mine had
-   * cancel parking at PAUSED, which would have made it a second pause with a
-   * different name. Pause is "stop for now" and keeps every artifact, budget and
-   * cursor intact. Cancel is "stop for good" and is terminal.
+   * Phase 2 asks for pause/resume/cancel AND for "a workflow-engine adapter
+   * boundary so the rest of QIR is not coupled to one vendor". These three
+   * signals are exactly the lifecycle an engine owns, so they are the ones that
+   * cross the boundary — the route no longer knows how a Run is paused, only
+   * that it asked for it.
+   *
+   * Model attempts, observations, recovery and promotion deliberately stay
+   * above: they carry request-scoped concerns (the verifier, artifact bytes,
+   * spend) and pretending an engine owns them would be a worse lie than the
+   * coupling it removed.
+   *
+   * This is also what stops the adapter being decoration. An interface with one
+   * implementation and no caller is the same defect as the cost meter and the
+   * Context Manager before it — written, tested, connected to nothing. Here it
+   * is on the live path.
    * ---------------------------------------------------------------------------
    */
-
-  if (action === "coding.pause") {
-    if (qirRunHasStopped(record.run)) {
-      return res.status(409).json({ error: `A ${record.run.status} Run has already stopped.` });
+  const SIGNAL_ACTIONS: Record<string, QirWorkflowSignal> = {
+    "coding.pause": "pause",
+    "coding.resume": "resume",
+    "coding.cancel": "cancel",
+  };
+  const signal = SIGNAL_ACTIONS[action];
+  if (signal) {
+    const result = await qirWorkflowAdapter().signalRun(userSub, record.run.runId, signal, {
+      now,
+      ...(signal === "cancel" ? { reason: safeText(req.body?.reason, 512) || "Cancelled by the user." } : {}),
+    });
+    switch (result.status) {
+      case "ok":
+        return res.status(200).json({
+          run: result.state.run,
+          storageVersion: result.state.storageVersion,
+          continuation: result.state.continuation,
+          durability: "persisted",
+        });
+      case "not-found":
+        return res.status(404).json({ error: "Run not found." });
+      case "already-stopped":
+        return res.status(409).json({ error: `A ${result.runStatus} Run has already stopped.` });
+      case "not-paused":
+        return res.status(409).json({ error: `Only a PAUSED Run can resume; this one is ${result.runStatus}.` });
+      case "conflict":
+        return res.status(409).json({
+          error: "This Run moved while the signal was in flight.",
+          run: result.state.run,
+          storageVersion: result.state.storageVersion,
+        });
+      default:
+        /*
+         * The store's classified verdict, forwarded rather than flattened —
+         * the same rule the persist diagnosis and the spend meter landed on.
+         */
+        return res.status(503).json({
+          error: "The durable Run store rejected this signal.",
+          ...(result.diagnosis ? { diagnosis: result.diagnosis } : {}),
+        });
     }
-    /*
-     * Idempotent. A double-click, a retry after a dropped response, or two
-     * tabs pausing the same Run must not be an error — the caller asked for it
-     * to be paused and it is paused.
-     */
-    if (record.run.status === "PAUSED") {
-      return res.status(200).json({ run: record.run, storageVersion: record.storageVersion, durability: "persisted" });
-    }
-    const run = pauseQirCodingRun(record.run, now);
-    return sendCommit(res, await commitQirRunEvent({
-      userSub,
-      runId: run.runId,
-      expectedVersion: record.storageVersion,
-      eventId: `coding-paused-${randomUUID()}`,
-      eventType: "coding.paused",
-      run,
-      payload: { pausedFrom: record.run.status },
-    }));
-  }
-
-  if (action === "coding.resume") {
-    if (record.run.status !== "PAUSED") {
-      return res.status(409).json({ error: `Only a PAUSED Run can resume; this one is ${record.run.status}.` });
-    }
-    /*
-     * Where to resume TO is derived from the Run itself rather than remembered.
-     * deriveQirContinuation returns null for a paused Run by design, so it is
-     * asked about a non-paused copy: if there is somewhere to continue, the Run
-     * is EXECUTING; if not, it is QUEUED and coding.attempt can pick it up
-     * (that handler accepts QUEUED and REPLANNING).
-     *
-     * Deriving beats storing a pre-pause status that could be stale by the time
-     * anyone resumes — the plan is the truth about where the work is.
-     */
-    const run = resumeQirCodingRun(record.run, now);
-    return sendCommit(res, await commitQirRunEvent({
-      userSub,
-      runId: run.runId,
-      expectedVersion: record.storageVersion,
-      eventId: `coding-resumed-${randomUUID()}`,
-      eventType: "coding.resumed",
-      run,
-      payload: { resumedTo: run.status },
-    }));
-  }
-
-  if (action === "coding.cancel") {
-    if (qirRunHasStopped(record.run)) {
-      return res.status(409).json({ error: `A ${record.run.status} Run has already stopped.` });
-    }
-    const reason = safeText(req.body?.reason, 512) || "Cancelled by the user.";
-    /*
-     * Terminal, and the candidate is REJECTED rather than left dangling. A
-     * candidate that survives a cancel is what coding.attempt refuses to start
-     * over ("a candidate artifact already exists"), so leaving one behind would
-     * make the cancelled Run's own wreckage block the next one.
-     *
-     * Verified artifacts are left alone: work that passed independent
-     * verification before the cancel is still real, and destroying it would
-     * lose an outcome the user already earned.
-     */
-    const run = cancelQirCodingRun(record.run, now);
-    return sendCommit(res, await commitQirRunEvent({
-      userSub,
-      runId: run.runId,
-      expectedVersion: record.storageVersion,
-      eventId: `coding-cancelled-${randomUUID()}`,
-      eventType: "coding.cancelled",
-      run,
-      payload: { cancelledFrom: record.run.status, reason },
-    }));
   }
 
   return res.status(400).json({ error: "Unsupported Coding Run action." });
