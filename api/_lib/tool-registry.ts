@@ -78,6 +78,15 @@ export interface QuantoraToolContext {
   recentUserTexts?: string[];
   /** The current turn attempt, when the caller tracks one. */
   turnAttempt?: number | null;
+  /**
+   * Epoch ms after which no tool may still be running for this turn.
+   *
+   * Owned by the handler because only it knows when the request started. Absent
+   * means "no turn deadline" — each call still gets its own ceiling below.
+   */
+  toolDeadlineAt?: number | null;
+  /** Set by dispatchToolCall so an executor's provider calls die with it. */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -111,6 +120,22 @@ export interface QuantoraToolInvocation {
 export interface QuantoraToolDefinition {
   name: string;
   family: string;
+  /**
+   * The longest this ONE call may take, whatever its providers do internally.
+   *
+   * Families already time out their own provider requests; this is the ceiling
+   * over the whole call, which those cannot give. read_pull_request makes three
+   * SEQUENTIAL GitHub hops of up to GITHUB_TIMEOUT_MS each, so its own limits
+   * bound a hop and not the tool.
+   */
+  budgetMs: number;
+  /**
+   * What this family says when the budget runs out, shaped like its own
+   * results so the handler and the classifier need no special case. Each family
+   * owns its wording for the same reason it owns its descriptions: the model
+   * repeats this to the user.
+   */
+  expired(reason: string): any;
   /**
    * The declaration handed to the model, in that provider's dialect. Kept as
    * the family authored it: a tool description is a promise, and rewriting one
@@ -150,10 +175,35 @@ export function classifyGithubToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
 }
 
+/*
+ * Travel providers are held to 6s per attempt, flights to two attempts with a
+ * short backoff. 20s is that plus headroom for the second provider hop, not a
+ * number chosen for roundness.
+ */
+const TRAVEL_TOOL_BUDGET_MS = 20_000;
+
+/*
+ * read_pull_request is three SEQUENTIAL GitHub hops — the PR, then a parallel
+ * batch, then the checks — at GITHUB_TIMEOUT_MS (12s) each. 45s covers that
+ * with headroom; it is deliberately not smaller, because cutting a legitimate
+ * slow read short is its own wrong answer.
+ */
+const GITHUB_TOOL_BUDGET_MS = 45_000;
+
 const TRAVEL_TOOLS: QuantoraToolDefinition[] = travelFunctionDeclarations.map((declaration) => ({
   name: String(declaration.name),
   family: "travel",
   declaration,
+  budgetMs: TRAVEL_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      status: "unavailable",
+      executed: false,
+      reason: "TOOL_BUDGET_EXHAUSTED",
+      retryable: false,
+      message: `The live travel lookup was stopped because ${reason}. Tell the user the provider did not answer in time and offer to try again; do not invent fares, availability or places.`,
+    };
+  },
   isEnabled(context) {
     /*
      * Two conditions, both already in the handler. shouldEnableTravelTools is
@@ -170,6 +220,7 @@ const TRAVEL_TOOLS: QuantoraToolDefinition[] = travelFunctionDeclarations.map((d
     const raw = await executeTravelToolCall(this.name, args, {
       ...(context.recentUserTexts ? { recentUserTexts: context.recentUserTexts } : {}),
       ...(hasTurnAttempt ? { turnAttempt: context.turnAttempt as number } : {}),
+      ...(context.abortSignal ? { fetchFn: budgetedFetch(context.abortSignal) } : {}),
     });
     return { family: "travel", raw, classify: (stream) => classifyTravelToolResult(raw, stream) };
   },
@@ -179,12 +230,22 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
   name: String(declaration.name),
   family: "github",
   declaration,
+  budgetMs: GITHUB_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `GitHub did not answer in time — ${reason}.`,
+      note: "Tell the user the read timed out and offer to try again. Do not describe the pull request, its CI or its reviews from memory; you did not read them.",
+    };
+  },
   isEnabled(context) {
     return shouldEnableGithubTools({ hasGithubConnection: Boolean(context.githubPrincipal) });
   },
   async execute(args, context) {
     const raw = await executeGithubToolCall(this.name, args, {
       principal: context.githubPrincipal || null,
+      ...(context.abortSignal ? { fetchImpl: budgetedFetch(context.abortSignal) } : {}),
     });
     return { family: "github", raw, classify: () => classifyGithubToolResult(raw) };
   },
@@ -254,6 +315,24 @@ export type QuantoraToolDispatch =
   | { status: "unknown-tool"; name: string };
 
 /**
+ * A fetch that also dies when the turn's tool budget does.
+ *
+ * Racing a promise does not stop the work behind it, so a raced-out call would
+ * keep a GitHub read alive against the function's clock while the turn moved
+ * on. Both families take an injectable fetch and pass an `init.signal`
+ * through, so merging the budget's signal into it CANCELS the request rather
+ * than merely ignoring it.
+ */
+export function budgetedFetch(signal: AbortSignal): any {
+  return (url: any, init: any = {}) => {
+    const merged = init?.signal
+      ? (AbortSignal as any).any([init.signal, signal])
+      : signal;
+    return (globalThis.fetch as any)(url, { ...init, signal: merged });
+  };
+}
+
+/**
  * The single dispatch. A caller never chooses an executor.
  *
  * An unregistered name is reported as unregistered rather than handed to some
@@ -267,5 +346,53 @@ export async function dispatchToolCall(
 ): Promise<QuantoraToolDispatch> {
   const tool = findRegisteredTool(name);
   if (!tool) return { status: "unknown-tool", name: String(name) };
-  return { status: "ok", invocation: await tool.execute(args, context) };
+
+  /*
+   * THE TURN'S TOOL CLOCK.
+   *
+   * api/pipeline.ts carries chat with maxDuration 180s and the agent loop takes
+   * up to MAX_AGENT_STEPS calls. read_pull_request alone can spend ~36s (three
+   * sequential GitHub hops at 12s each), so five of them reach 180s of tool
+   * time before a single token of model inference — and the function is killed
+   * mid-stream with nothing said to the user. A stream that dies silently is
+   * the failure this platform is least allowed to have.
+   *
+   * So the budget is the smaller of this tool's own ceiling and whatever is
+   * left of the turn. When it is gone the model is TOLD, in its own family's
+   * words, and can say so; it is never left waiting on a call that will outlive
+   * the response.
+   */
+  const remaining = typeof context.toolDeadlineAt === "number"
+    ? context.toolDeadlineAt - Date.now()
+    : Number.POSITIVE_INFINITY;
+  if (remaining <= 0) {
+    const raw = tool.expired("the turn's tool time was already spent before this call started");
+    return { status: "ok", invocation: { family: tool.family, raw, classify: () => "unavailable" } };
+  }
+  const budgetMs = Math.min(tool.budgetMs, remaining);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budgetMs);
+  let expired = false;
+  try {
+    const raw = await Promise.race([
+      tool.execute(args, { ...context, abortSignal: controller.signal }),
+      new Promise<null>((resolve) => {
+        controller.signal.addEventListener("abort", () => { expired = true; resolve(null); }, { once: true });
+      }),
+    ]);
+    if (expired || !raw) {
+      return {
+        status: "ok",
+        invocation: {
+          family: tool.family,
+          raw: tool.expired(`it did not finish within ${Math.round(budgetMs / 1000)}s`),
+          classify: () => "unavailable",
+        },
+      };
+    }
+    return { status: "ok", invocation: raw };
+  } finally {
+    clearTimeout(timer);
+  }
 }

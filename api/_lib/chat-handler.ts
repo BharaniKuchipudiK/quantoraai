@@ -137,6 +137,18 @@ const RATE_LIMIT_PER_MINUTE = 25;
 const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
+/*
+ * How much of the turn tools may spend, measured from when the request arrived.
+ *
+ * api/pipeline.ts carries this route with maxDuration 180s. read_pull_request
+ * alone can spend ~36s — three sequential GitHub hops at GITHUB_TIMEOUT_MS
+ * each — so MAX_AGENT_STEPS of it reaches 180s of tool time before one token of
+ * inference, and the function is killed mid-stream with nothing said to the
+ * user. 120s leaves a minute for the reply the tools were gathered for, and a
+ * call that would cross the line is refused in words the model can pass on
+ * instead of hanging until the platform dies under it.
+ */
+const TOOL_TIME_BUDGET_MS = 120_000;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 /*
  * What the platform may route to when it is spending its own credit.
@@ -1136,6 +1148,7 @@ export default async function handler(req: any, res: any) {
       studioDomain: normalizedStudioDomain,
       githubPrincipal: githubToolsEnabled ? githubPrincipal : null,
       get travelToolsPermitted() { return travelToolsEnabled; },
+      toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
     };
     const textCapabilities = visionImages.length
       ? (['text', 'vision'] as const)

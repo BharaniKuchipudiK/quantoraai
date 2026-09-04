@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  budgetedFetch,
   classifyGithubToolResult,
   classifyTravelToolResult,
   dispatchToolCall,
@@ -44,6 +46,9 @@ const CONTEXTS: Array<{ label: string; context: QuantoraToolContext }> = [
   },
   { label: "coding studio", context: { studioDomain: "coding" } },
 ];
+
+/** Let queued abort listeners run before asserting on what they did. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 const offeredNames = (context: QuantoraToolContext) =>
   enabledToolDeclarations(context)
@@ -201,6 +206,135 @@ test("a real dispatch carries its family's classifier, not a default", async () 
   assert.equal(gh.invocation.family, "github");
   assert.equal(gh.invocation.raw?.ok, false);
   assert.equal(gh.invocation.classify({ committed: false }), "unavailable");
+});
+
+/* ------------------------------------------------------------------ *
+ * A tool that never returns must not take the turn down with it.
+ * ------------------------------------------------------------------ */
+
+test("every tool declares a budget and an expiry its own classifier can read", () => {
+  /*
+   * The expiry result is shaped like the family's ordinary results so the
+   * handler needs no special case for it. That only holds if each family
+   * actually shapes one — a family that returns `{}` here would be classified
+   * 'cleared', and the model would be handed an empty success and describe a
+   * pull request it never read.
+   */
+  for (const tool of listRegisteredTools()) {
+    assert.ok(tool.budgetMs > 0, `${tool.name}: no time budget`);
+    assert.ok(tool.budgetMs <= 60_000, `${tool.name}: a budget longer than a minute is not a budget`);
+    const expired = tool.expired("it did not finish in time");
+    const state = tool.family === "github"
+      ? classifyGithubToolResult(expired)
+      : classifyTravelToolResult(expired, { committed: false });
+    assert.equal(state, "unavailable", `${tool.name}: an expired call does not read as unavailable`);
+    const words = JSON.stringify(expired);
+    assert.match(words, /did not finish in time/, `${tool.name}: the expiry does not say what happened`);
+    // The model repeats this to the user, so it must forbid the invention that
+    // an empty result invites — the search_hotels lesson.
+    assert.match(words, /do not (invent|describe)/i, `${tool.name}: the expiry does not tell the model what NOT to do`);
+  }
+});
+
+test("a tool that never returns is stopped, and the model is told", async () => {
+  const tool = listRegisteredTools()[0];
+  const original = (tool as any).execute;
+  (tool as any).execute = () => new Promise(() => { /* never settles */ });
+  try {
+    const started = Date.now();
+    const dispatch = await dispatchToolCall(tool.name, {}, { toolDeadlineAt: Date.now() + 60 });
+    const elapsed = Date.now() - started;
+    assert.equal(dispatch.status, "ok");
+    if (dispatch.status !== "ok") return;
+    assert.ok(elapsed < 5_000, `the dispatch hung for ${elapsed}ms instead of giving up`);
+    assert.equal(dispatch.invocation.classify({ committed: false }), "unavailable");
+    assert.match(JSON.stringify(dispatch.invocation.raw), /did not finish within/);
+  } finally {
+    (tool as any).execute = original;
+  }
+});
+
+test("a turn with no tool time left refuses without calling the executor", async () => {
+  // The call that would cross the line is the one that kills the function, so
+  // it must not start. Measured by an executor that records being entered.
+  const tool = listRegisteredTools()[0];
+  const original = (tool as any).execute;
+  let entered = false;
+  (tool as any).execute = async () => { entered = true; return { family: tool.family, raw: {}, classify: () => "cleared" as any }; };
+  try {
+    const dispatch = await dispatchToolCall(tool.name, {}, { toolDeadlineAt: Date.now() - 1 });
+    assert.equal(entered, false, "the executor ran after the turn's tool time was spent");
+    assert.equal(dispatch.status, "ok");
+    if (dispatch.status !== "ok") return;
+    assert.equal(dispatch.invocation.classify({ committed: false }), "unavailable");
+    assert.match(JSON.stringify(dispatch.invocation.raw), /already spent/);
+  } finally {
+    (tool as any).execute = original;
+  }
+});
+
+test("the budget actually CANCELS the provider request, it does not merely stop waiting", async () => {
+  /*
+   * Racing a promise leaves the work running. A raced-out GitHub read would go
+   * on burning the function's clock while the turn moved past it, so the budget
+   * would bound the WAIT and not the COST. Both families take an injectable
+   * fetch and pass an init.signal through, so the budget's signal is merged
+   * into theirs — this measures that the merged signal really fires, and with
+   * it that AbortSignal.any is present on the runtime (§10).
+   */
+  const controller = new AbortController();
+  let sawAbort = false;
+  const realFetch = globalThis.fetch;
+  (globalThis as any).fetch = (_url: any, init: any) =>
+    new Promise((resolve) => {
+      init.signal.addEventListener("abort", () => { sawAbort = true; resolve({ ok: false } as any); }, { once: true });
+    });
+  try {
+    void budgetedFetch(controller.signal)("https://example.test", { signal: AbortSignal.timeout(60_000) });
+    controller.abort();
+    // Bounded, so an unmerged signal fails by NAME rather than by hanging the
+    // suite until the runner gives up on it (§8 — an unactionable gate is one
+    // the next person mutes).
+    await settle();
+    assert.equal(sawAbort, true, "the provider request was left running after the budget expired");
+  } finally {
+    (globalThis as any).fetch = realFetch;
+  }
+
+  // And with no signal of its own, the request still dies with the budget.
+  const bare = new AbortController();
+  let bareAbort = false;
+  (globalThis as any).fetch = (_url: any, init: any) =>
+    new Promise((resolve) => {
+      init.signal.addEventListener("abort", () => { bareAbort = true; resolve({ ok: false } as any); }, { once: true });
+    });
+  try {
+    void budgetedFetch(bare.signal)("https://example.test");
+    bare.abort();
+    await settle();
+    assert.equal(bareAbort, true, "a request with no signal of its own was not given the budget's");
+  } finally {
+    (globalThis as any).fetch = realFetch;
+  }
+});
+
+test("the turn's tool budget fits inside the function that carries the turn", async () => {
+  /*
+   * The budget is a promise about a clock the platform does not own. If
+   * pipeline.ts's maxDuration were lowered under it, the budget would expire
+   * after the function had already been killed — a limit that can never fire,
+   * which is the §4 case.
+   */
+  const handler = await readFile(new URL("./chat-handler.ts", import.meta.url), "utf8");
+  const budget = Number(/TOOL_TIME_BUDGET_MS = ([0-9_]+)/.exec(handler)?.[1]?.replace(/_/g, ""));
+  assert.ok(budget > 0, "the handler no longer states a tool time budget");
+  const vercel = JSON.parse(await readFile(new URL("../../vercel.json", import.meta.url), "utf8"));
+  const maxDurationMs = Number(vercel.functions?.["api/pipeline.ts"]?.maxDuration) * 1000;
+  assert.ok(maxDurationMs > 0, "api/pipeline.ts no longer declares a maxDuration to fit inside");
+  assert.ok(
+    budget < maxDurationMs,
+    `the tool budget (${budget}ms) is not shorter than the function that carries it (${maxDurationMs}ms)`,
+  );
 });
 
 /* ------------------------------------------------------------------ *
