@@ -2091,7 +2091,19 @@ export default async function handler(req: any, res: any) {
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
-          : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+          /*
+           * The generic branch used to swallow FIVE distinct detailCodes —
+           * opaque-storage-access, golden-vfs-shape-missing,
+           * golden-root-mount-missing, calculator-contract-missing and
+           * calculator-interaction-missing. On 2026-09-04 the deployed golden
+           * spent all five attempts on the last of them and neither the log,
+           * the CI evidence, nor the user could tell which clause had failed:
+           * validateBuildArtifactResponse returns the code and every reader
+           * downstream dropped it. Naming it costs one clause and turns "could
+           * not run in Preview" into something reproducible.
+           */
+          : `Quantora generated files that could not run in Preview (${err?.detailCode || 'contract-failed'}). `
+            + 'Retry and I will rebuild a complete page.')
       : credentialRejected
       // Names the provider and separates an empty balance from a bad key. The
       // old sentence did neither, and sent somebody to re-issue a Gemini key
@@ -2112,6 +2124,8 @@ export default async function handler(req: any, res: any) {
       sse.fail({
         message: publicError,
         code: err?.code || 'CHAT_STREAM_FAILURE',
+        // Which contract clause, not merely that one failed.
+        ...(err?.detailCode ? { detailCode: err.detailCode } : {}),
         retryable: retryableProviderFailure || artifactContractFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,
