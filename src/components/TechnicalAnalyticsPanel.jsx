@@ -163,7 +163,7 @@ function ConversationInsightCard({ row, isLight }) {
  * Infrastructure KPIs — cost, latency, model health, build completion.
  * Replaces legacy telemetry table + misleading "network ingress" labels.
  */
-export default function TechnicalAnalyticsPanel({ technical, window, daily, isLight }) {
+export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, isLight }) {
   const tracking = technical?.tracking;
   const keyMix = technical?.keyMix;
   const latency = technical?.latencySummary;
@@ -278,6 +278,41 @@ export default function TechnicalAnalyticsPanel({ technical, window, daily, isLi
             <div className="product-analytics-panel__kpi-label">{kpi.label}</div>
           </div>
         ))}
+      </div>
+
+      <div
+        className="product-analytics-panel__chart"
+        data-quantora-study-representation-coverage={studyRepresentationCoverage?.source || undefined}
+        style={{ marginBottom: '16px' }}
+      >
+        <h4>Study renderer coverage</h4>
+        <p style={{ fontSize: '0.72rem', color: '#64748b', margin: '6px 0 12px' }}>
+          Capability catalog, not live traffic. Unsupported requests must stay unavailable.
+        </p>
+        {studyRepresentationCoverage?.rows?.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {studyRepresentationCoverage.rows.map((row) => (
+              <div
+                key={row.requestClass}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  fontSize: '0.78rem',
+                  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                  color: isLight ? '#0f172a' : '#e2e8f0',
+                }}
+              >
+                <span>{row.requestClass}</span>
+                <span style={{ color: row.outcome === 'renderer_available' ? '#10b981' : '#f97316' }}>
+                  {row.rendererKind || 'none'} · {row.outcome}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p>Coverage catalog is missing from this metrics payload.</p>
+        )}
       </div>
 
       <div className="product-analytics-panel__charts">

@@ -40,3 +40,34 @@ test('H3.4 learning-flow counters keep one correlation id and a closed privacy-s
   assert.equal('path' in metric, false);
   assert.equal('query' in metric, false);
 });
+
+test('representation coverage may name a renderer family without learner text', async () => {
+  const captured: unknown[][] = [];
+  const originalInfo = console.info;
+  console.info = (...args: unknown[]) => captured.push(args);
+  try {
+    await withStudyTelemetryScope('study_assessment', async () => {
+      emitStudyLearningFlowMetric({
+        metric: 'representation_coverage',
+        outcome: 'renderer_available',
+        rendererKind: 'geometry-construction',
+      });
+    });
+  } finally {
+    console.info = originalInfo;
+  }
+
+  const metric = captured[0][1] as Record<string, unknown>;
+  assert.deepEqual(Object.keys(metric).sort(), [
+    'metric',
+    'outcome',
+    'rendererKind',
+    'traceId',
+    'version',
+  ].sort());
+  assert.equal(metric.metric, 'representation_coverage');
+  assert.equal(metric.outcome, 'renderer_available');
+  assert.equal(metric.rendererKind, 'geometry-construction');
+  assert.equal('prompt' in metric, false);
+  assert.equal('userSub' in metric, false);
+});
