@@ -65,6 +65,7 @@ test('subject classification is independent of renderer shape', () => {
   assert.equal(studySubjectFamily('Chemical reactions'), 'chemistry');
   assert.equal(studySubjectFamily('Newtonian inertia'), 'mechanics');
   assert.equal(studySubjectFamily('Light: Reflection & Refraction'), 'optics');
+  assert.equal(studySubjectFamily('Teach me Pythagoras to find side x on a right triangle visually.'), 'geometry');
 });
 
 test('optics is locked as its own automatic visual family', () => {
@@ -161,6 +162,13 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
   ].join('\n');
   const topic = studyActiveConcept(history, reply);
   assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
+});
+
+test('a Pythagoras caption is a real geometry picture, not a dropped decorative picture', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared',
+    'Teach me Pythagoras to find side x on a right triangle visually.',
+  ), true);
 });
 
 test('a both-sides transformation caption is a real algebra picture, not a dropped decorative picture', () => {

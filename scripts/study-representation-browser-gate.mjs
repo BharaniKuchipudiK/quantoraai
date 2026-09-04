@@ -77,7 +77,9 @@ await page.route('**/api/**', async (route) => {
       ? 'isolation'
       : /unsupported-concept/.test(message)
         ? 'unsupported'
-        : /both sides|equation transformation/.test(message)
+        : /pythagoras|right triangle|hypotenuse/.test(message)
+          ? 'pythagoras'
+          : /both sides|equation transformation/.test(message)
           ? 'algebra-transform'
           : /magnetic|right[- ]hand/.test(message)
           ? 'magnetic'
@@ -95,6 +97,12 @@ await page.route('**/api/**', async (route) => {
         '<quantora-study-picture caption="Resolve a vector into x and y components on the coordinate axes" />',
         '',
         'Split the resultant into horizontal and vertical components first. Predict which component increases when the angle increases, then answer that one check.',
+      ].join('\n');
+    } else if (mode === 'pythagoras') {
+      reply = [
+        '<quantora-study-picture caption="Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared" />',
+        '',
+        'The square on the hypotenuse equals the squares on the other two sides. If a is 3 and b is 4, what is c?',
       ].join('\n');
     } else if (mode === 'algebra-transform') {
       reply = [
@@ -275,6 +283,28 @@ try {
   const algebraText = (await algebraLesson.textContent()) || '';
   if ((algebraText.match(/\?/g) || []).length > 1) {
     throw new Error('One-action pacing failed: algebra transformation lesson asked multiple learner questions.');
+  }
+
+  // 1f) A Pythagoras request with side x must not inherit the algebra scale.
+  const lessonsBeforeGeometry = await studyLessons.count();
+  await textarea.fill('Teach me Pythagoras to find side x on a right triangle visually.');
+  await textarea.press('Enter');
+  const geometryLesson = studyLessons.nth(lessonsBeforeGeometry);
+  await visible(geometryLesson, 'Pythagoras lesson did not render.', 15_000);
+  const geometryPicture = geometryLesson.locator('[data-quantora-study-picture="geometry-construction"][data-quantora-study-picture-variant="right-triangle"]').first();
+  await visible(geometryPicture, 'Pythagoras request rendered an algebra picture instead of the right-triangle visual.', 15_000);
+  if (await geometryLesson.locator('[data-quantora-study-picture="algebra-balance"], [data-quantora-study-picture-variant="scale"], [data-quantora-study-picture-variant="transformation"]').count()) {
+    throw new Error('Pythagoras lesson leaked an algebra scale or transformation picture.');
+  }
+  const geometrySvg = geometryPicture.locator('svg[role="img"]').first();
+  await visible(geometrySvg, 'Pythagoras visual is missing a screen-reader image role.');
+  const geometryLabel = String(await geometrySvg.getAttribute('aria-label') || '');
+  if (!/hypotenuse|right triangle|a squared|pythagoras/i.test(geometryLabel)) {
+    throw new Error('Pythagoras visual aria-label does not describe the right-triangle relationship.');
+  }
+  const geometryText = (await geometryLesson.textContent()) || '';
+  if ((geometryText.match(/\?/g) || []).length > 1) {
+    throw new Error('One-action pacing failed: Pythagoras lesson asked multiple learner questions.');
   }
 
   // 2) Unsupported concept should fail honestly (no fake picture).

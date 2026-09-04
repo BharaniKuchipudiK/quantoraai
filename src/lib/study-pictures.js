@@ -18,6 +18,7 @@ const META_CAPTION = /\b(icebreaker|picture tag|visual tag|study idea|this idea|
 
 const ELECTRICITY_VISUAL = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
 const FIELD_VISUAL = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
+const GEOMETRY_VISUAL = /\b(?:pythagoras|pythagorean|right[- ]angled triangle|right triangle|hypotenuse)\b/i;
 
 function compactLabel(value = '', max = 34) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -100,6 +101,7 @@ export function studyVisualKind(caption = '') {
   if (FIELD_VISUAL.test(text)) return 'field-lines';
   if (ELECTRICITY_VISUAL.test(text)) return 'electricity-circuit';
   if (/graph|slope|axis|curve|plot|trend|correlation|distribution|coordinate plane|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent|vector components?/.test(text)) return 'graph';
+  if (GEOMETRY_VISUAL.test(text)) return 'geometry-construction';
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
@@ -159,6 +161,15 @@ export function studyAlgebraVisualVariant(caption = '') {
   return /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(String(caption || ''))
     ? 'transformation'
     : 'scale';
+}
+
+/**
+ * Geometry is classified before algebra `\bx\b`. A Pythagoras lesson that
+ * names side x must not inherit the equation scale — that is a mismatched
+ * diagram, not a fallback.
+ */
+export function studyGeometryVisualVariant(caption = '') {
+  return GEOMETRY_VISUAL.test(String(caption || '')) ? 'right-triangle' : null;
 }
 
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
@@ -278,6 +289,7 @@ const TEACHING_CAPTIONS = Object.freeze({
   'field-lines': 'Electric field lines point from positive to negative and their density shows field strength',
   'electricity-circuit': 'Battery circuit: the cell drives conventional current through a resistor and back to the cell',
   'algebra-balance': 'An equation balance showing the same operation applied to both sides',
+  'geometry-construction': 'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared',
   'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',
   'chemistry-bond': 'Two atoms sharing electrons in a covalent bond',
   graph: 'A labelled graph showing axes, slope, and change between two points',
@@ -311,6 +323,9 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   }
   if (kind === 'algebra-balance' && /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(hay)) {
     caption = 'Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x';
+  }
+  if (kind === 'geometry-construction') {
+    caption = 'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared';
   }
   if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
     caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
