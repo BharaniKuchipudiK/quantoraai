@@ -14,6 +14,10 @@ test('the representation browser gate is registered and enforced in CI', () => {
   assert.match(ci, /id: study_representation_gate/);
 });
 
+test('the picture caption hook exists on StudyPicture so the a11y check cannot drift', () => {
+  assert.match(read('src/components/StudyPicture.jsx'), /data-quantora-study-picture-caption="true"/);
+});
+
 test('the representation browser gate anchors on durable Study hooks, not prose or invented attributes', () => {
   const gate = read('scripts/study-representation-browser-gate.mjs');
   assert.match(gate, /data-quantora-study-picture="physics-motion"/);
@@ -34,6 +38,8 @@ test('the representation browser gate anchors on durable Study hooks, not prose 
   assert.match(gate, /svg\[role="img"\]/);
   assert.match(gate, /data-quantora-study-reading-copy="true"/);
   assert.match(gate, /assertStudyTeachingBeat/);
+  assert.match(gate, /data-quantora-study-picture-caption="true"/);
+  assert.match(gate, /assertPictureAccessibility/);
   assert.doesNotMatch(gate, /data-quantora-chat-message/);
 });
 
