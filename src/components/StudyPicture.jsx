@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  studyAlgebraVisualVariant,
   studyElectricityVisualVariant,
   studyFieldVisualVariant,
   studyGraphVisualVariant,
@@ -45,6 +46,7 @@ function PictureArt({ isLight, caption, kind }) {
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(caption) : null;
   const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(caption) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(caption) : null;
+  const algebraVariant = kind === 'algebra-balance' ? studyAlgebraVisualVariant(caption) : null;
   const processSteps = kind === 'process-flow' ? studyProcessSteps(caption) : [];
   const timelinePoints = kind === 'timeline' ? studyTimelinePoints(caption) : [];
   const numberLine = kind === 'number-line' ? studyNumberLineSpec(caption) : null;
@@ -163,7 +165,7 @@ function PictureArt({ isLight, caption, kind }) {
           <text x="180" y="157" textAnchor="middle" fill={muted} fontSize="11">terminal voltage falls below EMF when current flows through internal resistance</text>
         </>
       ) : null}
-      {kind === 'algebra-balance' ? (
+      {kind === 'algebra-balance' && algebraVariant === 'scale' ? (
         <>
           <line x1="180" y1="42" x2="180" y2="138" stroke={ink} strokeWidth="5" />
           <line x1="82" y1="68" x2="278" y2="68" stroke={ink} strokeWidth="5" />
@@ -171,7 +173,18 @@ function PictureArt({ isLight, caption, kind }) {
           <path d="M248 72 L308 72 L296 118 L260 118 Z" fill="none" stroke="#f97316" strokeWidth="3" />
           <text x="82" y="103" textAnchor="middle" fill={ink} fontSize="18" fontWeight="800">x + a</text>
           <text x="278" y="103" textAnchor="middle" fill={ink} fontSize="18" fontWeight="800">b</text>
-          <text x="180" y="160" textAnchor="middle" fill={muted} fontSize="12">same operation on both sides</text>
+          <text x="180" y="160" textAnchor="middle" fill={muted} fontSize="12">equal sides of one equation</text>
+        </>
+      ) : null}
+      {kind === 'algebra-balance' && algebraVariant === 'transformation' ? (
+        <>
+          <rect x="18" y="48" width="126" height="64" rx="12" fill={isLight ? '#eff6ff' : '#172554'} stroke="#0ea5e9" strokeWidth="2" />
+          <rect x="216" y="48" width="126" height="64" rx="12" fill={isLight ? '#f0fdf4' : '#14532d'} stroke="#22c55e" strokeWidth="2" />
+          <text x="81" y="88" textAnchor="middle" fill={ink} fontSize="18" fontWeight="800">x + 8 = 15</text>
+          <text x="279" y="88" textAnchor="middle" fill={ink} fontSize="18" fontWeight="800">x = 7</text>
+          <Arrow x1="150" y1="80" x2="208" y2="80" label="" color="#f97316" />
+          <text x="180" y="64" textAnchor="middle" fill="#f97316" fontSize="11" fontWeight="800">−8 both sides</text>
+          <text x="180" y="158" textAnchor="middle" fill={muted} fontSize="11">the same operation on both sides keeps equality and isolates x</text>
         </>
       ) : null}
       {kind === 'biology-cell' ? (
@@ -348,11 +361,12 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const electricityVariant = kind === 'electricity-circuit' ? studyElectricityVisualVariant(label) : null;
   const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(label) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(label) : null;
+  const algebraVariant = kind === 'algebra-balance' ? studyAlgebraVisualVariant(label) : null;
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
-      data-quantora-study-picture-variant={physicsVariant || electricityVariant || fieldVariant || graphVariant || undefined}
+      data-quantora-study-picture-variant={physicsVariant || electricityVariant || fieldVariant || graphVariant || algebraVariant || undefined}
       style={{
         margin: '2px 0 18px',
         maxWidth: '430px',

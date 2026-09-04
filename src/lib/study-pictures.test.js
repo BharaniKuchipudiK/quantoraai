@@ -5,6 +5,7 @@ import {
   ensureStudyTeachingVisual,
   pictureCaptionFitsLesson,
   splitStudySegments,
+  studyAlgebraVisualVariant,
   studyElectricityVisualVariant,
   studyFieldVisualVariant,
   studyGraphVisualVariant,
@@ -165,6 +166,19 @@ test('motion-graph captions are graphs, not free-body diagrams, and name what th
   assert.equal(studyGraphVisualVariant(displacement), 'displacement-time');
   assert.equal(studyGraphVisualVariant(velocity), 'velocity-time');
   assert.equal(studyGraphVisualVariant('A labelled graph showing axes, slope, and change between two points'), 'slope');
+});
+
+test('algebra visuals distinguish a static scale from a both-sides transformation', () => {
+  assert.equal(studyAlgebraVisualVariant('A box holding the unknown in x + 3 = 5'), 'scale');
+  assert.equal(studyAlgebraVisualVariant('Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x'), 'transformation');
+});
+
+test('a substantial both-sides lesson receives the transformation diagram when the model omits its tag', () => {
+  const explanation = 'To isolate x you must undo the addition. Subtract 8 from both sides of x + 8 = 15 so the equality stays true. What is the value of x after that same operation?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Solving equations by doing the same to both sides');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /subtract 8 from both sides/);
+  assert.equal(studyAlgebraVisualVariant(splitStudySegments(illustrated, 'Solving equations by doing the same to both sides')[0].caption), 'transformation');
 });
 
 test('a substantial magnetic-field lesson receives the right-hand-rule diagram when the model omits its tag', () => {
