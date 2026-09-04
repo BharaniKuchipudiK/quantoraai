@@ -23,6 +23,8 @@ test('the representation browser gate anchors on durable Study hooks, not prose 
   assert.match(gate, /data-quantora-study-picture-variant="displacement-time"/);
   assert.match(gate, /data-quantora-study-picture="field-lines"/);
   assert.match(gate, /data-quantora-study-picture-variant="magnetic"/);
+  assert.match(gate, /data-quantora-study-picture="algebra-balance"/);
+  assert.match(gate, /data-quantora-study-picture-variant="transformation"/);
   assert.match(gate, /data-quantora-study-lesson="true"/);
   assert.match(gate, /data-quantora-advisor="education"/);
   assert.match(gate, /data-quantora-advisor="finance"/);
