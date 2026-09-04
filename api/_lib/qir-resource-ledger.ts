@@ -64,6 +64,51 @@ function checkpointGenerations(run: QirAgentRun): Record<string, number> {
  * action is a no-op. Ordinary work debits only ordinary Run/Step allowances;
  * recovery and premium work debit only their explicitly selected protected lane.
  */
+/*
+ * SPEND THE ORDINARY LANE, WHICH NOTHING HAS EVER DONE.
+ *
+ * Coding Runs are created metered — runUnitsRemaining: 100,
+ * stepUnitsRemaining: 40 — and the governor has full allowance logic for both
+ * (qir-resource-governor.ts). But the ONLY caller of the governor anywhere in
+ * this repository asks for lane "premium", so the ordinary lane has never
+ * decremented once. A budget that is displayed, checked, and never spent is
+ * accounting theatre: Phase 3 asks for model accounting, and until now the
+ * only model spend recorded was a premium escalation.
+ *
+ * WHY A HELPER AND NOT reduceQirResourceRequest. That reducer owns the full
+ * request protocol — its own event type, its own stale-action guard, and the
+ * WAITING_FOR_CAPACITY transition. A model attempt already has an event
+ * (coding.model_attempt_started) and already has its own guards, and one
+ * commit carries one event. This applies the same arithmetic to the same
+ * lanes inside that commit, so the debit is atomic with the attempt it pays
+ * for rather than a second round trip that can fail on its own.
+ *
+ * IT DEBITS, IT DOES NOT REFUSE. The governor's job is to refuse; that path
+ * exists and is exercised for premium. Making a model attempt refusable on a
+ * number nobody has yet calibrated is how a build stops running for a reason
+ * no user can act on — the defect #516 removed. A null lane stays null
+ * (unmetered), and a lane already at zero floors at zero rather than going
+ * negative or throwing.
+ */
+export function spendOrdinaryUnits(budget: QirResourceBudget, units = 1): QirResourceBudget {
+  /*
+   * FLOORED AT ZERO, AND THAT IS NOT COSMETIC.
+   *
+   * isValidQirRunSnapshot rejects a budget lane that is not finite and
+   * non-negative (qir-run-store.ts). A bare subtraction would take
+   * runUnitsRemaining to -1 on the attempt after the allowance ran out, the
+   * snapshot would then fail validation, and EVERY subsequent commit for that
+   * Run would come back "unavailable" — a Run bricked by its own bookkeeping,
+   * which is the shape of defect #516 removed.
+   */
+  const floored = (value: number | null) => (value === null ? null : Math.max(0, value - units));
+  return {
+    ...budget,
+    runUnitsRemaining: floored(budget.runUnitsRemaining),
+    stepUnitsRemaining: floored(budget.stepUnitsRemaining),
+  };
+}
+
 export function reduceQirResourceRequest(input: {
   run: QirAgentRun;
   request: QirResourceLedgerRequest;

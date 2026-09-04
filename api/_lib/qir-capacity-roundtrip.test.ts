@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import { QIR_CONTRACT_VERSION, deriveQirContinuation, type QirAgentRun } from "./qir-contracts.js";
-import { reduceQirCapacityResume, reduceQirResourceRequest } from "./qir-resource-ledger.js";
+import { reduceQirCapacityResume, reduceQirResourceRequest, spendOrdinaryUnits } from "./qir-resource-ledger.js";
 
 /** A Run mid-build, with a premium reserve too small for the request below. */
 function runAwaitingPremium(premiumRemaining: number | null): QirAgentRun {
@@ -173,4 +173,79 @@ test('a resume is refused when the Run was never waiting', () => {
   });
   assert.equal(notWaiting.accepted, false);
   assert.equal(notWaiting.payload.reason, "not_waiting");
+});
+
+/*
+ * THE ORDINARY LANE MUST ACTUALLY BE SPENT.
+ *
+ * Coding Runs are created with runUnitsRemaining: 100 and stepUnitsRemaining:
+ * 40, the governor has full allowance logic for both, and until now nothing
+ * ever decremented either — the only governor caller in the repository asks
+ * for lane "premium". Phase 3 asks for model accounting; a budget that is
+ * displayed and checked but never spent is accounting theatre.
+ */
+
+test("[was-red] an ordinary spend debits both nested lanes", () => {
+  const budget = { runUnitsRemaining: 100, stepUnitsRemaining: 40, recoveryReserveRemaining: 20, premiumEscalationRemaining: 5 };
+  const after = spendOrdinaryUnits(budget);
+
+  assert.equal(after.runUnitsRemaining, 99, "the Run allowance must pay for the attempt");
+  assert.equal(after.stepUnitsRemaining, 39, "and so must the Step allowance — they are nested, not alternatives");
+  assert.equal(after.recoveryReserveRemaining, 20, "the protected reserves stay isolated");
+  assert.equal(after.premiumEscalationRemaining, 5);
+});
+
+test("[was-red] an exhausted lane floors at zero, and never bricks the Run", () => {
+  /*
+   * isValidQirRunSnapshot rejects a lane that is not finite and non-negative.
+   * A bare subtraction would reach -1 on the attempt after the allowance ran
+   * out, and from then on EVERY commit for that Run would fail validation and
+   * come back "unavailable" — a Run destroyed by its own bookkeeping, which is
+   * the class #516 removed.
+   */
+  let budget = { runUnitsRemaining: 1, stepUnitsRemaining: 1, recoveryReserveRemaining: 20, premiumEscalationRemaining: 5 };
+  for (let i = 0; i < 5; i += 1) budget = spendOrdinaryUnits(budget);
+
+  assert.equal(budget.runUnitsRemaining, 0);
+  assert.equal(budget.stepUnitsRemaining, 0);
+  for (const lane of Object.values(budget)) {
+    assert.ok(lane === null || (Number.isFinite(lane) && lane >= 0), `${lane} must satisfy isValidQirRunSnapshot`);
+  }
+});
+
+test("an unmetered lane stays unmetered", () => {
+  /*
+   * null means unlimited throughout this spine — the same convention the
+   * governor and the premium resolver use. Spending must not turn it into a
+   * number and start counting down from nothing.
+   */
+  const after = spendOrdinaryUnits({ runUnitsRemaining: null, stepUnitsRemaining: null, recoveryReserveRemaining: null, premiumEscalationRemaining: null });
+  assert.equal(after.runUnitsRemaining, null);
+  assert.equal(after.stepUnitsRemaining, null);
+});
+
+test("[was-red] the attempt route actually spends it", () => {
+  /*
+   * The helper is worthless if nothing calls it — which is precisely how the
+   * ordinary lane came to be metered and never spent in the first place.
+   */
+  const source = fs.readFileSync(new URL("../qir-runs.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /const attemptRun = \{ \.\.\.started\.run, budget: spendOrdinaryUnits\(started\.run\.budget\) \}/,
+    "coding.attempt must pay for the attempt out of the ordinary lane",
+  );
+  assert.match(source, /run: attemptRun,/, "and must commit the debited Run, not the undebited one");
+});
+
+test("a debit never refuses an attempt", () => {
+  /*
+   * The governor's job is to refuse, and that path is exercised for premium.
+   * Making a model attempt refusable on an allowance nobody has calibrated is
+   * how a build stops running for a reason no user can act on.
+   */
+  const source = fs.readFileSync(new URL("../qir-runs.ts", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('action === "coding.attempt"'), source.indexOf('action === "coding.start"'));
+  assert.doesNotMatch(handler, /WAITING_FOR_CAPACITY/, "an ordinary spend must not park the Run");
+  assert.doesNotMatch(handler, /ordinary allowance is exhausted/i);
 });

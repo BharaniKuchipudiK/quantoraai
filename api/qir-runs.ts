@@ -1,4 +1,5 @@
 import { requireActiveSession } from "./_lib/authz.js";
+import { spendOrdinaryUnits } from "./_lib/qir-resource-ledger.js";
 import {
   commitQirRunEvent,
   createQirRun,
@@ -165,6 +166,21 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       return res.status(409).json({ error: "A candidate artifact already exists; recover or verify that generation instead." });
     }
     const started = startModelAttempt(record.run, now);
+    /*
+     * Pay for the attempt out of the ordinary lane.
+     *
+     * Runs are created with runUnitsRemaining: 100 and stepUnitsRemaining: 40,
+     * the governor has allowance logic for both, and until now NOTHING ever
+     * decremented either — the only governor caller in the repository asks for
+     * lane "premium". So a Coding Run recorded every premium escalation and no
+     * ordinary model spend at all.
+     *
+     * Debited inside this commit rather than through reduceQirResourceRequest:
+     * the attempt already has its own event and guards, one commit carries one
+     * event, and this way the spend is atomic with the attempt that incurred it.
+     * It debits but never refuses — see spendOrdinaryUnits.
+     */
+    const attemptRun = { ...started.run, budget: spendOrdinaryUnits(started.run.budget) };
     const strategy = safeText(req.body?.strategy, 240);
     return sendCommit(res, await commitQirRunEvent({
       userSub,
@@ -172,11 +188,12 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       expectedVersion: record.storageVersion,
       eventId: `coding-attempt-${randomUUID()}`,
       eventType: "coding.model_attempt_started",
-      run: started.run,
+      run: attemptRun,
       payload: {
         stepId: started.stepId,
         actionId: started.actionId,
         attempt: started.run.cursor.attempt + 1,
+        ordinaryUnitsRemaining: attemptRun.budget.runUnitsRemaining,
         ...(strategy ? { strategy } : {}),
       },
     }));
