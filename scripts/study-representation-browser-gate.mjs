@@ -77,11 +77,13 @@ await page.route('**/api/**', async (route) => {
       ? 'isolation'
       : /unsupported-concept/.test(message)
         ? 'unsupported'
-        : /quadrant/.test(message)
-          ? 'quadrant'
-          : /vector/.test(message)
-            ? 'vector'
-            : 'default';
+        : /displacement[- ]time/.test(message)
+          ? 'displacement-time'
+          : /quadrant/.test(message)
+            ? 'quadrant'
+            : /vector/.test(message)
+              ? 'vector'
+              : 'default';
 
     let reply = '';
     if (mode === 'vector') {
@@ -89,6 +91,12 @@ await page.route('**/api/**', async (route) => {
         '<quantora-study-picture caption="Resolve a vector into x and y components on the coordinate axes" />',
         '',
         'Split the resultant into horizontal and vertical components first. Predict which component increases when the angle increases, then answer that one check.',
+      ].join('\n');
+    } else if (mode === 'displacement-time') {
+      reply = [
+        '<quantora-study-picture caption="Displacement-time graph: the slope at a point is velocity, change in displacement over change in time" />',
+        '',
+        'On this graph the slope is change in displacement over change in time. What quantity is that?',
       ].join('\n');
     } else if (mode === 'quadrant') {
       reply = [
@@ -185,6 +193,28 @@ try {
   const quadrantText = (await quadrantLesson.textContent()) || '';
   if ((quadrantText.match(/\?/g) || []).length > 1) {
     throw new Error('One-action pacing failed: quadrant lesson asked multiple learner questions.');
+  }
+
+  // 1c) A displacement-time request must teach velocity-as-slope, not a generic graph.
+  const lessonsBeforeMotion = await studyLessons.count();
+  await textarea.fill('Teach me a displacement-time graph visually.');
+  await textarea.press('Enter');
+  const motionLesson = studyLessons.nth(lessonsBeforeMotion);
+  await visible(motionLesson, 'Displacement-time lesson did not render.', 15_000);
+  const motionPicture = motionLesson.locator('[data-quantora-study-picture="graph"][data-quantora-study-picture-variant="displacement-time"]').first();
+  await visible(motionPicture, 'Displacement-time request rendered a generic slope graph instead of the velocity-slope visual.', 15_000);
+  if (await motionLesson.locator('[data-quantora-study-picture="physics-motion"], [data-quantora-study-picture-variant="slope"]').count()) {
+    throw new Error('Displacement-time lesson leaked a free-body or generic slope picture.');
+  }
+  const motionSvg = motionPicture.locator('svg[role="img"]').first();
+  await visible(motionSvg, 'Displacement-time visual is missing a screen-reader image role.');
+  const motionLabel = String(await motionSvg.getAttribute('aria-label') || '');
+  if (!/displacement|velocity|slope/i.test(motionLabel)) {
+    throw new Error('Displacement-time visual aria-label does not describe the slope relationship.');
+  }
+  const motionText = (await motionLesson.textContent()) || '';
+  if ((motionText.match(/\?/g) || []).length > 1) {
+    throw new Error('One-action pacing failed: displacement-time lesson asked multiple learner questions.');
   }
 
   // 2) Unsupported concept should fail honestly (no fake picture).
