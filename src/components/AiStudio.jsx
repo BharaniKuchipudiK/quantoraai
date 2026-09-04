@@ -38,6 +38,7 @@ import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } fro
 import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
 import { advanceBuildJob, buildJobIsComplete, buildJobOutcome, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { unprovedClaimNote } from '../lib/unproved-claim-note.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
 import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/session-desks.js';
@@ -2370,6 +2371,39 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
 Paused — ${autoPauseRef.current}.`
                             : ''}
                         </div>
+                        );
+                      })() : null}
+                      {msg.sender === 'ai' ? (() => {
+                        /*
+                         * THE CORRECTION THE ENGINE ALREADY EARNED.
+                         *
+                         * verifyConversationResponse raises
+                         * outcome_done_without_proof / external_action_without_evidence
+                         * at severity FAILURE and ships them in
+                         * conversation.verification. Nothing read that field, so a
+                         * reply claiming "your app is ready" over nothing verified
+                         * reached the user uncorrected. QIR Phase 5.
+                         *
+                         * Rendered on the message it judged rather than only the
+                         * last one: an unbacked claim does not stop being one when
+                         * the next turn arrives.
+                         */
+                        const note = unprovedClaimNote(msg.conversation?.verification);
+                        if (!note) return null;
+                        return (
+                          <div
+                            data-quantora-unproved-claim={note.code}
+                            style={{
+                              marginTop: '10px',
+                              padding: '8px 10px',
+                              borderLeft: '3px solid #f87171',
+                              fontSize: '0.8rem',
+                              color: subtextColor,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {note.text}
+                          </div>
                         );
                       })() : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
