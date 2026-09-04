@@ -1,21 +1,6 @@
 import React from 'react';
 import './QuantoraLogo.css';
 
-/**
- * A regular capital Q — same face as the wordmark, no custom tail.
- */
-export function QuantoraIconSvg({ size = 28, isDark = true }) {
-  return (
-    <span
-      className={`quantora-icon${isDark ? ' is-dark' : ' is-light'}`}
-      style={{ fontSize: size }}
-      aria-hidden="true"
-    >
-      Q
-    </span>
-  );
-}
-
 function OrangeO() {
   return <span className="quantora-o" aria-hidden="true" />;
 }
@@ -50,12 +35,11 @@ export function QuantoraBrandText({
 }
 
 export function QuantoraEmblemSvg({ size = 220, isDark = true, showText = true, tagline = 'IDEA TO OUTCOME' }) {
+  if (!showText) return null;
+
   return (
     <div className="quantora-emblem">
-      <QuantoraIconSvg size={size} isDark={isDark} />
-      {showText && (
-        <QuantoraBrandText isDark={isDark} fontSize={`${Math.max(28, size * 0.28)}px`} tagline={tagline} align="center" />
-      )}
+      <QuantoraBrandText isDark={isDark} fontSize={`${Math.max(28, size * 0.28)}px`} tagline={tagline} align="center" />
     </div>
   );
 }
@@ -65,7 +49,6 @@ export function QuantoraFullLogoSvg({ height = 36, isDark = true, tagline = 'IDE
 
   return (
     <div className="quantora-lockup">
-      <QuantoraIconSvg size={nameSize} isDark={isDark} />
       <QuantoraBrandText isDark={isDark} fontSize={`${nameSize}px`} tagline={tagline} align="left" />
     </div>
   );
