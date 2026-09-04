@@ -448,3 +448,33 @@ test('a gateway with no credential is never injected', async () => {
     'no OpenRouter route may appear without an OpenRouter credential',
   );
 });
+
+test('a refused OpenRouter gateway costs its routes, not the deployment', async () => {
+  /*
+   * MEASURED, not supposed. On 2026-09-04 the deployed health payload read
+   * openRouterConfigured: true, routeCount: 3, ready: true while /auth/key
+   * answered HTTP 401 for that exact key — so the router planned rungs on a
+   * gateway that could not answer, and the golden chat spent its last attempt
+   * on a FREE model there. Free models present the same credential.
+   *
+   * Both halves of the trade are asserted together on purpose:
+   *   - the refused gateway stops being counted, so no retry is spent on it;
+   *   - `ready` survives on Gemini alone, because failing every deployment over
+   *     an OpenRouter key that needs rotating is the imprecise blocking gate
+   *     CLAUDE.md §5 warns gets muted, and then protects nothing.
+   */
+  const both = await summarizeInferenceReadiness({ geminiAvailable: true, openRouterAvailable: true });
+  const refused = await summarizeInferenceReadiness({ geminiAvailable: true, openRouterAvailable: false });
+
+  assert.equal(refused.ready, true, 'Gemini is a separate gateway with its own credential');
+  assert.ok(refused.routeCount >= 1, 'a deployment that can still serve must still offer a route');
+  assert.ok(
+    refused.routeCount < both.routeCount,
+    `a refused gateway must cost its routes (both=${both.routeCount}, refused=${refused.routeCount})`,
+  );
+
+  // And when the refused gateway was the only one, the deployment says so.
+  const nothingLeft = await summarizeInferenceReadiness({ geminiAvailable: false, openRouterAvailable: false });
+  assert.equal(nothingLeft.ready, false);
+  assert.equal(nothingLeft.routeCount, 0);
+});

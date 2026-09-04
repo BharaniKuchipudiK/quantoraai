@@ -245,12 +245,24 @@ export async function paidRouteAllowed(
     const auth = await checkOpenRouterKey(token, fetchFn ? { fetchFn } : undefined);
     const verdict = decidePaidRoute(auth);
     /*
-     * Only a READ verdict is cached. checkOpenRouterKey swallows its own
-     * network errors and returns ok:false, so caching every verdict would pin
-     * paid routing off for a minute after a single blip — the failure my own
-     * test caught here. A refusal we could not verify is re-checked next turn.
+     * Cached when the PROVIDER ANSWERED, not merely when it approved.
+     *
+     * The rule was "only a read verdict is cached", because checkOpenRouterKey
+     * swallows its own network errors and returns ok:false — caching every
+     * verdict would pin paid routing off for a minute after a single blip, a
+     * failure this file's own test caught. That reasoning is about refusals we
+     * COULD NOT VERIFY, and it is kept: a thrown request, a timeout and any
+     * result with no status still re-check next turn.
+     *
+     * A refusal carrying a status is a different thing. OpenRouter was reached
+     * and said no, in so many words. Re-asking it on every single turn adds an
+     * 8-second round trip to a question already answered — and now that a
+     * rejected credential also narrows routing, that probe sits on the path the
+     * user is waiting for. One minute is the same staleness the allow branch
+     * has always accepted, so a key repaired in the dashboard is picked up
+     * within the same window, with no redeploy.
      */
-    if (auth?.ok) cache = { at: now, key: token, verdict };
+    if (auth?.ok || typeof auth?.status === "number") cache = { at: now, key: token, verdict };
     return verdict;
   } catch {
     // Deliberately not cached: a transient failure must not lock paid routing

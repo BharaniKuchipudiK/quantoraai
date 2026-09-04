@@ -1174,6 +1174,25 @@ export default async function handler(req: any, res: any) {
      * read is a refusal, never an assumption of zero.
      */
     const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
+    /*
+     * PRESENCE IS NOT VALIDITY, and the meter above already knows the difference.
+     *
+     * openRouterAvailable was Boolean(effectiveOpenRouterKey) — a key exists, so
+     * plan rungs on it. On 2026-09-04 the deployed health payload read
+     * openRouterConfigured: true, routeCount: 3 while /auth/key answered
+     * HTTP 401 for that very key, and the golden chat spent its second and last
+     * attempt on nvidia/nemotron-3.5-lightning:free — a FREE model on the gateway
+     * that had already refused the credential. The retry budget was burned on a
+     * door that was measurably shut.
+     *
+     * gatewayDead is set only for an unambiguous 401/403 from the provider. A
+     * timeout, a 5xx and a 429 all leave it false, because "we could not ask" is
+     * not "we were told no" — the same precision rule that keeps the readiness
+     * gate worth having (CLAUDE.md §5). So this narrows routing only on evidence
+     * that every retry would fail identically until a human changes the key.
+     */
+    const openRouterUsable = Boolean(effectiveOpenRouterKey)
+      && paidVerdict.meterFault?.gatewayDead !== true;
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
@@ -1183,7 +1202,7 @@ export default async function handler(req: any, res: any) {
         ? ['text', 'travel-tools']
         : [...textCapabilities],
       geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
-      openRouterAvailable: Boolean(effectiveOpenRouterKey),
+      openRouterAvailable: openRouterUsable,
       geminiCredentialScope: userKey ? 'user' : 'server',
       openRouterCredentialScope: openRouterKey ? 'user' : 'server',
       geminiCredentialPartition: credentialCircuitPartition(userKey),
@@ -1201,7 +1220,7 @@ export default async function handler(req: any, res: any) {
         models: routePlanningModels,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
-        openRouterAvailable: Boolean(effectiveOpenRouterKey),
+        openRouterAvailable: openRouterUsable,
         geminiCredentialScope: userKey ? 'user' : 'server',
         openRouterCredentialScope: openRouterKey ? 'user' : 'server',
         geminiCredentialPartition: credentialCircuitPartition(userKey),

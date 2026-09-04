@@ -149,12 +149,6 @@ export default async function handler(req: any, res: any) {
       openRouterViaGateway = false;
     }
   }
-  const summary = await summarizeInferenceReadiness({
-    geminiAvailable: geminiConfigured,
-    openRouterAvailable,
-    circuitStore: providerCircuitStore,
-  });
-  const circuitStore = getProviderCircuitStoreHealth();
   /*
    * Spend, where the operator can see it without asking anyone.
    *
@@ -162,11 +156,39 @@ export default async function handler(req: any, res: any) {
    * this platform had spent was to log in to OpenRouter. A budget nobody can
    * see is the same as no budget — the figures come from the provider, not
    * from our own arithmetic.
+   *
+   * READ BEFORE THE SUMMARY, not after. It used to run below, so the route
+   * count was computed from key PRESENCE while the answer to "does this key
+   * work" was fetched seconds later and used for nothing but display. That is
+   * how this endpoint reported openRouterConfigured: true, routeCount: 3 on a
+   * deployment where /auth/key answered HTTP 401 for that exact key.
    */
   // The gateway key when the env has none, so the figure reflects the key that
   // would actually be charged.
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
   const paid = await paidRouteAllowed(spendKey);
+
+  /*
+   * A gateway the provider has REFUSED is not a route, however well-formed its
+   * key looks. openRouterConfigured stays true — a key is genuinely present,
+   * and saying otherwise would send an operator looking for a missing secret
+   * instead of a rejected one — but it stops being counted as somewhere a turn
+   * can go.
+   *
+   * `ready` is deliberately left to fall out of the remaining routes rather
+   * than being forced false: Gemini is a separate gateway with its own
+   * credential, and failing every deployment over an OpenRouter key that needs
+   * rotating is exactly the imprecise blocking gate CLAUDE.md §5 warns about —
+   * the kind the next person mutes under pressure. If Gemini is up, this
+   * deployment can still serve, and the warning above says what is lost.
+   */
+  const openRouterRefused = paid.meterFault?.gatewayDead === true;
+  const summary = await summarizeInferenceReadiness({
+    geminiAvailable: geminiConfigured,
+    openRouterAvailable: openRouterAvailable && !openRouterRefused,
+    circuitStore: providerCircuitStore,
+  });
+  const circuitStore = getProviderCircuitStoreHealth();
   const duffel = duffelEnvPublicHint();
   const serpApiConfigured = isSerpApiConfigured(defaultSerpApiKey);
   /*
@@ -209,7 +231,16 @@ export default async function handler(req: any, res: any) {
     goldenCanaryHonored: isGoldenCanaryRequest(req),
     geminiConfigured: summary.geminiConfigured,
     geminiVia: gemini.source,
-    openRouterConfigured: summary.openRouterConfigured,
+    /*
+     * PRESENCE, deliberately — not summary.openRouterConfigured, which now
+     * reflects whether the gateway is USABLE. A key that exists and is refused
+     * must not read as "no key configured": that sends an operator hunting for
+     * a missing secret when the one they have is the problem. Presence here,
+     * validity in spend.meterFault, and routeCount below counts only what a
+     * turn can actually reach.
+     */
+    openRouterConfigured: openRouterAvailable,
+    openRouterCredentialRefused: openRouterRefused,
     openRouterEnvShape: openRouterHint.shape,
     openRouterEnvHint: openRouterHint.hint,
     openRouterViaGateway,

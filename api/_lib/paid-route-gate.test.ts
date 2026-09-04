@@ -200,3 +200,74 @@ test('no credential names the environment, not the provider', async () => {
   assert.equal(v.meterFault?.gatewayDead, true, 'without a key nothing on that gateway runs');
   assert.match(v.meterFault?.remedy || '', /OPENROUTER_API_KEY/);
 });
+
+test('a refusal the provider ANSWERED is cached; one we could not verify is not', async () => {
+  /*
+   * The distinction is the whole point. "OpenRouter said 401" is settled until
+   * a human changes the key — re-asking every turn adds 8 seconds to the path
+   * the user is waiting on, and that probe now also narrows routing. "We could
+   * not reach OpenRouter" is not settled, and caching it would pin paid routing
+   * off for a minute after one blip.
+   */
+  resetPaidRouteCache();
+  let answered = 0;
+  const rejects = (async () => {
+    answered += 1;
+    return { ok: false, status: 401, text: async () => JSON.stringify({ error: { message: 'Missing Authentication header' } }) };
+  }) as any;
+  const first = await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 1_000 });
+  assert.equal(first.meterFault?.cause, 'CREDENTIAL_REJECTED');
+  await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 30_000 });
+  assert.equal(answered, 1, 'a settled refusal must not be re-asked every turn');
+  await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 200_000 });
+  assert.equal(answered, 2, 'and it must still expire, so a repaired key is picked up');
+
+  resetPaidRouteCache();
+  let blips = 0;
+  const blip = (async () => { blips += 1; throw new Error('network down'); }) as any;
+  await paidRouteAllowed('sk-or-v1-blip', { fetchFn: blip, now: 1_000 });
+  await paidRouteAllowed('sk-or-v1-blip', { fetchFn: blip, now: 2_000 });
+  assert.equal(blips, 2, 'an unverified refusal is still re-checked next turn');
+});
+
+test('only an answered 401/403 may narrow routing', () => {
+  /*
+   * gatewayDead is now load-bearing: chat-handler drops OpenRouter from route
+   * planning on it. So it must fire ONLY where every retry would fail
+   * identically until a human acts. A timeout, a 5xx and a rate limit are all
+   * "we could not ask" or "not now" — narrowing on those would strand turns on
+   * a gateway that was about to work, which is the imprecise gate CLAUDE.md §5
+   * warns gets muted and then protects nothing.
+   */
+  const dead = (status, error) => decidePaidRoute({ ok: false, usage: null, limit: null, status, error }).meterFault?.gatewayDead;
+  assert.equal(dead(401, 'Missing Authentication header'), true);
+  assert.equal(dead(403, 'forbidden'), true);
+  assert.equal(dead(402, 'Insufficient credits'), false, 'an empty balance still serves free models');
+  assert.equal(dead(429, 'rate limited'), false, 'a rate limit is not now, not never');
+  assert.equal(dead(503, 'upstream'), false, 'the provider faltering is not a refused key');
+  assert.equal(dead(null, 'timed out after 8000ms'), false, 'we could not ask is not we were told no');
+});
+
+test('the router reads the meter, not just the key', async () => {
+  /*
+   * A source assertion, because planInferenceRoutes is called deep inside the
+   * chat handler with no seam to drive from a test — the same tradeoff taken
+   * deliberately in provider-failure-message.test.js.
+   *
+   * It guards the wiring, which is the part that was missing rather than the
+   * arithmetic: the verdict was computed one line above planInferenceRoutes and
+   * the plan still asked only whether a key EXISTED.
+   */
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const handler = readFileSync(path.join(import.meta.dirname, 'chat-handler.ts'), 'utf8');
+
+  assert.doesNotMatch(
+    handler,
+    /openRouterAvailable: Boolean\(effectiveOpenRouterKey\)/,
+    'presence is not validity — the meter has already answered by this point',
+  );
+  assert.match(handler, /gatewayDead !== true/, 'the plan must consult the meter fault');
+  const usableSites = handler.match(/openRouterAvailable: openRouterUsable/g) || [];
+  assert.equal(usableSites.length, 2, 'both planInferenceRoutes call sites, including the travel retry');
+});
