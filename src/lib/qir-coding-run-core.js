@@ -516,6 +516,33 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     return current;
   });
 
+  /*
+   * THE STOP BUTTON, client side.
+   *
+   * Phase 2 asks for pause/resume/cancel. PAUSED existed as a state and
+   * deriveQirContinuation already honoured it, but nothing could reach it — so
+   * a user with a runaway build could close the tab and stop the browser while
+   * the Run carried on believing it was mid-flight.
+   *
+   * These are NOT fire-and-forget like compaction. A stop the user asked for
+   * has to be acknowledged before the desk claims it stopped, or the button
+   * lies the way "retry once on a fallback engine" lied in a state where
+   * nothing would ever run again.
+   */
+  const pause = () => enqueue(async (current) => (
+    current?.runId ? accept(await requestQir({ action: 'coding.pause', runId: current.runId })) : current
+  ));
+
+  const resume = () => enqueue(async (current) => (
+    current?.status === 'PAUSED' ? accept(await requestQir({ action: 'coding.resume', runId: current.runId })) : current
+  ));
+
+  const cancel = (reason = '') => enqueue(async (current) => (
+    current?.runId
+      ? accept(await requestQir({ action: 'coding.cancel', runId: current.runId, ...(reason ? { reason } : {}) }))
+      : current
+  ));
+
   return {
     sync,
     beginModelAttempt,
@@ -523,5 +550,8 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,
+    pause,
+    resume,
+    cancel,
   };
 }

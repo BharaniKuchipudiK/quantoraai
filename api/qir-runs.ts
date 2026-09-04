@@ -13,6 +13,10 @@ import {
   beginQirCodingRecovery,
   promoteQirCodingCheckpoint,
   resumeQirCodingFromSnapshot,
+  pauseQirCodingRun,
+  resumeQirCodingRun,
+  cancelQirCodingRun,
+  qirRunHasStopped,
 } from "./_lib/qir-coding-runtime.js";
 import type { QirAgentRun, QirObservation, QirVerificationResult } from "./_lib/qir-contracts.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -332,6 +336,98 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       eventType: "coding.checkpoint_promoted",
       run,
       payload: { verificationId: verification.verificationId, evidenceRefs: verification.evidenceRefs, score: report.score },
+    }));
+  }
+
+  /*
+   * ---------------------------------------------------------------------------
+   * THE STOP BUTTON. Phase 2 asks for pause/resume/cancel and the runtime had
+   * none: PAUSED existed as a state in qir-contracts.ts, deriveQirContinuation
+   * already honoured it, and no action could ever reach it. A user with a
+   * runaway build had nothing the durable runtime understood — closing the tab
+   * stopped the browser, not the Run.
+   *
+   * PAUSE AND CANCEL ARE NOT THE SAME THING, and an earlier draft of mine had
+   * cancel parking at PAUSED, which would have made it a second pause with a
+   * different name. Pause is "stop for now" and keeps every artifact, budget and
+   * cursor intact. Cancel is "stop for good" and is terminal.
+   * ---------------------------------------------------------------------------
+   */
+
+  if (action === "coding.pause") {
+    if (qirRunHasStopped(record.run)) {
+      return res.status(409).json({ error: `A ${record.run.status} Run has already stopped.` });
+    }
+    /*
+     * Idempotent. A double-click, a retry after a dropped response, or two
+     * tabs pausing the same Run must not be an error — the caller asked for it
+     * to be paused and it is paused.
+     */
+    if (record.run.status === "PAUSED") {
+      return res.status(200).json({ run: record.run, storageVersion: record.storageVersion, durability: "persisted" });
+    }
+    const run = pauseQirCodingRun(record.run, now);
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-paused-${randomUUID()}`,
+      eventType: "coding.paused",
+      run,
+      payload: { pausedFrom: record.run.status },
+    }));
+  }
+
+  if (action === "coding.resume") {
+    if (record.run.status !== "PAUSED") {
+      return res.status(409).json({ error: `Only a PAUSED Run can resume; this one is ${record.run.status}.` });
+    }
+    /*
+     * Where to resume TO is derived from the Run itself rather than remembered.
+     * deriveQirContinuation returns null for a paused Run by design, so it is
+     * asked about a non-paused copy: if there is somewhere to continue, the Run
+     * is EXECUTING; if not, it is QUEUED and coding.attempt can pick it up
+     * (that handler accepts QUEUED and REPLANNING).
+     *
+     * Deriving beats storing a pre-pause status that could be stale by the time
+     * anyone resumes — the plan is the truth about where the work is.
+     */
+    const run = resumeQirCodingRun(record.run, now);
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-resumed-${randomUUID()}`,
+      eventType: "coding.resumed",
+      run,
+      payload: { resumedTo: run.status },
+    }));
+  }
+
+  if (action === "coding.cancel") {
+    if (qirRunHasStopped(record.run)) {
+      return res.status(409).json({ error: `A ${record.run.status} Run has already stopped.` });
+    }
+    const reason = safeText(req.body?.reason, 512) || "Cancelled by the user.";
+    /*
+     * Terminal, and the candidate is REJECTED rather than left dangling. A
+     * candidate that survives a cancel is what coding.attempt refuses to start
+     * over ("a candidate artifact already exists"), so leaving one behind would
+     * make the cancelled Run's own wreckage block the next one.
+     *
+     * Verified artifacts are left alone: work that passed independent
+     * verification before the cancel is still real, and destroying it would
+     * lose an outcome the user already earned.
+     */
+    const run = cancelQirCodingRun(record.run, now);
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-cancelled-${randomUUID()}`,
+      eventType: "coding.cancelled",
+      run,
+      payload: { cancelledFrom: record.run.status, reason },
     }));
   }
 
