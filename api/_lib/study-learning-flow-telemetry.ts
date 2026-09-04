@@ -1,6 +1,7 @@
 import { currentStudyTraceId } from './study-observability.js';
+import type { StudyRepresentationRendererKind } from './study-representation-capabilities.js';
 
-export const STUDY_LEARNING_FLOW_TELEMETRY_VERSION = 'study-learning-flow-telemetry-2026-09-02.1';
+export const STUDY_LEARNING_FLOW_TELEMETRY_VERSION = 'study-learning-flow-telemetry-2026-09-04.1';
 
 export type StudyLearningFlowMetric =
   | 'assessment_availability'
@@ -42,6 +43,7 @@ export function emitStudyLearningFlowMetric(input: {
   metric: StudyLearningFlowMetric;
   outcome: StudyLearningFlowOutcome;
   evidenceKind?: StudyLearningFlowEvidenceKind;
+  rendererKind?: StudyRepresentationRendererKind;
 }): void {
   console.info('Study learning-flow metric', {
     version: STUDY_LEARNING_FLOW_TELEMETRY_VERSION,
@@ -49,5 +51,6 @@ export function emitStudyLearningFlowMetric(input: {
     metric: input.metric,
     outcome: input.outcome,
     ...(input.evidenceKind ? { evidenceKind: input.evidenceKind } : {}),
+    ...(input.rendererKind ? { rendererKind: input.rendererKind } : {}),
   });
 }

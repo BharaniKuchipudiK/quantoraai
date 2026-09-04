@@ -3,6 +3,7 @@ import { authenticateAdminRequest } from "../admin-auth.js";
 import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured } from "../store.js";
 import { getProductInsights } from "../product-analytics.js";
 import { getTechnicalInsights } from "../technical-analytics.js";
+import { reportStudyRepresentationCoverage } from "../study-representation-coverage.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -66,6 +67,14 @@ export default async function handler(req: any, res: any) {
     /* PCL North-Star (Roadmap 9.1): per-surface 7-day proactive-suggestion
      * acceptance rate — the honest measure of whether the PCL adds value. */
     suggestionAcceptance: suggestionAcceptance ?? [],
+
+    /*
+     * Capability catalog, not live traffic. Operators can see which Study
+     * renderer families exist and that unsupported requests stay unavailable,
+     * without learner text or identity. Live representation_coverage events
+     * remain privacy-safe log lines.
+     */
+    studyRepresentationCoverage: reportStudyRepresentationCoverage(),
 
     /*
      * Deliberately absent rather than fabricated: uptime, CPU, memory and
