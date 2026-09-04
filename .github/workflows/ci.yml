@@ -166,6 +166,28 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/workspace-contract-browser-gate.mjs
 
+      # NON-BLOCKING, with a stated end condition rather than a shrug — the same
+      # rule the deployed golden was put under.
+      #
+      # It reproduces an OPEN defect: the second build in one page session does
+      # not auto-open its workspace. The files are extracted, the VFS commits
+      # (measured: committed=true shopFiles=4), setIsWorkspaceMode(true) runs,
+      # and the preview still never mounts until the user clicks Preview. The
+      # deployed golden hits this as its website transaction after the
+      # calculator passes.
+      #
+      # It is wired in RED on purpose. Hiding a reproduction until its fix lands
+      # is how a defect stops being counted, and this one is a real product
+      # fault: every second build in a session silently shows no preview. When
+      # the auto-open bug is fixed this loses continue-on-error and becomes
+      # blocking; that is the end condition.
+      - name: Reproduce the second build in one session (known red)
+        id: second_transaction
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/second-transaction-browser-gate.mjs
+
       - name: Execute platform experience budget
         id: platform_experience
         continue-on-error: true

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildStudioJobCard } from './studio-job-card.js';
 import {
   applyWorkspaceFromChat,
   messageHasExtractableWorkspaceCode,
@@ -409,4 +410,89 @@ test('shipping calculator on a boutique does not strip shop catalog', () => {
   assert.equal(Boolean(next.vfs['products.json']), true);
   assert.match(next.vfs['index.html'].content, /product-card|boutique|Add to Cart/i);
   assert.match(next.job?.purpose || '', /shop/i);
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * A NEW PRODUCT IS NOT A REGRESSION OF THE OLD ONE.
+ *
+ * The regression guard in applyWorkspaceFromChat protects a STATED contract:
+ * the job card's mustWork list ("Number buttons still change the display",
+ * "Keep this a calculator, not a different app"). isStudioProductSwitch is what
+ * lets a deliberate switch through — and it returns false the moment there is
+ * no prior job card, because it has nothing to compare the new brief against.
+ *
+ * So a desk that kept its FILES but lost its JOB CARD could never be recognised
+ * as switching product, and the guard judged a brand-new build a regression of
+ * the old one. Silently: `rejected` returns with no error raised anywhere.
+ *
+ * Measured before the fix, as pure functions:
+ *   bakery onto an empty desk               -> rejected: false
+ *   bakery onto a calculator desk, job null -> rejected: TRUE
+ *   bakery onto a calculator desk, job set  -> rejected: false
+ * ---------------------------------------------------------------------------
+ */
+const calculatorDesk = () => ({
+  'package.json': { content: '{"name":"app","dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"}}', language: 'json' },
+  'src/main.jsx': { content: "import { createRoot } from 'react-dom/client';\nimport App from './App.jsx';\ncreateRoot(document.getElementById('root')).render(<App />);", language: 'jsx' },
+  'src/App.jsx': { content: "import React,{useState} from 'react';\nexport default function App(){const [v,setV]=useState('0');\nreturn <main><h1>Calculator</h1><output data-testid=\"calculator-display\">{v}</output><button data-testid=\"calculator-one\" onClick={()=>setV('1')}>1</button></main>;}", language: 'jsx' },
+  'src/styles.css': { content: 'body{margin:0}', language: 'css' },
+});
+
+const bakeryReply = [
+  'Here is the complete, self-contained Vite React project for Sunrise Bakery.',
+  '',
+  '```json filepath="package.json"',
+  '{"name":"bakery","dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"}}',
+  '```',
+  '',
+  '```jsx filepath="src/main.jsx"',
+  "import { createRoot } from 'react-dom/client';",
+  "import App from './App.jsx';",
+  "createRoot(document.getElementById('root')).render(<App />);",
+  '```',
+  '',
+  '```jsx filepath="src/App.jsx"',
+  "import React from 'react';",
+  'export default function App(){return <main><h1>Sunrise Bakery</h1><button data-testid="website-cta">View the menu</button></main>;}',
+  '```',
+  '',
+  '```css filepath="src/styles.css"',
+  'body{margin:0}',
+  '```',
+].join('\n');
+
+const BAKERY_BRIEF = 'Create a simple polished one-page React website for a neighborhood bakery.';
+
+test('a complete new build over a desk with no job card is not rejected', () => {
+  const result = applyWorkspaceFromChat(bakeryReply, calculatorDesk(), null, { brief: BAKERY_BRIEF });
+  assert.equal(result.rejected, false, 'with no stated contract there is nothing to regress against');
+  assert.equal(result.didUpdate, true, 'and the new product must actually reach the desk');
+});
+
+test('the guard still protects a product that DID state its contract', () => {
+  /*
+   * §4: what does this check do when the defect is present? A same-product
+   * refinement that drops the calculator's own promises must still be refused,
+   * or the guard is decorative.
+   */
+  const job = buildStudioJobCard({ brief: 'Create a simple working React calculator', vfs: calculatorDesk(), existing: null });
+  assert.ok(job?.mustWork?.length, 'the calculator states what must keep working');
+
+  const guttedCalculator = [
+    'Updated the calculator.',
+    '',
+    '```jsx filepath="src/App.jsx"',
+    "import React from 'react';",
+    'export default function App(){return <main><h1>Calculator</h1></main>;}',
+    '```',
+  ].join('\n');
+  const refined = applyWorkspaceFromChat(guttedCalculator, calculatorDesk(), job, { brief: 'make the calculator prettier' });
+  assert.equal(refined.rejected, true, 'losing the display and the keys is a real regression');
+});
+
+test('a stated switch is still allowed, exactly as before', () => {
+  const job = buildStudioJobCard({ brief: 'Create a simple working React calculator', vfs: calculatorDesk(), existing: null });
+  const switched = applyWorkspaceFromChat(bakeryReply, calculatorDesk(), job, { brief: BAKERY_BRIEF });
+  assert.equal(switched.rejected, false);
 });
