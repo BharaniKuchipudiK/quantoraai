@@ -20,7 +20,6 @@ import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.j
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
-import StudioMissionCard from './StudioMissionCard';
 import {
   PINNED_DESK_TAB,
   closeDeskTab,
@@ -123,6 +122,14 @@ const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
  * modalData exists. Anything in here that the first frame cannot show belongs
  * behind a lazy boundary.
  */
+/*
+ * Lazy, like the other composer chrome above. The desk entry chunk sits within
+ * a few hundred bytes of its 300,000-byte gate, and this card is chrome that
+ * renders under a Suspense boundary anyway — moving it out costs nothing at
+ * runtime and buys the margin back. Raising the cap instead would retire the
+ * only check that notices the desk getting heavier.
+ */
+const StudioMissionCard = lazy(() => import('./StudioMissionCard.jsx'));
 const StudioToolsMenu = lazy(() => import('./StudioToolsMenu.jsx'));
 const StudioDecisionModal = lazy(() => import('./StudioDecisionModal.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
@@ -4344,6 +4351,7 @@ Paused — ${autoPauseRef.current}.`
 
       {/* Clean Prompt Console Input Area */}
       <div style={{ position: 'relative', width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
+        <Suspense fallback={null}>
         <StudioMissionCard
           mission={
             // Coding Desk: mission chrome is not a progress indicator — it sits forever
@@ -4367,6 +4375,7 @@ Paused — ${autoPauseRef.current}.`
           textColor={textColor}
           subtextColor={subtextColor}
         />
+        </Suspense>
         {partnerStatus && !isGenerating && previewShellIsWarming(previewRunStatus) ? (
           <div
             data-quantora-partner-status="true"
