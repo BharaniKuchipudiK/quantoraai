@@ -3,6 +3,7 @@ import {
   studyAlgebraVisualVariant,
   studyElectricityVisualVariant,
   studyFieldVisualVariant,
+  studyGeometryVisualVariant,
   studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
@@ -47,6 +48,7 @@ function PictureArt({ isLight, caption, kind }) {
   const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(caption) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(caption) : null;
   const algebraVariant = kind === 'algebra-balance' ? studyAlgebraVisualVariant(caption) : null;
+  const geometryVariant = kind === 'geometry-construction' ? studyGeometryVisualVariant(caption) : null;
   const processSteps = kind === 'process-flow' ? studyProcessSteps(caption) : [];
   const timelinePoints = kind === 'timeline' ? studyTimelinePoints(caption) : [];
   const numberLine = kind === 'number-line' ? studyNumberLineSpec(caption) : null;
@@ -185,6 +187,18 @@ function PictureArt({ isLight, caption, kind }) {
           <Arrow x1="150" y1="80" x2="208" y2="80" label="" color="#f97316" />
           <text x="180" y="64" textAnchor="middle" fill="#f97316" fontSize="11" fontWeight="800">−8 both sides</text>
           <text x="180" y="158" textAnchor="middle" fill={muted} fontSize="11">the same operation on both sides keeps equality and isolates x</text>
+        </>
+      ) : null}
+      {kind === 'geometry-construction' && geometryVariant === 'right-triangle' ? (
+        <>
+          <line x1="72" y1="140" x2="72" y2="48" stroke={ink} strokeWidth="4" />
+          <line x1="72" y1="140" x2="250" y2="140" stroke={ink} strokeWidth="4" />
+          <line x1="72" y1="48" x2="250" y2="140" stroke="#f97316" strokeWidth="4" />
+          <rect x="72" y="126" width="14" height="14" fill="none" stroke="#0ea5e9" strokeWidth="2" />
+          <text x="52" y="98" fill={ink} fontSize="16" fontWeight="800">a</text>
+          <text x="154" y="160" fill={ink} fontSize="16" fontWeight="800">b</text>
+          <text x="178" y="86" fill="#f97316" fontSize="16" fontWeight="800">c</text>
+          <text x="180" y="172" textAnchor="middle" fill={muted} fontSize="12">a² + b² = c² on the hypotenuse</text>
         </>
       ) : null}
       {kind === 'biology-cell' ? (
@@ -362,11 +376,12 @@ export default function StudyPicture({ caption = '', isLight = false }) {
   const fieldVariant = kind === 'field-lines' ? studyFieldVisualVariant(label) : null;
   const graphVariant = kind === 'graph' ? studyGraphVisualVariant(label) : null;
   const algebraVariant = kind === 'algebra-balance' ? studyAlgebraVisualVariant(label) : null;
+  const geometryVariant = kind === 'geometry-construction' ? studyGeometryVisualVariant(label) : null;
   if (!kind) return null;
   return (
     <figure
       data-quantora-study-picture={kind}
-      data-quantora-study-picture-variant={physicsVariant || electricityVariant || fieldVariant || graphVariant || algebraVariant || undefined}
+      data-quantora-study-picture-variant={physicsVariant || electricityVariant || fieldVariant || graphVariant || algebraVariant || geometryVariant || undefined}
       style={{
         margin: '2px 0 18px',
         maxWidth: '430px',
