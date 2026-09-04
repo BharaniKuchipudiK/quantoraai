@@ -277,6 +277,7 @@ const TechnicalPredictiveTab = ({ metrics }) => {
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
       <TechnicalAnalyticsPanel
         technical={metrics.technical}
+        studyRepresentationCoverage={metrics.studyRepresentationCoverage}
         window={metrics.window}
         daily={metrics.daily}
         isLight={isLight}
