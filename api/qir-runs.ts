@@ -363,8 +363,17 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  const record = await createQirRun(userSub, candidate);
-  if (!record) return res.status(503).json({ error: "Unable to persist the durable Run.", reason: "persist-failed" });
+  const created = await createQirRun(userSub, candidate);
+  if (created.status !== "created") {
+    // Same verdict as the commit path: this is the FIRST write a new Run makes,
+    // so an unapplied migration surfaces here before it surfaces anywhere else.
+    return res.status(503).json({
+      error: "Unable to persist the durable Run.",
+      reason: "persist-failed",
+      ...(created.diagnosis ? { diagnosis: created.diagnosis } : {}),
+    });
+  }
+  const record = created.record;
   return res.status(201).json({
     run: record.run,
     storageVersion: record.storageVersion,

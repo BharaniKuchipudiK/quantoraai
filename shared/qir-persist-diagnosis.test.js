@@ -115,8 +115,27 @@ test('[was-red] every boundary between the store and the chip carries the verdic
 
   const store = read('api/_lib/qir-run-store.ts');
   assert.match(store, /diagnosis\?: \{ cause: string; remedy: string \} \| null/, 'the store type must carry it');
-  assert.match(store, /diagnosis: diagnoseQirPersistFailure\(\{ httpStatus: response\.status, detail \}\)/,
-    'and must classify at the one place the raw detail exists');
+
+  /*
+   * BOTH write paths, not just one. createQirRun is the FIRST call a new Run
+   * makes, so an unapplied migration surfaces there before it surfaces at
+   * commit. The first version of this change diagnosed commit and left create
+   * returning a bare null - the same dropped-boundary defect, one function
+   * over, on the path the operator actually hits first.
+   */
+  assert.equal(
+    (store.match(/diagnosis: diagnoseQirPersistFailure\(\{ httpStatus: response\.status, detail \}\)/g) || []).length,
+    2,
+    'both createQirRun and commitQirRunEvent must classify their own failure',
+  );
+  assert.doesNotMatch(
+    store,
+    /export async function createQirRun\([^)]*\): Promise<QirPersistedRun \| null>/,
+    'createQirRun must not go back to a bare null, which can carry no verdict',
+  );
+
+  assert.match(read('api/qir-runs.ts'), /created\.diagnosis \? \{ diagnosis: created\.diagnosis \} : \{\}/,
+    'the create route must forward the verdict too');
 
   for (const route of ['api/qir-runs.ts', 'api/qir-resources.ts', 'api/qir-context.ts']) {
     assert.match(read(route), /result\.diagnosis \? \{ diagnosis: result\.diagnosis \} : \{\}/,

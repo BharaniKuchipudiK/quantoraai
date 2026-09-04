@@ -119,21 +119,40 @@ function firstRecord(payload: any): QirPersistedRun | null {
   return persistedRun(row);
 }
 
-export async function createQirRun(userSub: string, run: QirAgentRun): Promise<QirPersistedRun | null> {
-  if (!userSub || !isValidQirRunSnapshot(run)) return null;
+/*
+ * CREATE IS THE FIRST CALL, SO IT NEEDS THE DIAGNOSIS MOST.
+ *
+ * This returned a bare null and console.warn'd the reason, so the very first
+ * failure a new Run can hit - the one you get when the migration was never
+ * applied to this project - reached the desk with no cause at all. The commit
+ * path was given a verdict first; diagnosing the second failure mode and not
+ * the first is the same dropped-boundary defect, one function over.
+ */
+export type QirRunCreateResult =
+  | { status: "created"; record: QirPersistedRun }
+  | { status: "unavailable"; diagnosis?: { cause: string; remedy: string } | null };
+
+export async function createQirRun(userSub: string, run: QirAgentRun): Promise<QirRunCreateResult> {
+  if (!userSub || !isValidQirRunSnapshot(run)) return { status: "unavailable" };
   const response = await requestRaw("rpc/create_qir_run", {
     method: "POST",
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({ p_user_sub: userSub, p_run_id: run.runId, p_state: run }),
   });
   if (!response?.ok) {
-    if (response) console.warn(`QIR create run -> ${response.status}`, await response.text());
-    return null;
+    if (!response) return { status: "unavailable" };
+    const detail = await response.text();
+    console.warn(`QIR create run -> ${response.status}`, detail);
+    return {
+      status: "unavailable",
+      diagnosis: diagnoseQirPersistFailure({ httpStatus: response.status, detail }),
+    };
   }
   try {
-    return firstRecord(await response.json());
+    const record = firstRecord(await response.json());
+    return record ? { status: "created", record } : { status: "unavailable" };
   } catch {
-    return null;
+    return { status: "unavailable" };
   }
 }
 
