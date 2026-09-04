@@ -192,6 +192,7 @@ test('[was-red] the working context is compacted when the Run advances', async (
     });
     await client.sync();
     await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
 
     const compaction = transport.calls.find((call) => call.url.startsWith('/api/qir-context'));
     assert.ok(compaction, `nothing called /api/qir-context. Called: ${transport.calls.map((c) => c.url).join(', ')}`);
@@ -218,6 +219,7 @@ test('compaction sends file NAMES, never file contents', async () => {
     });
     await client.sync();
     await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
 
     const compaction = transport.calls.find((call) => call.url.startsWith('/api/qir-context'));
     assert.ok(compaction);
@@ -251,6 +253,7 @@ test('[was-red] a build never fails because the context could not be compacted',
       });
       await client.sync();
       const settled = await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
       assert.ok(settled, `${why}: the caller must still get its Run back`);
       assert.equal(errors.length, 0, `${why}: compaction must not surface an error to the desk`);
     } finally { transport.restore(); }
@@ -272,8 +275,88 @@ test('[was-red] compaction is automatic, not a method someone must remember to c
   const returned = source.slice(source.lastIndexOf('  return {'));
   assert.doesNotMatch(returned, /compactWorkingContext/, 'it must NOT be exported for someone to remember');
   assert.equal(
-    (source.match(/await compactWorkingContext\(/g) || []).length,
+    (source.match(/void compactWorkingContext\(/g) || []).length,
     2,
     'both paths where the Run advances — promotion and runtime observation — must compact',
   );
+});
+
+test('[was-red] compaction is never on the path the user is waiting for', async () => {
+  /*
+   * THE REGRESSION THIS PINS. The first version awaited compaction inside
+   * reportPreviewStatus. The desktop app runs with no durable storage, so every
+   * preview status bought a doomed network round trip on the critical path —
+   * and the desktop smoke gate went red on "Cmd/Ctrl+S wrote the edit to disk"
+   * with a console 503 beside it. It passed on the commit before.
+   *
+   * Compaction is an optimisation for a worker that may never arrive. The
+   * caller must return without it, however slow the route is.
+   */
+  const original = globalThis.fetch;
+  let released;
+  const hold = new Promise((resolve) => { released = resolve; });
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith('/api/qir-context')) {
+      await hold;                       // a route that never answers in time
+      return { ok: true, json: async () => ({}) };
+    }
+    if (init?.body) JSON.parse(init.body);
+    return { ok: true, json: async () => ({ run: EXECUTING_RUN }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs: {}, job: {} }),
+    });
+    await client.sync();
+    const settled = await Promise.race([
+      client.reportPreviewStatus({ kind: 'runtime', status: 'clean' }).then(() => 'returned'),
+      new Promise((resolve) => { setTimeout(() => resolve('blocked'), 250); }),
+    ]);
+    assert.equal(settled, 'returned', 'the caller must not wait on compaction');
+  } finally {
+    released();
+    globalThis.fetch = original;
+  }
+});
+
+test('[was-red] it stops asking once the deployment says storage is unconfigured', async () => {
+  /*
+   * Repeating a request that has been definitively refused is how a console
+   * fills with 503s that mask a real one — which is what the desktop gate
+   * surfaced.
+   */
+  let contextCalls = 0;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('/api/qir-context')) {
+      contextCalls += 1;
+      return { ok: false, status: 503, json: async () => ({ reason: 'storage-unconfigured' }) };
+    }
+    return { ok: true, json: async () => ({ run: EXECUTING_RUN }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs: {}, job: {} }),
+    });
+    await client.sync();
+    for (let i = 0; i < 4; i += 1) {
+      await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    }
+    assert.equal(contextCalls, 1, `asked ${contextCalls} times; a refused deployment must be asked once`);
+  } finally { globalThis.fetch = original; }
+});
+
+test('[was-red] compaction never overwrites the live Run with its own reply', async () => {
+  /*
+   * Accepting the returned Run would let a late compaction land out of order
+   * with a newer transition and replace runNow with a staler snapshot. The
+   * compacted context is durable the moment the route commits it; taking it
+   * back is a data race for nothing.
+   */
+  const source = readFileSync(new URL('./qir-coding-run-core.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('const compactWorkingContext'), source.indexOf('const requestPremiumEscalation'));
+  assert.doesNotMatch(body, /accept\(/, 'compaction must not feed its response back into the client state');
 });

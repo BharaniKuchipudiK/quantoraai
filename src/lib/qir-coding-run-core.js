@@ -261,7 +261,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * THE GAP THIS CLOSES. The Context Manager — /api/qir-context,
    * compactQirWorkingContext, the whole bounded-context contract — shipped
    * complete on 2026-09-02: typed, tested, deployed, and called by NOTHING.
-   * It was the last entry in the served-route baseline, and the twin of the
+   * It was the last QIR entry in the served-route baseline, and the twin of the
    * Resource Governor #523 found the same way.
    *
    * WHY THIS IS NOT A NEW EXPORTED METHOD. The obvious wiring is to expose
@@ -274,16 +274,32 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    *
    * So compaction is automatic, and fires where the Run has definitively moved:
    * reportPreviewStatus is the point at which an observation, and possibly a
-   * promotion, has already been committed. That is when a bounded snapshot is
-   * worth taking and when nextAction is meaningful to a fresh worker.
+   * promotion, has already been committed.
    *
-   * IT MAY NEVER COST THE USER A BUILD. Every failure resolves to silence: no
-   * throw, no retry, no change to the Run the caller is holding. Compaction is
-   * an optimisation for a worker that may never arrive — the same fail-open
-   * rule the governor follows, and the invariant #516 added.
+   * IT IS NOT AWAITED, AND THAT IS THE FIX FOR A REAL REGRESSION.
+   *
+   * The first version awaited this inside reportPreviewStatus and turned the
+   * desktop smoke gate red: "Cmd/Ctrl+S wrote the edit to disk" failed with a
+   * console 503 beside it. The desktop app runs with no durable storage, so
+   * every preview status bought a doomed network round trip on the critical
+   * path — and the save check behind it lost the race.
+   *
+   * Compaction is an optimisation for a worker that may never arrive. Nothing
+   * the user is waiting for may ever wait for it, so callers fire and forget.
+   *
+   * IT ALSO DOES NOT ACCEPT THE RETURNED RUN. Landing out of order with a later
+   * transition would overwrite runNow with a staler snapshot. The compacted
+   * context is durable server-side the moment the route commits it; the client
+   * has no need of it, and taking it back is a data race for nothing.
+   *
+   * AND IT STOPS ASKING once the deployment says storage is not configured.
+   * Repeating a request that has already been definitively refused is how a
+   * console fills with 503s that mask a real one.
    */
+  let storageUnconfigured = false;
+
   const compactWorkingContext = async (current, note) => {
-    if (!current?.runId) return;
+    if (!current?.runId || storageUnconfigured) return;
     try {
       const { vfs, goal, job } = readOptions();
       const files = Object.keys(vfs || {});
@@ -310,13 +326,12 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
           recentInteractions: note ? [String(note).slice(0, 500)] : [],
         }),
       });
-      if (!response.ok) return;
-      const data = await response.json().catch(() => null);
-      // The compacted context rides on the returned Run; accepting it keeps the
-      // local snapshot and the durable one at the same storageVersion.
-      if (data?.run) accept(data);
+      if (response.status === 503) {
+        const body = await response.json().catch(() => ({}));
+        if (body?.reason === 'storage-unconfigured') storageUnconfigured = true;
+      }
     } catch {
-      /* A build must never fail because a snapshot could not be taken. */
+      /* A build must never fail, or slow down, because a snapshot was missed. */
     }
   };
 
@@ -486,7 +501,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         job,
       });
       const next = accept(promoted);
-      await compactWorkingContext(next, 'preview quality verified; artifact promoted');
+      void compactWorkingContext(next, 'preview quality verified; artifact promoted');
       return next;
     }
 
@@ -497,7 +512,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     const success = reported === 'clean';
     if ((!failure && !success) || current.status !== 'EXECUTING') return current;
     current = accept(await observePreview(current, failure));
-    await compactWorkingContext(current, failure ? 'preview reported a runtime failure' : 'preview ran clean');
+    void compactWorkingContext(current, failure ? 'preview reported a runtime failure' : 'preview ran clean');
     return current;
   });
 
