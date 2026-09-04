@@ -77,7 +77,9 @@ await page.route('**/api/**', async (route) => {
       ? 'isolation'
       : /unsupported-concept/.test(message)
         ? 'unsupported'
-        : /magnetic|right[- ]hand/.test(message)
+        : /both sides|equation transformation/.test(message)
+          ? 'algebra-transform'
+          : /magnetic|right[- ]hand/.test(message)
           ? 'magnetic'
           : /displacement[- ]time/.test(message)
             ? 'displacement-time'
@@ -93,6 +95,12 @@ await page.route('**/api/**', async (route) => {
         '<quantora-study-picture caption="Resolve a vector into x and y components on the coordinate axes" />',
         '',
         'Split the resultant into horizontal and vertical components first. Predict which component increases when the angle increases, then answer that one check.',
+      ].join('\n');
+    } else if (mode === 'algebra-transform') {
+      reply = [
+        '<quantora-study-picture caption="Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x" />',
+        '',
+        'The same operation on both sides keeps equality. What is x after subtracting 8 from both sides?',
       ].join('\n');
     } else if (mode === 'magnetic') {
       reply = [
@@ -245,6 +253,28 @@ try {
   const magneticText = (await magneticLesson.textContent()) || '';
   if ((magneticText.match(/\?/g) || []).length > 1) {
     throw new Error('One-action pacing failed: magnetic-field lesson asked multiple learner questions.');
+  }
+
+  // 1e) A both-sides request must teach the transformation, not a static scale.
+  const lessonsBeforeAlgebra = await studyLessons.count();
+  await textarea.fill('Teach me solving by doing the same to both sides visually.');
+  await textarea.press('Enter');
+  const algebraLesson = studyLessons.nth(lessonsBeforeAlgebra);
+  await visible(algebraLesson, 'Algebra transformation lesson did not render.', 15_000);
+  const algebraPicture = algebraLesson.locator('[data-quantora-study-picture="algebra-balance"][data-quantora-study-picture-variant="transformation"]').first();
+  await visible(algebraPicture, 'Both-sides request rendered a static scale instead of the transformation visual.', 15_000);
+  if (await algebraLesson.locator('[data-quantora-study-picture-variant="scale"]').count()) {
+    throw new Error('Algebra transformation lesson leaked the static scale picture.');
+  }
+  const algebraSvg = algebraPicture.locator('svg[role="img"]').first();
+  await visible(algebraSvg, 'Algebra transformation visual is missing a screen-reader image role.');
+  const algebraLabel = String(await algebraSvg.getAttribute('aria-label') || '');
+  if (!/both sides|isolate|subtract|transformation/i.test(algebraLabel)) {
+    throw new Error('Algebra transformation visual aria-label does not describe the both-sides operation.');
+  }
+  const algebraText = (await algebraLesson.textContent()) || '';
+  if ((algebraText.match(/\?/g) || []).length > 1) {
+    throw new Error('One-action pacing failed: algebra transformation lesson asked multiple learner questions.');
   }
 
   // 2) Unsupported concept should fail honestly (no fake picture).

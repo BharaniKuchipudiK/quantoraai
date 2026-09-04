@@ -150,6 +150,17 @@ export function studyGraphVisualVariant(caption = '') {
   return 'slope';
 }
 
+/**
+ * Algebra is one renderer family. A both-sides transformation lesson must not
+ * inherit the static scale picture — that restates equality instead of showing
+ * the operation that keeps it.
+ */
+export function studyAlgebraVisualVariant(caption = '') {
+  return /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(String(caption || ''))
+    ? 'transformation'
+    : 'scale';
+}
+
 /** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
 const STOCK_SCENE_CAPTION = /newton under the tree|apple fall the same way|book at rest on a table|two forces, no motion|truck vs car|step out of a canoe|rocket pushes gas|net force and mass together|on ice, a shove keeps going/i;
 
@@ -297,6 +308,9 @@ export function ensureStudyTeachingVisual(text = '', topic = '') {
   }
   if (kind === 'field-lines' && /\b(?:magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i.test(hay)) {
     caption = 'Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire';
+  }
+  if (kind === 'algebra-balance' && /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(hay)) {
+    caption = 'Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x';
   }
   if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
     caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';

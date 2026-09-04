@@ -163,6 +163,13 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
   assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
 });
 
+test('a both-sides transformation caption is a real algebra picture, not a dropped decorative picture', () => {
+  assert.equal(studyPictureFitsTopic(
+    'Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x',
+    'Teach me solving by doing the same to both sides visually.',
+  ), true);
+});
+
 test('a magnetic right-hand-rule caption is a real field picture, not a dropped decorative picture', () => {
   assert.equal(studyPictureFitsTopic(
     'Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire',
