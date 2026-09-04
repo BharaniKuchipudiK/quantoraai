@@ -16,7 +16,7 @@ import StudioInlineSuggestions from './StudioInlineSuggestions';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
-import { buildStudioJobCard, studioJobCardLabel } from '../lib/studio-job-card.js';
+import { buildStudioJobCard, studioJobCardLabel, jobCardForCheckout } from '../lib/studio-job-card.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
@@ -727,6 +727,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         return;
       }
       setVfs(nextVfs);
+      /*
+       * The desk's product is now this repository, so say so. Without this the
+       * old job card outlives the files it described: a desk that had built a
+       * shop kept asking whether the catalog and bag still work after a
+       * checkout of an unrelated application. See jobCardForCheckout.
+       */
+      setDeskJob(jobCardForCheckout({ owner: data.owner, repo: data.repo }));
       // Seed desk git from the commit we opened, so status immediately after
       // reports a clean tree rather than calling the whole project untracked.
       seedDeskRepoFromCheckout(activeSessionId || '', data.files, {
