@@ -30,6 +30,14 @@ import {
 
 const principal = { token: "gh-test-token", login: "octocat" } as any;
 
+/** A GitHub reply carrying one JSON body, in the shape githubRequest reads. */
+const fetchReturning = (body: unknown) => (async () => ({
+  ok: true,
+  status: 200,
+  json: async () => body,
+  text: async () => JSON.stringify(body),
+})) as any;
+
 const declaration = (name: string) => {
   const found = githubFunctionDeclarations.find((tool) => tool.name === name);
   assert.ok(found, `${name} is not declared`);
@@ -91,13 +99,70 @@ test("a declared state knob IS honoured where one exists", async () => {
  * anything that can write. A future write tool cannot be added without the
  * import appearing here, and no wording can hide it.
  */
-const READ_ONLY_TOOLS = ["read_pull_request", "list_pull_requests", "list_issues"];
+const READ_ONLY_TOOLS = ["read_pull_request", "list_pull_requests", "list_issues", "read_repo_file"];
 
 test("the declared set is exactly the reviewed read-only set", () => {
   assert.deepEqual([...GITHUB_TOOL_NAMES].sort(), [...READ_ONLY_TOOLS].sort());
   for (const tool of githubFunctionDeclarations) {
     assert.match(tool.description, /only reads/i, `${tool.name} must tell the model it only reads`);
   }
+});
+
+test("read_repo_file returns the file text its description promises, and admits truncation", async () => {
+  /*
+   * The whole reason this tool exists: on 2026-09-04 a user opened a 195-file
+   * repository and asked whether it was secure. The model could see 24 file
+   * NAMES and no source, said so honestly, and could not answer. A description
+   * that promised contents while the executor returned a listing would have
+   * turned that honest refusal into a confident invention — which is the class
+   * this file was written to close.
+   */
+  const file = { path: "api/auth.ts", content: Buffer.from("const KEY = 'hardcoded';\n").toString("base64"), type: "file", encoding: "base64", sha: "abc123" };
+  const result = await executeGithubToolCall(
+    "read_repo_file",
+    { owner: "o", repo: "r", path: "api/auth.ts" },
+    { principal, fetchImpl: fetchReturning(file) },
+  );
+  assert.equal(result.ok, true);
+  assert.match(result.file.content, /hardcoded/, "the description promises text content, so text content must come back");
+  assert.equal(result.file.truncated, false);
+  assert.equal(result.note, undefined, "an untruncated file must not carry a truncation warning");
+});
+
+test("a truncated file says so in the payload, not only in the description", async () => {
+  const big = "x".repeat(5_000);
+  const result = await executeGithubToolCall(
+    "read_repo_file",
+    { owner: "o", repo: "r", path: "big.ts", maxBytes: 1_000 },
+    { principal, fetchImpl: fetchReturning({ path: "big.ts", type: "file", encoding: "base64", sha: "s", content: Buffer.from(big).toString("base64") }) },
+  );
+  assert.equal(result.file.truncated, true);
+  assert.equal(result.file.bytes, 5_000);
+  assert.ok(
+    /Only the first 1000 of 5000 bytes/.test(String(result.note)),
+    `a truncated read must name both numbers so the model cannot treat it as whole, got ${JSON.stringify(result.note)}`,
+  );
+});
+
+test("a directory and a binary file are errors, never empty content", async () => {
+  const dir = await executeGithubToolCall(
+    "read_repo_file",
+    { owner: "o", repo: "r", path: "api" },
+    { principal, fetchImpl: fetchReturning([{ name: "auth.ts" }]) },
+  );
+  assert.equal(dir.ok, false);
+  assert.match(dir.error, /directory/i);
+
+  const binary = await executeGithubToolCall(
+    "read_repo_file",
+    { owner: "o", repo: "r", path: "logo.png" },
+    { principal, fetchImpl: fetchReturning({ path: "logo.png", type: "file", encoding: "base64", sha: "s", content: Buffer.from([0x89, 0x50, 0x00, 0x01]).toString("base64") }) },
+  );
+  assert.equal(binary.ok, false);
+  assert.match(binary.error, /binary/i);
+  // Empty content would read as "this file has nothing in it", which is a
+  // statement about the repository. A failure to read never is.
+  assert.equal(binary.file, undefined);
 });
 
 test("the tool module imports nothing that can write to GitHub", async () => {

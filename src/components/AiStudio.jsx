@@ -17,6 +17,7 @@ import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filter
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel, jobCardForCheckout } from '../lib/studio-job-card.js';
+import { promptPolishFailureMessage } from '../lib/prompt-polish-failure.js';
 import { deriveSessionResume, deriveStudioMission, isResumeSession } from '../lib/studio-mission.js';
 import { learnFromChipSelection } from '../lib/communication-intelligence.js';
 import { canOfferVercelPublish } from '../lib/preview-publish-policy.js';
@@ -80,7 +81,7 @@ import {
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
 import VerifiedMediaLink from './VerifiedMediaLink.jsx';
 import TravelPlaceLink from './TravelPlaceLink.jsx';
-import StudyMarkdown from './StudyMarkdown.jsx';
+
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
 import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
@@ -130,6 +131,14 @@ const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
  * only check that notices the desk getting heavier.
  */
 const StudioMissionCard = lazy(() => import('./StudioMissionCard.jsx'));
+/*
+ * Lazy: 5,246 bytes of Study-only markdown rendering that every desk user was
+ * downloading. It has one render site, already behind a Study branch, so the
+ * boundary costs nothing at runtime and buys back the room this change needed.
+ * Raising the 300,000 cap instead would retire the only check that notices the
+ * desk getting heavier, at the moment it is doing its job.
+ */
+const StudyMarkdown = lazy(() => import('./StudyMarkdown.jsx'));
 const StudioToolsMenu = lazy(() => import('./StudioToolsMenu.jsx'));
 const StudioDecisionModal = lazy(() => import('./StudioDecisionModal.jsx'));
 const StudioPreviewControls = lazy(() => import('./StudioPreviewControls.jsx'));
@@ -1552,6 +1561,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [showHeroCardModal, setShowHeroCardModal] = useState(false);
   const [intentSelectedIndex, setIntentSelectedIndex] = useState(0);
 
+  /*
+   * Seven distinct failures from /api/enhance used to end in console.error, so
+   * the wand read as a dead button. Surfaced the way every other refusal in
+   * this studio is — an isError message in the chat — rather than as new
+   * chrome nobody has to maintain.
+   */
+  const reportPromptPolishFailure = (input) => {
+    updateActiveMessages((prev) => [...prev, {
+      id: `wand-${Date.now()}`,
+      sender: 'ai',
+      text: promptPolishFailureMessage(input),
+      isError: true,
+    }]);
+  };
+
   const handleMagicWandEnhance = async () => {
     const draftValueAtStart = inputText;
     const draftAtStart = draftValueAtStart.trim();
@@ -1589,10 +1613,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
         setInputText(data.enhancedPrompt);
         setShowHeroCardModal(false);
       } else if (!res.ok) {
-        console.error("Magic Wand failed:", data.error);
+        /*
+         * Seven distinct failures used to end in console.error, so the button
+         * read as dead. Surfaced the way every other refusal in this studio is
+         * — an isError message in the chat — rather than as new chrome.
+         */
+        reportPromptPolishFailure({ status: res.status, payload: data });
       }
     } catch (e) {
-      console.error("Magic Wand network error:", e);
+      reportPromptPolishFailure({ networkError: e });
     } finally {
       setIsEnhancingPrompt(false);
     }
@@ -2301,6 +2330,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
+                          <Suspense fallback={null}>
                           <StudyMarkdown
                             text={cleanText}
                             topic={studySyllabusHaystack({ conversationContext, messages })}
@@ -2308,6 +2338,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                             textColor={textColor}
                             components={markdownComponents}
                           />
+                          </Suspense>
                         ) : (
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
