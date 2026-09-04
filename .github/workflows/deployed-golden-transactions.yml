@@ -171,6 +171,16 @@ jobs:
           GOLDEN_CHAT_OUTCOME: ${{ steps.golden_chat.outcome }}
         run: |
           echo "deployed calculator/website golden outcome=$GOLDEN_CHAT_OUTCOME"
+          # The verdict LAST, so it is the final line of the job log.
+          #
+          # The golden script already prints it, but that print sits above the
+          # shop gate, the artifact upload and this step — about forty lines of
+          # tail — and reading it over the log API kept landing past it. A
+          # diagnosis nobody can find is not a diagnosis (rule 8), and shorter
+          # was not the same as findable.
+          if [ -f artifacts/e2e/golden-verdict.txt ]; then
+            cat artifacts/e2e/golden-verdict.txt
+          fi
           if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
             echo "::warning::Deployed calculator/website golden failed. This is NOT 'just flaky' — read the log before dismissing it. Deployment executability is proven separately by the blocking readiness gate above."
           fi

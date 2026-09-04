@@ -399,11 +399,24 @@ try {
    */
   const oneLine = (value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 300);
   const done = evidence.transactions.map((entry) => entry.name).join(', ') || 'none';
-  console.error(
-    `\nGOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
+  const verdict = `GOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
     + ` | completed: ${done}`
-    + ` | why: ${oneLine(error?.message || error)}`,
-  );
+    + ` | why: ${oneLine(error?.message || error)}`;
+  console.error(`\n${verdict}`);
+  /*
+   * AND WRITTEN OUT, because printing it here was not enough.
+   *
+   * The first attempt at this only shortened the line. It still sat above the
+   * shop-preview gate, the artifact upload and the outcome step — roughly forty
+   * lines of tail — so reading it over the log API still took several fetches
+   * that each landed past it. Shorter is not the same as findable (rule 8).
+   *
+   * The workflow's final step cats this file, so the verdict is the LAST thing
+   * in the job log rather than merely a small thing in the middle of it.
+   */
+  try {
+    writeFileSync(`${ARTIFACT_DIR}/golden-verdict.txt`, `${verdict}\n`);
+  } catch { /* the console line above is still the primary record */ }
   process.exitCode = 1;
 } finally {
   await browser.close();
