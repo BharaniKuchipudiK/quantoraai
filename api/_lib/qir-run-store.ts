@@ -9,7 +9,7 @@ import {
   type QirVerificationResult,
 } from "./qir-contracts.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
-import { diagnoseQirPersistFailure } from "../../shared/qir-persist-diagnosis.js";
+import { QIR_PERSIST_CAUSES, diagnoseQirPersistFailure } from "../../shared/qir-persist-diagnosis.js";
 
 const REST_TIMEOUT_MS = 5_000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -27,6 +27,62 @@ function config() {
 export function isQirRunStoreConfigured(): boolean {
   return config() !== null;
 }
+/*
+ * DOES THE SCHEMA THIS CODE NEEDS ACTUALLY EXIST WHERE THE CODE RUNS?
+ *
+ * THE GAP THIS CLOSES. Every gate in this repository verifies code against
+ * code: imports, wiring, served routes, capability claims, and 3,000 tests
+ * against synthetic stores. Even the crash-resume proof drives a fake store.
+ * So the entire board can be green while the deployment's database contains
+ * none of the tables — which is exactly what happened.
+ * 20260902093000_qir_durable_run_journal.sql landed on 2026-09-02, nothing in
+ * CI or the deploy applies migrations, and durable persistence was a
+ * production no-op with no gate able to notice. It surfaced through a user's
+ * screenshot of the desk.
+ *
+ * THREE ANSWERS, NOT TWO. `present: false` is a claim, and it may only be made
+ * on unambiguous evidence — the store answered, and said the relation is not
+ * there. A timeout, an unreachable host, or a deployment with no credentials
+ * are all `null`: NOT KNOWN.
+ *
+ * That distinction is the whole design. A gate that fails a deploy because a
+ * network call blipped is one the next person mutes, and then it protects
+ * nothing (§5); and refusing to ship on ignorance is the same defect #516
+ * removed when an unreadable budget sealed whole missions.
+ */
+export type QirSchemaProbe = {
+  configured: boolean;
+  present: boolean | null;
+  diagnosis: { cause: string; remedy: string } | null;
+};
+
+const SCHEMA_TABLES = ["qir_runs", "qir_run_events"] as const;
+
+export async function probeQirRunSchema(): Promise<QirSchemaProbe> {
+  if (!config()) return { configured: false, present: null, diagnosis: null };
+
+  for (const table of SCHEMA_TABLES) {
+    // limit=0 asks PostgREST for the shape and no rows: it proves the relation
+    // resolves without reading anybody's data.
+    const response = await requestRaw(`${table}?select=run_id&limit=0`, { method: "GET" });
+    if (!response) return { configured: true, present: null, diagnosis: null };
+    if (response.ok) continue;
+
+    const detail = await response.text().catch(() => "");
+    const diagnosis = diagnoseQirPersistFailure({ httpStatus: response.status, detail });
+    /*
+     * Only a verdict that names the schema itself proves absence. A rejected
+     * key or a 5xx says the store is unhappy, not that the tables are missing,
+     * so those stay unknown and no deploy is blocked on them.
+     */
+    const provesAbsent = diagnosis?.cause === QIR_PERSIST_CAUSES.MISSING_TABLE.cause
+      || diagnosis?.cause === QIR_PERSIST_CAUSES.SCHEMA_DRIFT.cause;
+    return { configured: true, present: provesAbsent ? false : null, diagnosis };
+  }
+
+  return { configured: true, present: true, diagnosis: null };
+}
+
 
 async function requestRaw(path: string, init: RequestInit & { headers?: Record<string, string> }) {
   const cfg = config();

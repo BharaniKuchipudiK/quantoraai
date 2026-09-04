@@ -62,6 +62,37 @@ try {
   failures.push(`/api/inference-health could not be reached: ${error?.message || error}`);
 }
 
+
+/*
+ * ---- 1b. The schema the code needs must exist where the code runs ---------
+ *
+ * THE INCIDENT THIS EXISTS FOR. Every other gate in this repository checks
+ * code against code. So on 2026-09-04 the whole board was green while the
+ * production database had none of the durable Run tables: the migration had
+ * landed two days earlier, nothing applies migrations, and persistence,
+ * checkpoints and crash-resume were all no-ops. No gate could see it. A user's
+ * screenshot found it.
+ *
+ * WHY THIS IS SAFE TO BLOCK ON, per the header above. It fails on exactly one
+ * thing: the store answered, and said the relation is not there. Unreachable,
+ * timed out, key rejected, 5xx, or simply not configured are all `null` — NOT
+ * KNOWN — and pass with a warning. A gate that fails a deploy on a network
+ * blip is one the next person mutes, and a muted gate protects nothing.
+ */
+if (health?.durableStore?.present === false) {
+  const { cause, remedy } = health.durableStore.diagnosis || {};
+  failures.push(
+    'the durable Run schema is NOT present on the database this deployment points at'
+    + (cause ? ` — ${cause}` : '')
+    + (remedy ? `. To fix it, ${remedy}` : '')
+    + '. Durable persistence, checkpoints and crash-resume are all no-ops until it is.',
+  );
+} else if (health?.durableStore?.configured === false) {
+  console.warn('::warning::durable Run storage is not configured on this deployment — QIR records nothing here.');
+} else if (health?.durableStore && health.durableStore.present === null) {
+  console.warn('::warning::could not determine whether the durable Run schema is present; not blocking on ignorance.');
+}
+
 // ---- 2. Every deployed function must load ----------------------------------
 // Derived from the filesystem so a new function is covered the day it lands.
 const functions = readdirSync('api', { withFileTypes: true })

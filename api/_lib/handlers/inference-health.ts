@@ -1,5 +1,6 @@
 import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { isGoldenCanaryRequest } from '../transaction-trace.js';
+import { probeQirRunSchema } from '../qir-run-store.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
 import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
@@ -192,6 +193,18 @@ export default async function handler(req: any, res: any) {
      * for forty seconds per run instead of one line here. Presence is not a
      * secret; `honored` only says whether the presented header matched.
      */
+    /*
+     * Does this deployment's database actually have the durable Run schema?
+     *
+     * Reported here because the readiness gate can only speak HTTP to the
+     * deployment — it holds no Supabase credentials — so the deployment has to
+     * answer for itself, the same way goldenCanaryHonored does above.
+     *
+     * `present: null` means NOT KNOWN and never blocks a deploy. Only `false`
+     * is a claim, and it is made solely when the store answered and named the
+     * relation as absent.
+     */
+    durableStore: await probeQirRunSchema(),
     goldenCanaryConfigured: Boolean(process.env.QUANTORA_GOLDEN_CANARY_TOKEN),
     goldenCanaryHonored: isGoldenCanaryRequest(req),
     geminiConfigured: summary.geminiConfigured,
