@@ -236,6 +236,27 @@ export default async function handler(req: any, res: any) {
       spentUsd: paid.spentUsd,
       limitUsd: paid.limitUsd,
       remainingUsd: paid.remainingUsd,
+      /*
+       * WHY THE FAULT IS REPORTED AND NOT JUST THE REFUSAL
+       *
+       * On 2026-09-04 this endpoint reported, for every deployment:
+       *
+       *   "paidRoutesAllowed": false,
+       *   "reason": "the spend meter could not be read",
+       *   "spentUsd": null, "limitUsd": null, "remainingUsd": null
+       *
+       * A rejected key, an empty balance, a rate limit and a timeout are four
+       * different problems with four different remedies, and that payload
+       * cannot tell them apart — so the only way to find out was to log in to
+       * OpenRouter, which is the exact situation the spend block was added to
+       * end. checkOpenRouterKey knew the status and the provider's own words;
+       * decidePaidRoute's parameter type dropped both.
+       *
+       * `gatewayDead` is the one an operator must not miss: it says this fault
+       * also stops FREE OpenRouter models, so `openRouterConfigured: true` and
+       * the route count above are overstating what can actually run.
+       */
+      meterFault: paid.meterFault,
     },
     circuitStore,
   });

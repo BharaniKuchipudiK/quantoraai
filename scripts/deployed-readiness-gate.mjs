@@ -93,6 +93,47 @@ if (health?.durableStore?.present === false) {
   console.warn('::warning::could not determine whether the durable Run schema is present; not blocking on ignorance.');
 }
 
+/*
+ * ---- 1c. Say what the spend meter said ------------------------------------
+ *
+ * Every deployed run of this gate has passed while the health payload carried
+ *
+ *   "spend": { "paidRoutesAllowed": false,
+ *              "reason": "the spend meter could not be read" }
+ *
+ * and nobody could act on it, because those eleven words are the same whether
+ * the key was rejected, the balance is empty, the account is rate limited, or
+ * the check timed out. The cause now travels with the refusal, so print it —
+ * a diagnosis that only exists inside a JSON body nobody opens is not much
+ * better than no diagnosis (rule 1).
+ *
+ * NOT BLOCKING, deliberately, per rule 5. Paid routing being held back is not
+ * a platform crash: the deployment boots, Gemini is a separate gateway, and
+ * failing a deploy over a key that needs rotating is exactly the kind of
+ * imprecise gate that gets muted under pressure — and then protects nothing.
+ * The one case that deserves louder wording is gatewayDead, because it means
+ * routeCount above is overstating what can actually run.
+ */
+const spend = health?.spend;
+if (spend && spend.paidRoutesAllowed === false) {
+  const fault = spend.meterFault;
+  if (fault?.gatewayDead) {
+    console.warn(
+      `::warning::EVERY OpenRouter model is unavailable on this deployment, free ones included — `
+      + `${fault.cause}${fault.status ? ` (HTTP ${fault.status})` : ''}: ${fault.detail}. ${fault.remedy}`,
+    );
+  } else if (fault) {
+    console.warn(
+      `::warning::paid routes are held back — ${fault.cause}`
+      + `${fault.status ? ` (HTTP ${fault.status})` : ''}: ${fault.detail}. ${fault.remedy}`,
+    );
+  } else {
+    // Reached only when the meter READ successfully and the balance is the
+    // reason — a real, correct state that needs no remedy, just the figures.
+    console.warn(`::warning::paid routes are held back — ${spend.reason}.`);
+  }
+}
+
 // ---- 2. Every deployed function must load ----------------------------------
 // Derived from the filesystem so a new function is covered the day it lands.
 const functions = readdirSync('api', { withFileTypes: true })

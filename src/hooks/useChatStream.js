@@ -211,7 +211,25 @@ async function persistPclContinuity({
  */
 function responseErrorMessage(status, payload, modelName) {
   if (status === 401 && payload?.requiresAuth) return payload.error || 'Please sign in to continue.';
-  if (payload?.error) return payload.error;
+  /*
+   * spendHold says WHY the premium rung was withheld — a rejected OpenRouter
+   * credential, an empty balance, a rate limit. The server has computed and
+   * sent it since the paid-route gate was wired, and this function returned
+   * payload.error and dropped it on the floor, so it reached no user: written
+   * by the server, read by nothing, which is the exact class test:wiring
+   * exists for.
+   *
+   * It matters most for the fault it names best. A credential OpenRouter
+   * refuses at /auth/key cannot run a FREE model either, so a person reading
+   * "every route is unhealthy" was being told the symptom while the cause sat
+   * one field away in the same response body.
+   *
+   * Appended, never substituted: payload.error is the sentence about this
+   * turn, spendHold is the sentence about the deployment.
+   */
+  const spendHold = typeof payload?.spendHold === 'string' ? payload.spendHold.trim() : '';
+  if (payload?.error) return spendHold ? `${payload.error}\n\n${spendHold}` : payload.error;
+  if (spendHold) return spendHold;
 
   const who = modelName || 'the selected model';
   if (status === 401 || status === 403) {

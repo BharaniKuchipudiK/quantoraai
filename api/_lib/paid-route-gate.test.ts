@@ -88,12 +88,115 @@ test('a withheld premium route says why, with the number', () => {
 });
 
 test('an unreadable meter is explained, not dressed up as a balance', () => {
+  /*
+   * This used to assert the copy contained "could not be read" — it pinned the
+   * defect. Those eleven words were identical for a rejected key, an empty
+   * balance, a rate limit and a timeout, so the assertion passed while the
+   * sentence told nobody anything. What it must do is name the fault and a
+   * remedy; what it must still never do is invent a figure it does not have.
+   */
   const note = describePaidHold(decidePaidRoute({ ok: false, usage: null, limit: null }));
-  assert.match(note, /could not be read/);
+  assert.match(note, /never reached OpenRouter/);
+  assert.match(note, /fails closed/);
   assert.doesNotMatch(note, /\$0\.00/, 'unknown spend must never be printed as zero');
 });
 
 test('nothing is said when premium is available', () => {
   assert.equal(describePaidHold(decidePaidRoute({ ok: true, usage: 1, limit: 100 })), '');
   assert.equal(describePaidHold(null), '');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * A REFUSAL MUST CARRY ITS CAUSE
+ *
+ * decidePaidRoute was typed `{ ok, usage, limit }` while its caller handed it
+ * the whole OpenRouterAuthResult. `status` and the provider's scrubbed message
+ * were present on the object and dropped by the parameter type, so production
+ * reported the same eleven words — "the spend meter could not be read" — for
+ * four faults with four different remedies. These pin the carriage.
+ * ---------------------------------------------------------------------------
+ */
+
+test('402 is a wallet, not a bad key — and it is tested first', () => {
+  /*
+   * ORDER IS THE WHOLE TEST. isProviderCredentialRejection returns true for
+   * 401, 402 AND 403, so classifying in the obvious order reports an empty
+   * balance as a rejected credential and sends somebody to re-issue a key that
+   * was working. The identical ordering trap was shipped and caught in
+   * qir-persist-diagnosis.js earlier the same day.
+   */
+  const v = decidePaidRoute({ ok: false, usage: null, limit: null, status: 402, error: 'Insufficient credits' });
+  assert.equal(v.allowed, false);
+  assert.equal(v.meterFault?.cause, 'NO_CREDIT');
+  assert.match(v.meterFault?.remedy || '', /Top up/i);
+  assert.doesNotMatch(v.meterFault?.remedy || '', /rejected the credential itself/,
+    'an empty balance must never be described as a rejected key');
+  // And it must NOT claim the free rung is dead: 402 is charged per call.
+  assert.equal(v.meterFault?.gatewayDead, false);
+});
+
+test('a rejected key kills the free rung too, and says so', () => {
+  /*
+   * /auth/key authenticates the SAME credential a ":free" model presents. The
+   * hold copy asserted "Free routes still work" unconditionally, which for this
+   * one fault is false — and it is the fault most likely to be present when a
+   * turn dies on a free model while readiness still counts it as a route.
+   */
+  const v = decidePaidRoute({ ok: false, usage: null, limit: null, status: 401, error: 'No auth credentials found' });
+  assert.equal(v.meterFault?.cause, 'CREDENTIAL_REJECTED');
+  assert.equal(v.meterFault?.gatewayDead, true);
+  const hold = describePaidHold(v);
+  assert.match(hold, /every FREE OpenRouter model/,
+    'the free rung must be named explicitly — "no model on that gateway" leaves it ambiguous');
+  assert.doesNotMatch(hold, /Free routes still work/,
+    'a credential OpenRouter refuses cannot run a free model either');
+});
+
+test('rate limit, provider error and an unreachable meter stay distinct', () => {
+  assert.equal(decidePaidRoute({ ok: false, usage: null, limit: null, status: 429, error: 'rate limited' }).meterFault?.cause, 'RATE_LIMITED');
+  assert.equal(decidePaidRoute({ ok: false, usage: null, limit: null, status: 503, error: 'upstream' }).meterFault?.cause, 'PROVIDER_ERROR');
+  // No status at all is the timeout/network shape checkOpenRouterKey returns.
+  assert.equal(decidePaidRoute({ ok: false, usage: null, limit: null, status: null, error: 'timed out after 8000ms' }).meterFault?.cause, 'METER_UNREACHABLE');
+  assert.equal(decidePaidRoute({ ok: false, usage: null, limit: null }).meterFault?.cause, 'METER_UNREACHABLE');
+});
+
+test('no refusal is ever left without something a human can act on', () => {
+  /*
+   * The invariant, stated once so a future branch cannot quietly reintroduce
+   * the flat sentence: every refusal either names a fault with a remedy, or
+   * carries the spend figures that explain it. Never neither.
+   */
+  const refusals = [
+    decidePaidRoute({ ok: false, usage: null, limit: null, status: 401, error: 'nope' }),
+    decidePaidRoute({ ok: false, usage: null, limit: null, status: 402, error: 'nope' }),
+    decidePaidRoute({ ok: false, usage: null, limit: null, status: 429, error: 'nope' }),
+    decidePaidRoute({ ok: false, usage: null, limit: null, status: 500, error: 'nope' }),
+    decidePaidRoute({ ok: false, usage: null, limit: null }),
+    decidePaidRoute({ ok: true, usage: 99.5, limit: 100 }),
+    decidePaidRoute({ ok: true, usage: null, limit: 100 }),
+  ];
+  for (const verdict of refusals) {
+    assert.equal(verdict.allowed, false);
+    const actionable = Boolean(verdict.meterFault?.remedy)
+      || (verdict.limitUsd !== null && verdict.remainingUsd !== null)
+      // The one remaining case: the meter read, but reported no spend figure.
+      || /no spend figure/.test(verdict.reason);
+    assert.ok(actionable, `refusal carries nothing actionable: ${JSON.stringify(verdict)}`);
+    assert.notEqual(verdict.reason, 'the spend meter could not be read',
+      'the flat sentence that named nothing must not come back');
+  }
+});
+
+test('an allowed verdict carries no fault', () => {
+  assert.equal(decidePaidRoute({ ok: true, usage: 12, limit: 100 }).meterFault, null);
+  assert.equal(decidePaidRoute({ ok: true, usage: 4000, limit: null }).meterFault, null);
+});
+
+test('no credential names the environment, not the provider', async () => {
+  resetPaidRouteCache();
+  const v = await paidRouteAllowed('');
+  assert.equal(v.meterFault?.cause, 'METER_UNREACHABLE');
+  assert.equal(v.meterFault?.gatewayDead, true, 'without a key nothing on that gateway runs');
+  assert.match(v.meterFault?.remedy || '', /OPENROUTER_API_KEY/);
 });
