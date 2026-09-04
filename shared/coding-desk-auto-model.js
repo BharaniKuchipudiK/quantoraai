@@ -96,7 +96,12 @@ function readyModels(models = []) {
   );
 }
 
-function isFreeReady(model) {
+/*
+ * Exported so the premium debit can ask the same question the resolver asks.
+ * A second definition of "is this engine paid" would drift from this one, and
+ * the two would disagree about what to charge for.
+ */
+export function isFreeReady(model) {
   if (FREE_KINDS.has(String(model.pricingKind || '').toLowerCase())) return true;
   if (model.is_free === true) return true;
   const id = String(model.id || '');

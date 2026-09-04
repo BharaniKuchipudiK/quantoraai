@@ -23,6 +23,8 @@ import {
 } from '../lib/pcl-session-runtime.js';
 import { advisorBlocksPreviewBuild, codingFailureSpineOwnsTurn, resolveIsCodingRequest, shouldStartGuidedBuild } from '../lib/build-intent.js';
 import { createQirTurnJournal } from '../lib/qir-turn-journal.js';
+import { resolveAllowPaid } from '../lib/premium-escalation.js';
+import { isFreeReady } from '../../shared/coding-desk-auto-model.js';
 import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRename } from '../lib/desk-rename.js';
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
@@ -800,7 +802,7 @@ export function useChatStream({
       const renameAsk = detectRenameRequest(visibleUserText);
       if (renameAsk) {
         const plan = planDeskRename({ vfs, html: canvasCode || '', newName: renameAsk.newName });
-        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan)) : false;
+        const applied = plan.ok ? onDeskRename(applyDeskRename(vfs, plan), owningSessionId) : false;
         if (!plan.ok || applied) {
           if (!stillCurrent()) return;
           updateActiveMessages(prev => [...prev, {
@@ -835,6 +837,21 @@ export function useChatStream({
      * production. With no choice made, resolveStudioMode returns exactly that
      * literal, so nothing about the old behaviour moves.
      */
+    /*
+     * A premium engine needs BOTH a credential to call it and a reserve to
+     * charge it to. This used to be `Boolean(getClientSecret('openrouter'))`
+     * alone — is a key present — which is the finding the Phase 0 re-audit
+     * named: the Resource & Budget Governor answers exactly this question and
+     * nothing asked it.
+     *
+     * Fails open by design (see premium-escalation.js): an unmetered Run, or no
+     * durable Run at all, still allows paid. A budget nobody can read must never
+     * be why a build does not run.
+     */
+    const turnAllowPaid = resolveAllowPaid({
+      hasPaidCredential: Boolean(getClientSecret('openrouter')),
+      run: qirCoding?.run,
+    });
     const turnStudioMode = resolveStudioMode({ chosen: studioModeChoice, refineDesk });
     const planTurn = !mayWriteToDesk(turnStudioMode);
     const deskPacket = buildCodingTurnPacket({
@@ -889,7 +906,7 @@ export function useChatStream({
             fileCount: vfsFileCount,
             shopImageOversize: shopIntakeAsk.oversize,
           },
-          allowPaid: Boolean(getClientSecret('openrouter')),
+          allowPaid: turnAllowPaid,
         });
         autoResolvedLabel = resolved.model?.name || resolved.modelId;
         autoLadderReason = resolved.reason || '';
@@ -925,7 +942,7 @@ export function useChatStream({
         engineId: targetModel?.resolvedModelId || '',
         rankedFallbackIds: rankCodingDeskFallbacks(availableModels || [], {
           primaryId: targetModel?.resolvedModelId || '',
-          allowPaid: Boolean(getClientSecret('openrouter')),
+          allowPaid: turnAllowPaid,
         }),
         reachableEngineIds: [...reachableEngines.keys()],
         run: qirCoding?.run || null,
@@ -1455,6 +1472,17 @@ export function useChatStream({
         if (attempt > 1 && !mayRunAttempt(attempt, escalation)) break;
         qirTurn.beginAttempt(visibleUserText || text, attemptEngineId(targetModel));
         /*
+         * Charge the premium reserve only when the engine that is actually
+         * starting is a paid one. Fire-and-forget for the same reason the
+         * journal is: the durable ledger must never block a user's turn. The
+         * debit lands before the next turn's gate reads the budget.
+         */
+        if (turnAllowPaid) {
+          const startingEngine = (availableModels || [])
+            .find((model) => model?.id === attemptEngineId(targetModel));
+          if (startingEngine && !isFreeReady(startingEngine)) void qirTurn.chargePremium();
+        }
+        /*
          * Record the engine this attempt actually runs on, for honest terminal
          * copy AND for the ladder's own exclusion set. In auto mode
          * `targetModel.id` is the string 'auto', so recording it meant the
@@ -1509,6 +1537,21 @@ export function useChatStream({
               // experiment rather than the same one billed twice.
               message: retryBrief ? `${messageForModel}\n\n${retryBrief}` : messageForModel,
               turnAttempt: attempt,
+              /*
+               * What this turn actually has left, so the server plans inside it
+               * rather than against its own constant.
+               *
+               * Taken from planTurnEscalation — the same function that decides
+               * how many attempts fit — so there is ONE remainder, not a second
+               * calculation that can drift from it. Without this the server
+               * restarts a full 165s budget on every retry and funds rungs this
+               * loop will already have abandoned.
+               *
+               * Measured before fetch, so it is conservative: the server's true
+               * remainder is a little less, and it may only shorten its budget
+               * with this, never extend it.
+               */
+              turnRemainingMs: escalationNow().remainingMs,
             })
           });
           /*
@@ -1706,7 +1749,7 @@ export function useChatStream({
                 );
                 if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
                   if (typeof onCodingTurnProved === 'function') {
-                    try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                    try { onCodingTurnProved(deskProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                   }
                   const why = artifactFailed
                     ? (streamedError.message || 'Build artifact failed')
@@ -1894,7 +1937,7 @@ export function useChatStream({
               });
               if (codingTurnMayClaimSuccess(seededProof)) {
                 if (typeof onCodingTurnProved === 'function') {
-                  try { onCodingTurnProved(seededProof, turnPlan); } catch { /* ignore */ }
+                  try { onCodingTurnProved(seededProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
                 const okCopy = shopOwned
                   ? (
@@ -1995,7 +2038,7 @@ export function useChatStream({
             });
             if (typeof onCodingTurnProved === 'function') {
               try {
-                onCodingTurnProved(codingProof, turnPlan);
+                onCodingTurnProved(codingProof, turnPlan, owningSessionId);
               } catch { /* desk apply is best-effort */ }
             }
             /*
@@ -2174,7 +2217,7 @@ export function useChatStream({
               );
               if (thisTurnOwnedDesk && codingTurnMayClaimSuccess(deskProof)) {
                 if (typeof onCodingTurnProved === 'function') {
-                  try { onCodingTurnProved(deskProof, turnPlan); } catch { /* ignore */ }
+                  try { onCodingTurnProved(deskProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
                 const why = timedOut
                   ? `The model hit the ${Math.round(turnDeadlineMs / 1000)}s limit`

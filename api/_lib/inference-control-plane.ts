@@ -106,6 +106,31 @@ export const MIN_VIABLE_BUILD_ATTEMPT_MS = 45_000;
 const MAX_BUILD_RUNGS = 2;
 
 /** How many build rungs the remaining wall-clock can fund at a viable size. */
+/**
+ * The budget this turn may actually spend, given what the browser has left.
+ *
+ * THE DEFECT THIS CLOSES. The handler planned against a constant that restarts
+ * on every request, while the browser plans against a deadline that does not.
+ * On a retry after a 100s first attempt the browser has ~75s left and the
+ * server plans as if it has a fresh 165s — funding a primary rung of up to
+ * 110s whose result nobody will still be waiting for. Two planners, one wall
+ * clock, neither aware of the other: exit answer #6's duplicate authority,
+ * costing real tokens.
+ *
+ * THE CLIENT MAY ONLY SHORTEN. Never extend. A caller that asks for more than
+ * the ceiling gets the ceiling, so a buggy or hostile body cannot buy itself
+ * more of the platform's time than the platform allows.
+ *
+ * An absent, zero, negative or unparseable value means "no information", and
+ * that yields the full ceiling — an older client that does not send it must
+ * behave exactly as before.
+ */
+export function resolveTurnBudgetMs(requested: unknown, ceilingMs: number): number {
+  const asked = Number(requested);
+  if (!Number.isFinite(asked) || asked <= 0) return ceilingMs;
+  return Math.min(ceilingMs, Math.floor(asked));
+}
+
 export function maxViableBuildAttempts(
   totalBudgetMs: number,
   minAttemptMs: number = MIN_VIABLE_BUILD_ATTEMPT_MS,
