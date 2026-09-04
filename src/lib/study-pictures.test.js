@@ -6,6 +6,7 @@ import {
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyElectricityVisualVariant,
+  studyFieldVisualVariant,
   studyGraphVisualVariant,
   studyNumberLineLabel,
   studyNumberLineSpec,
@@ -138,6 +139,9 @@ test('Study visuals are subject-aware teaching diagrams', () => {
   assert.equal(studyVisualKind('Resolve a vector into x and y components'), 'physics-motion');
   assert.equal(studyPhysicsVisualVariant('Resolve a vector into x and y components'), 'vector-components');
   assert.equal(studyVisualKind('Electric field lines around a positive charge'), 'field-lines');
+  assert.equal(studyFieldVisualVariant('Electric field lines around a positive charge'), 'electric');
+  assert.equal(studyVisualKind('Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire'), 'field-lines');
+  assert.equal(studyFieldVisualVariant('Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire'), 'magnetic');
   assert.equal(studyVisualKind('A battery drives current around a resistor circuit'), 'electricity-circuit');
   assert.equal(studyVisualKind('Keep both sides of the equation balanced'), 'algebra-balance');
   assert.equal(studyVisualKind('The nucleus sits inside the cell membrane'), 'biology-cell');
@@ -161,6 +165,14 @@ test('motion-graph captions are graphs, not free-body diagrams, and name what th
   assert.equal(studyGraphVisualVariant(displacement), 'displacement-time');
   assert.equal(studyGraphVisualVariant(velocity), 'velocity-time');
   assert.equal(studyGraphVisualVariant('A labelled graph showing axes, slope, and change between two points'), 'slope');
+});
+
+test('a substantial magnetic-field lesson receives the right-hand-rule diagram when the model omits its tag', () => {
+  const explanation = 'Point your thumb along the conventional current in a straight wire. Your fingers then curl around the wire in the direction of the magnetic field B. Which way do the field lines go if current is to the right?';
+  const illustrated = ensureStudyTeachingVisual(explanation, 'Magnetic field direction and the right-hand rule');
+  assert.match(illustrated, /quantora-study-picture/);
+  assert.match(illustrated, /thumb along current I/);
+  assert.equal(studyFieldVisualVariant(splitStudySegments(illustrated, 'Magnetic field direction and the right-hand rule')[0].caption), 'magnetic');
 });
 
 test('a substantial displacement-time lesson receives the velocity-slope diagram when the model omits its tag', () => {
