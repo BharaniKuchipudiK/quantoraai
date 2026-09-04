@@ -184,3 +184,102 @@ test('golden canary turns never allow intake in place of the artifact', () => {
     detailCode: 'code-fences-missing',
   });
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * THE PLATFORM MUST NOT PUNISH THE MODEL FOR WRITING IT CORRECTLY
+ *
+ * On 2026-09-04 the deployed golden burned all five attempts on
+ * `calculator-interaction-missing`. The models were not failing — they were
+ * writing the calculator the normal way, with a functional updater behind a
+ * generic digit handler. The check demanded a LITERAL `setValue(1)`, so the
+ * correct implementation failed and a naive one passed, and the artifact never
+ * reached the browser gate that clicks the button and asserts the display reads
+ * 1 — the real verifier, which proves behaviour and does not care how state got
+ * there.
+ *
+ * Same class as the guided-intake contradiction documented in this module.
+ * These cases are the shapes a model actually emits; the negatives below are
+ * what keeps the check from becoming decorative.
+ * ---------------------------------------------------------------------------
+ */
+const withApp = (body) => calculator.replace(
+  /```jsx filepath="src\/App.jsx"\n[\s\S]*?\n```/,
+  '```jsx filepath="src/App.jsx"\n' + body + '\n```',
+);
+
+test('a functional updater behind a digit handler is a working calculator', () => {
+  // The exact shape that failed five times in production.
+  const realistic = withApp(`import { useState } from 'react';
+export default function App(){
+  const [display,setDisplay]=useState('0');
+  const handleDigit=(d)=>setDisplay((prev)=>prev==='0'?d:prev+d);
+  return <><output data-testid="calculator-display">{display}</output><button data-testid="calculator-one" onClick={()=>handleDigit('1')}>1</button></>;
+}`);
+  assert.deepEqual(validateBuildArtifactResponse(realistic, 'calculator'), {
+    ok: true, detailCode: 'build-artifact-valid',
+  });
+});
+
+test('a display that formats its state still renders it', () => {
+  // Requiring a bare {value} rejected {String(value)} — shape over behaviour.
+  const formatted = withApp(`import { useState } from 'react';
+export default function App(){
+  const [value,setValue]=useState(0);
+  const press=(n)=>setValue(n);
+  return <><output data-testid="calculator-display">{String(value)}</output><button data-testid="calculator-one" onClick={()=>press(1)}>1</button></>;
+}`);
+  assert.equal(validateBuildArtifactResponse(formatted, 'calculator').ok, true);
+});
+
+test('the attribute order on the button does not decide the verdict', () => {
+  /*
+   * `onClick={() => tap('1')}` contains a '>', so a [^>]* tag pattern ends the
+   * tag mid-handler. The tag is now read by brace depth instead.
+   */
+  const reordered = withApp(`import { useState } from 'react';
+export default function App(){
+  const [v,setV]=useState('0');
+  const tap=(n)=>setV(n);
+  return <><output data-testid="calculator-display">{v}</output><button onClick={()=>tap('1')} data-testid="calculator-one">1</button></>;
+}`);
+  assert.equal(validateBuildArtifactResponse(reordered, 'calculator').ok, true);
+});
+
+test('a static mockup is still not a calculator', () => {
+  // §4: what does the check do when the defect IS present? These four say.
+  const noHandler = withApp(`import { useState } from 'react';
+export default function App(){const [v,setV]=useState('0');
+  return <><output data-testid="calculator-display">{v}</output><button data-testid="calculator-one">1</button></>;}`);
+  assert.equal(validateBuildArtifactResponse(noHandler, 'calculator').detailCode, 'calculator-interaction-missing');
+
+  const wiredToNothing = withApp(`import { useState } from 'react';
+export default function App(){const [v,setV]=useState('0');const log=(n)=>console.log(n);
+  return <><output data-testid="calculator-display">{v}</output><button data-testid="calculator-one" onClick={()=>log('1')}>1</button></>;}`);
+  assert.equal(validateBuildArtifactResponse(wiredToNothing, 'calculator').detailCode, 'calculator-interaction-missing');
+
+  const deadDisplay = withApp(`import { useState } from 'react';
+export default function App(){const [v,setV]=useState('0');const tap=(n)=>setV(n);
+  return <><output data-testid="calculator-display">0</output><button data-testid="calculator-one" onClick={()=>tap('1')}>1</button></>;}`);
+  assert.equal(validateBuildArtifactResponse(deadDisplay, 'calculator').detailCode, 'calculator-interaction-missing');
+
+  const noState = withApp(`export default function App(){
+  return <><output data-testid="calculator-display">0</output><button data-testid="calculator-one" onClick={()=>{}}>1</button></>;}`);
+  assert.equal(validateBuildArtifactResponse(noState, 'calculator').detailCode, 'calculator-interaction-missing');
+});
+
+test('a button wired to an unrelated function fails even when state is set elsewhere', () => {
+  /*
+   * The hop reads the named handler's own body. Checking only "the setter is
+   * called somewhere in the module" would pass this, and the turn would reach
+   * the browser gate to fail there instead — slower, and on a worse signal.
+   */
+  const decoy = withApp(`import { useState } from 'react';
+export default function App(){
+  const [v,setV]=useState('0');
+  const reset=()=>setV('0');
+  const log=(n)=>console.log(n);
+  return <><output data-testid="calculator-display">{v}</output><button data-testid="calculator-one" onClick={log}>1</button><button onClick={reset}>C</button></>;
+}`);
+  assert.equal(validateBuildArtifactResponse(decoy, 'calculator').detailCode, 'calculator-interaction-missing');
+});

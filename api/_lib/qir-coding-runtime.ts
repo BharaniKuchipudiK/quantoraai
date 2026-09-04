@@ -3,6 +3,7 @@ import {
   deriveQirContinuation,
   type QirAgentRun,
   type QirArtifactRef,
+  type QirRunStatus,
   type QirVerificationResult,
 } from "./qir-contracts.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
@@ -128,5 +129,74 @@ export function promoteQirCodingCheckpoint(input: {
   return {
     ...verifiedRun,
     status: completion.completionAllowed ? "COMPLETE" : "CHECKPOINTED",
+  };
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * THE STOP BUTTON.
+ *
+ * Phase 2 asks for pause/resume/cancel. PAUSED existed as a state in
+ * qir-contracts.ts and deriveQirContinuation already honoured it, but no action
+ * could ever reach it: /api/qir-runs accepted only start, attempt, observe,
+ * recover and promote. A user with a runaway build could close the tab, which
+ * stops a browser and not a Run.
+ *
+ * These are pure transitions so they can be tested as logic rather than through
+ * a serverless handler — the route holds ownership, versioning and the event
+ * write; the RULES live here.
+ * ---------------------------------------------------------------------------
+ */
+const STOPPED: QirRunStatus[] = ["COMPLETE", "FAILED_TERMINAL"];
+
+/** A Run that has already stopped cannot be paused, resumed or cancelled again. */
+export function qirRunHasStopped(run: QirAgentRun): boolean {
+  return STOPPED.includes(run.status);
+}
+
+/**
+ * Stop for now. Every artifact, budget and cursor is left exactly as it stands,
+ * because the whole point is that resuming loses nothing.
+ */
+export function pauseQirCodingRun(run: QirAgentRun, now: string): QirAgentRun {
+  return { ...run, status: "PAUSED", updatedAt: now };
+}
+
+/**
+ * Where a paused Run resumes TO is derived from the plan, not remembered.
+ *
+ * deriveQirContinuation returns null for a paused Run by design, so it is asked
+ * about a non-paused copy. Somewhere to continue means EXECUTING; nowhere means
+ * QUEUED, which is a status coding.attempt accepts. A stored pre-pause status
+ * could be stale by the time anyone resumes; the plan is the truth about where
+ * the work actually is.
+ */
+export function resumeQirCodingRun(run: QirAgentRun, now: string): QirAgentRun {
+  const continuation = deriveQirContinuation({ ...run, status: "EXECUTING" });
+  return { ...run, status: continuation ? "EXECUTING" : "QUEUED", updatedAt: now };
+}
+
+/**
+ * Stop for good.
+ *
+ * NOT a second pause. An earlier draft of mine had cancel parking at PAUSED,
+ * which would have made it pause under another name and left the user with no
+ * way to actually end anything.
+ *
+ * The candidate is REJECTED rather than left dangling: a surviving candidate is
+ * exactly what coding.attempt refuses to start over ("a candidate artifact
+ * already exists"), so a cancelled Run's own wreckage would block the next one.
+ * Verified artifacts are untouched — work that passed independent verification
+ * before the cancel is real, and destroying it would take back an outcome the
+ * user already earned.
+ */
+export function cancelQirCodingRun(run: QirAgentRun, now: string): QirAgentRun {
+  return {
+    ...run,
+    status: "FAILED_TERMINAL",
+    artifacts: run.artifacts.map((artifact) => (
+      artifact.state === "candidate" ? { ...artifact, state: "rejected" } : artifact
+    )),
+    updatedAt: now,
   };
 }

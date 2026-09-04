@@ -1,8 +1,9 @@
 import { applyCors, clientIp, isRateLimited } from '../rate-limit.js';
 import { isGoldenCanaryRequest } from '../transaction-trace.js';
+import { probeQirRunSchema } from '../qir-run-store.js';
 import { summarizeInferenceReadiness } from '../inference-control-plane.js';
 import { getProviderCircuitStoreHealth, providerCircuitStore } from '../provider-circuit-store.js';
-import { openRouterEnvPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
+import { openRouterEnvPublicHint, openRouterPublicHint, resolveOpenRouterEnvKey } from '../openrouter-key.js';
 import { duffelEnvPublicHint } from '../duffel-key.js';
 import { defaultSerpApiKey, isSerpApiConfigured, resolveFlightProvider } from '../serpapi-flights.js';
 import { fetchApiGatewayKey } from '../../autocomplete.js';
@@ -148,12 +149,6 @@ export default async function handler(req: any, res: any) {
       openRouterViaGateway = false;
     }
   }
-  const summary = await summarizeInferenceReadiness({
-    geminiAvailable: geminiConfigured,
-    openRouterAvailable,
-    circuitStore: providerCircuitStore,
-  });
-  const circuitStore = getProviderCircuitStoreHealth();
   /*
    * Spend, where the operator can see it without asking anyone.
    *
@@ -161,11 +156,56 @@ export default async function handler(req: any, res: any) {
    * this platform had spent was to log in to OpenRouter. A budget nobody can
    * see is the same as no budget — the figures come from the provider, not
    * from our own arithmetic.
+   *
+   * READ BEFORE THE SUMMARY, not after. It used to run below, so the route
+   * count was computed from key PRESENCE while the answer to "does this key
+   * work" was fetched seconds later and used for nothing but display. That is
+   * how this endpoint reported openRouterConfigured: true, routeCount: 3 on a
+   * deployment where /auth/key answered HTTP 401 for that exact key.
    */
   // The gateway key when the env has none, so the figure reflects the key that
   // would actually be charged.
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
   const paid = await paidRouteAllowed(spendKey);
+  /*
+   * WHICH KEY, FROM WHICH STORE. Reported because presence was never the
+   * question an operator actually has.
+   *
+   * On 2026-09-04 an operator created a new OpenRouter key, pasted it into the
+   * Supabase gateway row, and asked whether it had taken effect. Nothing here
+   * could answer: openRouterEnvHint describes the ENV var — a store they had
+   * not touched — and openRouterViaGateway says only that the row was reached,
+   * never which key it holds. Two keys, last three characters apart, and the
+   * platform could not tell them apart. They were left comparing an OpenRouter
+   * dashboard's "Last Used" column against a guess.
+   *
+   * The hint is built from spendKey, which is the key the turn would actually
+   * charge — so it cannot describe one store while another one serves.
+   */
+  const openRouterActive = openRouterPublicHint(spendKey);
+  const openRouterKeySource = openRouterEnv ? 'env' : (openRouterViaGateway ? 'gateway' : null);
+
+  /*
+   * A gateway the provider has REFUSED is not a route, however well-formed its
+   * key looks. openRouterConfigured stays true — a key is genuinely present,
+   * and saying otherwise would send an operator looking for a missing secret
+   * instead of a rejected one — but it stops being counted as somewhere a turn
+   * can go.
+   *
+   * `ready` is deliberately left to fall out of the remaining routes rather
+   * than being forced false: Gemini is a separate gateway with its own
+   * credential, and failing every deployment over an OpenRouter key that needs
+   * rotating is exactly the imprecise blocking gate CLAUDE.md §5 warns about —
+   * the kind the next person mutes under pressure. If Gemini is up, this
+   * deployment can still serve, and the warning above says what is lost.
+   */
+  const openRouterRefused = paid.meterFault?.gatewayDead === true;
+  const summary = await summarizeInferenceReadiness({
+    geminiAvailable: geminiConfigured,
+    openRouterAvailable: openRouterAvailable && !openRouterRefused,
+    circuitStore: providerCircuitStore,
+  });
+  const circuitStore = getProviderCircuitStoreHealth();
   const duffel = duffelEnvPublicHint();
   const serpApiConfigured = isSerpApiConfigured(defaultSerpApiKey);
   /*
@@ -192,14 +232,44 @@ export default async function handler(req: any, res: any) {
      * for forty seconds per run instead of one line here. Presence is not a
      * secret; `honored` only says whether the presented header matched.
      */
+    /*
+     * Does this deployment's database actually have the durable Run schema?
+     *
+     * Reported here because the readiness gate can only speak HTTP to the
+     * deployment — it holds no Supabase credentials — so the deployment has to
+     * answer for itself, the same way goldenCanaryHonored does above.
+     *
+     * `present: null` means NOT KNOWN and never blocks a deploy. Only `false`
+     * is a claim, and it is made solely when the store answered and named the
+     * relation as absent.
+     */
+    durableStore: await probeQirRunSchema(),
     goldenCanaryConfigured: Boolean(process.env.QUANTORA_GOLDEN_CANARY_TOKEN),
     goldenCanaryHonored: isGoldenCanaryRequest(req),
     geminiConfigured: summary.geminiConfigured,
     geminiVia: gemini.source,
-    openRouterConfigured: summary.openRouterConfigured,
+    /*
+     * PRESENCE, deliberately — not summary.openRouterConfigured, which now
+     * reflects whether the gateway is USABLE. A key that exists and is refused
+     * must not read as "no key configured": that sends an operator hunting for
+     * a missing secret when the one they have is the problem. Presence here,
+     * validity in spend.meterFault, and routeCount below counts only what a
+     * turn can actually reach.
+     */
+    openRouterConfigured: openRouterAvailable,
+    openRouterCredentialRefused: openRouterRefused,
     openRouterEnvShape: openRouterHint.shape,
     openRouterEnvHint: openRouterHint.hint,
     openRouterViaGateway,
+    /*
+     * The two fields that answer "did my paste take effect?" without anyone
+     * having to know the precedence rule. Source names the store; hint names
+     * the key, by the same last-three-characters convention as the env hint and
+     * with the same refusal to echo an unknown secret.
+     */
+    openRouterKeySource,
+    openRouterKeyShape: openRouterActive.shape,
+    openRouterKeyHint: openRouterActive.hint,
     placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY),
     /*
      * Flights were the one provider this endpoint could not see. Hotels had
@@ -223,6 +293,27 @@ export default async function handler(req: any, res: any) {
       spentUsd: paid.spentUsd,
       limitUsd: paid.limitUsd,
       remainingUsd: paid.remainingUsd,
+      /*
+       * WHY THE FAULT IS REPORTED AND NOT JUST THE REFUSAL
+       *
+       * On 2026-09-04 this endpoint reported, for every deployment:
+       *
+       *   "paidRoutesAllowed": false,
+       *   "reason": "the spend meter could not be read",
+       *   "spentUsd": null, "limitUsd": null, "remainingUsd": null
+       *
+       * A rejected key, an empty balance, a rate limit and a timeout are four
+       * different problems with four different remedies, and that payload
+       * cannot tell them apart — so the only way to find out was to log in to
+       * OpenRouter, which is the exact situation the spend block was added to
+       * end. checkOpenRouterKey knew the status and the provider's own words;
+       * decidePaidRoute's parameter type dropped both.
+       *
+       * `gatewayDead` is the one an operator must not miss: it says this fault
+       * also stops FREE OpenRouter models, so `openRouterConfigured: true` and
+       * the route count above are overstating what can actually run.
+       */
+      meterFault: paid.meterFault,
     },
     circuitStore,
   });

@@ -11,7 +11,7 @@ import {
 } from './preview-images.js';
 import { injectShopCommerceUi, stripShopCommerceUi } from './shop-preview-ui.js';
 import { deskChecksRegressed, jobClearlyNotShop, looksLikeShopDesk, probeRunningDesk } from './studio-desk-context.js';
-import { buildStudioJobCard, isStudioProductSwitch } from './studio-job-card.js';
+import { buildStudioJobCard, isStudioProductSwitch, normalizeStudioJobCard } from './studio-job-card.js';
 // SHOP_CATALOG_CAP from its own module rather than through preview-images:
 // re-exporting a constant through an unrelated file hides the dependency.
 import { SHOP_CATALOG_CAP, shopCatalogScaleNote } from './shop-catalog-scale.js';
@@ -209,9 +209,33 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   const onlyNativeSidecars = changedPaths.length > 0
     && changedPaths.every((path) => isNativeSidecarPath(path));
   const needsWebEntry = Boolean(hadProject && didUpdate && onlyNativeSidecars && !previewChanged);
-  // Dropping a leftover boutique catalog is an intentional product switch —
-  // never reject the new product for losing old shop/calc checks.
-  if (hadProject && didUpdate && previewChanged && !purged.changed && !switchingProduct) {
+  /*
+   * The regression guard protects a STATED contract, so it needs one to protect.
+   *
+   * isStudioProductSwitch returns false the moment there is no prior job card —
+   * it has nothing to compare a new brief against. So a desk that kept its FILES
+   * but lost its JOB CARD could never be recognised as switching product, and
+   * the guard below then judged a brand-new build a regression of the old one:
+   * a bakery site "loses" the calculator's checks, so it was rejected. Silently,
+   * because `rejected` returns with no error anywhere.
+   *
+   * That is what the deployed golden hit on 2026-09-04. The calculator passed,
+   * the website replied with a complete project, and nothing opened: the desk
+   * carried the calculator's files into the next chat without its job card.
+   * Reproduced as a pure function before this line was touched —
+   *
+   *   bakery onto an empty desk                -> rejected: false
+   *   bakery onto a calculator desk, job null  -> rejected: TRUE
+   *   bakery onto a calculator desk, job set   -> rejected: false
+   *
+   * — so with a job card the guard was already right, and only the contractless
+   * case was wrong. With no stated contract there is nothing to keep working,
+   * and blocking a complete new project is guessing; it guessed wrong exactly
+   * when the desk had leaked. Whenever a job card IS present the guard behaves
+   * as before, which is the normal refine-in-session path.
+   */
+  const statedContract = normalizeStudioJobCard(job);
+  if (hadProject && didUpdate && previewChanged && !purged.changed && !switchingProduct && statedContract) {
     const before = probeRunningDesk({ html: pickPreviewEntry(currentVfs), vfs: currentVfs, job: nextJob });
     const after = probeRunningDesk({ html: pickPreviewEntry(vfs) || code, vfs, job: nextJob });
     if (deskChecksRegressed(before.checks, after.checks)) {

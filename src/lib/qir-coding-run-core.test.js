@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { qirCodingRunCanStart } from './qir-coding-run-core.js';
 
 const run = (status = 'QUEUED', extras = {}) => ({
@@ -148,4 +150,266 @@ test('an unattributed failure still records the failure, claiming no engine', as
   } finally {
     transport.restore();
   }
+});
+
+/**
+ * THE CONTEXT MANAGER MUST ACTUALLY BE CALLED BY A USER'S ACTION.
+ *
+ * /api/qir-context, compactQirWorkingContext and the whole bounded-context
+ * contract shipped complete on 2026-09-02 — typed, tested, deployed, and called
+ * by NOTHING. It was the last QIR entry in the served-route baseline, and the
+ * twin of the Resource Governor that #523 found the same way.
+ *
+ * These cases drive the REAL client, because "the module is complete and its
+ * tests pass" is exactly the definition of done that produced two unreachable
+ * subsystems.
+ */
+
+/** Like stubTransport, but records the URL as well as the body. */
+function stubRoutedTransport(contextResponder) {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : null;
+    calls.push({ url: String(url), body });
+    if (String(url).startsWith('/api/qir-context')) return contextResponder();
+    return { ok: true, json: async () => ({ run: EXECUTING_RUN }) };
+  };
+  return { calls, restore: () => { globalThis.fetch = original; } };
+}
+
+const CONTEXT_OK = () => ({ ok: true, json: async () => ({ run: EXECUTING_RUN, context: { hash: 'h1' } }) });
+
+test('[was-red] the working context is compacted when the Run advances', async () => {
+  const transport = stubRoutedTransport(CONTEXT_OK);
+  try {
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({
+        enabled: true, sessionId: 's1', goal: 'Build a boutique storefront',
+        vfs: { 'index.html': '<h1>hi</h1>', 'app.js': 'console.log(1)' },
+        job: { title: 'A shop website' },
+      }),
+    });
+    await client.sync();
+    await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const compaction = transport.calls.find((call) => call.url.startsWith('/api/qir-context'));
+    assert.ok(compaction, `nothing called /api/qir-context. Called: ${transport.calls.map((c) => c.url).join(', ')}`);
+    assert.equal(compaction.body.runId, EXECUTING_RUN.runId, 'compaction must name the Run it belongs to');
+    assert.match(compaction.body.projectState.goal, /boutique storefront/);
+  } finally { transport.restore(); }
+});
+
+test('compaction sends file NAMES, never file contents', async () => {
+  /*
+   * A VFS holds megabytes. This crosses the wire on every preview status, and
+   * the file inventory is the only thing the durable Run does not already know
+   * — the server compacts goal, cursor, blockers and artifacts out of the Run
+   * itself.
+   */
+  const transport = stubRoutedTransport(CONTEXT_OK);
+  try {
+    const secret = 'SENTINELFILECONTENTZZQ';
+    const vfs = {};
+    for (let i = 0; i < 250; i += 1) vfs[`file-${i}.js`] = `const x = "${secret}";`;
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs, job: { title: 'j' } }),
+    });
+    await client.sync();
+    await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+    const compaction = transport.calls.find((call) => call.url.startsWith('/api/qir-context'));
+    assert.ok(compaction);
+    assert.doesNotMatch(JSON.stringify(compaction.body), new RegExp(secret), 'file contents must never be sent');
+    assert.equal(compaction.body.projectState.files.length, 100, 'the inventory must stay bounded');
+    assert.equal(compaction.body.projectState.fileCount, 250, 'while still reporting the true total');
+  } finally { transport.restore(); }
+});
+
+test('[was-red] a build never fails because the context could not be compacted', async () => {
+  /*
+   * Compaction is an optimisation for a worker that may never arrive. Every
+   * failure mode must resolve to silence — the fail-open rule the governor
+   * follows, and the invariant #516 added when unreadable bookkeeping sealed
+   * whole missions.
+   */
+  const modes = [
+    ['the route is unreachable', () => { throw new Error('ECONNRESET'); }],
+    ['storage is unconfigured', () => ({ ok: false, status: 503, json: async () => ({ reason: 'storage-unconfigured' }) })],
+    ['the write was refused', () => ({ ok: false, status: 503, json: async () => ({ reason: 'persist-failed' }) })],
+    ['a version conflict', () => ({ ok: false, status: 409, json: async () => ({ conflict: true }) })],
+    ['the body is unreadable', () => ({ ok: true, json: async () => { throw new Error('bad json'); } })],
+  ];
+  for (const [why, responder] of modes) {
+    const transport = stubRoutedTransport(responder);
+    const errors = [];
+    try {
+      const client = createQirCodingRunClient({
+        onRun: () => {}, onError: (e) => errors.push(e),
+        readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs: {}, job: {} }),
+      });
+      await client.sync();
+      const settled = await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+      assert.ok(settled, `${why}: the caller must still get its Run back`);
+      assert.equal(errors.length, 0, `${why}: compaction must not surface an error to the desk`);
+    } finally { transport.restore(); }
+  }
+});
+
+test('[was-red] compaction is automatic, not a method someone must remember to call', async () => {
+  /*
+   * THE DESIGN DECISION, pinned because it is the whole point.
+   *
+   * Exposing compactWorkingContext() on the client and trusting a caller to
+   * invoke it is how BOTH the Governor and the Context Manager came to be
+   * unwired: a method nobody calls is indistinguishable from one nobody has
+   * called yet, and the served-route gate would report /api/qir-context as
+   * reachable while no user action ever reached it — a false clean, of exactly
+   * the kind that gate exists to prevent.
+   */
+  const source = readFileSync(new URL('./qir-coding-run-core.js', import.meta.url), 'utf8');
+  const returned = source.slice(source.lastIndexOf('  return {'));
+  assert.doesNotMatch(returned, /compactWorkingContext/, 'it must NOT be exported for someone to remember');
+  assert.equal(
+    (source.match(/void compactWorkingContext\(/g) || []).length,
+    2,
+    'both paths where the Run advances — promotion and runtime observation — must compact',
+  );
+});
+
+test('[was-red] compaction is never on the path the user is waiting for', async () => {
+  /*
+   * THE REGRESSION THIS PINS. The first version awaited compaction inside
+   * reportPreviewStatus. The desktop app runs with no durable storage, so every
+   * preview status bought a doomed network round trip on the critical path —
+   * and the desktop smoke gate went red on "Cmd/Ctrl+S wrote the edit to disk"
+   * with a console 503 beside it. It passed on the commit before.
+   *
+   * Compaction is an optimisation for a worker that may never arrive. The
+   * caller must return without it, however slow the route is.
+   */
+  const original = globalThis.fetch;
+  let released;
+  const hold = new Promise((resolve) => { released = resolve; });
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith('/api/qir-context')) {
+      await hold;                       // a route that never answers in time
+      return { ok: true, json: async () => ({}) };
+    }
+    if (init?.body) JSON.parse(init.body);
+    return { ok: true, json: async () => ({ run: EXECUTING_RUN }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs: {}, job: {} }),
+    });
+    await client.sync();
+    const settled = await Promise.race([
+      client.reportPreviewStatus({ kind: 'runtime', status: 'clean' }).then(() => 'returned'),
+      new Promise((resolve) => { setTimeout(() => resolve('blocked'), 250); }),
+    ]);
+    assert.equal(settled, 'returned', 'the caller must not wait on compaction');
+  } finally {
+    released();
+    globalThis.fetch = original;
+  }
+});
+
+test('[was-red] it stops asking once the deployment says storage is unconfigured', async () => {
+  /*
+   * Repeating a request that has been definitively refused is how a console
+   * fills with 503s that mask a real one — which is what the desktop gate
+   * surfaced.
+   */
+  let contextCalls = 0;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('/api/qir-context')) {
+      contextCalls += 1;
+      return { ok: false, status: 503, json: async () => ({ reason: 'storage-unconfigured' }) };
+    }
+    return { ok: true, json: async () => ({ run: EXECUTING_RUN }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: () => {},
+      readOptions: () => ({ enabled: true, sessionId: 's1', goal: 'g', vfs: {}, job: {} }),
+    });
+    await client.sync();
+    for (let i = 0; i < 4; i += 1) {
+      await client.reportPreviewStatus({ kind: 'runtime', status: 'clean' });
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    }
+    assert.equal(contextCalls, 1, `asked ${contextCalls} times; a refused deployment must be asked once`);
+  } finally { globalThis.fetch = original; }
+});
+
+test('[was-red] compaction never overwrites the live Run with its own reply', async () => {
+  /*
+   * Accepting the returned Run would let a late compaction land out of order
+   * with a newer transition and replace runNow with a staler snapshot. The
+   * compacted context is durable the moment the route commits it; taking it
+   * back is a data race for nothing.
+   */
+  const source = readFileSync(new URL('./qir-coding-run-core.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('const compactWorkingContext'), source.indexOf('const requestPremiumEscalation'));
+  assert.doesNotMatch(body, /accept\(/, 'compaction must not feed its response back into the client state');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * TOOL ACCOUNTING IS WIRED, NOT MERELY BUILT.
+ *
+ * This repository keeps deleting subsystems that were written, tested and
+ * called by nothing: the cost meter, the Context Manager, the Resource
+ * Governor. Tool accounting has three parts on three sides of the app — the
+ * server announces a completed tool over SSE, the stream hook forwards it, the
+ * Run charges for it — so the seams are asserted, not just the arithmetic.
+ * ---------------------------------------------------------------------------
+ */
+const readSource = (relative) => readFileSync(path.join(import.meta.dirname, relative), 'utf8');
+
+test('the chat stream forwards a completed tool call to the Run', () => {
+  const stream = readSource('../hooks/useChatStream.js');
+  assert.match(
+    stream,
+    /parsed\.status\.phase === 'tool' && parsed\.status\.state === 'completed'/,
+    'the server already announces each completed tool; the stream must forward it',
+  );
+  assert.match(stream, /onToolInvokedRef\.current\?\./, 'read through a ref, or a stale callback stops accounting mid-turn');
+});
+
+test('the desk hands the Run its tool reporter', () => {
+  // Two halves that lived on opposite sides of AiStudio and were never joined.
+  assert.match(readSource('../components/AiStudio.jsx'), /onToolInvoked: qirCoding\.reportToolUse/);
+  assert.match(readSource('../hooks/useQirCodingRun.js'), /client\.reportToolUse\(tool, units\)/);
+});
+
+test('the Run route can actually charge for a tool', () => {
+  const route = readFileSync(path.join(import.meta.dirname, '..', '..', 'api', 'qir-runs.ts'), 'utf8');
+  assert.match(route, /action === "coding\.tool"/, 'a reporter with no route to call is not accounting');
+  assert.match(route, /spendOrdinaryUnits\(record\.run\.budget, units\)/);
+  assert.match(route, /eventType: "coding\.tool_invoked"/, 'the journal names the tool, or model and tool spend cannot be told apart');
+  /*
+   * The client counts events it received, so a confused or hostile caller must
+   * not be able to drain a Run's budget in one request.
+   */
+  assert.match(route, /Math\.min\(10, Math\.max\(1, Number\(req\.body\?\.units\) \|\| 1\)\)/);
+});
+
+test('accounting never refuses a build, and never outlives the Run', () => {
+  const core = readSource('./qir-coding-run-core.js');
+  // #516: a build stopped by an uncalibrated allowance is stopped for a reason
+  // no user can act on. The route debits; it must not gate.
+  const route = readFileSync(path.join(import.meta.dirname, '..', '..', 'api', 'qir-runs.ts'), 'utf8');
+  const toolBlock = route.slice(route.indexOf('action === "coding.tool"'), route.indexOf('THE STOP BUTTON'));
+  assert.doesNotMatch(toolBlock, /WAITING_FOR_CAPACITY/, 'tool accounting debits, it does not refuse');
+  assert.match(toolBlock, /qirRunHasStopped\(record\.run\)/, 'a finished Run cannot accrue new charges');
+  assert.match(core, /\['COMPLETE', 'FAILED_TERMINAL'\]\.includes\(current\.status\)/);
 });

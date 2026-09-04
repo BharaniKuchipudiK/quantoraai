@@ -1,4 +1,6 @@
 import { requireActiveSession } from "./_lib/authz.js";
+import { spendOrdinaryUnits } from "./_lib/qir-resource-ledger.js";
+import { qirWorkflowAdapter, type QirWorkflowSignal } from "./_lib/qir-workflow-adapter.js";
 import {
   commitQirRunEvent,
   createQirRun,
@@ -12,6 +14,10 @@ import {
   beginQirCodingRecovery,
   promoteQirCodingCheckpoint,
   resumeQirCodingFromSnapshot,
+  pauseQirCodingRun,
+  resumeQirCodingRun,
+  cancelQirCodingRun,
+  qirRunHasStopped,
 } from "./_lib/qir-coding-runtime.js";
 import type { QirAgentRun, QirObservation, QirVerificationResult } from "./_lib/qir-contracts.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -165,6 +171,21 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       return res.status(409).json({ error: "A candidate artifact already exists; recover or verify that generation instead." });
     }
     const started = startModelAttempt(record.run, now);
+    /*
+     * Pay for the attempt out of the ordinary lane.
+     *
+     * Runs are created with runUnitsRemaining: 100 and stepUnitsRemaining: 40,
+     * the governor has allowance logic for both, and until now NOTHING ever
+     * decremented either — the only governor caller in the repository asks for
+     * lane "premium". So a Coding Run recorded every premium escalation and no
+     * ordinary model spend at all.
+     *
+     * Debited inside this commit rather than through reduceQirResourceRequest:
+     * the attempt already has its own event and guards, one commit carries one
+     * event, and this way the spend is atomic with the attempt that incurred it.
+     * It debits but never refuses — see spendOrdinaryUnits.
+     */
+    const attemptRun = { ...started.run, budget: spendOrdinaryUnits(started.run.budget) };
     const strategy = safeText(req.body?.strategy, 240);
     return sendCommit(res, await commitQirRunEvent({
       userSub,
@@ -172,11 +193,12 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       expectedVersion: record.storageVersion,
       eventId: `coding-attempt-${randomUUID()}`,
       eventType: "coding.model_attempt_started",
-      run: started.run,
+      run: attemptRun,
       payload: {
         stepId: started.stepId,
         actionId: started.actionId,
         attempt: started.run.cursor.attempt + 1,
+        ordinaryUnitsRemaining: attemptRun.budget.runUnitsRemaining,
         ...(strategy ? { strategy } : {}),
       },
     }));
@@ -316,6 +338,123 @@ async function handleCodingAction(req: any, res: any, userSub: string) {
       run,
       payload: { verificationId: verification.verificationId, evidenceRefs: verification.evidenceRefs, score: report.score },
     }));
+  }
+
+  /*
+   * ---------------------------------------------------------------------------
+   * TOOL ACCOUNTING (QIR Phase 3's last gap).
+   *
+   * Phase 3 asks for "model/tool accounting". Model spend became real when
+   * coding.attempt started debiting the ordinary lane; a TOOL call cost nothing
+   * at all, so a Run that searched hotels twenty times reported the same budget
+   * as one that searched none.
+   *
+   * WHY THIS DID NOT NEED PHASE 4'S REGISTRY, having claimed twice that it did.
+   * Every tool already funnels through ONE seam, executeToolCall in
+   * agent-tools.ts, and the chat handler already announces each completed call
+   * over SSE as `{ phase: 'tool', state: 'completed', tool }`. The desk has
+   * therefore always been told which tools ran; it simply never charged for
+   * one. A typed registry makes tools uniform and discoverable — worth having,
+   * and not a prerequisite for counting them.
+   *
+   * WHY THE SAME LANES AS A MODEL ATTEMPT, rather than a new toolUnits lane.
+   * A new lane is a contract field nobody has calibrated, and an allowance
+   * invented here would be a number with no evidence behind it. Run and step
+   * units already mean "work this Run may do"; a tool call is work. The EVENT
+   * carries the tool name, so model spend and tool spend stay tellable apart in
+   * the journal without inventing a budget for one of them.
+   *
+   * IT DEBITS, IT NEVER REFUSES — the same rule as the ordinary model lane, for
+   * the same reason (#516): a build stopped by an uncalibrated allowance is a
+   * build stopped for a reason no user can act on.
+   * ---------------------------------------------------------------------------
+   */
+  if (action === "coding.tool") {
+    if (qirRunHasStopped(record.run)) {
+      return res.status(409).json({ error: `A ${record.run.status} Run cannot record further tool use.` });
+    }
+    const tool = safeText(req.body?.tool, 120);
+    if (!tool) return res.status(400).json({ error: "A tool name is required to account for the call." });
+    /*
+     * One unit per call, bounded. The client counts completed tool events, so a
+     * confused or hostile caller must not be able to drain a Run's budget in a
+     * single request.
+     */
+    const units = Math.min(10, Math.max(1, Number(req.body?.units) || 1));
+    const run = { ...record.run, budget: spendOrdinaryUnits(record.run.budget, units), updatedAt: now };
+    return sendCommit(res, await commitQirRunEvent({
+      userSub,
+      runId: run.runId,
+      expectedVersion: record.storageVersion,
+      eventId: `coding-tool-${randomUUID()}`,
+      eventType: "coding.tool_invoked",
+      run,
+      payload: { tool, units },
+    }));
+  }
+
+  /*
+   * ---------------------------------------------------------------------------
+   * THE STOP BUTTON, delivered through the workflow-engine boundary.
+   *
+   * Phase 2 asks for pause/resume/cancel AND for "a workflow-engine adapter
+   * boundary so the rest of QIR is not coupled to one vendor". These three
+   * signals are exactly the lifecycle an engine owns, so they are the ones that
+   * cross the boundary — the route no longer knows how a Run is paused, only
+   * that it asked for it.
+   *
+   * Model attempts, observations, recovery and promotion deliberately stay
+   * above: they carry request-scoped concerns (the verifier, artifact bytes,
+   * spend) and pretending an engine owns them would be a worse lie than the
+   * coupling it removed.
+   *
+   * This is also what stops the adapter being decoration. An interface with one
+   * implementation and no caller is the same defect as the cost meter and the
+   * Context Manager before it — written, tested, connected to nothing. Here it
+   * is on the live path.
+   * ---------------------------------------------------------------------------
+   */
+  const SIGNAL_ACTIONS: Record<string, QirWorkflowSignal> = {
+    "coding.pause": "pause",
+    "coding.resume": "resume",
+    "coding.cancel": "cancel",
+  };
+  const signal = SIGNAL_ACTIONS[action];
+  if (signal) {
+    const result = await qirWorkflowAdapter().signalRun(userSub, record.run.runId, signal, {
+      now,
+      ...(signal === "cancel" ? { reason: safeText(req.body?.reason, 512) || "Cancelled by the user." } : {}),
+    });
+    switch (result.status) {
+      case "ok":
+        return res.status(200).json({
+          run: result.state.run,
+          storageVersion: result.state.storageVersion,
+          continuation: result.state.continuation,
+          durability: "persisted",
+        });
+      case "not-found":
+        return res.status(404).json({ error: "Run not found." });
+      case "already-stopped":
+        return res.status(409).json({ error: `A ${result.runStatus} Run has already stopped.` });
+      case "not-paused":
+        return res.status(409).json({ error: `Only a PAUSED Run can resume; this one is ${result.runStatus}.` });
+      case "conflict":
+        return res.status(409).json({
+          error: "This Run moved while the signal was in flight.",
+          run: result.state.run,
+          storageVersion: result.state.storageVersion,
+        });
+      default:
+        /*
+         * The store's classified verdict, forwarded rather than flattened —
+         * the same rule the persist diagnosis and the spend meter landed on.
+         */
+        return res.status(503).json({
+          error: "The durable Run store rejected this signal.",
+          ...(result.diagnosis ? { diagnosis: result.diagnosis } : {}),
+        });
+    }
   }
 
   return res.status(400).json({ error: "Unsupported Coding Run action." });

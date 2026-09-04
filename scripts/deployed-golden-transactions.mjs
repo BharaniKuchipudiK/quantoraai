@@ -2,7 +2,7 @@
 import process from 'node:process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
-import { describePageState } from './lib/golden-page-state.mjs';
+import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -159,7 +159,7 @@ async function correlationForPreview(previous = null) {
     if (turnFailed) {
       throw new Error(
         `The chat turn failed before any artifact was produced. `
-        + `Page state: ${await describePageState(page, consoleErrors)}`,
+        + `Page state: ${await recordPageState()}`,
       );
     }
     if (await preview.isVisible().catch(() => false)) {
@@ -176,8 +176,28 @@ async function correlationForPreview(previous = null) {
    */
   throw new Error(
     `The generated artifact never reached the deployed project preview after ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
-    + `Page state at timeout: ${await describePageState(page, consoleErrors)}`,
+    + `Page state at timeout: ${await recordPageState()}`,
   );
+}
+
+/*
+ * The snapshot kept as DATA, not only as a sentence.
+ *
+ * describePageState returns JSON embedded in a long message, and the verdict
+ * line then truncated it — on the ad6412b run it cut at exactly "previewMou",
+ * losing previewMounted/previewCompiling/previewError, which are the three
+ * fields that separate "the turn failed" from "the preview never mounted" from
+ * "the preview crashed". Keeping the object means the verdict can lead with
+ * them instead of with a URL and a paragraph of model prose.
+ */
+async function recordPageState() {
+  const snapshot = await pageStateSnapshot(page, consoleErrors);
+  evidence.pageState = snapshot;
+  try {
+    return JSON.stringify(snapshot);
+  } catch {
+    return '{"snapshotFailed":"page state was not serialisable"}';
+  }
 }
 
 async function recordInteraction(correlationId, transaction) {
@@ -236,7 +256,7 @@ try {
   const calculatorCorrelationId = await correlationForPreview();
   markActiveTransaction('calculator', calculatorCorrelationId);
   const calculatorFrame = await frameWith('[data-testid="calculator-display"]');
-  if (!calculatorFrame) throw new Error(`Calculator artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
+  if (!calculatorFrame) throw new Error(`Calculator artifact compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
   const calculatorDisplay = calculatorFrame.locator('[data-testid="calculator-display"]').first();
   if ((await calculatorDisplay.innerText()).trim() !== '0') throw new Error('Calculator rendered with the wrong initial value.');
   await calculatorFrame.locator('[data-testid="calculator-one"]').first().click();
@@ -266,7 +286,7 @@ try {
   const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
-  if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await describePageState(page, consoleErrors)}`);
+  if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
   const websiteHeading = await websiteFrame.locator('h1').first().innerText().catch(() => '');
   if (websiteHeading.trim() !== 'Sunrise Bakery') throw new Error(`Website rendered the wrong heading: ${websiteHeading}.`);
   const websiteCta = websiteFrame.locator('[data-testid="website-cta"]').first();
@@ -318,7 +338,7 @@ try {
     if (await failedTurn.isVisible().catch(() => false)) {
       throw new Error(
         'The guided-intake turn FAILED outright — a website ask must end in an intake question or an artifact, never a dead turn. '
-        + `Page state: ${await describePageState(page, consoleErrors)}`,
+        + `Page state: ${await recordPageState()}`,
       );
     }
     const previewCorrelation = await intakePreview.getAttribute('data-quantora-correlation-id').catch(() => null);
@@ -336,7 +356,7 @@ try {
       if (modalAnswers >= 3) {
         throw new Error(
           `Guided intake asked ${modalAnswers + 1} questions without ever building. `
-          + `Page state: ${await describePageState(page, consoleErrors)}`,
+          + `Page state: ${await recordPageState()}`,
         );
       }
       modalAnswers += 1;
@@ -358,7 +378,7 @@ try {
     if (modalAnswers === 0) {
       throw new Error(
         `The guided-intake turn produced neither an intake question nor an artifact within ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
-        + `Page state: ${await describePageState(page, consoleErrors)}`,
+        + `Page state: ${await recordPageState()}`,
       );
     }
     intakeOutcome = 'intake-rendered';
@@ -385,6 +405,54 @@ try {
   console.error('Deployed golden transactions FAILED:', error?.stack || error);
   // Whoever reads a failed run has the log; they may not have the artifact.
   console.error('Deployed golden evidence:', JSON.stringify(evidence, null, 2));
+  /*
+   * THE LAST LINE, AND THE SHORTEST ONE.
+   *
+   * The dump above is thousands of characters wide: a single console error can
+   * carry an entire base64 font, and one CSP violation about a data: URI dwarfs
+   * everything else in the run. Reading this failure over the GitHub log API
+   * cost several attempts per diagnosis, every attempt landing in the middle of
+   * that blob instead of on the sentence that matters.
+   *
+   * So the verdict is repeated here, last, in one line and bounded. Rule 8 in
+   * its plainest form: a diagnosis nobody can find is not a diagnosis.
+   */
+  const oneLine = (value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 300);
+  const done = evidence.transactions.map((entry) => entry.name).join(', ') || 'none';
+  /*
+   * The decisive fields FIRST. The previous order led with the URL and the
+   * model's prose, so the 300-character bound spent itself on context and cut
+   * off at "previewMou" — the exact field being looked for.
+   */
+  const state = evidence.pageState || {};
+  const digest = [
+    `preview=${state.previewMounted ? 'mounted' : 'absent'}`,
+    state.previewCompiling ? 'compiling' : null,
+    state.previewError ? `previewError=${oneLine(state.previewError).slice(0, 80)}` : null,
+    state.lastTurnFailed ? 'lastTurnFailed' : null,
+    typeof state.buildJobs === 'number' ? `buildJobs=${state.buildJobs}` : null,
+    state.previewCorrelationId ? `previewCid=${state.previewCorrelationId}` : null,
+    state.storageFault ? `storageFault` : null,
+  ].filter(Boolean).join(' ');
+  const verdict = `GOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
+    + ` | completed: ${done}`
+    + (digest ? ` | state: ${digest}` : '')
+    + ` | why: ${oneLine(error?.message || error).slice(0, 160)}`;
+  console.error(`\n${verdict}`);
+  /*
+   * AND WRITTEN OUT, because printing it here was not enough.
+   *
+   * The first attempt at this only shortened the line. It still sat above the
+   * shop-preview gate, the artifact upload and the outcome step — roughly forty
+   * lines of tail — so reading it over the log API still took several fetches
+   * that each landed past it. Shorter is not the same as findable (rule 8).
+   *
+   * The workflow's final step cats this file, so the verdict is the LAST thing
+   * in the job log rather than merely a small thing in the middle of it.
+   */
+  try {
+    writeFileSync(`${ARTIFACT_DIR}/golden-verdict.txt`, `${verdict}\n`);
+  } catch { /* the console line above is still the primary record */ }
   process.exitCode = 1;
 } finally {
   await browser.close();

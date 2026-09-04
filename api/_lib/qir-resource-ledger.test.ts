@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { QIR_CONTRACT_VERSION, type QirAgentRun } from "./qir-contracts.js";
-import { reduceQirCapacityResume, reduceQirResourceRequest } from "./qir-resource-ledger.js";
+import { reduceQirCapacityResume, reduceQirResourceRequest, spendOrdinaryUnits } from "./qir-resource-ledger.js";
 
 function run(overrides: Partial<QirAgentRun> = {}): QirAgentRun {
   return {
@@ -155,4 +155,51 @@ test("late resume callback cannot move a newer action", () => {
   assert.equal(resumed.accepted, false);
   assert.equal(resumed.stale, true);
   assert.strictEqual(resumed.run, waiting);
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * TOOL ACCOUNTING (Phase 3's last gap)
+ *
+ * Model spend became real when coding.attempt began debiting the ordinary lane.
+ * A TOOL call cost nothing, so a Run that searched hotels twenty times reported
+ * the same budget as one that searched none.
+ *
+ * Tools debit the SAME lanes as a model attempt rather than a new toolUnits
+ * lane: a new lane is a contract field nobody has calibrated, and an allowance
+ * invented here would be a number with no evidence behind it. Run and step
+ * units already mean "work this Run may do"; a tool call is work. The journal
+ * event carries the tool name, so the two stay tellable apart without inventing
+ * a budget for one of them.
+ * ---------------------------------------------------------------------------
+ */
+test('a tool call costs the same lanes a model attempt does', () => {
+  const budget = { runUnitsRemaining: 100, stepUnitsRemaining: 40, recoveryReserveRemaining: 20, premiumEscalationRemaining: 5 };
+  const after = spendOrdinaryUnits(budget, 1);
+  assert.equal(after.runUnitsRemaining, 99);
+  assert.equal(after.stepUnitsRemaining, 39);
+  // Protected lanes are for escalation and recovery; an ordinary tool call
+  // must never reach them.
+  assert.equal(after.recoveryReserveRemaining, 20);
+  assert.equal(after.premiumEscalationRemaining, 5);
+});
+
+test('many tool calls floor at zero and never brick the Run', () => {
+  /*
+   * The same trap as the ordinary model lane: isValidQirRunSnapshot rejects a
+   * negative lane, so an unfloored subtraction would make every later commit
+   * for that Run fail — a Run bricked by its own bookkeeping.
+   */
+  let budget = { runUnitsRemaining: 2, stepUnitsRemaining: 1, recoveryReserveRemaining: 3, premiumEscalationRemaining: 1 };
+  for (let call = 0; call < 8; call += 1) budget = spendOrdinaryUnits(budget, 1);
+  assert.equal(budget.runUnitsRemaining, 0);
+  assert.equal(budget.stepUnitsRemaining, 0);
+  assert.ok((budget.runUnitsRemaining ?? 0) >= 0 && (budget.stepUnitsRemaining ?? 0) >= 0);
+});
+
+test('an unlimited lane stays unlimited when a tool runs', () => {
+  const budget = { runUnitsRemaining: null, stepUnitsRemaining: null, recoveryReserveRemaining: null, premiumEscalationRemaining: null };
+  const after = spendOrdinaryUnits(budget, 3);
+  assert.equal(after.runUnitsRemaining, null);
+  assert.equal(after.stepUnitsRemaining, null);
 });

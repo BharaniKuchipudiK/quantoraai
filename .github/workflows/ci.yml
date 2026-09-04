@@ -5,6 +5,14 @@ on:
   push:
     branches:
       - main
+  # Run it on demand against any ref.
+  #
+  # Added on 2026-09-04, when three consecutive pushes to a PR branch produced
+  # NO workflow run at all: Vercel's deployment_status events kept creating
+  # runs while every pull_request synchronize stopped, so the code was pushed
+  # and nothing measured it. Local green is necessary and never sufficient
+  # here, and a suite that cannot be started is the same as no suite.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -89,7 +97,17 @@ jobs:
 
   browser-gates:
     name: Browser release gates
-    needs: verify
+    # No 'needs: verify'. These run on their own runners and share nothing with
+    # it, so gating them on it only serialised the wall clock: verify takes
+    # ~8-10 minutes and the browser jobs then took another ~4-6, making a green
+    # cycle ~14 minutes when the work itself is ~9.
+    #
+    # The tradeoff is deliberate. Waiting saved RUNNER MINUTES on a red build by
+    # not starting browsers for code that does not compile. Running in parallel
+    # saves WALL CLOCK on a green build. Green is the common case, and on
+    # 2026-09-04 four CI cycles in eighty minutes was the actual cost of this
+    # branch keeping up with main. Time to feedback is what was scarce, not
+    # runner minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -155,6 +173,27 @@ jobs:
         env:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/workspace-contract-browser-gate.mjs
+
+      # BLOCKING. It went in red with a stated end condition — "this loses
+      # continue-on-error when the auto-open bug is fixed" — and the bug is
+      # fixed, so it has.
+      #
+      # What it caught: the second build in any session rendered no preview.
+      # The commit block ended `if (assembled.reopenDesk) setCodingDeskOpen(true)`
+      # and reopenDesk is `hadProject && didUpdate`, so a chat's FIRST build
+      # never opened the desk. New Chat resets codingDeskOpen to false, and the
+      # preview pane is gated on it, so ProjectRuntimePreview was never mounted:
+      #
+      #   bakeryVfs=true wsMode=true runCode=true deskOpen=FALSE
+      #
+      # Everything right except the one flag deciding whether any of it is on
+      # screen. The deployed golden hit this as its website transaction, and no
+      # local gate covered a second build because the first had never passed.
+      - name: Prove a second build in one session still previews
+        id: second_transaction
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/second-transaction-browser-gate.mjs
 
       - name: Execute platform experience budget
         id: platform_experience
@@ -397,7 +436,7 @@ jobs:
 
   desktop-smoke:
     name: Desktop smoke gate
-    needs: verify
+    # Parallel with verify, for the reason given on browser-gates above.
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

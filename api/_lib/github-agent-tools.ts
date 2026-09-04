@@ -51,16 +51,18 @@ import {
 } from "./github-intelligence.js";
 import type { FetchLike, GithubPrincipal } from "./github-principal.js";
 
-export const GITHUB_TOOL_NAMES = new Set([
-  "read_pull_request",
-  "list_pull_requests",
-  "list_issues",
-  "read_repo_file",
-]);
-
-export function isGithubToolName(name: unknown): boolean {
-  return typeof name === "string" && GITHUB_TOOL_NAMES.has(name);
-}
+/*
+ * There was a GITHUB_TOOL_NAMES set and an isGithubToolName() beside it, kept
+ * in step with the declarations below by hand and by a test. Their only job was
+ * to let chat-handler.ts answer "is this call mine?" before choosing an
+ * executor. The tool registry (Phase 4) answers that by looking the name up in
+ * the one place tools are registered, so a second list of the same strings is
+ * now a thing to keep in step for no reader — which is how they drift.
+ *
+ * The gates that stood on it did not go with it: they moved onto
+ * githubFunctionDeclarations itself, which is stronger, because what the model
+ * is TOLD it has is the thing that reaches the user.
+ */
 
 /**
  * Tools are offered only to a user who has actually connected GitHub.

@@ -255,6 +255,86 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * qir-capacity-roundtrip.test.ts proves a Coding attempt can start from there.
    * Before that fix this call would have stalled the mission permanently.
    */
+  /*
+   * Compact the working context into durable state, after the Run advances.
+   *
+   * THE GAP THIS CLOSES. The Context Manager — /api/qir-context,
+   * compactQirWorkingContext, the whole bounded-context contract — shipped
+   * complete on 2026-09-02: typed, tested, deployed, and called by NOTHING.
+   * It was the last QIR entry in the served-route baseline, and the twin of the
+   * Resource Governor #523 found the same way.
+   *
+   * WHY THIS IS NOT A NEW EXPORTED METHOD. The obvious wiring is to expose
+   * compactWorkingContext() on the client and have some caller remember to
+   * invoke it. That is exactly how both subsystems came to be unwired in the
+   * first place: a method nobody calls looks identical to a method nobody has
+   * called YET, and the served-route gate would then report /api/qir-context as
+   * reachable while no user action ever reaches it — a false clean, of the kind
+   * that gate exists to prevent.
+   *
+   * So compaction is automatic, and fires where the Run has definitively moved:
+   * reportPreviewStatus is the point at which an observation, and possibly a
+   * promotion, has already been committed.
+   *
+   * IT IS NOT AWAITED, AND THAT IS THE FIX FOR A REAL REGRESSION.
+   *
+   * The first version awaited this inside reportPreviewStatus and turned the
+   * desktop smoke gate red: "Cmd/Ctrl+S wrote the edit to disk" failed with a
+   * console 503 beside it. The desktop app runs with no durable storage, so
+   * every preview status bought a doomed network round trip on the critical
+   * path — and the save check behind it lost the race.
+   *
+   * Compaction is an optimisation for a worker that may never arrive. Nothing
+   * the user is waiting for may ever wait for it, so callers fire and forget.
+   *
+   * IT ALSO DOES NOT ACCEPT THE RETURNED RUN. Landing out of order with a later
+   * transition would overwrite runNow with a staler snapshot. The compacted
+   * context is durable server-side the moment the route commits it; the client
+   * has no need of it, and taking it back is a data race for nothing.
+   *
+   * AND IT STOPS ASKING once the deployment says storage is not configured.
+   * Repeating a request that has already been definitively refused is how a
+   * console fills with 503s that mask a real one.
+   */
+  let storageUnconfigured = false;
+
+  const compactWorkingContext = async (current, note) => {
+    if (!current?.runId || storageUnconfigured) return;
+    try {
+      const { vfs, goal, job } = readOptions();
+      const files = Object.keys(vfs || {});
+      const response = await fetch('/api/qir-context', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          runId: current.runId,
+          /*
+           * The one thing the durable Run does not already know. The server
+           * compacts goal, cursor, blockers, evidence and artifacts out of the
+           * Run itself; the file inventory lives only in this browser.
+           *
+           * Names, never contents: a VFS can hold megabytes, this has to stay
+           * bounded, and the server sanitises and caps whatever arrives anyway.
+           */
+          projectState: {
+            files: files.sort().slice(0, 100),
+            fileCount: files.length,
+            goal: String(goal || '').slice(0, 500),
+            job: String(job?.title || job?.name || '').slice(0, 200),
+          },
+          recentInteractions: note ? [String(note).slice(0, 500)] : [],
+        }),
+      });
+      if (response.status === 503) {
+        const body = await response.json().catch(() => ({}));
+        if (body?.reason === 'storage-unconfigured') storageUnconfigured = true;
+      }
+    } catch {
+      /* A build must never fail, or slow down, because a snapshot was missed. */
+    }
+  };
+
   const requestPremiumEscalation = () => enqueue(async () => {
     const current = runNow;
     const actionId = current?.cursor?.actionId;
@@ -420,7 +500,9 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         brief: goal,
         job,
       });
-      return accept(promoted);
+      const next = accept(promoted);
+      void compactWorkingContext(next, 'preview quality verified; artifact promoted');
+      return next;
     }
 
     const reported = status && typeof status === 'object' && status.kind === 'runtime'
@@ -430,8 +512,61 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     const success = reported === 'clean';
     if ((!failure && !success) || current.status !== 'EXECUTING') return current;
     current = accept(await observePreview(current, failure));
+    void compactWorkingContext(current, failure ? 'preview reported a runtime failure' : 'preview ran clean');
     return current;
   });
+
+  /*
+   * THE STOP BUTTON, client side.
+   *
+   * Phase 2 asks for pause/resume/cancel. PAUSED existed as a state and
+   * deriveQirContinuation already honoured it, but nothing could reach it — so
+   * a user with a runaway build could close the tab and stop the browser while
+   * the Run carried on believing it was mid-flight.
+   *
+   * These are NOT fire-and-forget like compaction. A stop the user asked for
+   * has to be acknowledged before the desk claims it stopped, or the button
+   * lies the way "retry once on a fallback engine" lied in a state where
+   * nothing would ever run again.
+   */
+  /*
+   * TOOL ACCOUNTING, client side.
+   *
+   * The chat stream already announces each completed tool as
+   * `{ phase: 'tool', state: 'completed', tool }`; the desk has always been
+   * told and never charged for one. Reporting it here debits the same lanes a
+   * model attempt does, so a Run that searched hotels twenty times no longer
+   * reports the budget of one that searched none.
+   *
+   * FIRE-AND-FORGET, like compaction and unlike the stop button. Accounting is
+   * observational: the tool has already run and its result is already on screen,
+   * so making the user wait on a bookkeeping round trip would buy nothing — and
+   * an awaited call here would sit on the path the user is waiting for, which
+   * is the regression CI caught in the Context Manager this morning.
+   */
+  const reportToolUse = (tool, units = 1) => {
+    const name = String(tool || '').trim();
+    if (!name) return;
+    void enqueue(async (current) => (
+      current?.runId && !['COMPLETE', 'FAILED_TERMINAL'].includes(current.status)
+        ? accept(await requestQir({ action: 'coding.tool', runId: current.runId, tool: name, units }))
+        : current
+    ));
+  };
+
+  const pause = () => enqueue(async (current) => (
+    current?.runId ? accept(await requestQir({ action: 'coding.pause', runId: current.runId })) : current
+  ));
+
+  const resume = () => enqueue(async (current) => (
+    current?.status === 'PAUSED' ? accept(await requestQir({ action: 'coding.resume', runId: current.runId })) : current
+  ));
+
+  const cancel = (reason = '') => enqueue(async (current) => (
+    current?.runId
+      ? accept(await requestQir({ action: 'coding.cancel', runId: current.runId, ...(reason ? { reason } : {}) }))
+      : current
+  ));
 
   return {
     sync,
@@ -440,5 +575,9 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     reportModelFailure,
     reportHealedArtifact,
     reportPreviewStatus,
+    reportToolUse,
+    pause,
+    resume,
+    cancel,
   };
 }

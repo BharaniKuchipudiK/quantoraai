@@ -30,18 +30,119 @@ function regexEscape(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * The opening tag that carries `needle`, with `=>` inside braces skipped.
+ *
+ * A plain /<button[^>]*testid[^>]*>/ cannot do this: `onClick={() => setX(1)}`
+ * contains a `>`, so the character class ends the tag in the middle of the
+ * handler — which is why the previous version needed two alternative patterns
+ * and still only matched handlers with no arrow at all.
+ */
+function openingTagCarrying(source: string, needle: RegExp): string {
+  const match = source.match(needle);
+  if (!match || match.index === undefined) return '';
+  const start = source.lastIndexOf('<button', match.index);
+  if (start === -1) return '';
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === '{') depth += 1;
+    else if (character === '}') depth -= 1;
+    else if (character === '>' && depth === 0) return source.slice(start, index + 1);
+  }
+  return '';
+}
+
+/** A JSX attribute's braced expression, matched by brace depth rather than regex. */
+function jsxAttributeExpression(tag: string, attribute: string): string {
+  const at = tag.search(new RegExp(`${attribute}\\s*=\\s*\\{`, 'i'));
+  if (at === -1) return '';
+  const open = tag.indexOf('{', at);
+  let depth = 0;
+  for (let index = open; index < tag.length; index += 1) {
+    if (tag[index] === '{') depth += 1;
+    else if (tag[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return tag.slice(open + 1, index);
+    }
+  }
+  return '';
+}
+
+/**
+ * Is the calculator WIRED — not, is it written the one way these regexes
+ * happened to imagine.
+ *
+ * THE INCIDENT. On 2026-09-04 the deployed golden burned all five attempts on
+ * `calculator-interaction-missing`. The models were not failing; they were
+ * writing the calculator the way it is normally written:
+ *
+ *   const handleDigit = (d) => setDisplay((prev) => prev === '0' ? d : prev + d);
+ *   <button data-testid="calculator-one" onClick={() => handleDigit('1')}>1</button>
+ *
+ * The old check demanded a LITERAL `setDisplay(1)` or `setDisplay('1')`, so a
+ * functional updater behind a generic digit handler — the correct
+ * implementation — failed, while a naive one passed. Reproduced both ways
+ * locally before this was touched.
+ *
+ * That is the guided-intake contradiction again, one function down: the
+ * platform punishing the model for obeying it. Worse here, because the
+ * artifact never reached the browser gate that clicks the button and asserts
+ * the display reads 1 — the REAL verifier, which proves behaviour and does not
+ * care how the state got there.
+ *
+ * So this checks wiring and stops: state exists, the display renders it, and
+ * the "1" button's handler reaches the setter — directly or through one named
+ * function. A static mockup still fails, which is all this needs to catch
+ * before handing the artifact to a browser that can prove the rest.
+ */
 function hasCalculatorInteraction(content: string) {
-  const state = String(content || '').match(
-    /\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*(?:React\s*\.\s*)?useState\s*\(\s*['"]?0['"]?\s*\)/,
+  const source = String(content || '');
+  const state = source.match(
+    /\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*(?:React\s*\.\s*)?useState\s*\(/,
   );
   if (!state) return false;
   const value = regexEscape(state[1]);
   const setter = regexEscape(state[2]);
-  const displayReadsState = new RegExp(`data-testid\\s*=\\s*["']calculator-display["'][^>]*>[\\s\\S]*?\\{\\s*${value}\\s*\\}`).test(content);
-  const setterCanReachOne = new RegExp(`${setter}\\s*\\(\\s*["']?1["']?\\s*\\)`).test(content);
-  const buttonHasClickHandler = /<button\b[^>]*data-testid\s*=\s*["']calculator-one["'][^>]*onClick\s*=/i.test(content)
-    || /<button\b[^>]*onClick\s*=[^>]*data-testid\s*=\s*["']calculator-one["']/i.test(content);
-  return displayReadsState && setterCanReachOne && buttonHasClickHandler;
+
+  /*
+   * The display renders the state — through a formatter if the model chose one.
+   * Requiring a bare `{value}` rejected `{display.toLocaleString()}`, which is
+   * the same shape-over-behaviour mistake in miniature.
+   */
+  const displayTag = source.match(/data-testid\s*=\s*["']calculator-display["']/);
+  if (!displayTag) return false;
+  const afterDisplay = source.slice(displayTag.index ?? 0);
+  const rendersState = new RegExp(`>[^<]*\\{[^}]*\\b${value}\\b[^}]*\\}`).test(afterDisplay.slice(0, 400));
+  if (!rendersState) return false;
+
+  const button = openingTagCarrying(source, /data-testid\s*=\s*["']calculator-one["']/);
+  if (!button) return false;
+  const onClick = jsxAttributeExpression(button, 'onClick');
+  if (!onClick) return false;
+
+  // Directly: onClick={() => setDisplay(...)}
+  if (new RegExp(`\\b${setter}\\s*\\(`).test(onClick)) return true;
+
+  /*
+   * Or one hop, covering both ways a handler is passed:
+   *   onClick={() => handleDigit('1')}   — called inside the expression
+   *   onClick={chooseOne}                — passed by reference
+   * so every identifier in the expression is a candidate, not only called ones.
+   *
+   * The hop checks the handler's OWN body rather than merely that the setter
+   * appears somewhere in the module: a button wired to an unrelated function
+   * must still fail while some other code sets state.
+   */
+  const HANDLER_BODY_WINDOW = 300;
+  const candidates = [...onClick.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)].map((hit) => hit[1]);
+  return candidates.some((name) => {
+    const definition = source.search(new RegExp(
+      `(?:function\\s+${regexEscape(name)}\\b|(?:const|let|var)\\s+${regexEscape(name)}\\s*=)`,
+    ));
+    if (definition === -1) return false;
+    return new RegExp(`\\b${setter}\\s*\\(`).test(source.slice(definition, definition + HANDLER_BODY_WINDOW));
+  });
 }
 
 /**

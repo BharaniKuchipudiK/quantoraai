@@ -15,10 +15,20 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
   onDeskProbeRef.current = onDeskProbe;
   const onStatusChangeRef = useRef(onStatusChange);
   onStatusChangeRef.current = onStatusChange;
+  const deliveredRef = useRef(false);
   const [html, setHtml] = useState('');
+  /*
+   * Read through a ref inside the message listener, which is subscribed once.
+   * Putting `html` in that effect's deps would tear down and re-add the
+   * listener exactly when the shell is announcing itself, and embed-ready
+   * would be missed.
+   */
+  const htmlRef = useRef('');
+  const [delivered, setDelivered] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const serializedVfs = useMemo(() => JSON.stringify(vfs || {}), [vfs]);
+  htmlRef.current = html;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -34,6 +44,8 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
     frameRef.current = null;
     renderedRef.current = false;
     terminalRef.current = false;
+    deliveredRef.current = false;
+    setDelivered(false);
     onStatusChangeRef.current?.('compiling');
     compiledIdRef.current = normalizeClientCorrelationId(correlationId);
     // Facts observed on the previous build must not vouch for this one.
@@ -81,6 +93,21 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
   useEffect(() => {
     const onMessage = (event) => {
       if (event.source !== frameRef.current?.contentWindow) return;
+
+      /*
+       * The shell announcing itself. It is a DIFFERENT marker from the compiled
+       * app's (__quantora vs __quantoraProjectPreview), so the two can never be
+       * mistaken for one another — the shell saying "ready" must never satisfy
+       * the generated application's obligation to say it rendered.
+       */
+      if (event.data?.__quantora && event.data.kind === 'embed-ready') {
+        if (deliveredRef.current || !htmlRef.current) return;
+        deliveredRef.current = true;
+        event.source.postMessage({ __quantoraPreviewHtml: htmlRef.current }, '*');
+        setDelivered(true);
+        return;
+      }
+
       if (!event.data?.__quantoraProjectPreview) return;
       if (!previewMessageMatchesCompile({
         requestId: correlationId,
@@ -124,7 +151,13 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
   }, [correlationId, goldenTransaction]);
 
   useEffect(() => {
-    if (!html || error || renderedRef.current || terminalRef.current) return undefined;
+    /*
+     * Starts on DELIVERY, not on compilation. The shell has to load and
+     * announce itself before the generated app exists at all, so starting the
+     * clock when `html` arrived charged that round trip against the app's seven
+     * seconds.
+     */
+    if (!delivered || error || renderedRef.current || terminalRef.current) return undefined;
     // The compiled iframe itself promises a terminal ready/error event within
     // five seconds. Give message delivery two extra seconds, then fail visibly
     // instead of leaving the parent status on “starting” forever.
@@ -140,7 +173,7 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
       });
     }, PREVIEW_RENDER_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [html, error, correlationId, goldenTransaction]);
+  }, [delivered, error, correlationId, goldenTransaction]);
 
   return (
     <div
@@ -170,7 +203,31 @@ export default function ProjectRuntimePreview({ vfs, correlationId, goldenTransa
         <iframe
           ref={frameRef}
           title="Quantora generated app preview"
-          srcDoc={html}
+          /*
+           * THE SHELL, NOT srcDoc.
+           *
+           * A srcdoc document INHERITS the embedder's CSP, and the app's CSP is
+           * `script-src 'self' blob:` with no 'unsafe-inline'. So every inline
+           * script in a generated application was refused, the harness never
+           * ran, and the parent timed out with "compiled, but the generated
+           * application did not report that it rendered" — which is exactly
+           * what the deployed golden reported on aa79bb5, with two "Refused to
+           * execute inline script" errors sitting in the console next to it.
+           *
+           * /preview/embed.html is a real same-origin response, so it carries
+           * its OWN relaxed CSP (vercel.json /preview/* and the meta tag in the
+           * shell) instead of inheriting the app's.
+           *
+           * LivePreviewCanvas learned this and says so at the top of its file;
+           * the fix was never carried across to this component. Same defect,
+           * one component over — the class was left open (§7).
+           *
+           * The sandbox is UNCHANGED and still withholds allow-same-origin:
+           * same-origin *serving* is what supplies the shell's CSP, and the
+           * sandbox is what keeps the generated code at an opaque origin with
+           * no access to ours.
+           */
+          src="/preview/embed.html"
           sandbox={buildPreviewSandbox()}
           style={{ width: '100%', height: '100%', minHeight: 420, border: 0, background: '#ffffff' }}
         />

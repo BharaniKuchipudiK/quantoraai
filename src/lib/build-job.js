@@ -96,6 +96,71 @@ export function advanceBuildJob(job, vfs = {}) {
   return { ...job, steps, updatedAt: Date.now() };
 }
 
+/**
+ * A fingerprint of the desk as it stands.
+ *
+ * A verdict must not outlive what it judged. Without this, a pass earned by the
+ * calculator would still read as proof after the desk had been replaced by a
+ * bakery — the artifact-level version of the stale-locator failure that kept
+ * the deployed golden red for weeks while looking like a flake.
+ *
+ * Content, not just size: two files of equal length are not the same file, and
+ * a rename that preserves lengths is exactly the edit a size-only fingerprint
+ * would call unchanged. djb2, and deliberately not cryptographic — the question
+ * is "is this the same desk?", not "did an adversary forge it".
+ */
+export function deskFingerprint(vfs = {}) {
+  const paths = Object.keys(vfs || {}).sort();
+  if (!paths.length) return '';
+  let hash = 5381;
+  const push = (text) => {
+    const value = String(text || '');
+    for (let i = 0; i < value.length; i += 1) hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
+  };
+  for (const path of paths) {
+    const entry = vfs[path];
+    push(path);
+    push('\u0000');
+    push(typeof entry === 'string' ? entry : (entry?.content ?? entry?.code ?? ''));
+    push('\u0001');
+  }
+  return `${paths.length}-${(hash >>> 0).toString(36)}`;
+}
+
+/**
+ * WHETHER THE FILES ARE THERE IS NOT WHETHER IT WORKS.
+ *
+ * buildJobIsComplete answers the first question and was never meant to answer
+ * the second — the module note above is explicit that a step is done when its
+ * files exist, which is a deliberately falsifiable floor and stays exactly as
+ * it was. But the desk painted that count GREEN and the user read it as
+ * "my app works", while verifyBuild — which exists, runs on every build, and
+ * returns `passed` — was consulted by nobody here. A calculator whose four
+ * files are all present and whose buttons are wired to nothing scored 4 of 4.
+ *
+ * That is the same defect as hasCalculatorInteraction checking shape instead of
+ * wiring, one layer up, and it is what QIR Phase 5 means by "remove independent
+ * DONE paths that bypass verifier evidence".
+ *
+ * Four states, because collapsing them would put back a lie:
+ *
+ *   incomplete  — a step's files are still missing
+ *   unverified  — every file is present and NOTHING has judged this desk
+ *   failed      — every file is present and the check of THIS desk did not pass
+ *   proved      — every file is present and the check of THIS desk passed
+ *
+ * A verdict that cannot say which desk it judged counts as no verdict. That is
+ * strict on purpose: a verdict with no fingerprint is either stale or from a
+ * caller that does not know what it measured, and both are worse than an
+ * honest "not yet checked".
+ */
+export function buildJobOutcome(job, vfs = {}, verdict = null) {
+  if (!buildJobIsComplete(job)) return 'incomplete';
+  if (!verdict || typeof verdict.passed !== 'boolean') return 'unverified';
+  if (!verdict.desk || verdict.desk !== deskFingerprint(vfs)) return 'unverified';
+  return verdict.passed ? 'proved' : 'failed';
+}
+
 export function completedCount(job) {
   return (job?.steps || []).filter((step) => step.done).length;
 }
@@ -136,10 +201,11 @@ export function nextStepBrief(job) {
  * "not done" is a fact anybody can check against the FILES pane rather than a
  * verdict they have to trust.
  */
-export function describeBuildJob(job) {
+export function describeBuildJob(job, { vfs = {}, verdict = null } = {}) {
   if (!job?.steps?.length) return '';
   const done = completedCount(job);
   const total = job.steps.length;
+  const outcome = buildJobOutcome(job, vfs, verdict);
   const lines = [`**${done} of ${total} steps done** — judged by the files on the desk, not by what any turn claimed.`];
   for (const step of job.steps) {
     if (step.done) {
@@ -149,9 +215,23 @@ export function describeBuildJob(job) {
       lines.push(`- [ ] ${step.title} — waiting on ${missing.join(', ')}`);
     }
   }
-  if (!buildJobIsComplete(job)) {
+  if (outcome === 'incomplete') {
     // No resume is promised, because none is performed. See the module note.
     lines.push('', 'Say **continue** and I will take the next step.');
+    return lines.join('\n');
+  }
+  /*
+   * Every file is here. Say what that does and does not establish, in the same
+   * register as the counts above: a fact the user can check, never an adjective.
+   */
+  if (outcome === 'proved') {
+    lines.push('', 'Every file is on the desk, and this build passed its check.');
+  } else if (outcome === 'failed') {
+    const issues = (verdict?.issues || []).slice(0, 3).filter(Boolean);
+    lines.push('', 'Every file is on the desk. **The check of this build did not pass** — the files existing is not the same as the app working.');
+    for (const issue of issues) lines.push(`- ${issue}`);
+  } else {
+    lines.push('', 'Every file is on the desk. **Nothing has checked this build yet** — that the files exist is not yet evidence that it works.');
   }
   return lines.join('\n');
 }

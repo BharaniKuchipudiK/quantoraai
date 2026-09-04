@@ -17,13 +17,19 @@ import { verifyBuild } from "./verify-build.js";
 import { evaluateSafetyText } from "./safety-policy.js";
 import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-store.js";
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
-import { travelFunctionDeclarations, executeToolCall, shouldEnableTravelTools } from './agent-tools.js';
+import { shouldEnableTravelTools } from './agent-tools.js';
+import { shouldEnableGithubTools } from './github-agent-tools.js';
+/*
+ * Phase 4. The handler imports the REGISTRY, not the families: no declaration
+ * list, no executor, and no isGithubToolName. Which family a call belongs to is
+ * the registry's business, and a third family adds nothing to this file.
+ */
 import {
-  executeGithubToolCall,
-  githubFunctionDeclarations,
-  isGithubToolName,
-  shouldEnableGithubTools,
-} from './github-agent-tools.js';
+  dispatchToolCall,
+  enabledToolDeclarations,
+  isToolCallPermitted,
+  type QuantoraToolContext,
+} from './tool-registry.js';
 import { readGithubPrincipal } from './github-connection-store.js';
 import { shouldGroundTurn } from './studio-domains.js';
 import { normalizeResearchVerifyRequest, runResearchVerification } from './research-verify.js';
@@ -131,6 +137,18 @@ const RATE_LIMIT_PER_MINUTE = 25;
 const TOTAL_CHAT_BUDGET_MS = 165_000;
 const PROVIDER_STREAM_IDLE_MS = 20_000;
 const MAX_AGENT_STEPS = 5;
+/*
+ * How much of the turn tools may spend, measured from when the request arrived.
+ *
+ * api/pipeline.ts carries this route with maxDuration 180s. read_pull_request
+ * alone can spend ~36s — three sequential GitHub hops at GITHUB_TIMEOUT_MS
+ * each — so MAX_AGENT_STEPS of it reaches 180s of tool time before one token of
+ * inference, and the function is killed mid-stream with nothing said to the
+ * user. 120s leaves a minute for the reply the tools were gathered for, and a
+ * call that would cross the line is refused in words the model can pass on
+ * instead of hanging until the platform dies under it.
+ */
+const TOOL_TIME_BUDGET_MS = 120_000;
 const TASK_CATEGORIES = new Set(["coding", "vision", "research", "writing", "quick", "general"]);
 /*
  * What the platform may route to when it is spending its own credit.
@@ -307,25 +325,22 @@ async function openGeminiStream(input: {
   systemInstruction: string;
   temperature: number;
   grounding: boolean;
-  travelToolsEnabled: boolean;
-  githubToolsEnabled?: boolean;
+  toolContext: QuantoraToolContext;
   signal?: AbortSignal;
 }) {
   const client = new GoogleGenAI({ apiKey: input.apiKey });
   const enabledTools: any[] = [];
   if (input.grounding) enabledTools.push({ googleSearch: {} });
   /*
-   * Travel and GitHub declarations are kept in separate groups rather than one
-   * merged list: the call-site guard below decides per family whether a call is
-   * legitimate, and a single list would make "which family is this?" a string
-   * comparison in two places instead of one.
+   * ONE source for what the model is offered (Phase 4).
+   *
+   * This was two `if` blocks over two hand-kept declaration lists, and a third
+   * family meant a third block plus a third boolean threaded down from the
+   * request. The registry answers "which tools may this turn offer?" and still
+   * returns them grouped by family, because the call-site guard below asks the
+   * same registry per call.
    */
-  if (input.travelToolsEnabled && travelFunctionDeclarations.length > 0) {
-    enabledTools.push({ functionDeclarations: travelFunctionDeclarations });
-  }
-  if (input.githubToolsEnabled && githubFunctionDeclarations.length > 0) {
-    enabledTools.push({ functionDeclarations: githubFunctionDeclarations });
-  }
+  enabledTools.push(...enabledToolDeclarations(input.toolContext));
 
   const stream = await client.models.generateContentStream({
     model: input.model,
@@ -1117,6 +1132,24 @@ export default async function handler(req: any, res: any) {
       : null;
     const githubToolsEnabled = shouldEnableGithubTools({ hasGithubConnection: Boolean(githubPrincipal) })
       && Boolean(effectiveGeminiKey);
+    /*
+     * THE turn's tool context. Every question about tools — what to declare,
+     * whether a call is legitimate, who executes it — is asked of the registry
+     * with this, so the three answers cannot disagree with each other.
+     *
+     * travelToolsPermitted is passed explicitly rather than letting the
+     * registry re-derive it from the domain: the handler revokes travel tools
+     * later in the turn (no route survived planning, tools deferred, no Gemini
+     * key), and a registry that re-derived would hand back declarations the
+     * handler had already decided against. Read through a getter because
+     * travelToolsEnabled is reassigned after this point.
+     */
+    const activeToolContext: QuantoraToolContext = {
+      studioDomain: normalizedStudioDomain,
+      githubPrincipal: githubToolsEnabled ? githubPrincipal : null,
+      get travelToolsPermitted() { return travelToolsEnabled; },
+      toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
+    };
     const textCapabilities = visionImages.length
       ? (['text', 'vision'] as const)
       : effectiveBuildMode
@@ -1174,6 +1207,25 @@ export default async function handler(req: any, res: any) {
      * read is a refusal, never an assumption of zero.
      */
     const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
+    /*
+     * PRESENCE IS NOT VALIDITY, and the meter above already knows the difference.
+     *
+     * openRouterAvailable was Boolean(effectiveOpenRouterKey) — a key exists, so
+     * plan rungs on it. On 2026-09-04 the deployed health payload read
+     * openRouterConfigured: true, routeCount: 3 while /auth/key answered
+     * HTTP 401 for that very key, and the golden chat spent its second and last
+     * attempt on nvidia/nemotron-3.5-lightning:free — a FREE model on the gateway
+     * that had already refused the credential. The retry budget was burned on a
+     * door that was measurably shut.
+     *
+     * gatewayDead is set only for an unambiguous 401/403 from the provider. A
+     * timeout, a 5xx and a 429 all leave it false, because "we could not ask" is
+     * not "we were told no" — the same precision rule that keeps the readiness
+     * gate worth having (CLAUDE.md §5). So this narrows routing only on evidence
+     * that every retry would fail identically until a human changes the key.
+     */
+    const openRouterUsable = Boolean(effectiveOpenRouterKey)
+      && paidVerdict.meterFault?.gatewayDead !== true;
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
@@ -1183,7 +1235,7 @@ export default async function handler(req: any, res: any) {
         ? ['text', 'travel-tools']
         : [...textCapabilities],
       geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
-      openRouterAvailable: Boolean(effectiveOpenRouterKey),
+      openRouterAvailable: openRouterUsable,
       geminiCredentialScope: userKey ? 'user' : 'server',
       openRouterCredentialScope: openRouterKey ? 'user' : 'server',
       geminiCredentialPartition: credentialCircuitPartition(userKey),
@@ -1201,7 +1253,7 @@ export default async function handler(req: any, res: any) {
         models: routePlanningModels,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
-        openRouterAvailable: Boolean(effectiveOpenRouterKey),
+        openRouterAvailable: openRouterUsable,
         geminiCredentialScope: userKey ? 'user' : 'server',
         openRouterCredentialScope: openRouterKey ? 'user' : 'server',
         geminiCredentialPartition: credentialCircuitPartition(userKey),
@@ -1389,7 +1441,8 @@ export default async function handler(req: any, res: any) {
                 systemInstruction: attemptSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
-                travelToolsEnabled: false,
+                // The non-travel text/build route offers no tools at all.
+                toolContext: {},
                 signal: openController.signal,
               });
             } catch (error) {
@@ -1740,8 +1793,7 @@ export default async function handler(req: any, res: any) {
                 systemInstruction: injectedSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
-                travelToolsEnabled,
-                githubToolsEnabled,
+                toolContext: activeToolContext,
               });
             } catch (groundError) {
               if (!grounding) throw groundError;
@@ -1752,8 +1804,7 @@ export default async function handler(req: any, res: any) {
                 systemInstruction: injectedSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding: false,
-                travelToolsEnabled,
-                githubToolsEnabled,
+                toolContext: activeToolContext,
               });
             }
             currentModel = attempt.id;
@@ -1817,34 +1868,50 @@ export default async function handler(req: any, res: any) {
            * case worth throwing on rather than quietly executing.
            */
           const toolName = signedFunctionTurn.call.name || 'unknown';
-          const isGithubCall = isGithubToolName(toolName);
-          if (isGithubCall ? !githubToolsEnabled : !travelToolsEnabled) {
+          if (!isToolCallPermitted(toolName, activeToolContext)) {
             throw new Error(`Blocked unexpected tool call this turn: ${toolName}`);
           }
           sse.status({ phase: 'tool', state: 'running', tool: toolName });
 
-          if (isGithubCall) {
-            const githubResult = await executeGithubToolCall(toolName, signedFunctionTurn.call.args, {
-              principal: githubPrincipal,
-            });
-            sse.status({
-              phase: 'tool',
-              state: githubResult?.ok ? 'cleared' : 'unavailable',
-              tool: toolName,
-            });
-            // Same handback as the travel path: mutate `contents` in place and
-            // let the agent loop take the next step, so a GitHub turn keeps the
-            // step accounting and the MAX_AGENT_STEPS ceiling that protects it.
-            appendFunctionResponse(contents, signedFunctionTurn.modelTurn, signedFunctionTurn.call, githubResult);
-            sse.status({ phase: 'tool', state: 'completed', tool: toolName });
-            continueAgent = true;
-          } else {
-
+          /*
+           * turnAttempt is forwarded, not dropped. It is the flight lookup's
+           * stop condition: without it stopAgentLoopOnProviderFailure cannot
+           * tell a first failure from a retried one, and the desk retries a
+           * dead provider forever. Passed only when the request actually sent
+           * one, because absent and 1 mean different things there.
+           */
           const hasTurnAttempt = Object.prototype.hasOwnProperty.call(req.body || {}, 'turnAttempt');
-          const turnAttempt = hasTurnAttempt ? Math.max(1, Number(req.body?.turnAttempt) || 1) : null;
-          const toolResult = await executeToolCall(signedFunctionTurn.call.name, signedFunctionTurn.call.args, {
+          const dispatch = await dispatchToolCall(toolName, signedFunctionTurn.call.args, {
+            ...activeToolContext,
             recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
-            ...(hasTurnAttempt ? { turnAttempt } : {}),
+            ...(hasTurnAttempt ? { turnAttempt: Math.max(1, Number(req.body?.turnAttempt) || 1) } : {}),
+          });
+          if (dispatch.status !== 'ok') {
+            /*
+             * Unreachable while the guard above is the registry's own answer —
+             * and asserted anyway, because a dispatch that is safe only because
+             * of a preceding check is not a boundary. It refuses by the same
+             * words as the guard rather than letting a family executor answer
+             * "unknown or disabled TRAVEL tool" about a GitHub call, which the
+             * model repeats to the user as a fact about their repository.
+             */
+            throw new Error(`Blocked unexpected tool call this turn: ${toolName}`);
+          }
+          const toolResult = dispatch.invocation.raw;
+          /*
+           * ONE announcement, from the family's own classifier.
+           *
+           * This was two emissions written twice — GitHub mapping `ok`, travel
+           * mapping PAUSE_AND_ASK — and a travel result that came back
+           * unavailable WITHOUT an ask fell between them and announced nothing
+           * at all between 'running' and 'completed'. The classifier is handed
+           * the one stream fact it cannot see, so the auto-retry case still
+           * reads 'cleared' only while a retry is actually still possible.
+           */
+          sse.status({
+            phase: 'tool',
+            state: dispatch.invocation.classify({ committed: sse.isCommitted }),
+            tool: toolName,
           });
           if (Array.isArray(toolResult?.hotels) && toolResult.hotels.length) {
             travelPlaces = toolResult.hotels;
@@ -1855,16 +1922,11 @@ export default async function handler(req: any, res: any) {
           }
 
           if (toolResult?.action === 'PAUSE_AND_ASK') {
+            // The status for this result was announced above by the family's
+            // classifier, on the same stream state read here.
             const autoRetryToolTurn = toolResult?.autoRetryTurn === true
               && toolResult?.retryable === true
               && !sse.isCommitted;
-            sse.status({
-              phase: 'tool',
-              state: autoRetryToolTurn
-                ? 'cleared'
-                : (toolResult?.status === 'unavailable' ? 'unavailable' : 'waiting_for_user'),
-              tool: signedFunctionTurn.call.name,
-            });
             if (autoRetryToolTurn) {
               // Mirror turn-recovery (#273): clear the tool status and fail the
               // stream as retryable so the desk re-runs the tool turn once.
@@ -1888,7 +1950,6 @@ export default async function handler(req: any, res: any) {
           appendFunctionResponse(contents, signedFunctionTurn.modelTurn, signedFunctionTurn.call, toolResult);
           sse.status({ phase: 'tool', state: 'completed', tool: signedFunctionTurn.call.name });
           continueAgent = true;
-          }
         }
       }
 
@@ -2072,7 +2133,19 @@ export default async function handler(req: any, res: any) {
         ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
-          : 'Quantora generated files that could not run in Preview. Retry and I will rebuild a complete page.')
+          /*
+           * The generic branch used to swallow FIVE distinct detailCodes —
+           * opaque-storage-access, golden-vfs-shape-missing,
+           * golden-root-mount-missing, calculator-contract-missing and
+           * calculator-interaction-missing. On 2026-09-04 the deployed golden
+           * spent all five attempts on the last of them and neither the log,
+           * the CI evidence, nor the user could tell which clause had failed:
+           * validateBuildArtifactResponse returns the code and every reader
+           * downstream dropped it. Naming it costs one clause and turns "could
+           * not run in Preview" into something reproducible.
+           */
+          : `Quantora generated files that could not run in Preview (${err?.detailCode || 'contract-failed'}). `
+            + 'Retry and I will rebuild a complete page.')
       : credentialRejected
       // Names the provider and separates an empty balance from a bad key. The
       // old sentence did neither, and sent somebody to re-issue a Gemini key
@@ -2093,6 +2166,8 @@ export default async function handler(req: any, res: any) {
       sse.fail({
         message: publicError,
         code: err?.code || 'CHAT_STREAM_FAILURE',
+        // Which contract clause, not merely that one failed.
+        ...(err?.detailCode ? { detailCode: err.detailCode } : {}),
         retryable: retryableProviderFailure || artifactContractFailure,
         provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
         requestId,

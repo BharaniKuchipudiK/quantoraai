@@ -38,7 +38,8 @@ import { buildStudioDeskSnapshot, restoreStudioDeskSnapshot } from '../lib/studi
 import { buildDeskContextPacket, mergeLiveDeskProbe, describeMissingShopUi } from '../lib/studio-desk-context.js';
 import { describePatchFailures } from '../lib/diff-patcher.js';
 import { describeEmptyFenceKept } from '../lib/vfs-parser.js';
-import { advanceBuildJob, buildJobIsComplete, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { advanceBuildJob, buildJobIsComplete, buildJobOutcome, describeBuildJob, readPlanMarker } from '../lib/build-job.js';
+import { unprovedClaimNote } from '../lib/unproved-claim-note.js';
 import { guardPlanTurn, planTurnDiscardNotice } from '../lib/studio-mode.js';
 import { isSessionWorking, sessionActivityLabel } from '../lib/session-activity.js';
 import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/session-desks.js';
@@ -665,6 +666,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // agent loop can never become an open tap.
   const autoPauseRef = useRef('');
   const [previewRunStatus, setPreviewRunStatus] = useState('');
+  /*
+   * The last verification verdict, kept apart from previewRunStatus because it
+   * is evidence rather than a phase: it carries the desk it judged, and
+   * build-job.js refuses it once that desk has moved on.
+   */
+  const [deskVerdict, setDeskVerdict] = useState(null);
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
   // Legacy deckSpec state removed
@@ -1765,6 +1772,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     conversationContext,
     updateActiveSession,
     onCodingTurnExecute,
+    /*
+     * Phase 3's tool accounting, closed here. The chat stream announces each
+     * completed tool call and the Run charges for it — the two halves have
+     * always existed on opposite sides of this component and were never joined.
+     */
+    onToolInvoked: qirCoding.reportToolUse,
     onCodingTurnProved,
     qirCoding,
     onDeskRename,
@@ -2364,19 +2377,73 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           {shopUiMissingNote}
                         </div>
                       ) : null}
-                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (
+                      {msg.sender === 'ai' && lastAiMessage?.id === msg.id && buildJob?.steps?.length ? (() => {
+                        /*
+                         * GREEN MEANS PROVED, NOT "THE FILES ARRIVED".
+                         *
+                         * This was `buildJobIsComplete(buildJob) ? '#4ade80' : …`,
+                         * and buildJobIsComplete asks only whether every promised
+                         * file exists with content. So a calculator with all four
+                         * files present and its buttons wired to nothing went
+                         * green, while verifyBuild — which had already run and
+                         * returned `passed: false` — was read by nobody here.
+                         * QIR Phase 5: no independent DONE path that bypasses
+                         * verifier evidence.
+                         */
+                        const outcome = buildJobOutcome(buildJob, vfs, deskVerdict);
+                        const outcomeColor = outcome === 'proved'
+                          ? '#4ade80'
+                          : outcome === 'failed'
+                            ? '#f87171'
+                            : subtextColor;
+                        return (
                         <div
                           data-quantora-build-job="true"
-                          style={{ marginTop: '12px', fontSize: '0.82rem', color: buildJobIsComplete(buildJob) ? '#4ade80' : subtextColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
+                          data-quantora-build-outcome={outcome}
+                          style={{ marginTop: '12px', fontSize: '0.82rem', color: outcomeColor, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}
                         >
-                          {describeBuildJob(buildJob)}
+                          {describeBuildJob(buildJob, { vfs, verdict: deskVerdict })}
                           {autoPauseRef.current && !buildJobIsComplete(buildJob)
                             ? `
 
 Paused — ${autoPauseRef.current}.`
                             : ''}
                         </div>
-                      ) : null}
+                        );
+                      })() : null}
+                      {msg.sender === 'ai' ? (() => {
+                        /*
+                         * THE CORRECTION THE ENGINE ALREADY EARNED.
+                         *
+                         * verifyConversationResponse raises
+                         * outcome_done_without_proof / external_action_without_evidence
+                         * at severity FAILURE and ships them in
+                         * conversation.verification. Nothing read that field, so a
+                         * reply claiming "your app is ready" over nothing verified
+                         * reached the user uncorrected. QIR Phase 5.
+                         *
+                         * Rendered on the message it judged rather than only the
+                         * last one: an unbacked claim does not stop being one when
+                         * the next turn arrives.
+                         */
+                        const note = unprovedClaimNote(msg.conversation?.verification);
+                        if (!note) return null;
+                        return (
+                          <div
+                            data-quantora-unproved-claim={note.code}
+                            style={{
+                              marginTop: '10px',
+                              padding: '8px 10px',
+                              borderLeft: '3px solid #f87171',
+                              fontSize: '0.8rem',
+                              color: subtextColor,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {note.text}
+                          </div>
+                        );
+                      })() : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && patchNote ? (
                         <div
                           data-quantora-preview-honesty="patch"
@@ -3129,7 +3196,31 @@ Paused — ${autoPauseRef.current}.`
            }
            setWorkspaceActiveTab('preview');
            setIsWorkspaceMode(true);
-           if (assembled.reopenDesk) setCodingDeskOpen(true);
+           /*
+            * A build that produced a runnable project must SHOW it.
+            *
+            * This was `if (assembled.reopenDesk)`, and reopenDesk is
+            * `hadProject && didUpdate` — it only fires when the desk already
+            * held a project. So the FIRST build in a chat never opened the
+            * desk, and since New Chat resets codingDeskOpen to false, every
+            * second build in a session rendered no preview at all: the pane is
+            * gated on codingDeskOpen, so ProjectRuntimePreview was never
+            * mounted however correct the state behind it was.
+            *
+            * Measured at the moment of the commit, on the second build:
+            *   bakeryVfs=true wsMode=true runCode=true deskOpen=FALSE
+            *
+            * Everything was right except the one flag that decides whether any
+            * of it is on screen. The user saw a chat reply and had to know to
+            * click Preview.
+            *
+            * Unconditional is safe here: this branch runs only when the turn
+            * produced a non-empty, previewable project (parsedVfs > 0 and the
+            * previewable check above), which is exactly when the desk should be
+            * open. `reopenDesk` remains what it always was — a statement about
+            * history, not about whether there is something to show.
+            */
+           setCodingDeskOpen(true);
         } else {
            const code = assembled.code || extractRunnableCode(lastMsg.text);
               if (code) {
@@ -5551,6 +5642,7 @@ Paused — ${autoPauseRef.current}.`
                       turnBusy={isGenerating}
                       onVerificationStatusChange={(status) => {
                         setPreviewRunStatus(status);
+                        if (status?.kind === 'quality') setDeskVerdict(status);
                         void qirCoding.reportPreviewStatus(status);
                       }}
                       onChromeChange={setPreviewChrome}
