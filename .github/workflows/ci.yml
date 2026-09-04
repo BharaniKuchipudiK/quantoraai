@@ -89,7 +89,17 @@ jobs:
 
   browser-gates:
     name: Browser release gates
-    needs: verify
+    # No 'needs: verify'. These run on their own runners and share nothing with
+    # it, so gating them on it only serialised the wall clock: verify takes
+    # ~8-10 minutes and the browser jobs then took another ~4-6, making a green
+    # cycle ~14 minutes when the work itself is ~9.
+    #
+    # The tradeoff is deliberate. Waiting saved RUNNER MINUTES on a red build by
+    # not starting browsers for code that does not compile. Running in parallel
+    # saves WALL CLOCK on a green build. Green is the common case, and on
+    # 2026-09-04 four CI cycles in eighty minutes was the actual cost of this
+    # branch keeping up with main. Time to feedback is what was scarce, not
+    # runner minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -397,7 +407,7 @@ jobs:
 
   desktop-smoke:
     name: Desktop smoke gate
-    needs: verify
+    # Parallel with verify, for the reason given on browser-gates above.
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
