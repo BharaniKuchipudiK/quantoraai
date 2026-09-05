@@ -179,6 +179,7 @@ becomes safely more autonomous.
 | `node --test src/lib/turn-heal-contract.test.js` | a retry identical to the attempt that failed, or terminal copy promising action in a state with no future |
 | `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
 | `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
+| `node --test src/lib/desk-chat-claim-filter.test.js` | the desk rewriting its own machine-readable block — a Preview disclaimer written into a decision modal's JSON where the model's question was |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
 | `npm run test:github-writes` | a GitHub mutation that runs on a session alone, without asking GitHub whether this user may make it |
 

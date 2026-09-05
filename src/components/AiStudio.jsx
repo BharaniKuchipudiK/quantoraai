@@ -2399,8 +2399,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         data-quantora-modal-failure={modalFailure || undefined}
-                        data-quantora-reply-finish={msg.sender === 'ai' && msg.finish?.kind && msg.finish.kind !== 'complete' ? msg.finish.kind : undefined}
-                        data-quantora-reply-finish-reason={msg.sender === 'ai' && msg.finish?.reason && msg.finish.kind !== 'complete' ? String(msg.finish.reason) : undefined}
+                        /*
+                         * Every kind, "complete" included. Publishing only the
+                         * bad kinds made a completed reply and a reply whose
+                         * finish never arrived look identical — null — and on
+                         * 2026-09-05 that silence sent a round chasing
+                         * truncation for a modal the desk itself had rewritten.
+                         */
+                        data-quantora-reply-finish={msg.sender === 'ai' && msg.finish?.kind ? msg.finish.kind : undefined}
+                        data-quantora-reply-finish-reason={msg.sender === 'ai' && msg.finish?.reason ? String(msg.finish.reason) : undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
