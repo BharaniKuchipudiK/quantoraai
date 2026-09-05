@@ -97,6 +97,12 @@ jobs:
       - name: Platform dead control gate
         run: node scripts/platform-dead-control-gate.mjs
 
+      # Every user journey names the gates that exercise it, every gate on disk
+      # names its journey, and the proven count is a floor that only rises.
+      # The last line of this step is the number: JOURNEY COVERAGE | ...
+      - name: Journey-versus-gate inventory is true, and stable is a number
+        run: npm run test:journeys
+
       - name: Shop catalog photos scale gate
         run: node scripts/shop-catalog-photos-scale-gate.mjs
 
