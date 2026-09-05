@@ -200,6 +200,23 @@ test('the parser reason reaches the verdict, not just the fact of failure', () =
  * must keep answering "would this deployment honor my canary?", and the
  * gate must keep asking BEFORE spending a model turn.
  */
+/*
+ * WHICH REPAIR (2026-09-05). The verdict told every unreadable modal to "repair
+ * the reader", and for a TRUNCATED one that is the wrong file: completing a cut
+ * off JSON string means inventing the rest of the user's question, which
+ * assistant-modal refuses to do by design. Wrong advice in a blocking gate is
+ * the §8 defect, and this is the third round this class has been guessed at.
+ */
+test('the verdict routes a truncated modal away from the reader', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const routed = (gate.match(/const truncated = ([^;]+);/) || [])[1];
+  assert.ok(routed, 'the truncated/malformed split is gone — every unreadable modal blames the reader again');
+  assert.notEqual(routed.trim(), 'false', 'the split is hardcoded off, which is the same bug wearing a variable');
+  assert.match(routed, /unterminated/i, 'and it must route on what the parser actually says');
+  assert.match(gate, /NOT a reader bug/, 'a truncated modal must say plainly that the reader is the wrong place');
+  assert.match(gate, /IS the reader/, 'and a malformed-but-complete one must still point at it');
+});
+
 test('the health endpoint and the golden gate keep the canary handshake', () => {
   const handler = read('api/_lib/handlers/inference-health.ts');
   assert.match(handler, /goldenCanaryHonored:\s*isGoldenCanaryRequest\(req\)/);
