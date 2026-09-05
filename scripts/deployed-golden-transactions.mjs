@@ -94,18 +94,6 @@ const engineDigest = engineProbe.ok
   : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
 console.log(`Engine probe before the first turn: ${engineDigest}`);
 /*
- * STOP HERE when the engine itself refused the credential. A 401, 403 or 429
- * from the engine is not about any one model or any one turn: every route on
- * that key fails the same way, so five browser transactions would only
- * restate it as a mystery in the calculator (2026-09-05: "Your prepayment
- * credits are depleted"). Any other probe outcome — a single model 404, the
- * probe endpoint unreachable — is recorded and the transactions still run,
- * because that evidence is not unambiguous (§5).
- */
-if (engineProbe.httpStatus === 200 && !engineProbe.ok && [401, 403, 429].includes(Number(engineProbe.status))) {
-  throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${engineProbe.verdict || ''}`.trim());
-}
-/*
  * Fail in one second with the real cause, not in forty with a false one.
  *
  * On 2026-09-01 this gate failed 3/3 on PR previews as "no healthy AI route"
@@ -300,6 +288,28 @@ function markActiveTransaction(name, correlationId = null) {
 }
 
 try {
+  /*
+   * STOP HERE when the engine itself refused the credential. A 401, 403 or 429
+   * from the engine is not about any one model or any one turn: every route on
+   * that key fails the same way, so five browser transactions would only
+   * restate it as a mystery in the calculator (2026-09-05: "Your prepayment
+   * credits are depleted"). Any other probe outcome — a single-model 404, the
+   * probe endpoint unreachable — is recorded and the transactions still run,
+   * because that evidence is not unambiguous (§5).
+   *
+   * INSIDE the try, deliberately: the first version threw above it and the
+   * run ended with a stack trace and no GOLDEN VERDICT line, no verdict file
+   * and no evidence JSON — the gate said less at the moment it knew most (§8).
+   * From here the catch below composes the verdict like any other failure:
+   * "failed at: engine-probe … engine=FAILED(429: …)".
+   */
+  // Not a transaction (the roster test reads markActiveTransaction), but the
+  // verdict's "failed at:" must still name where the run stopped.
+  evidence.activeTransaction = { name: 'engine-probe', correlationId: null };
+  if (engineProbe.httpStatus === 200 && !engineProbe.ok && [401, 403, 429].includes(Number(engineProbe.status))) {
+    throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${engineProbe.verdict || ''}`.trim());
+  }
+
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   /*
    * Anchor on the data hook, not the button's words.
