@@ -86,7 +86,7 @@ import TravelPlaceLink from './TravelPlaceLink.jsx';
 
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
-import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
+import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode, canChooseStudioMode, canUseGithubControls, studioModeChoiceForDomain } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { activeOfficeArtifact } from '../lib/office-briefing.js';
 import { downloadOfficeArtifact, resolveOfficeDownloadPayload } from '../lib/office-artifact-cache.js';
@@ -689,7 +689,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    */
   const [studioModeChoice, setStudioModeChoice] = useState(null);
   const studioModeChoiceRef = useRef(null);
-  studioModeChoiceRef.current = studioModeChoice;
+  // Not `studioModeChoice`. A Plan chosen on the desk must not follow the
+  // person into an advisor workspace that hides the control — see
+  // studioModeChoiceForDomain.
+  studioModeChoiceRef.current = studioModeChoiceForDomain(studioModeChoice, studioDomain);
   const [githubCheckout, setGithubCheckout] = useState(null);
 
   /*
@@ -4986,6 +4989,12 @@ Paused — ${autoPauseRef.current}.`
                         <ImageIcon size={16} color="#10b981" /> Image
                       </button>
 
+                      {/*
+                        GitHub is a coding control, so it is offered where code
+                        can be written. On an advisor desk the connect flow ends
+                        at a workspace that never opens — a door onto nothing.
+                      */}
+                      {canUseGithubControls(studioDomain) && (<>
                       <div style={{ height: '1px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
                       <button 
@@ -4996,6 +5005,7 @@ Paused — ${autoPauseRef.current}.`
                       >
                         <Github size={16} color={isLight ? "#334155" : "#e5e5e5"} /> Connect to Github
                       </button>
+                      </>)}
                     </div>
                   </>
                 )}
@@ -5158,6 +5168,7 @@ Paused — ${autoPauseRef.current}.`
                 )}
               </div>
 
+              {canChooseStudioMode(studioDomain) && (
               <Suspense fallback={null}>
                 <StudioModeToggle
                   chosen={studioModeChoice}
@@ -5166,11 +5177,13 @@ Paused — ${autoPauseRef.current}.`
                   subtextColor={subtextColor}
                 />
               </Suspense>
+              )}
 
               {/*
                 * Where this build is going to sit — a setting, so it sits with
                 * the other settings rather than shouting above the prompt.
                 */}
+              {canUseGithubControls(studioDomain) && (
               <Suspense fallback={null}>
                 <GithubDestinationBar
                   destination={githubDestination}
@@ -5181,6 +5194,7 @@ Paused — ${autoPauseRef.current}.`
                   subtextColor={subtextColor}
                 />
               </Suspense>
+              )}
 
             </div>
 

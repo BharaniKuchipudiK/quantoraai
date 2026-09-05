@@ -17,6 +17,18 @@ const BASE = Object.freeze({
   autoOpenCodeWorkspace: true,
   explicitCodePreview: true,
   mediaCanvas: true,
+  /*
+   * Plan/Build and the GitHub destination belong to the desk that writes code.
+   *
+   * `null` — the generic Quantora — covers BOTH Normal Chat and the Coding
+   * Desk, which is why one flag scopes them correctly: the four advisor desks
+   * are the only named domains, and none of them can write to a repository or
+   * open a workspace (`autoOpenCodeWorkspace: false` on every one). A repo
+   * picker on the Travel desk is a control whose every outcome is "nothing
+   * happens" — the painted door this repo has an incident for.
+   */
+  showStudioModeToggle: true,
+  showGithubControls: true,
 });
 
 const POLICIES = Object.freeze({
@@ -32,6 +44,8 @@ const POLICIES = Object.freeze({
     autoOpenCodeWorkspace: false,
     explicitCodePreview: false,
     mediaCanvas: false,
+    showStudioModeToggle: false,
+    showGithubControls: false,
   }),
   [STUDIO_DOMAIN.FINANCE]: Object.freeze({
     title: 'Finance Advisor',
@@ -54,6 +68,8 @@ const POLICIES = Object.freeze({
     autoOpenCodeWorkspace: false,
     explicitCodePreview: false,
     mediaCanvas: false,
+    showStudioModeToggle: false,
+    showGithubControls: false,
   }),
   [STUDIO_DOMAIN.EDUCATION]: Object.freeze({
     title: 'Study Tutor',
@@ -67,6 +83,8 @@ const POLICIES = Object.freeze({
     autoOpenCodeWorkspace: false,
     explicitCodePreview: false,
     mediaCanvas: true,
+    showStudioModeToggle: false,
+    showGithubControls: false,
   }),
   [STUDIO_DOMAIN.RESEARCH]: Object.freeze({
     title: 'Research Analyst',
@@ -88,6 +106,8 @@ const POLICIES = Object.freeze({
     autoOpenCodeWorkspace: false,
     explicitCodePreview: false,
     mediaCanvas: false,
+    showStudioModeToggle: false,
+    showGithubControls: false,
   }),
 });
 
@@ -110,5 +130,33 @@ export function canAutoOpenCodeWorkspace(domain) {
 
 export function canExplicitlyPreviewCode(domain) {
   return studioDomainPolicy(domain).explicitCodePreview === true;
+}
+
+/** Plan/Build is a coding control. Advisor desks do not offer it. */
+export function canChooseStudioMode(domain) {
+  return studioDomainPolicy(domain).showStudioModeToggle === true;
+}
+
+/** The GitHub account chip, the repository picker, and the paperclip entry. */
+export function canUseGithubControls(domain) {
+  return studioDomainPolicy(domain).showGithubControls === true;
+}
+
+/*
+ * The mode a turn actually runs in, given where the person is standing.
+ *
+ * Hiding the toggle is not enough on its own. `studioModeChoice` survives a
+ * workspace switch, and the send path reads it from a ref — so choosing Plan on
+ * the Coding Desk and then clicking Travel Advisor left the travel turn a plan
+ * turn, with `guardPlanTurn` discarding the reply, and no visible control to
+ * undo it. That is the exact failure the Research policy above already names
+ * for a pinned engine: a choice made where it is visible must not steer a desk
+ * that gives no way to see or unset it.
+ *
+ * So the neutralisation lives here, on the read, where it cannot drift from the
+ * flag that hides the control.
+ */
+export function studioModeChoiceForDomain(chosen, domain) {
+  return canChooseStudioMode(domain) ? (chosen ?? null) : null;
 }
 
