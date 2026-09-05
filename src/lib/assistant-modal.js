@@ -39,12 +39,39 @@
  * WHAT THIS DELIBERATELY DOES NOT DO
  *
  * It does not "fix JSON" in general — no quote balancing, no trailing-comma
- * removal, no bracket completion. Each of those guesses at intent and can
- * invent an option the model never offered, which on a decision modal means
- * putting words in its mouth and then acting on the user's click. Control
- * characters inside strings are the one case where the repair is
- * information-preserving: the character was already there, only its encoding
- * was wrong.
+ * removal, no bracket completion, no smart-quote or single-quote rewriting, no
+ * stripping of comments or of prose wrapped around the object. Each of those
+ * guesses at intent and can invent an option the model never offered, which on
+ * a decision modal means putting words in its mouth and then acting on the
+ * user's click.
+ *
+ * The bar is INFORMATION-PRESERVING, and exactly two deviations clear it:
+ *
+ *   1. Control characters inside strings. The character was already there;
+ *      only its encoding was wrong.
+ *   2. A markdown code fence around the whole body (2026-09-05, below). The
+ *      fence is packaging, not content — removing it changes nothing about
+ *      what the model said.
+ *
+ * ADDED 2026-09-05, AND HOW IT WAS FOUND
+ *
+ * The night this module shipped, the deployed golden went red again at
+ * guided-intake. The verdict — added the same night for exactly this purpose —
+ * said which of three failures it was:
+ *
+ *   GOLDEN VERDICT | failed at: guided-intake | why: The guided-intake turn
+ *   wrote a decision modal the desk could not READ, so nothing rendered.
+ *
+ * modalUnreadable: true, and the transcript ended "So, first thing:" — the
+ * model had obeyed, written its prose, and handed over to a modal we then
+ * dropped. A boolean was enough to name the class and not the instance, so the
+ * failure REASON is now published too: a gate that says "unreadable" without
+ * saying why is one round short of a diagnosis (§8).
+ *
+ * A model that fences its JSON is being conventional, not malformed. Every
+ * other code block it emits is fenced, and the directive it is following shows
+ * a raw block — so this is the same shape as the newline: the platform
+ * punishing the model for a habit it was never told to drop.
  */
 
 /**
@@ -76,6 +103,20 @@ function escapeControlCharsInStrings(raw) {
 const MODAL_MARKER = /<quantora-modal>([\s\S]*?)<\/quantora-modal>/;
 
 /**
+ * A markdown fence around the ENTIRE body, and only then.
+ *
+ * Anchored at both ends so a stray ``` inside a question is left alone: an
+ * unbalanced or partial fence is ambiguous, and ambiguity is where inventing
+ * structure starts. Returns the input unchanged when it does not match.
+ */
+const WHOLE_BODY_FENCE = /^\s*```[a-z]*\s*\r?\n([\s\S]*?)\r?\n?\s*```\s*$/i;
+
+function unwrapCodeFence(raw) {
+  const match = String(raw).match(WHOLE_BODY_FENCE);
+  return match ? match[1] : raw;
+}
+
+/**
  * @returns {{ modalData: object|null, cleanText: string, repaired: boolean, failure: string|null }}
  *
  * cleanText has the marker removed WHETHER OR NOT the parse succeeded. That is
@@ -93,13 +134,31 @@ export function readAssistantModal(text) {
   try {
     return { modalData: JSON.parse(raw), cleanText, repaired: false, failure: null };
   } catch {
-    /* fall through to the one repair worth making */
+    /* fall through to the repairs worth making */
+  }
+
+  /*
+   * Both repairs, then both together — a fenced two-line question is one
+   * message, not two problems, and it was the shape that reached production.
+   */
+  const unfenced = unwrapCodeFence(raw);
+  for (const candidate of [unfenced, escapeControlCharsInStrings(unfenced)]) {
+    if (candidate === raw) continue;
+    try {
+      return { modalData: JSON.parse(candidate), cleanText, repaired: true, failure: null };
+    } catch {
+      /* try the next repair */
+    }
   }
 
   try {
     return { modalData: JSON.parse(escapeControlCharsInStrings(raw)), cleanText, repaired: true, failure: null };
   } catch (error) {
-    // Reported, not thrown, and never rendered as itself.
+    /*
+     * Reported, not thrown, and never rendered as itself. The reason travels:
+     * "unreadable" alone cost a production round, because it named the class
+     * and left the instance to be guessed at.
+     */
     return { modalData: null, cleanText, repaired: false, failure: String(error?.message || 'unparseable modal') };
   }
 }

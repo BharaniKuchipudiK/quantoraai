@@ -2134,11 +2134,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * owners. One hook is the difference between a diagnosis and a guess.
        */
       let modalUnreadable = false;
+      let modalFailure = null;
       if (cleanText) {
         const modal = readAssistantModal(cleanText);
         modalData = modal.modalData;
         cleanText = modal.cleanText;
         modalUnreadable = Boolean(modal.failure);
+        // The class was not enough. "unreadable" told the golden WHICH failure
+        // it was and still left the shape to be guessed at, which cost a
+        // production round on 2026-09-05. Bounded: a parser message, not a
+        // transcript.
+        modalFailure = modal.failure ? String(modal.failure).slice(0, 160) : null;
       }
       if (modalData && !shouldShowAssistantDecisionCard({
         choiceUsed: msg.choiceUsed,
@@ -2356,6 +2362,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         data-quantora-assistant-prose={msg.sender === 'ai' ? 'true' : undefined}
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
+                        data-quantora-modal-failure={modalFailure || undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (

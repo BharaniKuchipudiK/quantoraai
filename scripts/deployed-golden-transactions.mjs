@@ -397,6 +397,7 @@ try {
         throw new Error(
           'The guided-intake turn wrote a decision modal the desk could not READ, so nothing rendered. '
           + 'That is ours, not the model\'s — repair the reader (src/lib/assistant-modal.js), do not reword the prompt. '
+          + `Parser said: ${snapshot.modalFailure || '(no reason published — the desk is not carrying data-quantora-modal-failure)'}. `
           + `Page state: ${state}`,
         );
       }
