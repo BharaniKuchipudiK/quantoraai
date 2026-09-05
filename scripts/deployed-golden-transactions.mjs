@@ -5,6 +5,23 @@ import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 
+/*
+ * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
+ *
+ * Adding the business-tool transaction, the run went green and step 10 finished
+ * FASTER than the three-transaction runs before it. Nothing in the log could
+ * settle whether the new transaction had run at all: on success this script
+ * printed a JSON blob in the middle of the output and wrote no verdict file, so
+ * the workflow's final `cat` printed nothing. The only clue was the artifact
+ * growing by 400KB, which is a guess wearing evidence's clothes.
+ *
+ * A transaction that silently stops running would report success forever. That
+ * is the §4 case at its worst — the suite still costs four live model turns per
+ * run and would be proving three of them. So the roster is declared, checked
+ * against what actually completed, and printed last on every run, pass or fail.
+ */
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool'];
+
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
 const VERCEL_BYPASS_TOKEN = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '');
@@ -537,10 +554,38 @@ try {
   });
   delete evidence.activeTransaction;
 
+  /*
+   * Thrown, not warned, and thrown INSIDE the try so it is reported by the same
+   * verdict machinery as any other failure. A run that quietly covers less than
+   * it claims is a worse outcome than a run that fails.
+   */
+  const ran = evidence.transactions.map((entry) => entry.name);
+  const missing = EXPECTED_TRANSACTIONS.filter((name) => !ran.includes(name));
+  if (missing.length) {
+    throw new Error(
+      `The golden reported success while ${missing.length} transaction(s) never ran: ${missing.join(', ')}. `
+      + `Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
+    );
+  }
+
   evidence.completedAt = new Date().toISOString();
   evidence.consoleErrors = consoleErrors.slice(0, 20);
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify({ ok: true, ...evidence }));
+
+  /*
+   * The same last line a failure gets. "Which transactions actually ran?" was
+   * unanswerable from a green log, and that question is the whole reason to
+   * trust a green log at all.
+   */
+  const passedVerdict = `GOLDEN VERDICT | all ${ran.length} transactions passed | `
+    + evidence.transactions
+      .map((entry) => `${entry.name}(${Math.round((entry.durationMs || 0) / 1000)}s)`)
+      .join(' ');
+  console.log(`\n${passedVerdict}`);
+  try {
+    writeFileSync(`${ARTIFACT_DIR}/golden-verdict.txt`, `${passedVerdict}\n`);
+  } catch { /* the console line above is still the primary record */ }
 } catch (error) {
   evidence.failedAt = new Date().toISOString();
   evidence.error = error?.message || String(error);
