@@ -104,6 +104,30 @@ test('unfenced HTML after chat is sliced from the document start', () => {
   assert.doesNotMatch(assembled.code, /Got it/);
 });
 
+/*
+ * The stress gate's one real defect (scripts/stress/pipeline-stress.mjs,
+ * `unfenced-html`): the fenced path merges into the workspace, but an unfenced
+ * document came back as `{ 'index.html' }` alone, so a model that forgot its
+ * fence on a same-product turn silently deleted every sibling — products.json,
+ * styles.css — on 8 of 8 arrival shapes. Reported as `file-lost`, muted under
+ * continue-on-error since the gate was written. A page is not a project.
+ */
+test('[was-red] an unfenced document on an existing project replaces the page and keeps its siblings', () => {
+  const base = {
+    'index.html': { content: '<!DOCTYPE html><html><body><h1>Kaapi Bharat</h1><button id="add">Add to Cart</button></body></html>', language: 'html' },
+    'products.json': { content: '[{"id":"araku","name":"Araku","price":1200}]', language: 'json' },
+    'styles.css': { content: '.product-card{padding:8px}', language: 'css' },
+  };
+  const reply = 'Here you go.\n\n<!DOCTYPE html><html><body><h1>Kaapi Bharat</h1><p>New hero.</p><button id="add">Add to Cart</button></body></html>';
+  const out = applyWorkspaceFromChat(reply, base, null, { brief: 'build my coffee shop' });
+  assert.equal(out.didUpdate, true, 'a complete page is a build');
+  assert.match(out.vfs['index.html'].content, /New hero/, 'the page is the new page');
+  assert.equal(out.vfs['products.json']?.content, base['products.json'].content, 'products.json survived the turn');
+  assert.equal(out.vfs['styles.css']?.content, base['styles.css'].content, 'styles.css survived the turn');
+  // With no workspace to keep, the shape is unchanged: one file, the page.
+  assert.deepEqual(Object.keys(assembleStudioPreview(reply, {}).vfs), ['index.html']);
+});
+
 test('a follow-up that only sends one file keeps the rest of the project', () => {
   const first = assembleStudioPreview(`\`\`\`json filepath="package.json"
 {"name":"mission"}

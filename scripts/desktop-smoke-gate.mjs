@@ -103,6 +103,17 @@ let app = null;
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Read `path` until it contains `needle` or `timeoutMs` passes; returns the last text read. */
+async function waitForFileToContain(path, needle, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let text = '';
+    try { text = readFileSync(path, 'utf8'); } catch { text = ''; }
+    if (text.includes(needle) || Date.now() >= deadline) return text;
+    await settle(100);
+  }
+}
+
 try {
   app = await electron.launch({
     executablePath: electronBinary,
@@ -355,15 +366,62 @@ try {
   await click('[data-qd-file="index.html"]');
   await waitFor('[data-qd-editor="index.html"] .monaco-editor', 30_000);
   check(await present('[data-qd-editor="index.html"] .monaco-editor'), 'Monaco opened the file');
-  await click('[data-qd-editor="index.html"] .monaco-editor');
-  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+End' : 'Control+End');
+  /*
+   * The container exists before the file's text does. Workspace opens the tab
+   * with content "" and loading:true, fills it from disk afterwards, and the
+   * Editor resets its model when that value arrives — so keystrokes typed into
+   * that window are discarded, and a click that lands before Monaco's textarea
+   * is interactive focuses nothing at all. On #548 and #551 this act failed on
+   * a loaded runner even with a 10s wait for the save, and reproduced here
+   * under CPU load: the save was fine; the typing had never reached the file.
+   * So: wait for the seeded text, then click until the editor owns focus.
+   */
+  const editorText = () => window.evaluate(() => document.querySelector('[data-qd-editor="index.html"] .monaco-editor .view-lines')?.textContent || '');
+  let shown = '';
+  for (const shownDeadline = Date.now() + 15_000; Date.now() < shownDeadline; await settle(100)) {
+    shown = await editorText();
+    if (shown.includes('desk')) break;
+  }
+  check(shown.includes('desk'), `the editor shows the file's text before editing — editor shows: ${JSON.stringify(shown.slice(-80))}`);
+  let focused = false;
+  let lastClickFailure = '';
+  for (let attempt = 0; attempt < 8 && !focused; attempt += 1) {
+    // The main-world click above: a covered or missing target is named, and
+    // the name survives into the check below instead of being swallowed.
+    await click('[data-qd-editor="index.html"] .monaco-editor .view-lines').catch((error) => { lastClickFailure = error?.message || String(error); });
+    await settle(150);
+    // Monaco's hidden input is a textarea.inputarea on older builds and a
+    // div.native-edit-context on newer ones; what matters is that focus sits
+    // inside this editor.
+    focused = await window.evaluate(() => Boolean(document.activeElement?.closest?.('[data-qd-editor="index.html"] .monaco-editor')));
+  }
+  check(focused, `the editor owns keyboard focus${lastClickFailure ? ` — last click: ${lastClickFailure}` : ''}`);
   const nonce = `edited-${randomBytes(3).toString('hex')}`;
-  await window.keyboard.type(`\n<!-- ${nonce} -->`);
-  await settle(300);
+  /*
+   * Keystrokes are delivered one event at a time and a loaded runner drops
+   * some: under CPU load this typed "<!-edited-…" for "<!-- edited-…". A drop
+   * inside the nonce fails the disk check for a reason that has nothing to do
+   * with saving, so the keys are spaced out, and the act is tried again once
+   * if the editor does not show the nonce. The two halves — typing that never
+   * reached the editor, a save that never reached disk — are checked by name,
+   * because they fail for different owners.
+   */
+  let typed = '';
+  for (let attempt = 0; attempt < 2 && !typed.includes(nonce); attempt += 1) {
+    await window.keyboard.press(process.platform === 'darwin' ? 'Meta+End' : 'Control+End');
+    await window.keyboard.type(`\n<!-- ${nonce} -->`, { delay: 15 });
+    for (const typedDeadline = Date.now() + 5_000; Date.now() < typedDeadline; await settle(100)) {
+      typed = await editorText();
+      if (typed.includes(nonce)) break;
+    }
+  }
+  check(typed.includes(nonce), `typing landed in the editor (${nonce}) — editor shows: ${JSON.stringify(typed.slice(-80))}`);
   await window.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
-  await settle(800);
-  const onDisk = readFileSync(join(workspace, 'index.html'), 'utf8');
-  check(onDisk.includes(nonce), `Cmd/Ctrl+S wrote the edit to disk (${nonce})`);
+  // Poll, never sleep: a fixed 800ms budget for keypress -> IPC -> disk missed
+  // once on a shared runner (#548); the write lands, or the check fails naming
+  // the nonce it never saw.
+  const onDisk = await waitForFileToContain(join(workspace, 'index.html'), nonce, 10_000);
+  check(onDisk.includes(nonce), `Cmd/Ctrl+S wrote the edit to disk (${nonce}) — on disk: ${JSON.stringify(onDisk.slice(-80))}`);
 
   // 7. terminal: whichever the host has, it must run in the folder for real
   const caps = (await window.evaluate(() => window.quantoraDesktop.workspace.info())).capabilities;

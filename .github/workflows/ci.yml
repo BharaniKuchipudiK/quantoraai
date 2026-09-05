@@ -75,11 +75,14 @@ jobs:
       - name: Wiring gate (tested but called by nothing)
         run: npm run test:wiring
 
-      # Report-only for now: it currently finds one real defect and one design
-      # hazard, both unfixed on purpose so they can be judged before being
-      # patched. Drop continue-on-error once the defect list is empty.
+      # BLOCKING. 160 hostile replies through the real desk path, no model calls,
+      # asserting invariants ("a failed turn must not destroy the user's build"),
+      # never golden output — so it is deterministic and precise enough to block.
+      # It was report-only while it carried one real defect, judged and fixed on
+      # 2026-09-05: an unfenced page deleted its siblings (`file-lost`, 8 of 8
+      # arrival shapes). A muted red check is the 2026-08-31 incident's shape
+      # exactly (CLAUDE.md §1); this step was red the whole time it was muted.
       - name: Pipeline stress (hostile replies, no model calls)
-        continue-on-error: true
         run: npm run test:stress
 
       - name: Run all tests
