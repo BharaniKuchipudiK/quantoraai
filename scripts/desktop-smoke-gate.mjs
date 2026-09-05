@@ -166,11 +166,25 @@ try {
    * markup. The file already claimed this standard for itself — "a red run
    * names its cause instead of a selector (CLAUDE.md §8)" — and did not meet it.
    *
-   * This is deliberately NOT a claimed fix for those two failures. They were not
-   * reproducible here: the desktop bundle built locally has the same hash CI
-   * builds (index-B9RvVjYW.js), CI runs the same `xvfb-run -a` command, and the
-   * gate passes. Shipping a cure for a cause nobody has observed would be a
-   * guess with a commit message. This makes the NEXT occurrence legible instead.
+   * That reporting paid for itself on the third occurrence (2026-09-05, run
+   * 33956885420, a docs-only PR; main's own run 33955304819 failed the same
+   * way minutes earlier). With the wait already at state 'attached', it still
+   * timed out — and in the SAME run the report above said targetAttached:
+   * true, targetRect 1280x893, display flex, visibility visible, readyState
+   * complete. Then click('[data-qd-signin]') timed out on a button the DOM
+   * dump contained. Every failing call was a selector-engine operation; every
+   * passing call was an evaluate. That is not a visibility problem and it is
+   * not a missing element: Playwright's selector engine runs in its own
+   * isolated "utility" world, and in these runs that world never bound to the
+   * frame, while the page's main world — where evaluate runs — was fine.
+   *
+   * So every wait, click and keystroke below uses the main world and CDP
+   * input, never the selector engine: waitForFunction runs in the main world,
+   * and page.mouse / page.keyboard dispatch real input events. The gate keeps
+   * what it asserted before — the element exists, has a box, is the thing at
+   * its own centre, and receives a real click — and drops only the dependency
+   * that failed. WHY the utility world fails to bind is not established here;
+   * this removes the dependency, not the cause, and says so.
    */
   const failureState = async (selector) => {
     const state = await window.evaluate((sel) => {
@@ -209,6 +223,45 @@ try {
     ].join('\n');
   };
 
+  // ---- main-world primitives (see the header above for why) ---------------
+  const present = (selector) => window.evaluate((sel) => Boolean(document.querySelector(sel)), selector);
+  const waitFor = async (selector, timeout = 60_000) => {
+    try {
+      await window.waitForFunction((sel) => Boolean(document.querySelector(sel)), selector, { timeout, polling: 100 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /*
+   * A real click at the element's centre, after the page itself confirms the
+   * element is there, has a box, and is what sits at that point. A covered or
+   * missing target is a named failure, never a silent no-op.
+   */
+  const click = async (selector) => {
+    const target = await window.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { why: 'is not in the DOM' };
+      el.scrollIntoView?.({ block: 'center', inline: 'center' });
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return { why: `has no box (${Math.round(r.width)}x${Math.round(r.height)})` };
+      const x = r.x + r.width / 2;
+      const y = r.y + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || !(hit === el || el.contains(hit))) {
+        return { why: `is covered at its centre by <${hit?.tagName?.toLowerCase() || 'nothing'}>` };
+      }
+      if (el.disabled) return { why: 'is disabled' };
+      return { x, y };
+    }, selector);
+    if (target.why) throw new Error(`click ${selector}: the element ${target.why}`);
+    await window.mouse.click(target.x, target.y);
+  };
+  const type = async (selector, text) => {
+    await click(selector);
+    await window.keyboard.type(text);
+  };
+
   const waitScreen = async (name, timeout = 60_000) => {
     const selector = `[data-qd-screen="${name}"]`;
     try {
@@ -218,7 +271,7 @@ try {
        * at a non-zero size is a different claim, and the checks that need it
        * (the clicks below) assert it themselves.
        */
-      await window.waitForSelector(selector, { timeout, state: 'attached' });
+      if (!(await waitFor(selector, timeout))) throw new Error('timeout');
       return true;
     } catch {
       diagnostics.push(`Waiting for screen ${name} failed.\n${await failureState(selector)}`);
@@ -265,7 +318,7 @@ try {
   //    hands back the grant URL, we play the browser, the deep link completes it
   const grantUrlPromise = app.evaluate(() => null); // keep evaluate ordering explicit
   await grantUrlPromise;
-  await window.click('[data-qd-signin]');
+  await click('[data-qd-signin]');
   await settle(500);
   const waitingCopy = await window.evaluate(() => document.querySelector('[data-qd-signin]')?.textContent || '');
   check(/browser/i.test(waitingCopy), `sign-in button hands off to the browser (${waitingCopy.trim()})`);
@@ -302,17 +355,17 @@ try {
     `watch poll reports the mirror's 503 honestly and raises nothing (${JSON.stringify(poll)})`);
 
   // 5. open the folder from the launcher → workspace with the real files
-  await window.click('[data-qd-open-folder]');
+  await click('[data-qd-open-folder]');
   check(await waitScreen('workspace', 30_000), 'open folder shows the workspace');
   const shownRoot = await window.evaluate(() => document.querySelector('[data-qd-screen="workspace"]')?.getAttribute('data-qd-workspace') || '');
   check(shownRoot.endsWith(workspace.split('/').pop()), `workspace title shows the folder (${shownRoot})`);
-  await window.waitForSelector('[data-qd-file="index.html"]', { timeout: 15_000 }).catch(() => {});
-  check(Boolean(await window.$('[data-qd-file="index.html"]')), 'explorer lists the folder\'s file');
+  await waitFor('[data-qd-file="index.html"]', 15_000);
+  check(await present('[data-qd-file="index.html"]'), 'explorer lists the folder\'s file');
 
   // 6. editor: open the file, edit, save with the keyboard, verify on disk
-  await window.click('[data-qd-file="index.html"]');
-  await window.waitForSelector('[data-qd-editor="index.html"] .monaco-editor', { timeout: 30_000 }).catch(() => {});
-  check(Boolean(await window.$('[data-qd-editor="index.html"] .monaco-editor')), 'Monaco opened the file');
+  await click('[data-qd-file="index.html"]');
+  await waitFor('[data-qd-editor="index.html"] .monaco-editor', 30_000);
+  check(await present('[data-qd-editor="index.html"] .monaco-editor'), 'Monaco opened the file');
   /*
    * The container exists before the file's text does. Workspace opens the tab
    * with content "" and loading:true, fills it from disk afterwards, and the
@@ -331,15 +384,18 @@ try {
   }
   check(shown.includes('desk'), `the editor shows the file's text before editing — editor shows: ${JSON.stringify(shown.slice(-80))}`);
   let focused = false;
+  let lastClickFailure = '';
   for (let attempt = 0; attempt < 8 && !focused; attempt += 1) {
-    await window.click('[data-qd-editor="index.html"] .monaco-editor .view-lines').catch(() => {});
+    // The main-world click above: a covered or missing target is named, and
+    // the name survives into the check below instead of being swallowed.
+    await click('[data-qd-editor="index.html"] .monaco-editor .view-lines').catch((error) => { lastClickFailure = error?.message || String(error); });
     await settle(150);
     // Monaco's hidden input is a textarea.inputarea on older builds and a
     // div.native-edit-context on newer ones; what matters is that focus sits
     // inside this editor.
     focused = await window.evaluate(() => Boolean(document.activeElement?.closest?.('[data-qd-editor="index.html"] .monaco-editor')));
   }
-  check(focused, 'the editor owns keyboard focus');
+  check(focused, `the editor owns keyboard focus${lastClickFailure ? ` — last click: ${lastClickFailure}` : ''}`);
   const nonce = `edited-${randomBytes(3).toString('hex')}`;
   /*
    * Keystrokes are delivered one event at a time and a loaded runner drops
@@ -385,30 +441,30 @@ try {
       return out;
     }, shellNonce);
     check(seen.split(shellNonce).length >= 3, `the pty terminal echoed ${shellNonce} in the folder`);
-    check(Boolean(await window.$('[data-qd-terminal="pty"]')), 'terminal pane is the interactive terminal');
+    check(await present('[data-qd-terminal="pty"]'), 'terminal pane is the interactive terminal');
   } else {
     const echoed = await window.evaluate((n) => window.quantoraDesktop.runCollected(`echo ${n} && pwd`), shellNonce);
     check(echoed.ok && echoed.output.startsWith(shellNonce), `collected shell echoed ${shellNonce}`);
     check(echoed.output.trim().endsWith(workspace.split('/').pop()), 'collected shell runs in the folder');
-    check(Boolean(await window.$('[data-qd-terminal="collected"]')), 'terminal pane says it is collected-output mode (no pty on this machine)');
+    check(await present('[data-qd-terminal="collected"]'), 'terminal pane says it is collected-output mode (no pty on this machine)');
   }
   const refused = await window.evaluate(() => window.quantoraDesktop.files.sync([{ path: '../escape.txt', content: 'x' }]));
   check(refused.ok === false && !existsSync(join(workspace, '..', 'escape.txt')), 'a path outside the folder is refused and nothing lands outside');
 
   // 8. git panel: init, then status shows the file
-  await window.click('[data-qd-bottom-git]');
-  await window.click('[data-qd-git-init]');
+  await click('[data-qd-bottom-git]');
+  await click('[data-qd-git-init]');
   await settle(800);
-  await window.click('[data-qd-git-status]');
+  await click('[data-qd-git-status]');
   await settle(800);
   const gitOut = await window.evaluate(() => document.querySelector('[data-qd-git-output]')?.textContent || '');
   check(/\?\? index\.html/.test(gitOut), 'git status in the panel lists the untracked file');
   check(existsSync(join(workspace, '.git', 'HEAD')), 'the repository really exists on disk');
 
   // 9. chat: a turn against a mirror with no model keys must report the failure, not invent a reply
-  await window.fill('[data-qd-chat-input]', 'Add a footer to index.html');
-  await window.click('[data-qd-chat-send]');
-  await window.waitForSelector('[data-qd-message="ai"]', { timeout: 15_000 }).catch(() => {});
+  await type('[data-qd-chat-input]', 'Add a footer to index.html');
+  await click('[data-qd-chat-send]');
+  await waitFor('[data-qd-message="ai"]', 15_000);
   let aiText = '';
   for (let i = 0; i < 40; i += 1) {
     aiText = await window.evaluate(() => document.querySelector('[data-qd-message="ai"]')?.textContent || '');
