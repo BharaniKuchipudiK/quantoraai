@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   STUDIO_SIDEBAR_HISTORY_MIN_PX,
   defaultStudioSidebarSections,
+  newChatDestinationCopy,
   loadStudioSidebarSections,
   normalizeStudioSidebarSections,
   persistStudioSidebarSections,
@@ -186,4 +187,27 @@ test('a term in the newest message is findable in a very long chat', () => {
     text: i === 59 ? 'the kubernetes rollout' : 'y'.repeat(400),
   }));
   assert.equal(filterChatSessions([{ title: 'Chat', messages }], 'kubernetes').length, 1);
+});
+
+test('the New Chat line names the project it lands in', () => {
+  assert.equal(
+    newChatDestinationCopy({ projectName: 'Sartho' }),
+    'New chat opens in Sartho',
+  );
+});
+
+/*
+ * The clause that answers the actual complaint. A new chat is created with a
+ * domain of null, so pressing it inside an advisor desk silently leaves that
+ * desk — the one transition worth spending a line of nav on.
+ */
+test('the New Chat line warns when it will leave the advisor you are in', () => {
+  assert.equal(
+    newChatDestinationCopy({ projectName: 'Sartho', advisorTitle: 'Travel Advisor' }),
+    'New chat opens in Sartho · leaves Travel Advisor',
+  );
+});
+
+test('an unnamed project still reads as a sentence', () => {
+  assert.match(newChatDestinationCopy({}), /^New chat opens in .+/);
 });

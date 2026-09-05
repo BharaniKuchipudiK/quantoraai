@@ -106,6 +106,24 @@ export function studioSidebarHistoryHint(count, projectName) {
   return `${n} chats in this project`;
 }
 
+/**
+ * Where the New Chat button actually sends you.
+ *
+ * `handleCreateNewChat` calls `makeSession(activeProject.id, …, null)` — the
+ * active project, and a domain of `null`. That second argument is the part
+ * nobody could see: standing in Travel Advisor and pressing New Chat does NOT
+ * give you a new travel chat, it drops you back into a general one. The
+ * question "when I click New Chat, where is this going?" has an exact answer
+ * and the nav was keeping it in a `title` attribute.
+ *
+ * The second clause appears only when it is true, so the line stays one short
+ * sentence in the ordinary case rather than a permanent paragraph in the nav.
+ */
+export function newChatDestinationCopy({ projectName, advisorTitle = null } = {}) {
+  const home = `New chat opens in ${studioProjectLabel(projectName)}`;
+  return advisorTitle ? `${home} · leaves ${advisorTitle}` : home;
+}
+
 export function studioSidebarMembershipCopy(projectName) {
   return `These chats belong to ${studioProjectLabel(projectName)}. New Chat stays here.`;
 }
