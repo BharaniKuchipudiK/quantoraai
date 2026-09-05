@@ -352,6 +352,7 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
   assert.match(gate, /engine=FAILED\(/, 'a dead engine is named with its status and reason');
   assert.match(gate, /engineDigest,\n\s*\]\.filter\(Boolean\)\.join\(' '\)/, 'the digest is part of the failure verdict, not only the evidence JSON');
   assert.match(gate, /engineProbe,\n\s*transactions: \[\]/, 'and the evidence carries the whole report');
+  assert.match(gate, /\[401, 403, 429\]\.includes\(Number\(engineProbe\.status\)\)/, 'a refused credential stops the run before the first turn; anything less ambiguous does not');
   const handler = read('api/_lib/handlers/inference-health.ts');
   const probeBranch = handler.slice(handler.indexOf("=== 'gemini'"), handler.indexOf('probe: \'gemini\''));
   assert.match(probeBranch, /if \(!isGoldenCanaryRequest\(req\)\) \{\s*const failure = await authenticateAdminRequest\(req\)/, 'the canary reads the probe; everyone else still needs admin');

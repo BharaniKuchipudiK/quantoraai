@@ -94,6 +94,18 @@ const engineDigest = engineProbe.ok
   : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
 console.log(`Engine probe before the first turn: ${engineDigest}`);
 /*
+ * STOP HERE when the engine itself refused the credential. A 401, 403 or 429
+ * from the engine is not about any one model or any one turn: every route on
+ * that key fails the same way, so five browser transactions would only
+ * restate it as a mystery in the calculator (2026-09-05: "Your prepayment
+ * credits are depleted"). Any other probe outcome — a single model 404, the
+ * probe endpoint unreachable — is recorded and the transactions still run,
+ * because that evidence is not unambiguous (§5).
+ */
+if (engineProbe.httpStatus === 200 && !engineProbe.ok && [401, 403, 429].includes(Number(engineProbe.status))) {
+  throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${engineProbe.verdict || ''}`.trim());
+}
+/*
  * Fail in one second with the real cause, not in forty with a false one.
  *
  * On 2026-09-01 this gate failed 3/3 on PR previews as "no healthy AI route"
