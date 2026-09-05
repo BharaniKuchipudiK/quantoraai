@@ -394,10 +394,32 @@ try {
       const state = await recordPageState();
       const snapshot = evidence.pageState || {};
       if (snapshot.modalUnreadable) {
+        /*
+         * WHICH REPAIR, THOUGH.
+         *
+         * This branch used to end "repair the reader (src/lib/assistant-modal.js)"
+         * for every unreadable modal, and on 2026-09-05 that advice was wrong.
+         * The parser said "Unterminated string in JSON at position 106" — the
+         * modal was CUT OFF, and finishing a truncated string means inventing
+         * the rest of the user's question, which assistant-modal refuses to do
+         * on purpose. Sending the next reader to the reader would have cost
+         * another round; it is the third time this class has been guessed at.
+         *
+         * A malformed-but-complete modal is the reader's problem. A truncated
+         * one never reaches the reader intact and is an output problem.
+         */
+        const reason = snapshot.modalFailure
+          || '(no reason published — the desk is not carrying data-quantora-modal-failure)';
+        const truncated = /unterminated|unexpected end of (?:json|input)/i.test(reason);
         throw new Error(
           'The guided-intake turn wrote a decision modal the desk could not READ, so nothing rendered. '
-          + 'That is ours, not the model\'s — repair the reader (src/lib/assistant-modal.js), do not reword the prompt. '
-          + `Parser said: ${snapshot.modalFailure || '(no reason published — the desk is not carrying data-quantora-modal-failure)'}. `
+          + (truncated
+            ? 'The modal was TRUNCATED — the JSON ends mid-string. This is NOT a reader bug: completing it would mean '
+              + 'inventing the rest of the question. Look at why the reply was cut off (token budget, stream end), '
+              + 'not at src/lib/assistant-modal.js.'
+            : 'The modal is malformed but complete, which IS the reader\'s problem — repair '
+              + 'src/lib/assistant-modal.js, and do not reword the prompt.')
+          + ` Parser said: ${reason}. `
           + `Page state: ${state}`,
         );
       }
