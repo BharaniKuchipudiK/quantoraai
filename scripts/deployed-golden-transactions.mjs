@@ -56,6 +56,44 @@ if (!healthResponse.ok || health.ready !== true) {
   throw new Error(`Deployed inference is not executable (${healthResponse.status}): ${JSON.stringify(health)}`);
 }
 /*
+ * ASK THE ENGINE ITSELF, before the first turn spends five transactions on it.
+ *
+ * "ready" above is configuration: a key is present, a route is planned. On
+ * 2026-09-05 two preview deployments failed their FIRST transaction four hours
+ * apart — once as "no healthy AI route", once as a silent turn — and the
+ * verdict could not say whether Gemini (the only engine a preview has) had
+ * answered anything at all. This live probe lists models and generates one
+ * short answer through the same credential path the chat handler uses. Its
+ * outcome rides in the evidence and in the failure verdict's state digest as
+ * engine=ok(model) or engine=FAILED(status: reason), so a dead gateway reads
+ * as a dead gateway and never again as a mystery in the calculator.
+ */
+const engineProbe = await (async () => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/inference-health?probe=gemini`, { headers: apiBypassHeaders });
+    const report = await response.json().catch(() => ({}));
+    const generate = report?.generate || {};
+    const list = report?.list || {};
+    return {
+      httpStatus: response.status,
+      ok: generate.ok === true,
+      model: generate.model || null,
+      listOk: list.ok === true,
+      listed: typeof list.totalListed === 'number' ? list.totalListed : null,
+      status: generate.status ?? list.status ?? null,
+      error: generate.error || list.error || report?.error || null,
+      ms: typeof generate.ms === 'number' ? generate.ms : null,
+      verdict: typeof report?.verdict === 'string' ? report.verdict : null,
+    };
+  } catch (error) {
+    return { httpStatus: null, ok: false, model: null, listOk: false, listed: null, status: null, error: error?.message || String(error), ms: null, verdict: null };
+  }
+})();
+const engineDigest = engineProbe.ok
+  ? `engine=ok(${engineProbe.model || 'gemini'}${engineProbe.ms ? ` ${engineProbe.ms}ms` : ''})`
+  : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
+console.log(`Engine probe before the first turn: ${engineDigest}`);
+/*
  * Fail in one second with the real cause, not in forty with a false one.
  *
  * On 2026-09-01 this gate failed 3/3 on PR previews as "no healthy AI route"
@@ -240,6 +278,8 @@ const evidence = {
   // turn — carries no secrets and answers "which key/route path differed"
   // without a fifth round of hypothesis.
   inferenceHealth: health,
+  // The engine's own answer at the start, not the configuration's promise.
+  engineProbe,
   transactions: [],
 };
 
@@ -781,6 +821,7 @@ try {
     typeof state.buildJobs === 'number' ? `buildJobs=${state.buildJobs}` : null,
     state.previewCorrelationId ? `previewCid=${state.previewCorrelationId}` : null,
     state.storageFault ? `storageFault` : null,
+    engineDigest,
   ].filter(Boolean).join(' ');
   const verdict = `GOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
     + ` | completed: ${done}`

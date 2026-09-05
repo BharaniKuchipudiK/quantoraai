@@ -336,3 +336,23 @@ test('every transaction that arms the golden canary asks for the artifact shape 
   assert.match(canvas, /goldenTransaction && Object\.keys\(vfs \|\| \{\}\)\.length > 0 && !projectRuntimeActive/,
     'the desk-side contract this test exists to agree with');
 });
+
+/*
+ * THE ENGINE ANSWERS FOR ITSELF (2026-09-05). Two preview deployments failed
+ * their first transaction four hours apart, once as "no healthy AI route" and
+ * once as a silent turn, and the verdict could not say whether the only engine
+ * a preview has had answered at all. The golden now runs the live Gemini probe
+ * before the first turn and carries the outcome in the verdict's state digest;
+ * the health handler lets the golden canary read that probe.
+ */
+test('the golden verdict names the engine\'s live state, and the canary may ask for it', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /\/api\/inference-health\?probe=gemini/, 'the golden must run the live probe');
+  assert.match(gate, /engine=ok\(/, 'a healthy engine is named');
+  assert.match(gate, /engine=FAILED\(/, 'a dead engine is named with its status and reason');
+  assert.match(gate, /engineDigest,\n\s*\]\.filter\(Boolean\)\.join\(' '\)/, 'the digest is part of the failure verdict, not only the evidence JSON');
+  assert.match(gate, /engineProbe,\n\s*transactions: \[\]/, 'and the evidence carries the whole report');
+  const handler = read('api/_lib/handlers/inference-health.ts');
+  const probeBranch = handler.slice(handler.indexOf("=== 'gemini'"), handler.indexOf('probe: \'gemini\''));
+  assert.match(probeBranch, /if \(!isGoldenCanaryRequest\(req\)\) \{\s*const failure = await authenticateAdminRequest\(req\)/, 'the canary reads the probe; everyone else still needs admin');
+});
