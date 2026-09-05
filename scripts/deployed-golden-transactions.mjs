@@ -3,7 +3,25 @@ import process from 'node:process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
+import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
+
+/*
+ * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
+ *
+ * Adding the business-tool transaction, the run went green and step 10 finished
+ * FASTER than the three-transaction runs before it. Nothing in the log could
+ * settle whether the new transaction had run at all: on success this script
+ * printed a JSON blob in the middle of the output and wrote no verdict file, so
+ * the workflow's final `cat` printed nothing. The only clue was the artifact
+ * growing by 400KB, which is a guess wearing evidence's clothes.
+ *
+ * A transaction that silently stops running would report success forever. That
+ * is the §4 case at its worst — the suite still costs four live model turns per
+ * run and would be proving three of them. So the roster is declared, checked
+ * against what actually completed, and printed last on every run, pass or fail.
+ */
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool'];
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -474,10 +492,149 @@ try {
   });
   delete evidence.activeTransaction;
 
+  /*
+   * TRANSACTION 4 — A BUSINESS TOOL, WHICH IS WHAT PEOPLE ACTUALLY BUILD HERE.
+   *
+   * The three transactions above prove a calculator renders, a one-page site
+   * renders, and intake asks before it builds. None of them is the shape of the
+   * platform's real output: a working internal tool — a form with a dropdown,
+   * rows that accumulate, and a number computed FROM those rows.
+   *
+   * That gap was found by a screenshot, again. A user shipped a consulting CRM
+   * with a SOW intake form, contract-model and deal-stage selects, weighted
+   * pipeline value and a bench-burn figure, and nothing in this gate covered
+   * any of it. Its own Preview checks listed "Totals match their rows" — a
+   * correctness property the deployed gate never asserted end to end.
+   *
+   * WHY THE TOTAL IS COMPARED TO THE ROWS, NOT TO A NUMBER I PREDICTED.
+   *
+   * Asserting "the total says 460000" would pass for a build that hardcoded
+   * 460000 and never computes anything, which is the confidently-wrong class
+   * this repo already has a gate for on the travel desk: reachability is not
+   * correctness, and a dashboard of invented numbers renders perfectly. So the
+   * total is checked against the sum of the rows in the DOM, twice — before any
+   * interaction, and again after adding a deal. A hardcoded total passes the
+   * first check by luck and fails the second every time.
+   */
+  const newChatForTool = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForTool, 'New Chat control is missing after the guided-intake transaction.', 15_000);
+  await newChatForTool.click();
+
+  const toolStartedAt = Date.now();
+  markActiveTransaction('business-tool');
+  await setGoldenTransaction('business-tool');
+  await prompt.fill('Create a small React deal pipeline tool for an IT consulting firm. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render a form with data-testid="deal-form" containing a text input data-testid="deal-name", a number input data-testid="deal-value", a select data-testid="deal-stage" offering Discovery, Proposal and Won, and a submit button data-testid="add-deal". It must render one element per deal with data-testid="deal-row", each carrying that deal\'s numeric value in a data-deal-value attribute. It must render an element data-testid="pipeline-total" showing the sum of every deal value, recomputed whenever a deal is added. Seed it with exactly two deals worth 120000 and 60000. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
+  await prompt.press('Enter');
+  const toolCorrelationId = await correlationForPreview(websiteCorrelationId);
+  markActiveTransaction('business-tool', toolCorrelationId);
+
+  const toolFrame = await frameWith('[data-testid="pipeline-total"]');
+  if (!toolFrame) throw new Error(`Business tool compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
+
+  /** The displayed total as a number — "$180,000" and "180000" both read 180000. */
+  const readTotal = async () => {
+    const text = (await toolFrame.locator('[data-testid="pipeline-total"]').first().innerText()).trim();
+    const digits = text.replace(/[^0-9.-]/g, '');
+    const value = Number.parseFloat(digits);
+    if (!Number.isFinite(value)) throw new Error(`Pipeline total is not a number: "${text}".`);
+    return value;
+  };
+
+  /** The sum the rows themselves claim, straight from the DOM. */
+  const readRowSum = async () => {
+    const rows = toolFrame.locator('[data-testid="deal-row"]');
+    const count = await rows.count();
+    let sum = 0;
+    for (let index = 0; index < count; index += 1) {
+      const raw = await rows.nth(index).getAttribute('data-deal-value');
+      const value = Number.parseFloat(String(raw ?? '').replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(value)) throw new Error(`Deal row ${index} carries no readable data-deal-value (saw "${raw}").`);
+      sum += value;
+    }
+    return { count, sum };
+  };
+
+  const seeded = await readRowSum();
+  const seededTotal = await readTotal();
+
+  const ADDED_DEAL_VALUE = 280000;
+  await toolFrame.locator('[data-testid="deal-name"]').first().fill('HIPAA Cloud Migration');
+  await toolFrame.locator('[data-testid="deal-value"]').first().fill(String(ADDED_DEAL_VALUE));
+  /*
+   * The select is asserted by USING it. A dropdown that renders and cannot be
+   * chosen from is the dead-control class, and a business tool is mostly
+   * dropdowns.
+   */
+  const stage = toolFrame.locator('[data-testid="deal-stage"]').first();
+  await visible(stage, 'The deal form rendered without its stage select.', 10_000);
+  await stage.selectOption({ label: 'Proposal' }).catch(async () => { await stage.selectOption({ index: 1 }); });
+  await toolFrame.locator('[data-testid="add-deal"]').first().click();
+
+  // Give the new row a chance to attach before judging; its absence is a
+  // verdict reconcilePipeline reports by name, not a Playwright timeout.
+  await toolFrame.locator('[data-testid="deal-row"]').nth(seeded.count)
+    .waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {});
+
+  const after = await readRowSum();
+  const afterTotal = await readTotal();
+
+  const verdict = reconcilePipeline({
+    seededRows: seeded.count,
+    seededSum: seeded.sum,
+    seededTotal,
+    afterRows: after.count,
+    afterSum: after.sum,
+    afterTotal,
+    addedValue: ADDED_DEAL_VALUE,
+  });
+  if (!verdict.ok) throw new Error(`${verdict.message} Page state: ${await recordPageState()}`);
+
+  await recordInteraction(toolCorrelationId, 'business-tool');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-business-tool.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'business-tool',
+    correlationId: toolCorrelationId,
+    rendered: true,
+    interacted: true,
+    seededRows: seeded.count,
+    rowsAfterAdd: after.count,
+    totalMatchedRows: true,
+    durationMs: Date.now() - toolStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * Thrown, not warned, and thrown INSIDE the try so it is reported by the same
+   * verdict machinery as any other failure. A run that quietly covers less than
+   * it claims is a worse outcome than a run that fails.
+   */
+  const ran = evidence.transactions.map((entry) => entry.name);
+  const missing = EXPECTED_TRANSACTIONS.filter((name) => !ran.includes(name));
+  if (missing.length) {
+    throw new Error(
+      `The golden reported success while ${missing.length} transaction(s) never ran: ${missing.join(', ')}. `
+      + `Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
+    );
+  }
+
   evidence.completedAt = new Date().toISOString();
   evidence.consoleErrors = consoleErrors.slice(0, 20);
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify({ ok: true, ...evidence }));
+
+  /*
+   * The same last line a failure gets. "Which transactions actually ran?" was
+   * unanswerable from a green log, and that question is the whole reason to
+   * trust a green log at all.
+   */
+  const passedVerdict = `GOLDEN VERDICT | all ${ran.length} transactions passed | `
+    + evidence.transactions
+      .map((entry) => `${entry.name}(${Math.round((entry.durationMs || 0) / 1000)}s)`)
+      .join(' ');
+  console.log(`\n${passedVerdict}`);
+  try {
+    writeFileSync(`${ARTIFACT_DIR}/golden-verdict.txt`, `${passedVerdict}\n`);
+  } catch { /* the console line above is still the primary record */ }
 } catch (error) {
   evidence.failedAt = new Date().toISOString();
   evidence.error = error?.message || String(error);
