@@ -1730,6 +1730,9 @@ export function useChatStream({
                       : {}),
                   } : {}),
                   ...(parsed.conversation ? { conversation: parsed.conversation } : {}),
+                  // Why the model stopped, from the provider. Rendered as a
+                  // hook so a cut-off reply is visible to the golden by name.
+                  ...(parsed.finish ? { finish: parsed.finish } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
                   ...(travelPlaces ? { travelPlaces } : {}),

@@ -56,6 +56,16 @@ export const UNPROVED_CLAIM_NOTES = {
     + 'nothing left this session.',
 
   /*
+   * Not a claim the model made — a fact the provider reported: the reply hit
+   * its output budget and the rest was never generated. Outranks the artifact
+   * note below, because "nothing has verified it" is beside the point when the
+   * answer is not all there. Says what to do, since the user can act on it.
+   */
+  reply_truncated:
+    'This reply was **cut off** — the model reached its output limit before finishing, so what you see is not the whole answer. '
+    + 'Ask for the rest, or ask for a shorter version.',
+
+  /*
    * Nothing, on purpose. The desk already shows an empty reply as a failed turn
    * with its own recovery; a second note under a blank message would describe
    * what the user is already looking at.
@@ -85,7 +95,7 @@ export function unprovedClaimNote(verification) {
   const issues = Array.isArray(verification?.issues) ? verification.issues : [];
   const failures = issues.filter((item) => item?.severity === 'failure' && typeof item?.code === 'string');
   if (!failures.length) return null;
-  const order = ['external_action_without_evidence', 'outcome_done_without_proof'];
+  const order = ['external_action_without_evidence', 'reply_truncated', 'outcome_done_without_proof'];
   for (const code of order) {
     if (failures.some((item) => item.code === code) && UNPROVED_CLAIM_NOTES[code]) {
       return { code, text: UNPROVED_CLAIM_NOTES[code] };
