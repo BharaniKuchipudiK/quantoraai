@@ -3,6 +3,7 @@ import process from 'node:process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
+import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -422,6 +423,117 @@ try {
     outcome: intakeOutcome,
     modalAnswers,
     durationMs: Date.now() - intakeStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 4 — A BUSINESS TOOL, WHICH IS WHAT PEOPLE ACTUALLY BUILD HERE.
+   *
+   * The three transactions above prove a calculator renders, a one-page site
+   * renders, and intake asks before it builds. None of them is the shape of the
+   * platform's real output: a working internal tool — a form with a dropdown,
+   * rows that accumulate, and a number computed FROM those rows.
+   *
+   * That gap was found by a screenshot, again. A user shipped a consulting CRM
+   * with a SOW intake form, contract-model and deal-stage selects, weighted
+   * pipeline value and a bench-burn figure, and nothing in this gate covered
+   * any of it. Its own Preview checks listed "Totals match their rows" — a
+   * correctness property the deployed gate never asserted end to end.
+   *
+   * WHY THE TOTAL IS COMPARED TO THE ROWS, NOT TO A NUMBER I PREDICTED.
+   *
+   * Asserting "the total says 460000" would pass for a build that hardcoded
+   * 460000 and never computes anything, which is the confidently-wrong class
+   * this repo already has a gate for on the travel desk: reachability is not
+   * correctness, and a dashboard of invented numbers renders perfectly. So the
+   * total is checked against the sum of the rows in the DOM, twice — before any
+   * interaction, and again after adding a deal. A hardcoded total passes the
+   * first check by luck and fails the second every time.
+   */
+  const newChatForTool = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForTool, 'New Chat control is missing after the guided-intake transaction.', 15_000);
+  await newChatForTool.click();
+
+  const toolStartedAt = Date.now();
+  markActiveTransaction('business-tool');
+  await setGoldenTransaction('business-tool');
+  await prompt.fill('Create a small React deal pipeline tool for an IT consulting firm. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render a form with data-testid="deal-form" containing a text input data-testid="deal-name", a number input data-testid="deal-value", a select data-testid="deal-stage" offering Discovery, Proposal and Won, and a submit button data-testid="add-deal". It must render one element per deal with data-testid="deal-row", each carrying that deal\'s numeric value in a data-deal-value attribute. It must render an element data-testid="pipeline-total" showing the sum of every deal value, recomputed whenever a deal is added. Seed it with exactly two deals worth 120000 and 60000. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
+  await prompt.press('Enter');
+  const toolCorrelationId = await correlationForPreview(websiteCorrelationId);
+  markActiveTransaction('business-tool', toolCorrelationId);
+
+  const toolFrame = await frameWith('[data-testid="pipeline-total"]');
+  if (!toolFrame) throw new Error(`Business tool compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
+
+  /** The displayed total as a number — "$180,000" and "180000" both read 180000. */
+  const readTotal = async () => {
+    const text = (await toolFrame.locator('[data-testid="pipeline-total"]').first().innerText()).trim();
+    const digits = text.replace(/[^0-9.-]/g, '');
+    const value = Number.parseFloat(digits);
+    if (!Number.isFinite(value)) throw new Error(`Pipeline total is not a number: "${text}".`);
+    return value;
+  };
+
+  /** The sum the rows themselves claim, straight from the DOM. */
+  const readRowSum = async () => {
+    const rows = toolFrame.locator('[data-testid="deal-row"]');
+    const count = await rows.count();
+    let sum = 0;
+    for (let index = 0; index < count; index += 1) {
+      const raw = await rows.nth(index).getAttribute('data-deal-value');
+      const value = Number.parseFloat(String(raw ?? '').replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(value)) throw new Error(`Deal row ${index} carries no readable data-deal-value (saw "${raw}").`);
+      sum += value;
+    }
+    return { count, sum };
+  };
+
+  const seeded = await readRowSum();
+  const seededTotal = await readTotal();
+
+  const ADDED_DEAL_VALUE = 280000;
+  await toolFrame.locator('[data-testid="deal-name"]').first().fill('HIPAA Cloud Migration');
+  await toolFrame.locator('[data-testid="deal-value"]').first().fill(String(ADDED_DEAL_VALUE));
+  /*
+   * The select is asserted by USING it. A dropdown that renders and cannot be
+   * chosen from is the dead-control class, and a business tool is mostly
+   * dropdowns.
+   */
+  const stage = toolFrame.locator('[data-testid="deal-stage"]').first();
+  await visible(stage, 'The deal form rendered without its stage select.', 10_000);
+  await stage.selectOption({ label: 'Proposal' }).catch(async () => { await stage.selectOption({ index: 1 }); });
+  await toolFrame.locator('[data-testid="add-deal"]').first().click();
+
+  // Give the new row a chance to attach before judging; its absence is a
+  // verdict reconcilePipeline reports by name, not a Playwright timeout.
+  await toolFrame.locator('[data-testid="deal-row"]').nth(seeded.count)
+    .waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {});
+
+  const after = await readRowSum();
+  const afterTotal = await readTotal();
+
+  const verdict = reconcilePipeline({
+    seededRows: seeded.count,
+    seededSum: seeded.sum,
+    seededTotal,
+    afterRows: after.count,
+    afterSum: after.sum,
+    afterTotal,
+    addedValue: ADDED_DEAL_VALUE,
+  });
+  if (!verdict.ok) throw new Error(`${verdict.message} Page state: ${await recordPageState()}`);
+
+  await recordInteraction(toolCorrelationId, 'business-tool');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-business-tool.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'business-tool',
+    correlationId: toolCorrelationId,
+    rendered: true,
+    interacted: true,
+    seededRows: seeded.count,
+    rowsAfterAdd: after.count,
+    totalMatchedRows: true,
+    durationMs: Date.now() - toolStartedAt,
   });
   delete evidence.activeTransaction;
 
