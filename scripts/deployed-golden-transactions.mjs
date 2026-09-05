@@ -376,9 +376,41 @@ try {
      * all, a silent stall.
      */
     if (modalAnswers === 0) {
+      /*
+       * WHICH of these it is decides who fixes it, so the verdict must say.
+       *
+       * On 2026-09-04 this branch printed "produced neither an intake question
+       * nor an artifact" while the page held a perfectly good intake question:
+       * "does your client want real online selling or a beautiful showcase?".
+       * The desk HAD asked. It had simply not wrapped the question in a modal,
+       * because the same system prompt both required one (FIRST-TURN RULE) and
+       * excused it ("omit the modal if a free-text answer is better").
+       *
+       * A blocking gate whose only diagnosis is false costs a night (§8), and
+       * three outcomes that share one sentence are one outcome as far as the
+       * next reader is concerned. They are separated here by the page state
+       * that is already being captured.
+       */
+      const state = await recordPageState();
+      const snapshot = evidence.pageState || {};
+      if (snapshot.modalUnreadable) {
+        throw new Error(
+          'The guided-intake turn wrote a decision modal the desk could not READ, so nothing rendered. '
+          + 'That is ours, not the model\'s — repair the reader (src/lib/assistant-modal.js), do not reword the prompt. '
+          + `Page state: ${state}`,
+        );
+      }
+      if ((snapshot.assistantMessages || 0) > 0 && snapshot.lastAssistantText) {
+        throw new Error(
+          'The guided-intake turn asked its question in PROSE and never rendered the decision modal the '
+          + 'FIRST-TURN RULE requires, leaving the user to type an answer the desk could have offered. '
+          + 'The turn was NOT dead — check what the assembled system prompt tells the model about omitting '
+          + `the modal before blaming the model. Page state: ${state}`,
+        );
+      }
       throw new Error(
-        `The guided-intake turn produced neither an intake question nor an artifact within ${Math.round(TURN_TIMEOUT_MS / 1000)}s. `
-        + `Page state: ${await recordPageState()}`,
+        `The guided-intake turn produced NOTHING within ${Math.round(TURN_TIMEOUT_MS / 1000)}s — no question, no artifact, no error. `
+        + `Page state: ${state}`,
       );
     }
     intakeOutcome = 'intake-rendered';

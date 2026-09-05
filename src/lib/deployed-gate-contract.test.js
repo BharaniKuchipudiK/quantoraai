@@ -119,6 +119,25 @@ test('the decision modal publishes durable hooks and the golden gate anchors on 
 });
 
 /*
+ * The other half of the same transaction (2026-09-04). When no modal renders,
+ * the gate has to say WHY, and the only two answers are opposites: the desk
+ * asked in prose, or the desk wrote a modal it could not parse. AiStudio held
+ * that answer all along — readAssistantModal returns a failure — and threw it
+ * away at the call site, so the verdict guessed. Both ends pinned here: the
+ * desk publishes the hook, the snapshot the verdict reads still reads it.
+ */
+test('an unreadable decision modal is published as a hook and read by the snapshot', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /modalUnreadable = Boolean\(modal\.failure\)/, 'the desk must keep the parse failure');
+  assert.match(studio, /data-quantora-modal-unreadable=\{modalUnreadable \? 'true' : undefined\}/);
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /\[data-quantora-modal-unreadable="true"\]/);
+  assert.match(snapshot, /modalUnreadable:/, 'the snapshot must carry the field the verdict branches on');
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /snapshot\.modalUnreadable/, 'the verdict must branch on it, or the hook is decorative');
+});
+
+/*
  * The canary handshake (2026-09-01). The chat golden failed 3/3 on PR
  * previews as a provider outage; the real cause was the canary token env
  * being scoped to Production, discovered only by reading three run logs.
