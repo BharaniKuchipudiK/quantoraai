@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
+import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -21,7 +22,7 @@ import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
  * run and would be proving three of them. So the roster is declared, checked
  * against what actually completed, and printed last on every run, pass or fail.
  */
-const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool'];
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded'];
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -600,6 +601,105 @@ try {
     rowsAfterAdd: after.count,
     totalMatchedRows: true,
     durationMs: Date.now() - toolStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 5 — A DOCUMENT THE USER ATTACHED, READ AND BUILT FROM.
+   *
+   * 2026-09-05: four association documents attached to one chat turn were
+   * dropped in the browser as "(not a readable image)", and the model — told
+   * nothing about files it never received — asked the user how to get them.
+   * Nothing in this gate had ever attached a file.
+   *
+   * A PDF is generated here with a registration number that exists nowhere
+   * else, attached through the composer's real file input, and the ask is a
+   * page that must SHOW that number. The number can only come from the PDF,
+   * so its presence in the rendered preview proves the whole path: intake,
+   * request, server extraction, the model's context, the build. A reply that
+   * asks for the document, or a page without the number, fails by name.
+   */
+  const newChatForDocument = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForDocument, 'New Chat control is missing after the business-tool transaction.', 15_000);
+  await newChatForDocument.click();
+
+  const documentStartedAt = Date.now();
+  markActiveTransaction('document-grounded');
+  await setGoldenTransaction('document-grounded');
+  const REGISTRATION_NUMBER = `RKV-${String(Date.now()).slice(-6)}-GLD`;
+  const bylawsPdf = buildMinimalPdf(
+    `Ramakrishna Venuzia Owners Welfare Association. Registered society. Registration number ${REGISTRATION_NUMBER}. `
+    + 'Annual general meeting every March. Maintenance dues are payable quarterly.',
+  );
+  const fileInput = page.locator('.app-shell--studio input[type="file"]').first();
+  await fileInput.setInputFiles({ name: 'rkv-bylaws.pdf', mimeType: 'application/pdf', buffer: bylawsPdf });
+  const chip = page.locator('[data-quantora-attachment-chip="rkv-bylaws.pdf"]').first();
+  await visible(chip, 'The composer never showed the attached PDF as a chip.', 10_000);
+  const chipKind = await chip.getAttribute('data-quantora-attachment-kind');
+  if (chipKind !== 'document') {
+    throw new Error(`The composer took the PDF as "${chipKind}", not as a document — it would be dropped at send. Page state: ${await recordPageState()}`);
+  }
+  await prompt.fill('Build a single-file HTML page for the association named in the attached bylaws PDF. Include a heading with the association\'s name and a paragraph with data-testid="reg-no" that contains the registration number exactly as it appears in the document. Use only HTML and CSS, no images, no external assets, no localStorage.');
+  await prompt.press('Enter');
+  const documentCorrelationId = await correlationForPreview(toolCorrelationId);
+  markActiveTransaction('document-grounded', documentCorrelationId);
+
+  const headsUp = page.locator('[data-quantora-assistant-prose]', { hasText: /could not send/i }).first();
+  if (await headsUp.isVisible().catch(() => false)) {
+    throw new Error(`The desk dropped the attached PDF before sending — the 2026-09-05 defect is back. Page state: ${await recordPageState()}`);
+  }
+  /*
+   * A fresh chat asking for a website gets the designer's ONE question first
+   * (transaction 3 is that invariant). The real flow is attach → ask → answer
+   * → build, and the build turn must still have the document: the desk carries
+   * it across the handoff. Answer the question if it comes, then demand the page.
+   */
+  const documentIntakeModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const documentFailedTurn = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  let documentFrame = null;
+  let documentModalAnswers = 0;
+  const documentDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  while (Date.now() < documentDeadline && !documentFrame) {
+    if (await documentFailedTurn.isVisible().catch(() => false)) {
+      throw new Error(`The document-grounded turn FAILED outright. Page state: ${await recordPageState()}`);
+    }
+    if (await documentIntakeModal.isVisible().catch(() => false)) {
+      if (documentModalAnswers >= 2) throw new Error(`Guided intake asked ${documentModalAnswers + 1} questions without building from the document. Page state: ${await recordPageState()}`);
+      documentModalAnswers += 1;
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    documentFrame = await frameWith('[data-testid="reg-no"]', 2_000);
+  }
+  if (!documentFrame) {
+    const state = await recordPageState();
+    const snapshot = evidence.pageState || {};
+    const asked = /attach|document|send (me|it)|didn't come through|did not come through/i.test(String(snapshot.lastAssistantText || ''));
+    throw new Error(
+      (asked
+        ? 'The model asked for the document instead of building from it — the attached PDF\'s text did not reach the model. '
+        : 'The document-grounded page never rendered its data-testid="reg-no" element. ')
+      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. Page state: ${state}`,
+    );
+  }
+  const shown = (await documentFrame.locator('[data-testid="reg-no"]').first().innerText()).trim();
+  if (!shown.includes(REGISTRATION_NUMBER)) {
+    throw new Error(
+      `The page rendered but its registration number is "${shown}", not the ${REGISTRATION_NUMBER} that exists only in the attached PDF — `
+      + `the model built without reading the document. Page state: ${await recordPageState()}`,
+    );
+  }
+  await recordInteraction(documentCorrelationId, 'document-grounded');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-document-grounded.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'document-grounded',
+    correlationId: documentCorrelationId,
+    rendered: true,
+    groundedFact: true,
+    registrationNumber: REGISTRATION_NUMBER,
+    intakeQuestionsAnswered: documentModalAnswers,
+    durationMs: Date.now() - documentStartedAt,
   });
   delete evidence.activeTransaction;
 

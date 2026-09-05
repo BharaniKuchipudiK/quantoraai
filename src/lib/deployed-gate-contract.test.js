@@ -273,3 +273,32 @@ test('the health endpoint and the golden gate keep the canary handshake', () => 
   assert.match(gate, /goldenCanaryHonored !== true/);
   assert.match(gate, /QUANTORA_GOLDEN_CANARY_TOKEN/, 'the failure message names the env var to fix');
 });
+
+/*
+ * DOCUMENTS TRAVEL (2026-09-05). Four association documents were dropped in
+ * the browser as "(not a readable image)" and the model asked the user how to
+ * get them. Every hop is pinned: the composer sends documents, the server reads
+ * the same field, the desk publishes what was read, the snapshot reads it, and
+ * the golden attaches a real file and demands a fact only that file holds.
+ */
+test('an attached document reaches the model, and the desk says what was read', () => {
+  const hook = read('src/hooks/useChatStream.js');
+  assert.match(hook, /attachedDocuments,/, 'the request body must carry documents');
+  assert.match(hook, /partitionAttachments\(attachments\)/, 'one decision in one place — chat-attachments.js');
+  assert.match(hook, /documentReads: parsed\.attachments/, 'the done payload\'s reads must be kept on the message');
+  const normalizer = read('api/_lib/communication/request-normalizer.ts');
+  assert.match(normalizer, /body\?\.attachedDocuments/, 'the server must read the same field the client sends');
+  const handler = read('api/_lib/chat-handler.ts');
+  assert.match(handler, /readAttachedDocuments\(attachedDocuments\)/, 'documents are read once, on the server');
+  assert.match(handler, /const refineUserMessage = \[\s*messageForModel,/, 'the model sees the documents on the primary path');
+  assert.match(handler, /buildGeminiContents\(boundedHistory, messageForModel, visionImages\)/, 'and on the legacy path');
+  assert.equal((handler.match(/attachments: attachmentSummary,/g) || []).length, 3, 'every done payload carries the read summary');
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /data-quantora-document-reads=/, 'the desk must publish what was read');
+  assert.match(studio, /attachmentKindForFile\(file\)/, 'the composer classifies with the shared module, not its own rule');
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /documentReads:/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /setInputFiles\(\{ name: 'rkv-bylaws\.pdf'/, 'the golden must attach a real file through the composer');
+  assert.match(gate, /'document-grounded'\]/, 'and the roster must demand it ran');
+});
