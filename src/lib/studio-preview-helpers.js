@@ -160,8 +160,22 @@ export function assembleStudioPreview(rawText, currentVfs = {}) {
 
   const html = extractUnfencedHtml(rawText);
   if (html) {
+    /*
+     * An unfenced document is THE PAGE, not the project.
+     *
+     * The fenced path above merges into the current workspace; this branch
+     * returned `{ 'index.html' }` alone, so a model that forgot its fence on a
+     * same-product turn silently deleted every sibling — products.json,
+     * styles.css — which the stress gate reported as `file-lost` on 8 of 8
+     * arrival shapes, muted under continue-on-error since it was written.
+     * A product switch never arrives here with a workspace to keep:
+     * applyWorkspaceFromChat hands this function {} for it.
+     */
+    const base = currentVfs && typeof currentVfs === 'object' ? currentVfs : {};
+    const currentEntry = pickPreviewEntryPath(base);
+    const entryPath = currentEntry && /\.html?$/i.test(currentEntry) ? currentEntry : 'index.html';
     return {
-      vfs: { 'index.html': { content: html, language: 'html' } },
+      vfs: { ...base, [entryPath]: { content: html, language: 'html' } },
       code: html,
       patchFailures,
       emptyFenceKept,
