@@ -8,6 +8,7 @@ import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
 import { fetchApiGatewayKey } from "../autocomplete.js";
 import { classifyFinish, finishFromGemini, finishFromOpenRouter, truncatedArtifactError, type StreamFinish } from "./stream-finish.js";
+import { ledgerOutcomeFor } from "./model-quality-outcome.js";
 import { readByokCredentials } from "./byok-credentials.js";
 import { resolveOpenRouterEnvKey } from "./openrouter-key.js";
 import { buildConversationSystemPrompt } from "./conversation-policy.js";
@@ -1709,14 +1710,24 @@ export default async function handler(req: any, res: any) {
         telemetryContext,
         req,
       );
-      recordModelQualityEvent({
-        requestId,
-        modelId: usedRoute.id,
-        taskCategory,
-        outcome: 'success',
-        latencyMs,
-        fallbackFrom: usedRoute.reason === 'fallback' ? modelId : fallbackFrom,
-      });
+      /*
+       * The ledger records what the provider MEASURED, not what the stream
+       * implied: a reply cut at the output budget or blocked is a failure, a
+       * finish that never arrived is not counted at all. Writing success for
+       * anything that did not throw taught the outcome router that a route
+       * which had just failed was reliable (Phase 6; deferred from #547).
+       */
+      const measuredOutcome = ledgerOutcomeFor(fullReplyFinish);
+      if (measuredOutcome) {
+        recordModelQualityEvent({
+          requestId,
+          modelId: usedRoute.id,
+          taskCategory,
+          outcome: measuredOutcome,
+          latencyMs,
+          fallbackFrom: usedRoute.reason === 'fallback' ? modelId : fallbackFrom,
+        });
+      }
       sse.done({
         provider: `${usedRoute.gateway === 'gemini' ? 'Google Gemini' : 'OpenRouter'} (${usedRoute.id})`,
         latencyMs,
@@ -2005,8 +2016,11 @@ export default async function handler(req: any, res: any) {
 
       const latencyMs = Date.now() - startTime;
       logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", activeSessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
-      recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
       const legacyFinish = classifyFinish(legacyFinishReason);
+      const legacyOutcome = ledgerOutcomeFor(legacyFinish);
+      if (legacyOutcome) {
+        recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: legacyOutcome, latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
+      }
       sse.done({
         provider: `Google Gemini (${modelName || usedModel})`,
         latencyMs,
@@ -2111,16 +2125,20 @@ export default async function handler(req: any, res: any) {
             sse.text(token);
           }
         } catch { /* ignore malformed upstream event */ }
-        // Must escape before the success path below, which records
-        // outcome:"success" into the ledger the outcome router reads.
+        // Must escape before the acceptance path below: a mid-stream provider
+        // error is a failed rung, and the ledger row the outcome router reads
+        // is measured from the finish that never arrived, not from tokens.
         if (midStreamFailure) throw midStreamFailure;
       }
     }
 
     const latencyMs = Date.now() - startTime;
     logTelemetry(usedOpenRouterModel, latencyMs, fullReply.length, "OpenRouter", activeSessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
-    recordModelQualityEvent({ requestId, modelId: usedOpenRouterModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
     const refineFinish = classifyFinish(refineFinishReason);
+    const refineOutcome = ledgerOutcomeFor(refineFinish);
+    if (refineOutcome) {
+      recordModelQualityEvent({ requestId, modelId: usedOpenRouterModel, taskCategory, outcome: refineOutcome, latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
+    }
     sse.done({
       provider: `OpenRouter (${modelName || usedOpenRouterModel})`,
       latencyMs,
