@@ -125,6 +125,7 @@ This is the single richest source of "green locally, broken in production" here:
 |---|---|---|---|---|
 | `./x` (no extension) | resolves | resolves | never sees `api/` | **fails** |
 | default import of an ESM-only package | typed as callable | interops | never sees `api/` | **fails** |
+| a file a dependency loads by computed `import()` (pdfjs's worker) | present | present | never sees `api/` | **absent from the bundle** — name it in `vercel.json` `includeFiles` |
 
 When in doubt about production behaviour, the deployed gate is the only
 authority. Local green is necessary, never sufficient.
