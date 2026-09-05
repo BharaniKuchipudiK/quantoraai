@@ -187,6 +187,8 @@ becomes safely more autonomous.
 | `node scripts/attachments-browser-gate.mjs` | the composer or the send path dropping an attached document, the desk hiding what it could not read, or a document forgotten by the build turn after the designer's question |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
 | `npm run test:github-writes` | a GitHub mutation that runs on a session alone, without asking GitHub whether this user may make it |
+| `node --test shared/trace-story.test.js` | a reference id whose account invents a cause the record does not prove — or blames the server for a request it never saw |
+| `node scripts/trace-lookup-browser-gate.mjs` | a failed turn whose reference is not the id the request carried, so no lookup could ever find it — or a "What happened?" that renders nothing |
 
 ### A tool description is a promise, and the model passes it on
 
