@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { extractResearchPdfText } from "./research-pdf-text.js";
 import { fetchResearchSourceText } from "./research-source-fetch.js";
 import { verifyResearchClaimEvidence } from "./research-claim-verifier.js";
@@ -133,4 +136,39 @@ test("a broken PDF fetched from the web keeps its named reason on the ledger", a
   );
   assert.equal(result.ok, false);
   assert.equal(result.reason, "source_pdf_unreadable");
+});
+
+/*
+ * THE WORKER THAT NEVER SHIPPED (2026-09-05, deployed golden transaction 5).
+ *
+ * In Node, pdfjs loads its worker with `import(this.workerSrc)` — a computed
+ * specifier no file tracer can follow — so Vercel's bundle carried pdf.mjs and
+ * not pdf.worker.mjs, getDocument rejected, and every PDF in production came
+ * back "not a readable PDF": the platform blamed the user's file for its own
+ * missing file. Locally every test passed, because node_modules is whole.
+ * Two halves, held together here: the reader names the worker's location and
+ * says "reader unavailable" when it is absent, and vercel.json ships it.
+ */
+test("[was-red] a missing worker is the platform's fault, never the file's", async () => {
+  const result = await extractResearchPdfText(buildMinimalPdf(SENTENCE), { workerPath: "/nowhere/pdf.worker.mjs" });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "source_pdf_support_unavailable", "an absent worker must not read as an unreadable PDF");
+});
+
+test("[was-red] pdfjs's computed worker import is named to the bundler, and the reader points at the shipped copy", async () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const vercel = JSON.parse(fs.readFileSync(path.join(root, "vercel.json"), "utf8"));
+  const includeFiles = String(vercel?.functions?.["api/pipeline.ts"]?.includeFiles || "");
+  // /api/chat is served by api/pipeline.ts; the tracer cannot see the worker,
+  // so the function's includeFiles must name it (and the font/CMap data the
+  // reader points at for non-embedded and CID fonts).
+  assert.match(includeFiles, /pdfjs-dist\/\{legacy\/build\/pdf\.worker\.mjs,cmaps\/\*\*,standard_fonts\/\*\*\}/,
+    `api/pipeline.ts must ship pdfjs's worker, cmaps and standard_fonts; includeFiles is ${JSON.stringify(includeFiles)}`);
+
+  const result = await extractResearchPdfText(buildMinimalPdf(SENTENCE));
+  assert.equal(result.ok, true);
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const workerSrc = String(pdfjs.GlobalWorkerOptions.workerSrc || "");
+  assert.match(workerSrc, /^file:\/\/.*\/pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs$/, "the reader must point pdfjs at an absolute worker file, not a relative import");
+  assert.equal(fs.existsSync(fileURLToPath(workerSrc)), true, "and that file must exist where the reader says it is");
 });
