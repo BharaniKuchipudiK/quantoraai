@@ -138,6 +138,23 @@ test('an unreadable decision modal is published as a hook and read by the snapsh
 });
 
 /*
+ * And the REASON (2026-09-05). The boolean above shipped one night and was red
+ * the next: it said the desk could not read the modal, which was the class, and
+ * left the shape — a markdown fence, as it turned out — to be guessed at. The
+ * parser knew all along. Three ends pinned so the answer keeps travelling.
+ */
+test('the parser reason reaches the verdict, not just the fact of failure', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /modalFailure = modal\.failure/, 'the desk must keep the reason, not only the boolean');
+  assert.match(studio, /data-quantora-modal-failure=\{modalFailure \|\| undefined\}/);
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /data-quantora-modal-failure/, 'the snapshot must read it');
+  assert.match(snapshot, /modalFailure:/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /snapshot\.modalFailure/, 'and the verdict must print it, or it is another silent hop');
+});
+
+/*
  * The canary handshake (2026-09-01). The chat golden failed 3/3 on PR
  * previews as a provider outage; the real cause was the canary token env
  * being scoped to Production, discovered only by reading three run logs.

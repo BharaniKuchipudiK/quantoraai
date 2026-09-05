@@ -81,6 +81,58 @@ test('a quote escaped inside a string does not end the string', () => {
   assert.equal(modalData.question, 'he said "hello,\nand left');
 });
 
+test('a fenced modal is read — the fence is packaging, not content', () => {
+  /*
+   * 2026-09-05, found by the verdict added the night before. The deployed
+   * golden went red at guided-intake with modalUnreadable: true and the
+   * transcript ending "So, first thing:" — the model had obeyed, written its
+   * prose, and handed over to a modal the desk then dropped.
+   *
+   * A model that fences JSON is being conventional. Every other code block it
+   * emits is fenced, and nothing ever told it this one must not be.
+   */
+  const body = '{"question":"Sell online, or a showcase?","options":[{"label":"Sell online"},{"label":"Showcase"}]}';
+  for (const fence of ['```json', '```JSON', '```', '```jsonc']) {
+    const { modalData, repaired } = readAssistantModal(wrap(`${fence}\n${body}\n\`\`\``));
+    assert.ok(modalData, `${fence} must not cost the model its question`);
+    assert.equal(repaired, true);
+    assert.equal(modalData.question, 'Sell online, or a showcase?');
+    assert.deepEqual(modalData.options.map((o) => o.label), ['Sell online', 'Showcase']);
+  }
+});
+
+test('a fenced TWO-LINE question survives both repairs at once', () => {
+  // One message, not two problems — the newline case inside the fence case.
+  const { modalData, repaired } = readAssistantModal(wrap(
+    '```json\n{"question":"Lead with sarees,\nor with the services?","options":[]}\n```',
+  ));
+  assert.ok(modalData, 'a fenced two-line question must survive');
+  assert.equal(repaired, true);
+  assert.match(modalData.question, /sarees,\nor with the services/);
+});
+
+test('an UNBALANCED fence is left alone rather than guessed at', () => {
+  /*
+   * The anchors earn their keep here. A ``` that opens and never closes, or one
+   * that appears mid-question, is ambiguous — and ambiguity is where inventing
+   * structure starts. Refusing is correct; the reason is published instead.
+   */
+  const { modalData, failure } = readAssistantModal(wrap('```json\n{"question":"Q","options":[]}'));
+  assert.equal(modalData, null, 'a half-fence must not be second-guessed');
+  assert.ok(failure, 'and the refusal must be reportable');
+});
+
+test('the failure REASON is carried, not just the fact of failure', () => {
+  /*
+   * "unreadable" named the class and left the instance to be guessed at, which
+   * cost a production round on 2026-09-05. The parser already knew; nothing
+   * carried it.
+   */
+  const { failure } = readAssistantModal(wrap('{"options":[{"label":"A"},]}'));
+  assert.ok(failure, 'a refusal must report');
+  assert.match(failure, /JSON/i, 'and the report must name the parser problem, not just say "no"');
+});
+
 test('an unreadable modal never reaches the user as raw braces', () => {
   /*
    * The half of this that is not about JSON. cleanText used to be stripped

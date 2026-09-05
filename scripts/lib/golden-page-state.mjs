@@ -48,6 +48,10 @@ export async function pageStateSnapshot(page, consoleErrors = []) {
       // Separates "the desk asked in prose" from "the desk wrote a modal it
       // could not read" — opposite defects that used to produce one message.
       modalUnreadable: (await count('[data-quantora-modal-unreadable="true"]')) > 0,
+      // And WHY. The boolean alone named the class and left the shape to be
+      // guessed at, which is a diagnosis one round short (§8).
+      modalFailure: await page.locator('[data-quantora-modal-failure]').first()
+        .getAttribute('data-quantora-modal-failure', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       buildJobs: await count('[data-quantora-build-job]'),
       storageFault: await textOf(page.locator('[data-quantora-storage-fault]').first()),
       alert: await textOf(page.locator('[role="alert"]').first()),
