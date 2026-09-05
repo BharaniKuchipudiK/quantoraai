@@ -155,10 +155,30 @@ export function readAssistantModal(text) {
     return { modalData: JSON.parse(escapeControlCharsInStrings(raw)), cleanText, repaired: true, failure: null };
   } catch (error) {
     /*
-     * Reported, not thrown, and never rendered as itself. The reason travels:
-     * "unreadable" alone cost a production round, because it named the class
-     * and left the instance to be guessed at.
+     * Reported, not thrown, and never rendered as itself — WITH the bytes.
+     *
+     * "unreadable" named the class and cost a round. The parser's message named
+     * the instance and cost another, because "Unterminated string in JSON at
+     * position 106" still does not say WHICH string or what preceded it, and I
+     * guessed at the shape twice (a markdown fence, then truncation) without
+     * ever seeing what the model wrote. A position with no text at that
+     * position is a diagnosis nobody can act on (§8).
+     *
+     * So a short window around the reported offset travels too. It is the
+     * model's own question — already on the page as prose — bounded to 60
+     * characters, which is enough to tell an unescaped quote from a truncation
+     * and not enough to be a transcript.
      */
-    return { modalData: null, cleanText, repaired: false, failure: String(error?.message || 'unparseable modal') };
+    const message = String(error?.message || 'unparseable modal');
+    const at = Number.parseInt((message.match(/position (\d+)/) || [])[1] ?? '', 10);
+    const window = Number.isFinite(at)
+      ? String(raw).slice(Math.max(0, at - 30), at + 30).replace(/\s+/g, ' ')
+      : String(raw).slice(0, 60).replace(/\s+/g, ' ');
+    return {
+      modalData: null,
+      cleanText,
+      repaired: false,
+      failure: `${message} | near: ${window}`,
+    };
   }
 }

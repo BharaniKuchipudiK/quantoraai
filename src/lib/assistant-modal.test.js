@@ -122,6 +122,41 @@ test('an UNBALANCED fence is left alone rather than guessed at', () => {
   assert.ok(failure, 'and the refusal must be reportable');
 });
 
+test('a TRUNCATED modal is refused and says so, because completing it would invent the question', () => {
+  /*
+   * 2026-09-05, on the deployed golden: "Unterminated string in JSON at
+   * position 106". Not a fence, not a trailing comma — the reply was cut off
+   * mid-sentence. There is no information-preserving repair for that: the rest
+   * of the user's question does not exist anywhere to be recovered.
+   *
+   * The distinction matters because the verdict routes on it. A malformed but
+   * COMPLETE modal is the reader's bug; a truncated one is an output bug, and
+   * sending someone to the reader for it costs a round.
+   */
+  const cut = '{\n  "question": "Should this be an online store, or a showcase focused on WhatsApp in';
+  const { modalData, failure } = readAssistantModal(wrap(cut));
+  assert.equal(modalData, null, 'a truncated question must never be completed by us');
+  assert.match(failure, /Unterminated string/i, 'and the verdict routes on exactly this wording');
+});
+
+test('the failure carries the BYTES around the error, not just an offset', () => {
+  /*
+   * "position 106" with no text at position 106 is a number, not a diagnosis.
+   * Two rounds were spent guessing the shape — a markdown fence, then
+   * truncation — without ever seeing what the model actually wrote.
+   */
+  const { failure } = readAssistantModal(wrap('{\n  "question": "Lead with sarees or with the services and mehndi bookings'));
+  assert.match(failure, / \| near: /, 'the excerpt must travel with the message');
+  assert.match(failure, /mehndi bookings/, 'and it must be the text AT the failure, not the start of the body');
+});
+
+test('an unescaped quote reads differently from a truncation, so they can be told apart', () => {
+  // The verdict sends these to different places, so they must not collide.
+  const { failure } = readAssistantModal(wrap('{"question":"Call it an "online store" or a showcase?","options":[]}'));
+  assert.ok(failure, 'an unescaped inner quote is still a refusal');
+  assert.doesNotMatch(failure, /Unterminated string/i, 'and must NOT look like a truncation');
+});
+
 test('the failure REASON is carried, not just the fact of failure', () => {
   /*
    * "unreadable" named the class and left the instance to be guessed at, which
