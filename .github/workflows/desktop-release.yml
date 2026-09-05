@@ -4,10 +4,13 @@ name: Desktop release
 # three platforms from a `desktop-v*` tag and publishes them as a GitHub
 # release draft, which is also the electron-updater feed.
 #
-# Signing is opt-in by secret: with no certificates configured the workflow
-# still produces unsigned artifacts (useful for a first internal try), and
-# electron-builder prints exactly which step it skipped. Nothing here can
-# sign or notarise without the accounts listed in the design doc §12.
+# Signing is opt-in by secret, and build/signing-policy.cjs decides it from
+# the credentials actually present: with none configured the macOS build is
+# unsigned on purpose (identity null, hardened runtime off, notarisation not
+# requested) rather than failing on a certificate it was told to expect. That
+# build is installable for testing and WILL be refused by Gatekeeper once
+# downloaded — see desktop/build/signing-policy.test.js, which pins both
+# states. Nothing here can sign or notarise without the accounts in §12.
 #
 #   macOS   CSC_LINK / CSC_KEY_PASSWORD (Developer ID .p12, base64)
 #           APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID (notarisation)
@@ -60,7 +63,7 @@ jobs:
         working-directory: desktop
 
       - name: Package and publish installers
-        run: npx electron-builder --config build/electron-builder.json --publish always
+        run: npx electron-builder --config build/electron-builder.config.cjs --publish always
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

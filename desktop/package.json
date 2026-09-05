@@ -11,7 +11,7 @@
     "start": "npm run build && electron .",
     "test": "cd .. && npx tsx --test desktop/main/*.test.ts",
     "smoke": "cd .. && xvfb-run -a node scripts/desktop-smoke-gate.mjs",
-    "package": "npm run build && electron-builder --config build/electron-builder.json",
+    "package": "npm run build && electron-builder --config build/electron-builder.config.cjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
