@@ -386,26 +386,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [renameDraft, setRenameDraft] = useState('');
   const [showArchivedChats, setShowArchivedChats] = useState(false);
 
-  /*
-   * One signal for "you are here", used by every selectable row in the nav.
-   *
-   * The old one was two weak ones — a slightly lighter background and a bolder
-   * weight — which at a glance read as nothing at all, and which the report
-   * "when the workspace is active, it is quite difficult to know" is about. An
-   * inset box-shadow draws the accent bar without taking layout space, so no
-   * row shifts by a pixel when selection moves.
-   */
-  const navRowStyle = useCallback((active) => ({
-    padding: '8px 10px',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'background 0.15s ease, box-shadow 0.15s ease',
-    color: textColor,
-    fontWeight: active ? 700 : 500,
-    background: active ? (isLight ? '#e6e6e6' : 'rgba(255,255,255,0.10)') : 'transparent',
-    border: '1px solid transparent',
-    boxShadow: active ? 'inset 3px 0 0 #f97316' : 'none',
-  }), [isLight, textColor]);
   const [sidebarSections, setSidebarSections] = useState(() => loadStudioSidebarSections());
   const toggleSidebarSection = useCallback((key) => {
     setSidebarSections((prev) => persistStudioSidebarSections({ ...prev, [key]: !prev[key] }));
@@ -1465,6 +1445,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Flat homepage palette: near-black ink and neutral gray, no blue tint.
   const textColor = isLight ? '#0a0a0a' : '#ffffff';
   const subtextColor = isLight ? '#737373' : '#a3a3a3';
+
+  /*
+   * One signal for "you are here", used by every selectable row in the nav.
+   *
+   * The old one was two weak ones — a slightly lighter background and a bolder
+   * weight — which at a glance read as nothing at all, and which the report
+   * "when the workspace is active, it is quite difficult to know" is about. An
+   * inset box-shadow draws the accent bar without taking layout space, so no
+   * row shifts by a pixel when selection moves.
+   */
+  const navRowStyle = useCallback((active) => ({
+    padding: '8px 10px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'background 0.15s ease, box-shadow 0.15s ease',
+    color: textColor,
+    fontWeight: active ? 700 : 500,
+    background: active ? (isLight ? '#e6e6e6' : 'rgba(255,255,255,0.10)') : 'transparent',
+    border: '1px solid transparent',
+    boxShadow: active ? 'inset 3px 0 0 #f97316' : 'none',
+  }), [isLight, textColor]);
   const bubbleUserBg = isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)';
   const bubbleUserBorder = isLight ? '#ffedd5' : 'rgba(249, 115, 22, 0.3)';
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
