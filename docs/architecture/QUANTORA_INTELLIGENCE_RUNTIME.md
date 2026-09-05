@@ -594,7 +594,29 @@ thing this repository has an incident for.
 | 2 — Durable Agent Runtime | closed | `api/_lib/qir-workflow-adapter.ts`, pause/resume/cancel, the event ledger | `qir-workflow-adapter.test.ts` — a conformance suite a second engine passes, plus the deployed durability gate |
 | 3 — Context, Memory, Resource Governor | closed | bounded context, compaction, nested budgets, recovery reserve, capacity waiting, model AND tool accounting | `refinement-loop.test.js`, the QIR route tests, the tool-accounting seam tests |
 | 4 — Universal Tool Fabric | closed | `api/_lib/tool-registry.ts` — one registration per tool, carrying identity, declaration, enablement, dispatch and time budget | `tool-registry.test.ts` |
-| 5 — Outcome & Verification Engine | next | — | — |
+| 5 — Outcome & Verification Engine | closing — the claim is bound, the act deliberately is not | `qir-contracts.ts` (a Run reaches COMPLETE only on verified Proof of Done + matching independent verification), `buildJobOutcome`/`deskFingerprint`, `completion-claim.ts` + `unproved-claim-note.js` | `completion-claim.test.ts` (precision 100%, recall floor), `qir-contracts.test.ts`, `unproved-claim-note.test.js` |
+
+**Where Phase 5 binds, and where it deliberately does not.** "Make Outcome
+Contracts mandatory" has two readings and they are not the same product. Bound
+here is the CLAIM: the desk may build whatever it likes, and may not tell the
+user the work is finished unless a verifier says so. Not bound is the ACT: a
+turn is never refused for lacking a stated Definition of Done.
+
+That was a decision, taken 2026-09-05, and the reason is in this repository's
+own incident list. Three separate outages in one night were the platform
+refusing work the model had done correctly — an intake modal discarded over a
+newline, an image url wrapped twice because the policy demanded the proxy, a
+modal discarded over a markdown fence. Binding the act would add a fourth place
+to reject a good turn. Binding the claim cannot refuse anything; it can only
+decline to repeat a boast nothing checked.
+
+**The detector is measured, because a binding is only as good as it.** The
+claim check ran on every turn for weeks behind a prose regex that read 27% of
+real completion claims and falsely corrected 43% of what it did flag — including
+"I have finished reading the file you shared", which claims nothing about the
+work. Precision is the harder floor and sits at 100%: a correction printed under
+a reply that made no claim is the platform contradicting a correct model in
+front of the user, and per §5 that is the gate the next person mutes.
 
 **What Phase 4 deliberately left to Phase 5.** §7's `ToolResult` sketch carries
 `evidence` and `telemetry`; the registry returns each family's raw result
