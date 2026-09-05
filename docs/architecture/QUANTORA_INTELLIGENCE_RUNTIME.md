@@ -595,6 +595,7 @@ thing this repository has an incident for.
 | 3 — Context, Memory, Resource Governor | closed | bounded context, compaction, nested budgets, recovery reserve, capacity waiting, model AND tool accounting | `refinement-loop.test.js`, the QIR route tests, the tool-accounting seam tests |
 | 4 — Universal Tool Fabric | closed | `api/_lib/tool-registry.ts` — one registration per tool, carrying identity, declaration, enablement, dispatch and time budget | `tool-registry.test.ts` |
 | 5 — Outcome & Verification Engine | closing — the claim is bound, the act deliberately is not | `qir-contracts.ts` (a Run reaches COMPLETE only on verified Proof of Done + matching independent verification), `buildJobOutcome`/`deskFingerprint`, `completion-claim.ts` + `unproved-claim-note.js` | `completion-claim.test.ts` (precision 100%, recall floor), `qir-contracts.test.ts`, `unproved-claim-note.test.js` |
+| 6 — Model Fabric v2 | opening — measured outcome is now measured: the ledger row comes from the provider's finish (`complete` → success, `truncated`/`blocked` → failure, no finish → no row), not from "the stream did not throw" | `model-quality-outcome.ts` wired into every success-path write in `chat-handler.ts`; adapter normalization and budget-aware routing still open | `model-quality-outcome.test.ts` (the mapping, and the §4 gate that every success-path ledger write consults it) |
 
 **Where Phase 5 binds, and where it deliberately does not.** "Make Outcome
 Contracts mandatory" has two readings and they are not the same product. Bound

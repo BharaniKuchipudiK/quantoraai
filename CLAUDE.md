@@ -180,6 +180,7 @@ becomes safely more autonomous.
 | `node scripts/guided-intake-browser-gate.mjs` | a platform that punishes the model for obeying it — an intake question flagged as a failed build, or a retry burned on a compliant answer |
 | `node --test src/lib/shop-ui-react-vfs.test.js` | the desk corrupting its own artifact — HTML injected into a React module the model shipped working |
 | `node --test src/lib/desk-chat-claim-filter.test.js` | the desk rewriting its own machine-readable block — a Preview disclaimer written into a decision modal's JSON where the model's question was |
+| `npx tsx --test api/_lib/model-quality-outcome.test.ts` | a ledger that records a cut-off or blocked reply as a success, teaching the router that a route which just failed is reliable |
 | `npx tsx --test api/_lib/attachment-text.test.ts` | a document the user attached that never reaches the model — a PDF dropped as "not a readable image", a spreadsheet nobody read, a scanned page reported as anything but unreadable |
 | `node scripts/attachments-browser-gate.mjs` | the composer or the send path dropping an attached document, the desk hiding what it could not read, or a document forgotten by the build turn after the designer's question |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
