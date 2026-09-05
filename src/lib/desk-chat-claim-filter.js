@@ -149,6 +149,56 @@ function wording(rule, level) {
   return level === 'unverified' ? (rule.unverified || rule.honest) : rule.honest;
 }
 
+/*
+ * MACHINE-READABLE BLOCKS ARE ARTIFACTS, NOT PROSE.
+ *
+ * On 2026-09-05 the deployed golden's guided-intake turn failed with the
+ * decision modal unreadable: "Unterminated string in JSON at position 83 |
+ * near: t confirmed Add to Cart yet." Those bytes are this file's own cart
+ * wording. The modal's JSON mentioned Add to Cart next to a ready-word, the
+ * sentence loop below called that a lie, and REPLACED the sentence-run — JSON
+ * syntax and all — with "Preview has not confirmed Add to Cart yet." The
+ * closing tag survived, the string never closed, and the reader refused to
+ * invent the rest, which is exactly what it should do. Two rounds went to a
+ * markdown fence and to truncation before anyone read the bytes.
+ *
+ * The rules read SENTENCES. A JSON value is not a sentence and a code comment
+ * is not a claim, so the filter now skips these blocks whole — closed or still
+ * streaming (an opener with no closer yet runs to the end of the text).
+ * Precise on purpose (§5): only blocks with an unambiguous delimiter.
+ */
+const MACHINE_BLOCK = /<quantora-modal>[\s\S]*?<\/quantora-modal>|<quantora-modal>[\s\S]*$|```[\s\S]*?```|```[\s\S]*$/g;
+
+/** Prose and machine segments, in order, WITHOUT losing a character. */
+export function segmentDeskReply(text) {
+  const value = String(text || '');
+  const out = [];
+  let last = 0;
+  for (const match of value.matchAll(MACHINE_BLOCK)) {
+    if (match.index > last) out.push({ machine: false, text: value.slice(last, match.index) });
+    out.push({ machine: true, text: match[0] });
+    last = match.index + match[0].length;
+  }
+  if (last < value.length) out.push({ machine: false, text: value.slice(last) });
+  return out;
+}
+
+/*
+ * The sentences this filter writes, recognisable from a fragment: the golden
+ * carries a 60-character window around a parse failure, so a whole sentence
+ * would never match the evidence that named this class. Used by the deployed
+ * gate to say "the desk rewrote its own modal" instead of guessing again.
+ */
+const WORDING_TAILS = RULES
+  .flatMap((rule) => [rule.honest, rule.unverified])
+  .filter(Boolean)
+  .map((line) => line.slice(-24));
+
+export function claimFilterWroteThis(text) {
+  const value = String(text || '').replace(/\s+/g, ' ');
+  return WORDING_TAILS.some((tail) => value.includes(tail));
+}
+
 /**
  * @param {string} text
  * @param {object|null} packet desk context; null denies control claims (not pass-through)
@@ -167,23 +217,37 @@ export function filterDeskChatClaims(text = '', packet = null, studioDomain = nu
 
   const used = new Set();
   const out = [];
-  for (const part of splitKeep(source)) {
-    const liars = active.filter((row) => sentenceIsLie(part, row.rule));
-    if (!liars.length) {
-      out.push(part);
+  for (const segment of segmentDeskReply(source)) {
+    if (segment.machine) {
+      out.push(segment.text);
       continue;
     }
-    for (const row of liars) {
-      const line = wording(row.rule, row.level);
-      if (used.has(line)) continue;
-      used.add(line);
-      out.push(line);
+    const prose = [];
+    for (const part of splitKeep(segment.text)) {
+      const liars = active.filter((row) => sentenceIsLie(part, row.rule));
+      if (!liars.length) {
+        prose.push(part);
+        continue;
+      }
+      for (const row of liars) {
+        const line = wording(row.rule, row.level);
+        if (used.has(line)) continue;
+        used.add(line);
+        prose.push(line);
+      }
+      if (/\n+$/.test(part)) prose.push(part.match(/\n+$/)[0]);
     }
-    if (/\n+$/.test(part)) out.push(part.match(/\n+$/)[0]);
+    out.push(prose.join('').replace(/\n{3,}/g, '\n\n'));
   }
-  return out.join('').replace(/\n{3,}/g, '\n\n').trim();
+  return out.join('').trim();
 }
 
+/*
+ * Whitespace the filter normalises is not a rewrite. Compared after the same
+ * normalisation, so the desk's data-quantora-desk-claim-filter hook — now read
+ * by the deployed golden as evidence — is true only when a sentence changed.
+ */
 export function deskChatClaimWasFiltered(original, filtered) {
-  return String(original || '') !== String(filtered || '');
+  const normalised = String(original || '').replace(/\n{3,}/g, '\n\n').trim();
+  return normalised !== String(filtered || '');
 }

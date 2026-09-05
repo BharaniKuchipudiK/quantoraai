@@ -163,6 +163,32 @@ test('the provider finish reason reaches the verdict, not only the parser sympto
   const gate = read('scripts/deployed-golden-transactions.mjs');
   assert.match(gate, /snapshot\.replyFinish === 'truncated'/, 'the verdict must route on the provider word, not only the parser message');
   assert.match(gate, /The provider reported finish_reason/, 'and print it, or the cause stays a symptom');
+  // "complete" is a fact, not silence. Omitting it made a finished reply and a
+  // reply whose finish never arrived read identically (null), and on 2026-09-05
+  // that ambiguity sent a round chasing truncation for a rewrite.
+  assert.doesNotMatch(studio, /data-quantora-reply-finish=\{[^\n]*!== 'complete'/, 'a completed reply must publish "complete" by name');
+  assert.match(gate, /snapshot\.replyFinish === 'complete'/, 'and the verdict must say what it means: the model ended the reply itself, so a missing tail was removed on our side');
+});
+
+/*
+ * THE DESK'S OWN HAND (2026-09-05, the third round on one failure). The bytes
+ * at the parse failure were the claim filter's wording, written into the modal
+ * JSON. The filter now leaves machine blocks verbatim — desk-chat-claim-filter
+ * .test.js holds the reproduction — and this pins the verdict, so a recurrence
+ * is named as the desk's doing instead of being guessed at as truncation again.
+ */
+test('a modal rewritten by the claim filter is named as the desk\'s doing, not as truncation', () => {
+  const filter = read('src/lib/desk-chat-claim-filter.js');
+  assert.match(filter, /export function claimFilterWroteThis/, 'the filter must own the signature of its own wordings');
+  assert.match(filter, /export function segmentDeskReply/, 'and skip machine blocks by segment, not by luck');
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /claimFilterWroteThis\(reason\)/, 'the verdict must test the parser window against the filter\'s wordings');
+  assert.match(gate, /const truncated = !rewritten &&/, 'and a rewrite must win over the truncation guess');
+  assert.match(gate, /desk-chat-claim-filter\.js/, 'naming the file that did it');
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /data-quantora-desk-claim-filter=\{claimFiltered \? 'true' : undefined\}/, 'the desk must publish that the filter ran');
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /claimFiltered: \(await count\('\[data-quantora-desk-claim-filter="true"\]'\)\) > 0/, 'and the snapshot must read it');
 });
 
 test('the parser reason reaches the verdict, not just the fact of failure', () => {
