@@ -1,6 +1,14 @@
 node_modules
 node_modules/
 build/
+# A bare `build/` matches at every depth, and it silently swallowed
+# desktop/build/ — electron-builder's config, the macOS entitlements and the
+# app icon. Those are source, not output, and the release workflow checks out
+# a tree that has to contain them. The actual packaging output is
+# desktop/dist/ (covered by `dist/`) and desktop/release/, ignored explicitly
+# below with a rooted path so it cannot repeat the at-any-depth mistake.
+!desktop/build/
+/desktop/release/
 dist/
 coverage/
 .DS_Store
