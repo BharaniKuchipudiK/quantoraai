@@ -103,6 +103,17 @@ let app = null;
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Read `path` until it contains `needle` or `timeoutMs` passes; returns the last text read. */
+async function waitForFileToContain(path, needle, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let text = '';
+    try { text = readFileSync(path, 'utf8'); } catch { text = ''; }
+    if (text.includes(needle) || Date.now() >= deadline) return text;
+    await settle(100);
+  }
+}
+
 try {
   app = await electron.launch({
     executablePath: electronBinary,
@@ -308,8 +319,15 @@ try {
   await window.keyboard.type(`\n<!-- ${nonce} -->`);
   await settle(300);
   await window.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
-  await settle(800);
-  const onDisk = readFileSync(join(workspace, 'index.html'), 'utf8');
+  /*
+   * Poll, never sleep. A fixed 800ms budget for keypress -> IPC -> disk missed
+   * once on a shared CI runner (#548, 2026-09-05) and passed on the re-run,
+   * with the other 30 checks green both times. A check that turns on the
+   * runner's mood is the one the next person mutes (CLAUDE.md §5), so the
+   * write now gets a deadline instead of a guess: it lands, or the check fails
+   * naming the nonce it never saw.
+   */
+  const onDisk = await waitForFileToContain(join(workspace, 'index.html'), nonce, 10_000);
   check(onDisk.includes(nonce), `Cmd/Ctrl+S wrote the edit to disk (${nonce})`);
 
   // 7. terminal: whichever the host has, it must run in the folder for real
