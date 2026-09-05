@@ -119,6 +119,44 @@ test('the decision modal publishes durable hooks and the golden gate anchors on 
 });
 
 /*
+ * THE ROSTER (2026-09-05). Adding a fourth transaction, the run went green and
+ * step 10 finished FASTER than the three-transaction runs before it — and
+ * nothing in a passing log could settle whether the new transaction had run.
+ * The only clue was the uploaded artifact growing, which is a guess wearing
+ * evidence's clothes.
+ *
+ * So the golden declares what it covers, fails when a declared transaction did
+ * not run, and prints the roster last on every run. This pins the declaration
+ * to the transactions actually in the file: adding one without listing it, or
+ * listing one that no longer exists, both stop the suite from meaning what it
+ * says.
+ */
+test('the golden declares every transaction it runs, and runs every one it declares', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+
+  const declared = (gate.match(/const EXPECTED_TRANSACTIONS = \[([^\]]*)\]/) || [])[1];
+  assert.ok(declared, 'EXPECTED_TRANSACTIONS is gone — a skipped transaction would pass silently again');
+  const roster = [...declared.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+
+  // markActiveTransaction(name, correlationId) — the first argument names the
+  // transaction, and it is called again with the id once known, hence the set.
+  const marked = new Set(
+    [...gate.matchAll(/markActiveTransaction\('([^']+)'/g)].map((match) => match[1]),
+  );
+  assert.ok(marked.size > 0, 'no transactions found in the golden — this test is reading the wrong file');
+
+  for (const name of marked) {
+    assert.ok(roster.includes(name), `"${name}" runs but is not in EXPECTED_TRANSACTIONS, so skipping it would be silent`);
+  }
+  for (const name of roster) {
+    assert.ok(marked.has(name), `"${name}" is declared but never runs — the roster would fail every run`);
+  }
+
+  assert.match(gate, /all \$\{ran\.length\} transactions passed/, 'a passing run must still say what it covered');
+  assert.match(gate, /golden-verdict\.txt/, 'and write it where the workflow cats it, or nobody reads it');
+});
+
+/*
  * The other half of the same transaction (2026-09-04). When no modal renders,
  * the gate has to say WHY, and the only two answers are opposites: the desk
  * asked in prose, or the desk wrote a modal it could not parse. AiStudio held
