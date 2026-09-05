@@ -406,6 +406,8 @@ export function verifyConversationResponse(input: {
   decision: ConversationDecision;
   response: string;
   toolEvidence?: Array<{ type: string; ref: string }>;
+  /** Why the model stopped, from the provider. Absent on paths that predate it. */
+  finish?: { kind: 'complete' | 'truncated' | 'blocked' | 'unknown'; reason: string | null } | null;
 }): ConversationVerification {
   const response = String(input.response || "").replace(/<!--\s*quantora-[\s\S]*?-->/gi, "").trim();
   const issues: ConversationVerificationIssue[] = [];
@@ -413,6 +415,14 @@ export function verifyConversationResponse(input: {
   const evidence = input.toolEvidence || [];
 
   if (!response) issue(issues, "empty_response", "failure");
+  /*
+   * The provider said the reply hit its output budget. Whatever the text
+   * claims, it is not the whole answer, and the user is owed that fact more
+   * than any other note on the message (2026-09-05 — the intake modal cut
+   * mid-string was the loud case; prose cut the same way had been silent).
+   * `blocked` is deliberately not raised here: the safety path owns its copy.
+   */
+  if (input.finish?.kind === "truncated") issue(issues, "reply_truncated", "failure");
   if (input.decision.move === "clarify" && questionCount === 0) {
     issue(issues, "material_question_missing", "warning");
   }

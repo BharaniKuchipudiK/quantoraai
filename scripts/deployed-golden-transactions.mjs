@@ -410,7 +410,13 @@ try {
          */
         const reason = snapshot.modalFailure
           || '(no reason published — the desk is not carrying data-quantora-modal-failure)';
-        const truncated = /unterminated|unexpected end of (?:json|input)/i.test(reason);
+        const truncated = /unterminated|unexpected end of (?:json|input)/i.test(reason)
+          || snapshot.replyFinish === 'truncated';
+        // The provider's word, when the desk carried one — this is the fact
+        // the parser error was only ever a symptom of.
+        const provider = snapshot.replyFinish && snapshot.replyFinish !== 'complete'
+          ? ` The provider reported finish_reason ${snapshot.replyFinishReason || snapshot.replyFinish}.`
+          : '';
         throw new Error(
           'The guided-intake turn wrote a decision modal the desk could not READ, so nothing rendered. '
           + (truncated
@@ -419,7 +425,7 @@ try {
               + 'not at src/lib/assistant-modal.js.'
             : 'The modal is malformed but complete, which IS the reader\'s problem — repair '
               + 'src/lib/assistant-modal.js, and do not reword the prompt.')
-          + ` Parser said: ${reason}. `
+          + ` Parser said: ${reason}.${provider} `
           + `Page state: ${state}`,
         );
       }

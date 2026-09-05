@@ -143,6 +143,28 @@ test('an unreadable decision modal is published as a hook and read by the snapsh
  * left the shape — a markdown fence, as it turned out — to be guessed at. The
  * parser knew all along. Three ends pinned so the answer keeps travelling.
  */
+/*
+ * THE PROVIDER'S OWN WORD (2026-09-05). A modal "Unterminated string" and a
+ * finish_reason of MAX_TOKENS are one event seen from two sides; until the desk
+ * carried the second, the verdict could only ever report the symptom. Three
+ * hops pinned so the cause keeps travelling: the desk publishes what the
+ * provider said, the snapshot reads it, the verdict prints it.
+ */
+test('the provider finish reason reaches the verdict, not only the parser symptom', () => {
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /data-quantora-reply-finish=/, 'the desk must publish why the model stopped');
+  assert.match(studio, /data-quantora-reply-finish-reason=/, 'and the provider word itself, verbatim');
+  const hook = read('src/hooks/useChatStream.js');
+  assert.match(hook, /parsed\.finish \? \{ finish: parsed\.finish \}/, 'the done payload\'s finish must be kept on the message');
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /data-quantora-reply-finish\]/, 'the snapshot must read it');
+  assert.match(snapshot, /replyFinish:/);
+  assert.match(snapshot, /replyFinishReason:/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /snapshot\.replyFinish === 'truncated'/, 'the verdict must route on the provider word, not only the parser message');
+  assert.match(gate, /The provider reported finish_reason/, 'and print it, or the cause stays a symptom');
+});
+
 test('the parser reason reaches the verdict, not just the fact of failure', () => {
   const studio = read('src/components/AiStudio.jsx');
   assert.match(studio, /modalFailure = modal\.failure/, 'the desk must keep the reason, not only the boolean');

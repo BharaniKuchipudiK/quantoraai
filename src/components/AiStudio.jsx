@@ -2399,6 +2399,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         data-quantora-modal-failure={modalFailure || undefined}
+                        data-quantora-reply-finish={msg.sender === 'ai' && msg.finish?.kind && msg.finish.kind !== 'complete' ? msg.finish.kind : undefined}
+                        data-quantora-reply-finish-reason={msg.sender === 'ai' && msg.finish?.reason && msg.finish.kind !== 'complete' ? String(msg.finish.reason) : undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (

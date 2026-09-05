@@ -7,6 +7,7 @@ import { isProjectStoreConfigured, readProjectContext } from "./project-store.js
 import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
 import { fetchApiGatewayKey } from "../autocomplete.js";
+import { classifyFinish, finishFromGemini, finishFromOpenRouter, truncatedArtifactError, type StreamFinish } from "./stream-finish.js";
 import { readByokCredentials } from "./byok-credentials.js";
 import { resolveOpenRouterEnvKey } from "./openrouter-key.js";
 import { buildConversationSystemPrompt } from "./conversation-policy.js";
@@ -1085,8 +1086,8 @@ export default async function handler(req: any, res: any) {
       : "");
     let finalSystemPrompt = finalSystemPromptBase;
 
-    const conversationMetadata = (response: string) => {
-      const verification = verifyConversationResponse({ snapshot: conversationSnapshot, decision: conversationDecision, response });
+    const conversationMetadata = (response: string, finish?: StreamFinish) => {
+      const verification = verifyConversationResponse({ snapshot: conversationSnapshot, decision: conversationDecision, response, finish });
       return publicConversationMetadata(
         conversationSnapshot,
         conversationDecision,
@@ -1364,6 +1365,7 @@ export default async function handler(req: any, res: any) {
       // Committed only from the attempt that actually answered — see below.
       let sources: Array<{ uri: string; title: string }> = [];
       let fullReply = '';
+      let fullReplyFinish: StreamFinish = { kind: 'unknown', reason: null };
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
@@ -1415,6 +1417,9 @@ export default async function handler(req: any, res: any) {
 
         try {
           let attemptReply = '';
+          // Why the model stopped, from the provider's last event. Read on
+          // every consumer below; judged once at acceptance.
+          let attemptFinishReason: string | null = null;
           // Citations are evidence for THIS attempt's reply only. Collected
           // per attempt and committed with it: a failed attempt's citations
           // appended to a fallback attempt's answer would be forged
@@ -1471,6 +1476,7 @@ export default async function handler(req: any, res: any) {
               }
               if (next.done) break;
               const chunk = next.value;
+              attemptFinishReason = finishFromGemini(chunk) || attemptFinishReason;
               if (chunk?.text) {
                 attemptReply += chunk.text;
                 emitBuildProgress(sse, effectiveBuildMode, buildBeat);
@@ -1532,6 +1538,7 @@ export default async function handler(req: any, res: any) {
                 try {
                   const parsed = JSON.parse(line.slice(6));
                   midStreamFailure = streamErrorFrom(parsed, route.gateway);
+                  attemptFinishReason = finishFromOpenRouter(parsed) || attemptFinishReason;
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
                     attemptReply += token;
@@ -1563,6 +1570,24 @@ export default async function handler(req: any, res: any) {
           if (!attemptReply.trim()) {
             throw Object.assign(new Error(`${route.gateway} returned an empty response.`), { status: 502 });
           }
+          /*
+           * WHY THE MODEL STOPPED, judged before the reply is accepted.
+           *
+           * A build cut off at the output budget is not a deliverable, however
+           * well the fragment parses — it is refused by name so the ladder tries
+           * another engine, which is the one retry that is a different
+           * experiment. A chat reply cut off is still worth delivering, but the
+           * user is told: the finish rides with the reply into the verifier,
+           * which raises reply_truncated, and the desk shows the note.
+           *
+           * Until 2026-09-05 nothing here read this. The health probes did, and
+           * the Gemini probe's header calls it "the difference between 'the
+           * model cannot do this' and 'we cut it off'".
+           */
+          const attemptFinish = classifyFinish(attemptFinishReason);
+          if (effectiveBuildMode && attemptFinish.kind === 'truncated') {
+            throw truncatedArtifactError(route.gateway === 'gemini' ? 'Gemini' : 'OpenRouter', attemptFinish.reason);
+          }
           if (effectiveBuildMode) {
             const artifactContract = validateBuildArtifactResponse(
               attemptReply,
@@ -1580,6 +1605,7 @@ export default async function handler(req: any, res: any) {
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
           fullReply = attemptReply;
+          fullReplyFinish = attemptFinish;
           sources = attemptSources; // the answering attempt's evidence, and only its
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
@@ -1709,7 +1735,8 @@ export default async function handler(req: any, res: any) {
           health: usedRoute.health,
           circuit: usedRoute.circuit,
         },
-        conversation: conversationMetadata(fullReply),
+        conversation: conversationMetadata(fullReply, fullReplyFinish),
+        finish: fullReplyFinish,
         ...(travelDegraded ? { travelDegraded: true } : {}),
       });
       traceBoundary({
@@ -1762,6 +1789,7 @@ export default async function handler(req: any, res: any) {
       const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona;
       const contents = buildGeminiContents(boundedHistory, message, visionImages);
       let fullReply = '';
+      let legacyFinishReason: string | null = null;
       const sources: Array<{ uri: string; title: string }> = [];
       const seenSources = new Set<string>();
       let usedModel = attempts[0].id;
@@ -1833,6 +1861,7 @@ export default async function handler(req: any, res: any) {
           const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
           if (next.done) break;
           const chunk = next.value;
+          legacyFinishReason = finishFromGemini(chunk) || legacyFinishReason;
           const toolTurn = extractSignedFunctionTurn(chunk);
           if (toolTurn) {
             signedFunctionTurn = toolTurn;
@@ -1977,16 +2006,18 @@ export default async function handler(req: any, res: any) {
       const latencyMs = Date.now() - startTime;
       logTelemetry(usedModel, latencyMs, fullReply.length, "Gemini", activeSessionUser?.sub ?? null, !userKey && mayUseServerKeys, telemetryContext, req);
       recordModelQualityEvent({ requestId, modelId: usedModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
+      const legacyFinish = classifyFinish(legacyFinishReason);
       sse.done({
         provider: `Google Gemini (${modelName || usedModel})`,
         latencyMs,
         modelId: usedModel,
         requestId,
         correlationId,
+        finish: legacyFinish,
         liveConnected: true,
         grounded: grounding && sources.length > 0,
         fallbackUsed: modelFallbackUsed,
-        conversation: conversationMetadata(fullReply),
+        conversation: conversationMetadata(fullReply, legacyFinish),
         ...(travelPlaces.length ? { travelPlaces: travelPlaces.slice(0, 8) } : {}),
         ...(travelDegraded ? { travelDegraded: true } : {}),
       });
@@ -2058,6 +2089,7 @@ export default async function handler(req: any, res: any) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let fullReply = '';
+    let refineFinishReason: string | null = null;
     let buffer = '';
     while (true) {
       assertBudget(startTime, turnBudgetMs, 'chat turn');
@@ -2072,6 +2104,7 @@ export default async function handler(req: any, res: any) {
         try {
           const parsed = JSON.parse(line.slice(6));
           midStreamFailure = streamErrorFrom(parsed, 'OpenRouter');
+          refineFinishReason = finishFromOpenRouter(parsed) || refineFinishReason;
           const token = parsed.choices?.[0]?.delta?.content || '';
           if (token) {
             fullReply += token;
@@ -2087,15 +2120,17 @@ export default async function handler(req: any, res: any) {
     const latencyMs = Date.now() - startTime;
     logTelemetry(usedOpenRouterModel, latencyMs, fullReply.length, "OpenRouter", activeSessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
     recordModelQualityEvent({ requestId, modelId: usedOpenRouterModel, taskCategory, outcome: "success", latencyMs, fallbackFrom: modelFallbackUsed ? modelId : fallbackFrom });
+    const refineFinish = classifyFinish(refineFinishReason);
     sse.done({
       provider: `OpenRouter (${modelName || usedOpenRouterModel})`,
       latencyMs,
       modelId: usedOpenRouterModel,
       requestId,
       correlationId,
+      finish: refineFinish,
       liveConnected: true,
       fallbackUsed: modelFallbackUsed,
-      conversation: conversationMetadata(fullReply),
+      conversation: conversationMetadata(fullReply, refineFinish),
       ...(travelDegraded ? { travelDegraded: true } : {}),
     });
     return;
