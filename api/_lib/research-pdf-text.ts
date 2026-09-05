@@ -18,9 +18,43 @@
  * pdfjs-dist is imported lazily: the chat handler pulls this module on every
  * cold start via the research routes, and non-PDF turns should not pay for
  * parsing a 2 MB library they will not use.
+ *
+ * THE WORKER THAT NEVER SHIPPED (2026-09-05). In Node, pdfjs loads its worker
+ * with `import(this.workerSrc)` — a computed specifier no file tracer follows —
+ * so Vercel's function bundle carried pdf.mjs and not pdf.worker.mjs. Every
+ * getDocument rejected, and every PDF in production read as "not a readable
+ * PDF": the platform blamed the user's file for its own missing file, while
+ * every local test passed against a whole node_modules. The deployed golden's
+ * document-grounded transaction is what caught it. Two halves, each owed:
+ * this module names the worker's absolute location (and says "reader
+ * unavailable" when it is absent, never "unreadable"), and vercel.json ships
+ * the worker with the pipeline function, because the tracer cannot.
  */
 
-export const RESEARCH_PDF_TEXT_VERSION = "research-pdf-text-2026-09-02.1";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+export const RESEARCH_PDF_TEXT_VERSION = "research-pdf-text-2026-09-05.1";
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Where pdfjs's worker and data files live in THIS deployment. Resolved from
+ * the one file the bundle is certain to hold — pdf.mjs, which this module
+ * imports by a static string — never from package.json (a deep import does
+ * not ship it) and never from a relative path pdf.mjs guesses at.
+ */
+export function pdfjsAssetLocations(): { worker: string; cmaps: string; standardFonts: string } {
+  const root = path.resolve(path.dirname(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")), "..", "..");
+  return {
+    worker: path.join(root, "legacy", "build", "pdf.worker.mjs"),
+    // Trailing separator: pdfjs concatenates the file name onto these.
+    cmaps: `${path.join(root, "cmaps")}${path.sep}`,
+    standardFonts: `${path.join(root, "standard_fonts")}${path.sep}`,
+  };
+}
 
 const MAX_PAGES = 60;
 const MAX_TEXT_CHARS = 800_000;
@@ -32,20 +66,43 @@ export type ResearchPdfTextResult = {
   reason?: string;
 };
 
-export async function extractResearchPdfText(bytes: Uint8Array): Promise<ResearchPdfTextResult> {
-  let getDocument: any;
+export async function extractResearchPdfText(
+  bytes: Uint8Array,
+  options: { workerPath?: string } = {},
+): Promise<ResearchPdfTextResult> {
+  let pdfjs: any;
   try {
-    ({ getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs"));
+    pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   } catch (err: any) {
     console.warn("pdfjs-dist unavailable:", err?.message || err);
     return { ok: false, reason: "source_pdf_support_unavailable" };
   }
 
+  let assets: ReturnType<typeof pdfjsAssetLocations>;
+  try {
+    assets = pdfjsAssetLocations();
+  } catch (err: any) {
+    console.warn("pdfjs-dist package not resolvable:", err?.message || err);
+    return { ok: false, reason: "source_pdf_support_unavailable" };
+  }
+  const workerPath = options.workerPath || assets.worker;
+  if (!existsSync(workerPath)) {
+    // A deployment fault, said as one. "Unreadable" here would blame the file.
+    console.warn(`pdfjs worker missing at ${workerPath} — the function bundle did not ship it (vercel.json includeFiles).`);
+    return { ok: false, reason: "source_pdf_support_unavailable" };
+  }
+  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+
   let doc: any = null;
   try {
-    doc = await getDocument({
+    doc = await pdfjs.getDocument({
       data: bytes,
-      useSystemFonts: true,
+      // The bundled data, not the system's: a serverless runtime has no fonts
+      // to fall back on, and a CID-keyed font needs its CMap from disk.
+      useSystemFonts: false,
+      standardFontDataUrl: assets.standardFonts,
+      cMapUrl: assets.cmaps,
+      cMapPacked: true,
       isEvalSupported: false,
       useWorkerFetch: false,
     }).promise;
