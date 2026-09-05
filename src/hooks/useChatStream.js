@@ -329,6 +329,7 @@ export function useChatStream({
    * Maps rather than state: these are identity, not something React renders.
    */
   const abortControllersRef = useRef(new Map());
+  const silentTurnsRecordedRef = useRef(new Set());
   const generationTokensRef = useRef(new Map());
 
   /*
@@ -2384,12 +2385,23 @@ export function useChatStream({
          * message - never replaces - so never-discard-model-output holds by
          * construction, and it names no cause it cannot prove.
          */
-        updateActiveMessages(prev => prev.map(m => (m.id === aiMsgId && turnIsSilent(m) ? {
-          ...m,
-          text: describeSilentTurn(m),
-          isError: true,
-          executionStatus: null,
-        } : m)));
+        updateActiveMessages(prev => prev.map(m => {
+          if (m.id !== aiMsgId || !turnIsSilent(m)) return m;
+          // The desk's own word goes on the record too, so the reference
+          // resolves to "the desk received nothing" beside whatever the server
+          // kept — the two halves of the 2026-09-05 silent turn. Once per
+          // reference: an updater may run twice.
+          if (m.correlationId && !silentTurnsRecordedRef.current.has(m.correlationId)) {
+            silentTurnsRecordedRef.current.add(m.correlationId);
+            void recordClientBoundary(m.correlationId, 'browser.chat-stream', 'failed', { detailCode: 'silent-turn' });
+          }
+          return {
+            ...m,
+            text: describeSilentTurn(m),
+            isError: true,
+            executionStatus: null,
+          };
+        }));
       }
     }
   };

@@ -74,6 +74,7 @@ import {
   correlationIdForRequest,
   isGoldenCanaryRequest,
   traceBoundary,
+  type TransactionBoundaryEvent,
 } from './transaction-trace.js';
 import { SseWriter, assertBudget, readWithIdleTimeout, remainingBudgetMs } from './sse-writer.js';
 import {
@@ -482,9 +483,12 @@ export default async function handler(req: any, res: any) {
   const transaction = typeof req.body?.goldenTransaction === 'string'
     ? req.body.goldenTransaction.slice(0, 80)
     : null;
-  traceBoundary({ correlationId, boundary: 'api.chat', state: 'started', transaction, route: '/api/chat' });
-
   const sessionUser = getSessionUser(req);
+  // Every boundary of this turn is kept under the signed-in owner, so the
+  // reference id the desk shows on a failure resolves for the person who saw it.
+  const trace = (input: Partial<TransactionBoundaryEvent>) => traceBoundary({ ...input, userSub: sessionUser?.sub || null });
+  trace({ correlationId, boundary: 'api.chat', state: 'started', transaction, route: '/api/chat' });
+
   const limitKey = goldenCanary
     ? 'chat:golden-canary'
     : sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
@@ -1327,7 +1331,7 @@ export default async function handler(req: any, res: any) {
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
-    traceBoundary({
+    trace({
       correlationId,
       boundary: 'inference.plan',
       state: 'selected',
@@ -1376,7 +1380,7 @@ export default async function handler(req: any, res: any) {
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
         if (failedQuotaDomains.has(route.quotaDomain)) {
-          traceBoundary({
+          trace({
             correlationId,
             boundary: 'inference.provider',
             state: 'skipped',
@@ -1399,7 +1403,7 @@ export default async function handler(req: any, res: any) {
               { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
             )
           : remainingBudgetMs(startTime, turnBudgetMs);
-        traceBoundary({
+        trace({
           correlationId,
           boundary: 'inference.provider',
           state: 'attempting',
@@ -1610,7 +1614,7 @@ export default async function handler(req: any, res: any) {
           sources = attemptSources; // the answering attempt's evidence, and only its
           usedRoute = route;
           await recordInferenceRouteSuccess(providerCircuitStore, route);
-          traceBoundary({
+          trace({
             correlationId,
             boundary: 'inference.provider',
             state: 'succeeded',
@@ -1642,7 +1646,7 @@ export default async function handler(req: any, res: any) {
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
             await recordInferenceRouteFailure(providerCircuitStore, route, status);
           }
-          traceBoundary({
+          trace({
             correlationId,
             boundary: 'inference.provider',
             state: 'failed',
@@ -1750,7 +1754,7 @@ export default async function handler(req: any, res: any) {
         finish: fullReplyFinish,
         ...(travelDegraded ? { travelDegraded: true } : {}),
       });
-      traceBoundary({
+      trace({
         correlationId,
         boundary: 'api.chat',
         state: 'succeeded',
@@ -2154,7 +2158,7 @@ export default async function handler(req: any, res: any) {
     return;
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    traceBoundary({
+    trace({
       correlationId,
       boundary: 'api.chat',
       state: 'failed',

@@ -95,6 +95,7 @@ import { normalizeDeck, hasSlideHtml } from '../lib/deck-builder.js';
 import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
+import { fetchTraceStory } from '../lib/trace-lookup.js';
 import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
 import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
@@ -687,6 +688,17 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [deskVerdict, setDeskVerdict] = useState(null);
   const [workspaceCorrelationId, setWorkspaceCorrelationId] = useState(null);
   const [workspaceGoldenTransaction, setWorkspaceGoldenTransaction] = useState(null);
+  /*
+   * "What happened?" for a failed turn (2026-09-05). The reference id the desk
+   * shows resolves to the server's own record of the turn (GET /api/trace),
+   * keyed by reference so each failed message keeps its own answer.
+   */
+  const [traceStories, setTraceStories] = useState({});
+  const lookupTraceStory = useCallback(async (correlationId) => {
+    setTraceStories((prev) => ({ ...prev, [correlationId]: { pending: true } }));
+    const result = await fetchTraceStory(correlationId);
+    setTraceStories((prev) => ({ ...prev, [correlationId]: { pending: false, ...result } }));
+  }, []);
   // Legacy deckSpec state removed
   const [workspaceActiveTab, setWorkspaceActiveTab] = useState('preview');
   /*
@@ -2429,6 +2441,51 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           </ReactMarkdown>
                         )}
                       </div>
+                      {/*
+                        * A failed turn's reference id resolves to what happened
+                        * (2026-09-05). The control carries the reference itself,
+                        * and the account comes from the server's record of the
+                        * turn — never from the desk's guess at a cause.
+                        */}
+                      {msg.sender === 'ai' && msg.isError && msg.correlationId ? (
+                        <div style={{ marginTop: '8px', fontSize: '0.8rem', color: subtextColor }}>
+                          {traceStories[msg.correlationId]?.pending ? (
+                            <span data-quantora-trace-lookup={msg.correlationId} data-quantora-trace-state="pending">Looking up what happened…</span>
+                          ) : traceStories[msg.correlationId] ? (
+                            <div
+                              data-quantora-trace-story={traceStories[msg.correlationId].ok ? traceStories[msg.correlationId].story.outcome : 'unresolved'}
+                              style={{ padding: '10px 12px', borderRadius: '10px', background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.04)', border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(255,255,255,0.08)'}` }}
+                            >
+                              {traceStories[msg.correlationId].ok ? (
+                                <>
+                                  <div style={{ fontWeight: 600, color: textColor, marginBottom: '4px' }}>{traceStories[msg.correlationId].story.headline}</div>
+                                  <div style={{ marginBottom: traceStories[msg.correlationId].story.steps?.length ? '8px' : 0 }}>{traceStories[msg.correlationId].story.detail}</div>
+                                  {traceStories[msg.correlationId].story.steps?.length ? (
+                                    <ol style={{ margin: 0, paddingLeft: '18px' }}>
+                                      {traceStories[msg.correlationId].story.steps.map((step, index) => (
+                                        <li key={`${msg.correlationId}-${index}`}>
+                                          {typeof step.offsetMs === 'number' ? `+${(step.offsetMs / 1000).toFixed(1)}s · ` : ''}{step.text}
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <div>{traceStories[msg.correlationId].error}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              data-quantora-trace-lookup={msg.correlationId}
+                              onClick={() => { void lookupTraceStory(msg.correlationId); }}
+                              style={{ background: 'transparent', border: `1px solid ${isLight ? '#cbd5e1' : 'rgba(255,255,255,0.18)'}`, borderRadius: '8px', padding: '4px 10px', color: textColor, cursor: 'pointer', fontSize: '0.8rem' }}
+                            >
+                              What happened? (reference {msg.correlationId})
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                       {msg.sender === 'ai' && lastAiMessage?.id === msg.id && photosMissing && (assistantClaimsImagesReady(msg.text) || userAskedForPreviewPhotos(lastUserMessage?.text || '')) ? (
                         <div
                           data-quantora-preview-honesty="true"
@@ -3055,7 +3112,7 @@ Paused — ${autoPauseRef.current}.`
               </div>
             );
           });
-  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, availableModels, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts]);
+  }, [messages, isLight, textColor, subtextColor, feedOpenCanvasWithCode, showCodeMap, arenaMode, secondModel, onOpenAuth, isGenerating, studioDomain, forkChatFromMessage, handleCreateHandoverChat, feedHandleSendMessage, availableModels, dismissedContinueId, conversationContext, updateActiveSession, updateActiveMessages, studySyllabusSet, financeBrief, user, setInputText, feedCommitStudySyllabusChip, lastAiMessage, lastUserMessage, photosMissing, shopUiMissing, deskPacket, claimFilterOpts, traceStories, lookupTraceStory]);
 
   
   useEffect(() => {
