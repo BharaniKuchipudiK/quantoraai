@@ -59,6 +59,16 @@ jobs:
       - name: Runtime import gate (imports that only fail in production)
         run: npm run test:imports
 
+      # Also instant, and also blind spots everywhere else: a useCallback/useMemo
+      # dependency array naming a binding declared further down the component
+      # throws on first render. tsc exits 0, vite build exits 0, and 1645 unit
+      # tests pass because none of them render the component — the only thing
+      # that caught it was the browser suite timing out on a textarea, at the
+      # end of a full CI cycle, with 2 gates failed and 24 skipped and nothing
+      # naming the cause.
+      - name: Hook dependency order gate (a dep array that throws on first render)
+        run: npm run test:hook-order
+
       # Runs before the suite because it takes a second and catches the one
       # thing 1400 passing tests cannot: a feature that is tested and reachable
       # by nothing. Also inside test:all, so it holds locally too.

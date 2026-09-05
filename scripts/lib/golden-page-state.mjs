@@ -52,6 +52,17 @@ export async function pageStateSnapshot(page, consoleErrors = []) {
       // guessed at, which is a diagnosis one round short (§8).
       modalFailure: await page.locator('[data-quantora-modal-failure]').first()
         .getAttribute('data-quantora-modal-failure', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
+      // Whether the desk's claim filter changed this reply at all. The 2026-09-05
+      // intake failure was that filter writing its disclaimer INTO the modal
+      // JSON; the verdict names it from the bytes, and this says the filter ran.
+      claimFiltered: (await count('[data-quantora-desk-claim-filter="true"]')) > 0,
+      // The provider's own account of why the last reply stopped. A modal
+      // "Unterminated string" and a replyFinish of MAX_TOKENS are the same
+      // event seen from two sides; carrying both lets the verdict say so.
+      replyFinish: await page.locator('[data-quantora-reply-finish]').last()
+        .getAttribute('data-quantora-reply-finish', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
+      replyFinishReason: await page.locator('[data-quantora-reply-finish-reason]').last()
+        .getAttribute('data-quantora-reply-finish-reason', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       buildJobs: await count('[data-quantora-build-job]'),
       storageFault: await textOf(page.locator('[data-quantora-storage-fault]').first()),
       alert: await textOf(page.locator('[role="alert"]').first()),

@@ -17,6 +17,12 @@ import { compactSupersededBuilds } from '../lib/session-code-budget.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
 import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
+import {
+  renameChat as renameChatSession,
+  setChatArchived as setChatArchivedInList,
+  toggleChatPinned as toggleChatPinnedInList,
+} from '../lib/chat-organization.js';
+
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
 /*
@@ -922,6 +928,60 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [activeProject.id, activeSessionId, defaultGreetingMsg, projects]);
 
+  /*
+   * Rename, pin, archive. Each commits through the same shape: the pure module
+   * decides, this decides whether anything is worth persisting.
+   *
+   * `changed: false` returns the previous array by identity on purpose — a
+   * no-op rename must not write storage or re-render every chat row.
+   */
+  const handleRenameChat = useCallback((sessionId, title) => {
+    setAllChatSessions((prev) => {
+      const result = renameChatSession({ sessions: prev, sessionId, title });
+      if (!result.changed) return prev;
+      persistSessions(result.sessions);
+      return result.sessions;
+    });
+  }, []);
+
+  const handleToggleChatPinned = useCallback((sessionId) => {
+    setAllChatSessions((prev) => {
+      const result = toggleChatPinnedInList({ sessions: prev, sessionId });
+      if (!result.changed) return prev;
+      persistSessions(result.sessions);
+      return result.sessions;
+    });
+  }, []);
+
+  /*
+   * Archive is a soft delete, so it owes what delete owes: never leave the
+   * reader on a chat the nav no longer lists, and never leave a project with
+   * nothing open. setChatArchived works out which of those applies; the
+   * replacement session is built here because only this scope can.
+   */
+  const handleSetChatArchived = useCallback((sessionId, archived) => {
+    setAllChatSessions((prev) => {
+      const result = setChatArchivedInList({
+        sessions: prev,
+        sessionId,
+        archived,
+        activeSessionId,
+        projectId: activeProject.id,
+      });
+      if (!result.changed) return prev;
+      let next = result.sessions;
+      if (result.needsNewChat) {
+        const replacement = makeSession(activeProject.id, defaultGreetingMsg);
+        next = [replacement, ...next];
+        setActiveSessionId(replacement.id);
+      } else if (result.nextActiveSessionId) {
+        setActiveSessionId(result.nextActiveSessionId);
+      }
+      persistSessions(next);
+      return next;
+    });
+  }, [activeProject.id, activeSessionId, defaultGreetingMsg]);
+
   return {
     /*
      * Surfaced so the UI can say that saving degraded. 'evicted' means the quota
@@ -959,6 +1019,9 @@ export function useStudioSession({ user, selectedModel }) {
     forkChatFromMessage,
     handleDeleteChat,
     handleMoveChatToProject,
+    handleRenameChat,
+    handleToggleChatPinned,
+    handleSetChatArchived,
     projects,
     activeProjectId: activeProject.id,
     activeProject,

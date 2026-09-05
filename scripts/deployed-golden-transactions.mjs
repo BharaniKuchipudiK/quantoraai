@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
+import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -428,16 +429,42 @@ try {
          */
         const reason = snapshot.modalFailure
           || '(no reason published — the desk is not carrying data-quantora-modal-failure)';
-        const truncated = /unterminated|unexpected end of (?:json|input)/i.test(reason);
+        /*
+         * WHO CUT IT, THOUGH (2026-09-05, the third round on one failure).
+         * The bytes at the failure were "t confirmed Add to Cart yet." — the
+         * desk's own claim-filter wording, written INTO the modal JSON in
+         * place of a sentence that mentioned a control. Not the provider, not
+         * transport, not the reader: the desk corrupting its own artifact.
+         * The filter's wordings are recognisable from a fragment, so this is
+         * decided first, before "truncated" gets to guess again.
+         */
+        const rewritten = claimFilterWroteThis(reason);
+        const truncated = !rewritten && (/unterminated|unexpected end of (?:json|input)/i.test(reason)
+          || snapshot.replyFinish === 'truncated');
+        // The provider's word, when the desk carried one — this is the fact
+        // the parser error was only ever a symptom of. "complete" is a fact
+        // too: the model ENDED the reply itself, so whatever is missing was
+        // removed on our side. Silence is a third: the done payload's finish
+        // never reached the message. Each is said, none is left to be guessed.
+        const provider = snapshot.replyFinish
+          ? (snapshot.replyFinish === 'complete'
+            ? ` The provider reported finish_reason ${snapshot.replyFinishReason || 'stop'} — the model ended this reply itself, so anything missing was removed on our side, not cut by the provider.`
+            : ` The provider reported finish_reason ${snapshot.replyFinishReason || snapshot.replyFinish}.`)
+          : ' The desk published NO finish state — the done payload\'s finish never reached this message (src/hooks/useChatStream.js), so the provider\'s word is unknown here.';
         throw new Error(
           'The guided-intake turn wrote a decision modal the desk could not READ, so nothing rendered. '
-          + (truncated
-            ? 'The modal was TRUNCATED — the JSON ends mid-string. This is NOT a reader bug: completing it would mean '
-              + 'inventing the rest of the question. Look at why the reply was cut off (token budget, stream end), '
-              + 'not at src/lib/assistant-modal.js.'
-            : 'The modal is malformed but complete, which IS the reader\'s problem — repair '
-              + 'src/lib/assistant-modal.js, and do not reword the prompt.')
-          + ` Parser said: ${reason}. `
+          + (rewritten
+            ? 'The DESK REWROTE the modal: the bytes at the failure are the claim filter\'s own wording '
+              + '(src/lib/desk-chat-claim-filter.js), written into the JSON in place of a sentence that mentioned a control. '
+              + 'This is NOT truncation and NOT the reader — the filter must leave <quantora-modal> blocks verbatim '
+              + `(claimFiltered=${snapshot.claimFiltered === true}).`
+            : truncated
+              ? 'The modal was TRUNCATED — the JSON ends mid-string. This is NOT a reader bug: completing it would mean '
+                + 'inventing the rest of the question. Look at why the reply was cut off (token budget, stream end), '
+                + 'not at src/lib/assistant-modal.js.'
+              : 'The modal is malformed but complete, which IS the reader\'s problem — repair '
+                + 'src/lib/assistant-modal.js, and do not reword the prompt.')
+          + ` Parser said: ${reason}.${provider} `
           + `Page state: ${state}`,
         );
       }

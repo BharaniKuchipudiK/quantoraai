@@ -7,7 +7,7 @@ import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Folder, FolderOpen, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2 } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Folder, FolderOpen, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2, Pin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
@@ -74,6 +74,7 @@ import {
   studioSidebarHistoryListStyle,
   studioSidebarHistoryPaneStyle,
   studioSidebarHistoryTitle,
+  newChatDestinationCopy,
   studioSidebarMembershipCopy,
   studioSidebarYieldingSectionStyle,
   relativeChatTime,
@@ -86,7 +87,7 @@ import TravelPlaceLink from './TravelPlaceLink.jsx';
 
 import { deriveFinanceBrief } from '../lib/finance-board-brief.js';
 import { travelPlacePreviewHtml } from '../lib/travel-place-shortlist.js';
-import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode } from '../lib/studio-domain-policy.js';
+import { studioDomainPolicy, canAutoOpenCodeWorkspace, canExplicitlyPreviewCode, canChooseStudioMode, canUseGithubControls, studioModeChoiceForDomain } from '../lib/studio-domain-policy.js';
 import { detectOfficeIntent, isPresentationIntent as detectSlideDeck } from '../lib/office-intent.js';
 import { activeOfficeArtifact } from '../lib/office-briefing.js';
 import { downloadOfficeArtifact, resolveOfficeDownloadPayload } from '../lib/office-artifact-cache.js';
@@ -110,6 +111,8 @@ import {
 const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
+import ChatRowMenu from './ChatRowMenu.jsx';
+import { archivedChats, visibleChats } from '../lib/chat-organization.js';
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
 /*
@@ -358,6 +361,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     handleCreateAdvisorChat,
     handleDeleteChat,
     handleMoveChatToProject,
+    handleRenameChat,
+    handleToggleChatPinned,
+    handleSetChatArchived,
     projects,
     activeProjectId,
     activeProject,
@@ -374,6 +380,12 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Rename happens in the row itself. A window.prompt for something as ordinary
+  // as naming a chat is a modal interruption for a two-word edit.
+  const [renamingChatId, setRenamingChatId] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [showArchivedChats, setShowArchivedChats] = useState(false);
+
   const [sidebarSections, setSidebarSections] = useState(() => loadStudioSidebarSections());
   const toggleSidebarSection = useCallback((key) => {
     setSidebarSections((prev) => persistStudioSidebarSections({ ...prev, [key]: !prev[key] }));
@@ -689,7 +701,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    */
   const [studioModeChoice, setStudioModeChoice] = useState(null);
   const studioModeChoiceRef = useRef(null);
-  studioModeChoiceRef.current = studioModeChoice;
+  // Not `studioModeChoice`. A Plan chosen on the desk must not follow the
+  // person into an advisor workspace that hides the control — see
+  // studioModeChoiceForDomain.
+  studioModeChoiceRef.current = studioModeChoiceForDomain(studioModeChoice, studioDomain);
   const [githubCheckout, setGithubCheckout] = useState(null);
 
   /*
@@ -1430,6 +1445,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   // Flat homepage palette: near-black ink and neutral gray, no blue tint.
   const textColor = isLight ? '#0a0a0a' : '#ffffff';
   const subtextColor = isLight ? '#737373' : '#a3a3a3';
+
+  /*
+   * One signal for "you are here", used by every selectable row in the nav.
+   *
+   * The old one was two weak ones — a slightly lighter background and a bolder
+   * weight — which at a glance read as nothing at all, and which the report
+   * "when the workspace is active, it is quite difficult to know" is about. An
+   * inset box-shadow draws the accent bar without taking layout space, so no
+   * row shifts by a pixel when selection moves.
+   */
+  const navRowStyle = useCallback((active) => ({
+    padding: '8px 10px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'background 0.15s ease, box-shadow 0.15s ease',
+    color: textColor,
+    fontWeight: active ? 700 : 500,
+    background: active ? (isLight ? '#e6e6e6' : 'rgba(255,255,255,0.10)') : 'transparent',
+    border: '1px solid transparent',
+    boxShadow: active ? 'inset 3px 0 0 #f97316' : 'none',
+  }), [isLight, textColor]);
   const bubbleUserBg = isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.12)';
   const bubbleUserBorder = isLight ? '#ffedd5' : 'rgba(249, 115, 22, 0.3)';
   const bubbleAiBg = isLight ? '#ffffff' : 'rgba(255, 255, 255, 0.04)';
@@ -2363,6 +2399,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         data-quantora-modal-failure={modalFailure || undefined}
+                        /*
+                         * Every kind, "complete" included. Publishing only the
+                         * bad kinds made a completed reply and a reply whose
+                         * finish never arrived look identical — null — and on
+                         * 2026-09-05 that silence sent a round chasing
+                         * truncation for a modal the desk itself had rewritten.
+                         */
+                        data-quantora-reply-finish={msg.sender === 'ai' && msg.finish?.kind ? msg.finish.kind : undefined}
+                        data-quantora-reply-finish-reason={msg.sender === 'ai' && msg.finish?.reason ? String(msg.finish.reason) : undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
@@ -3337,21 +3382,27 @@ Paused — ${autoPauseRef.current}.`
    * The sidebar is a tree, so search spans every chat in every project —
    * a result you cannot see is a result that does not exist.
    */
+  /*
+   * Every list below reads through visibleChats: archived out, pinned hoisted.
+   * Search included — a result that opens a chat the nav says is archived is
+   * the kind of contradiction that makes people distrust the archive.
+   */
   const searchedChatSessions = useMemo(
-    () => filterChatSessions(allChatSessions, chatQuery),
+    () => visibleChats(filterChatSessions(allChatSessions, chatQuery)),
     [allChatSessions, chatQuery],
   );
+  const archivedChatSessions = useMemo(() => archivedChats(allChatSessions), [allChatSessions]);
   const namedProjects = useMemo(
     () => projects.filter((project) => project.id !== DEFAULT_PROJECT_ID),
     [projects],
   );
   // Chats in the default Personal Workspace read as plain, project-free chats.
   const personalChatSessions = useMemo(
-    () => allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === DEFAULT_PROJECT_ID),
+    () => visibleChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === DEFAULT_PROJECT_ID)),
     [allChatSessions],
   );
   const chatsForProject = useCallback(
-    (projectId) => allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId),
+    (projectId) => visibleChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId)),
     [allChatSessions],
   );
 
@@ -3376,16 +3427,9 @@ Paused — ${autoPauseRef.current}.`
           flexWrap: 'wrap',
           gap: '6px',
           minWidth: 0,
-          padding: '7px 10px',
-          borderRadius: '10px',
-          cursor: 'pointer',
           flexShrink: 0,
-          background: isActive ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
-          border: isActive ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
-          color: textColor,
           fontSize: '0.85rem',
-          fontWeight: isActive ? '700' : '500',
-          transition: 'all 0.15s ease'
+          ...navRowStyle(isActive),
         }}
         onMouseEnter={(e) => {
           if (!isActive) e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
@@ -3421,9 +3465,41 @@ Paused — ${autoPauseRef.current}.`
           )}
           <div style={{ minWidth: 0, overflow: 'hidden', flex: 1 }}>
             <span style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
-                {session.title || 'New Chat'}
-              </span>
+              {renamingChatId === session.id ? (
+                <input
+                  data-quantora-chat-rename={session.id}
+                  autoFocus
+                  value={renameDraft}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => setRenameDraft(event.target.value)}
+                  onBlur={() => { handleRenameChat(session.id, renameDraft); setRenamingChatId(null); }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') { handleRenameChat(session.id, renameDraft); setRenamingChatId(null); }
+                    // Escape abandons the edit. A rename you cannot back out of
+                    // is a rename people stop using.
+                    if (event.key === 'Escape') setRenamingChatId(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    background: isLight ? '#ffffff' : '#0a0a0a',
+                    color: textColor,
+                    border: '1px solid #f97316',
+                    borderRadius: '6px',
+                    padding: '2px 6px',
+                    font: 'inherit',
+                    fontSize: '0.82rem',
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+                  {session.title || 'New Chat'}
+                </span>
+              )}
+              {session.pinned === true && renamingChatId !== session.id ? (
+                <Pin size={11} color={subtextColor} style={{ flexShrink: 0 }} aria-label="pinned" />
+              ) : null}
               {/*
                 Age, so a long list is scannable. updatedAt is what the reader
                 cares about — "when did I last touch this" — and createdAt only
@@ -3481,62 +3557,24 @@ Paused — ${autoPauseRef.current}.`
               Resume
             </span>
           ) : null}
-          {projects.length > 1 ? (
-            <select
-              aria-label="Move chat to project"
-              data-quantora-sidebar-move-chat={session.id}
-              value=""
-              onChange={(event) => {
-                const nextProjectId = event.target.value;
-                if (nextProjectId) handleMoveChatToProject(event, session.id, nextProjectId);
-              }}
-              style={{
-                maxWidth: '92px',
-                background: isLight ? '#fafafa' : '#0a0a0a',
-                color: subtextColor,
-                border: isLight ? '1px solid #e5e5e5' : '1px solid #262626',
-                borderRadius: '6px',
-                padding: '2px 4px',
-                fontSize: '0.62rem',
-                fontWeight: 650,
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="" disabled>Move to…</option>
-              {projects
-                .filter((project) => project.id !== (session.projectId || activeProjectId))
-                .map((project) => (
-                  <option key={project.id} value={project.id}>{project.name}</option>
-                ))}
-            </select>
-          ) : null}
-          <button
-            onClick={(e) => {
+          <ChatRowMenu
+            session={session}
+            isLight={isLight}
+            textColor={textColor}
+            subtextColor={subtextColor}
+            projects={projects}
+            onRename={(id) => { setRenamingChatId(id); setRenameDraft(session.title || ''); }}
+            onTogglePin={handleToggleChatPinned}
+            onMoveToProject={handleMoveChatToProject}
+            onToggleArchive={handleSetChatArchived}
+            onDelete={(event, id) => {
               // Drop this chat's desk with the chat. Leaving it behind is a
               // leak that grows with every deleted build, and the desk of a
               // session that no longer exists can never be shown again.
-              desksRef.current = forgetDesk(desksRef.current, session.id);
-              handleDeleteChat(e, session.id);
+              desksRef.current = forgetDesk(desksRef.current, id);
+              handleDeleteChat(event, id);
             }}
-            title="Delete chat"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: subtextColor,
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              opacity: isActive ? 1 : 0.6,
-              transition: 'opacity 0.2s ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-            onMouseLeave={(e) => e.currentTarget.style.color = subtextColor}
-          >
-            <Trash2 size={13} />
-          </button>
+          />
         </div>
       </div>
     );
@@ -3790,6 +3828,30 @@ Paused — ${autoPauseRef.current}.`
           </button>
         </div>
 
+        {/*
+          Where New Chat goes, on screen rather than in a tooltip nobody hovers.
+          See newChatDestinationCopy: the answer is not "here" when you are
+          standing in an advisor desk, and that was invisible.
+        */}
+        <div
+          data-quantora-new-chat-destination="true"
+          style={{
+            padding: '0 4px',
+            marginTop: '-4px',
+            marginBottom: '12px',
+            color: subtextColor,
+            fontSize: '0.68rem',
+            fontWeight: 500,
+            lineHeight: 1.35,
+            flexShrink: 0,
+          }}
+        >
+          {newChatDestinationCopy({
+            projectName: activeProject?.name,
+            advisorTitle: studioDomain ? domainPolicy.title : null,
+          })}
+        </div>
+
         {/* Search folds out under the header only while it is wanted. */}
         {chatSearchOpen && (
           <div style={{ position: 'relative', marginBottom: '10px', flexShrink: 0 }}>
@@ -3828,7 +3890,7 @@ Paused — ${autoPauseRef.current}.`
         )}
 
         {/* Specialized Agents — collapsible, open by default so desks stay discoverable for gates. */}
-        <div data-quantora-sidebar-agents="true" style={studioSidebarYieldingSectionStyle({ marginBottom: sidebarSections.agents ? '10px' : '8px', display: 'flex', flexDirection: 'column', overflow: 'hidden' })}>
+        <div data-quantora-sidebar-agents="true" style={studioSidebarYieldingSectionStyle({ marginBottom: sidebarSections.agents ? '18px' : '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' })}>
           <button
             type="button"
             data-quantora-sidebar-section="agents"
@@ -3856,7 +3918,7 @@ Paused — ${autoPauseRef.current}.`
             {sidebarSections.agents ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {sidebarSections.agents ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
           <div
             data-quantora-coding-desk-nav="true"
             onClick={openCodingDesk}
@@ -3864,19 +3926,11 @@ Paused — ${autoPauseRef.current}.`
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '6px 10px',
-              borderRadius: '8px',
-              cursor: 'pointer',
               fontSize: '0.82rem',
-              fontWeight: '500',
-              color: textColor,
-              fontWeight: isCodingDesk ? '700' : '500',
-              background: isCodingDesk ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
-              border: isCodingDesk ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
-              transition: 'all 0.15s ease',
+              ...navRowStyle(isCodingDesk),
             }}
           >
-            <div style={{ flexShrink: 0 }}><Code2 size={15} /></div>
+            <div style={{ flexShrink: 0, color: isCodingDesk ? '#f97316' : subtextColor }}><Code2 size={15} /></div>
             <span>Coding desk</span>
           </div>
           {[
@@ -3899,29 +3953,19 @@ Paused — ${autoPauseRef.current}.`
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
-                padding: '6px 10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
                 fontSize: '0.82rem',
-                fontWeight: '500',
-                color: textColor,
-                fontWeight: selected ? '700' : '500',
-                background: selected ? (isLight ? '#e8e8e8' : 'rgba(255, 255, 255, 0.1)') : 'transparent',
-                border: selected ? (isLight ? '1px solid #d4d4d4' : '1px solid rgba(255, 255, 255, 0.18)') : '1px solid transparent',
-                transition: 'all 0.15s ease'
+                ...navRowStyle(selected),
               }}
               onMouseEnter={(e) => {
                 if (selected) return;
                 e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.borderColor = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)';
               }}
               onMouseLeave={(e) => {
                 if (selected) return;
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.borderColor = 'transparent';
               }}
             >
-              <div style={{ flexShrink: 0 }}>{card.icon}</div>
+              <div style={{ flexShrink: 0, color: selected ? '#f97316' : subtextColor }}>{card.icon}</div>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
             </div>
             </div>
@@ -4051,6 +4095,48 @@ Paused — ${autoPauseRef.current}.`
                     {studioSidebarHistoryHint(0, 'Personal Workspace')}
                   </div>
                 ) : personalChatSessions.map((session) => renderChatRow(session))}
+
+                {/*
+                  The other half of archive. Hiding a chat with no way back is
+                  a delete wearing a gentler word — so the count is always on
+                  screen when there is one, and opening it shows the same rows
+                  with the same menu, where Archive reads Unarchive.
+                */}
+                {archivedChatSessions.length ? (
+                  <div data-quantora-sidebar-archived="true" style={{ marginTop: '10px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      data-quantora-sidebar-archived-toggle="true"
+                      aria-expanded={showArchivedChats}
+                      onClick={() => setShowArchivedChats((was) => !was)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '6px',
+                        padding: '4px 4px',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: subtextColor,
+                        font: 'inherit',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      <span>Archived ({archivedChatSessions.length})</span>
+                      {showArchivedChats ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                    {showArchivedChats ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px', opacity: 0.75 }}>
+                        {archivedChatSessions.map((session) => renderChatRow(session))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             )}
           </div>
@@ -4986,6 +5072,12 @@ Paused — ${autoPauseRef.current}.`
                         <ImageIcon size={16} color="#10b981" /> Image
                       </button>
 
+                      {/*
+                        GitHub is a coding control, so it is offered where code
+                        can be written. On an advisor desk the connect flow ends
+                        at a workspace that never opens — a door onto nothing.
+                      */}
+                      {canUseGithubControls(studioDomain) && (<>
                       <div style={{ height: '1px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
                       <button 
@@ -4996,6 +5088,7 @@ Paused — ${autoPauseRef.current}.`
                       >
                         <Github size={16} color={isLight ? "#334155" : "#e5e5e5"} /> Connect to Github
                       </button>
+                      </>)}
                     </div>
                   </>
                 )}
@@ -5158,6 +5251,7 @@ Paused — ${autoPauseRef.current}.`
                 )}
               </div>
 
+              {canChooseStudioMode(studioDomain) && (
               <Suspense fallback={null}>
                 <StudioModeToggle
                   chosen={studioModeChoice}
@@ -5166,11 +5260,13 @@ Paused — ${autoPauseRef.current}.`
                   subtextColor={subtextColor}
                 />
               </Suspense>
+              )}
 
               {/*
                 * Where this build is going to sit — a setting, so it sits with
                 * the other settings rather than shouting above the prompt.
                 */}
+              {canUseGithubControls(studioDomain) && (
               <Suspense fallback={null}>
                 <GithubDestinationBar
                   destination={githubDestination}
@@ -5181,6 +5277,7 @@ Paused — ${autoPauseRef.current}.`
                   subtextColor={subtextColor}
                 />
               </Suspense>
+              )}
 
             </div>
 

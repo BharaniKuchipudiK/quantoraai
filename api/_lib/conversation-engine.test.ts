@@ -175,6 +175,36 @@ test("verifier flags a Done claim when Proof of Done is not verified", () => {
   assert.ok(verification.issues.some((item) => item.code === "outcome_done_without_proof"));
 });
 
+test("verifier raises reply_truncated when the provider says the reply hit its output budget", () => {
+  /*
+   * 2026-09-05. Until this, the live turn never read finish_reason: a reply cut
+   * off by the budget was accepted and recorded as a success. In JSON it broke
+   * loudly (the intake modal); in prose it was silent. The verifier is where a
+   * cut becomes a NAMED outcome the desk shows.
+   */
+  const snapshot = buildConversationSnapshot({ message: "Explain the pipeline." });
+  const decision = { ...chooseNextConversationMove(snapshot), move: "answer" as const };
+  const cut = verifyConversationResponse({
+    snapshot,
+    decision,
+    response: "The weighted pipeline value feeds utilisation forecasts by taking each deal and",
+    finish: { kind: "truncated", reason: "MAX_TOKENS" },
+  });
+  assert.equal(cut.status, "fail");
+  assert.ok(cut.issues.some((item) => item.code === "reply_truncated" && item.severity === "failure"));
+
+  // The same reply with a normal finish, and with none at all, raises nothing —
+  // the paths that predate this input must keep behaving exactly as before.
+  for (const finish of [{ kind: "complete" as const, reason: "STOP" }, null, undefined]) {
+    const ok = verifyConversationResponse({ snapshot, decision, response: "The weighted pipeline value feeds utilisation forecasts.", finish });
+    assert.ok(!ok.issues.some((item) => item.code === "reply_truncated"), `finish=${JSON.stringify(finish)} must not be read as a cut`);
+  }
+
+  // Blocked is deliberately NOT this verifier's — the safety path owns its copy.
+  const blocked = verifyConversationResponse({ snapshot, decision, response: "Partial.", finish: { kind: "blocked", reason: "SAFETY" } });
+  assert.ok(!blocked.issues.some((item) => item.code === "reply_truncated"));
+});
+
 test("verifier permits a Done claim when the Outcome Contract is fully verified", () => {
   const snapshot = buildConversationSnapshot({
     outcomeRecord: {
