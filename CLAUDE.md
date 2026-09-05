@@ -174,6 +174,7 @@ becomes safely more autonomous.
 | `npm run test:wiring` | code that is tested and reachable by nothing |
 | `npm run test:dead-controls` | a `/api/` path the frontend calls that nothing serves |
 | `npm run test:claims` | capability claims with no backing implementation, and tool descriptions that promise the model a field the request never asks for |
+| `npm run test:stress` | a hostile or malformed reply that destroys the user's build — a file lost, emptied, or committed unrunnable — across 160 arrival shapes, with no model call |
 | `scripts/deployed-readiness-gate.mjs` | a deployed function that dies before its handler runs |
 | `node --test src/lib/refinement-loop.test.js` | a repair loop that burns the user's money without improving |
 | `node --test src/lib/turn-heal-contract.test.js` | a retry identical to the attempt that failed, or terminal copy promising action in a state with no future |
