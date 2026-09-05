@@ -639,49 +639,59 @@ try {
   if (chipKind !== 'document') {
     throw new Error(`The composer took the PDF as "${chipKind}", not as a document — it would be dropped at send. Page state: ${await recordPageState()}`);
   }
-  await prompt.fill('Build a single-file HTML page for the association named in the attached bylaws PDF. Include a heading with the association\'s name and a paragraph with data-testid="reg-no" that contains the registration number exactly as it appears in the document. Use only HTML and CSS, no images, no external assets, no localStorage.');
+  /*
+   * The ask takes the same shape as calculator, simple-website and
+   * business-tool, and for the same reason: setGoldenTransaction arms two
+   * contracts on the turn it precedes — the server validator owes files and
+   * forbids an intake move, and the desk refuses any non-empty VFS that is not
+   * a React/VFS project. This transaction's first run asked for "a single-file
+   * HTML page" with the canary armed; the model obeyed, and the desk failed the
+   * page by construction ("did not satisfy the React/VFS project runtime
+   * contract"). The two must agree, and deployed-gate-contract.test.js holds
+   * every armed transaction to it. The attach → question → build handoff, where
+   * the desk carries documents across turns, is proven deterministically by
+   * scripts/attachments-browser-gate.mjs; this transaction proves the document
+   * reaches the REAL model.
+   */
+  await prompt.fill('Create a small React information page for the association named in the attached bylaws PDF. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render an h1 with the association\'s exact name as written in the document and a paragraph with data-testid="reg-no" whose text is the registration number exactly as it appears in the document. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
-  const documentCorrelationId = await correlationForPreview(toolCorrelationId);
-  markActiveTransaction('document-grounded', documentCorrelationId);
 
+  // The desk says so at send time, before any model turn, so it is checked first.
+  await page.waitForTimeout(1_000);
   const headsUp = page.locator('[data-quantora-assistant-prose]', { hasText: /could not send/i }).first();
   if (await headsUp.isVisible().catch(() => false)) {
     throw new Error(`The desk dropped the attached PDF before sending — the 2026-09-05 defect is back. Page state: ${await recordPageState()}`);
   }
+
   /*
-   * A fresh chat asking for a website gets the designer's ONE question first
-   * (transaction 3 is that invariant). The real flow is attach → ask → answer
-   * → build, and the build turn must still have the document: the desk carries
-   * it across the handoff. Answer the question if it comes, then demand the page.
+   * Say which half. A turn that asked for the document instead of building
+   * means the PDF's text never reached the model, and the desk's own account
+   * of what it read (data-quantora-document-reads) separates "never sent"
+   * from "sent, but unreadable".
    */
-  const documentIntakeModal = page.locator('[data-quantora-decision-modal="true"]').first();
-  const documentFailedTurn = page.locator('[data-quantora-last-turn-failed="true"]').first();
-  let documentFrame = null;
-  let documentModalAnswers = 0;
-  const documentDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
-  while (Date.now() < documentDeadline && !documentFrame) {
-    if (await documentFailedTurn.isVisible().catch(() => false)) {
-      throw new Error(`The document-grounded turn FAILED outright. Page state: ${await recordPageState()}`);
-    }
-    if (await documentIntakeModal.isVisible().catch(() => false)) {
-      if (documentModalAnswers >= 2) throw new Error(`Guided intake asked ${documentModalAnswers + 1} questions without building from the document. Page state: ${await recordPageState()}`);
-      documentModalAnswers += 1;
-      await page.locator('[data-quantora-decision-option]').first().click();
-      await page.waitForTimeout(500);
-      continue;
-    }
-    documentFrame = await frameWith('[data-testid="reg-no"]', 2_000);
-  }
-  if (!documentFrame) {
-    const state = await recordPageState();
+  const documentDiagnosis = async (why) => {
+    const state = /Page state:/.test(why) ? '' : ` Page state: ${await recordPageState()}`;
     const snapshot = evidence.pageState || {};
-    const asked = /attach|document|send (me|it)|didn't come through|did not come through/i.test(String(snapshot.lastAssistantText || ''));
-    throw new Error(
-      (asked
-        ? 'The model asked for the document instead of building from it — the attached PDF\'s text did not reach the model. '
-        : 'The document-grounded page never rendered its data-testid="reg-no" element. ')
-      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. Page state: ${state}`,
-    );
+    // A request for the file, not a mention of it: a build reply that says
+    // "based on the attached document" must not read as the model asking.
+    const asked = /\b(?:attach|upload|send|share|paste|provide)\b[^.]{0,60}\b(?:document|file|pdf|bylaws)\b|\b(?:document|file|pdf|attachment)\b[^.]{0,40}\b(?:didn't|did not|never|hasn't|has not)\b[^.]{0,30}\b(?:come through|arrive|receive|reach|attach)|\bcould(?:n't| not) (?:find|see|read|access|open)\b[^.]{0,40}\b(?:document|file|pdf|attachment)\b/i
+      .test(String(snapshot.lastAssistantText || ''));
+    return (asked
+      ? 'The model asked for the document instead of building from it — the attached PDF\'s text did not reach the model. '
+      : '')
+      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. ${why}${state}`;
+  };
+  let documentCorrelationId;
+  try {
+    documentCorrelationId = await correlationForPreview(toolCorrelationId);
+  } catch (error) {
+    throw new Error(await documentDiagnosis(error?.message || String(error)));
+  }
+  markActiveTransaction('document-grounded', documentCorrelationId);
+
+  const documentFrame = await frameWith('[data-testid="reg-no"]');
+  if (!documentFrame) {
+    throw new Error(await documentDiagnosis('The document-grounded page compiled but never rendered its data-testid="reg-no" element.'));
   }
   const shown = (await documentFrame.locator('[data-testid="reg-no"]').first().innerText()).trim();
   if (!shown.includes(REGISTRATION_NUMBER)) {
@@ -698,7 +708,6 @@ try {
     rendered: true,
     groundedFact: true,
     registrationNumber: REGISTRATION_NUMBER,
-    intakeQuestionsAnswered: documentModalAnswers,
     durationMs: Date.now() - documentStartedAt,
   });
   delete evidence.activeTransaction;

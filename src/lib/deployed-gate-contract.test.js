@@ -302,3 +302,37 @@ test('an attached document reaches the model, and the desk says what was read', 
   assert.match(gate, /setInputFiles\(\{ name: 'rkv-bylaws\.pdf'/, 'the golden must attach a real file through the composer');
   assert.match(gate, /'document-grounded'\]/, 'and the roster must demand it ran');
 });
+
+/*
+ * THE CANARY AND THE ASK MUST AGREE (2026-09-05, PR #553's first run).
+ *
+ * setGoldenTransaction arms two contracts on the turn it precedes: the server
+ * validator owes files, and the desk (LivePreviewCanvas) rejects any non-empty
+ * VFS that is not a React/VFS project. Transaction 5 armed the canary and then
+ * asked for "a single-file HTML page" — the model obeyed, and the desk failed
+ * the page by construction: "Generated files did not satisfy the React/VFS
+ * project runtime contract." Not the document path; the gate contradicting
+ * itself. So every armed transaction's prompt must ask for the shape the
+ * canary enforces, the way calculator, simple-website and business-tool do.
+ */
+test('every transaction that arms the golden canary asks for the artifact shape the canary enforces', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const armed = [];
+  const armPattern = /setGoldenTransaction\('([a-z-]+)'\)/g;
+  let match;
+  while ((match = armPattern.exec(gate)) !== null) {
+    const rest = gate.slice(match.index + match[0].length);
+    const fill = /prompt\.fill\('((?:[^'\\]|\\.)*)'\)/.exec(rest);
+    assert.ok(fill, `transaction ${match[1]} arms the canary but never fills a prompt after it`);
+    armed.push({ name: match[1], ask: fill[1] });
+  }
+  assert.ok(armed.length >= 4, `expected at least four armed transactions, found ${armed.length}`);
+  for (const { name, ask } of armed) {
+    assert.match(ask, /Return a Vite-style VFS project with package\.json, src\/main\.jsx, src\/App\.jsx, and src\/styles\.css/,
+      `transaction ${name} arms the canary but asks for a different artifact shape — the desk will reject whatever the model builds`);
+    assert.match(ask, /do not return index\.html/, `transaction ${name} must forbid the single-file shape the canary cannot run`);
+  }
+  const canvas = read('src/components/LivePreviewCanvas.jsx');
+  assert.match(canvas, /goldenTransaction && Object\.keys\(vfs \|\| \{\}\)\.length > 0 && !projectRuntimeActive/,
+    'the desk-side contract this test exists to agree with');
+});
