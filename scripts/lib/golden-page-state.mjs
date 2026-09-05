@@ -56,6 +56,10 @@ export async function pageStateSnapshot(page, consoleErrors = []) {
       // intake failure was that filter writing its disclaimer INTO the modal
       // JSON; the verdict names it from the bytes, and this says the filter ran.
       claimFiltered: (await count('[data-quantora-desk-claim-filter="true"]')) > 0,
+      // The server's account of attached documents, as the desk publishes it:
+      // "2/3" read. Null when no document travelled with the last reply.
+      documentReads: await page.locator('[data-quantora-document-reads]').last()
+        .getAttribute('data-quantora-document-reads', { timeout: PROBE_TIMEOUT_MS }).catch(() => null),
       // The provider's own account of why the last reply stopped. A modal
       // "Unterminated string" and a replyFinish of MAX_TOKENS are the same
       // event seen from two sides; carrying both lets the verdict say so.

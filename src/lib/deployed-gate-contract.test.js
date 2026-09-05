@@ -273,3 +273,66 @@ test('the health endpoint and the golden gate keep the canary handshake', () => 
   assert.match(gate, /goldenCanaryHonored !== true/);
   assert.match(gate, /QUANTORA_GOLDEN_CANARY_TOKEN/, 'the failure message names the env var to fix');
 });
+
+/*
+ * DOCUMENTS TRAVEL (2026-09-05). Four association documents were dropped in
+ * the browser as "(not a readable image)" and the model asked the user how to
+ * get them. Every hop is pinned: the composer sends documents, the server reads
+ * the same field, the desk publishes what was read, the snapshot reads it, and
+ * the golden attaches a real file and demands a fact only that file holds.
+ */
+test('an attached document reaches the model, and the desk says what was read', () => {
+  const hook = read('src/hooks/useChatStream.js');
+  assert.match(hook, /attachedDocuments,/, 'the request body must carry documents');
+  assert.match(hook, /partitionAttachments\(attachments\)/, 'one decision in one place — chat-attachments.js');
+  assert.match(hook, /documentReads: parsed\.attachments/, 'the done payload\'s reads must be kept on the message');
+  const normalizer = read('api/_lib/communication/request-normalizer.ts');
+  assert.match(normalizer, /body\?\.attachedDocuments/, 'the server must read the same field the client sends');
+  const handler = read('api/_lib/chat-handler.ts');
+  assert.match(handler, /readAttachedDocuments\(attachedDocuments\)/, 'documents are read once, on the server');
+  assert.match(handler, /const refineUserMessage = \[\s*messageForModel,/, 'the model sees the documents on the primary path');
+  assert.match(handler, /buildGeminiContents\(boundedHistory, messageForModel, visionImages\)/, 'and on the legacy path');
+  assert.equal((handler.match(/attachments: attachmentSummary,/g) || []).length, 3, 'every done payload carries the read summary');
+  const studio = read('src/components/AiStudio.jsx');
+  assert.match(studio, /data-quantora-document-reads=/, 'the desk must publish what was read');
+  assert.match(studio, /attachmentKindForFile\(file\)/, 'the composer classifies with the shared module, not its own rule');
+  const snapshot = read('scripts/lib/golden-page-state.mjs');
+  assert.match(snapshot, /documentReads:/);
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  assert.match(gate, /setInputFiles\(\{ name: 'rkv-bylaws\.pdf'/, 'the golden must attach a real file through the composer');
+  assert.match(gate, /'document-grounded'\]/, 'and the roster must demand it ran');
+});
+
+/*
+ * THE CANARY AND THE ASK MUST AGREE (2026-09-05, PR #553's first run).
+ *
+ * setGoldenTransaction arms two contracts on the turn it precedes: the server
+ * validator owes files, and the desk (LivePreviewCanvas) rejects any non-empty
+ * VFS that is not a React/VFS project. Transaction 5 armed the canary and then
+ * asked for "a single-file HTML page" — the model obeyed, and the desk failed
+ * the page by construction: "Generated files did not satisfy the React/VFS
+ * project runtime contract." Not the document path; the gate contradicting
+ * itself. So every armed transaction's prompt must ask for the shape the
+ * canary enforces, the way calculator, simple-website and business-tool do.
+ */
+test('every transaction that arms the golden canary asks for the artifact shape the canary enforces', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const armed = [];
+  const armPattern = /setGoldenTransaction\('([a-z-]+)'\)/g;
+  let match;
+  while ((match = armPattern.exec(gate)) !== null) {
+    const rest = gate.slice(match.index + match[0].length);
+    const fill = /prompt\.fill\('((?:[^'\\]|\\.)*)'\)/.exec(rest);
+    assert.ok(fill, `transaction ${match[1]} arms the canary but never fills a prompt after it`);
+    armed.push({ name: match[1], ask: fill[1] });
+  }
+  assert.ok(armed.length >= 4, `expected at least four armed transactions, found ${armed.length}`);
+  for (const { name, ask } of armed) {
+    assert.match(ask, /Return a Vite-style VFS project with package\.json, src\/main\.jsx, src\/App\.jsx, and src\/styles\.css/,
+      `transaction ${name} arms the canary but asks for a different artifact shape — the desk will reject whatever the model builds`);
+    assert.match(ask, /do not return index\.html/, `transaction ${name} must forbid the single-file shape the canary cannot run`);
+  }
+  const canvas = read('src/components/LivePreviewCanvas.jsx');
+  assert.match(canvas, /goldenTransaction && Object\.keys\(vfs \|\| \{\}\)\.length > 0 && !projectRuntimeActive/,
+    'the desk-side contract this test exists to agree with');
+});

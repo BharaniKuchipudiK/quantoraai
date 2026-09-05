@@ -2,6 +2,7 @@ import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
 import { OFFICE_CLIENT_GENERATE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
 import { detectOfficeIntent } from '../lib/office-intent.js';
+import { carryDocuments, describeExcludedAttachments, explainNothingToSend, partitionAttachments } from '../lib/chat-attachments.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { officePclMemory } from '../lib/office-session-state.js';
@@ -329,6 +330,8 @@ export function useChatStream({
    * Maps rather than state: these are identity, not something React renders.
    */
   const abortControllersRef = useRef(new Map());
+  /** Documents attached earlier in this chat, re-sent on later turns (chat-attachments.js: carryDocuments). */
+  const carriedDocumentsRef = useRef(null);
   const silentTurnsRecordedRef = useRef(new Set());
   const generationTokensRef = useRef(new Map());
 
@@ -1087,75 +1090,36 @@ export function useChatStream({
      * every smaller image queued behind it, and the turn then went to the model
      * describing an image it had never been sent.
      */
-    const MAX_ATTACHED_IMAGE_CHARS = 3_500_000; // keeps the JSON body under Vercel's 4.5MB limit
-    const MAX_ATTACHED_IMAGES = 4;
-    const deliverableImages = [];
-    const excluded = [];
-    let attachedChars = 0;
-    for (const item of attachments || []) {
-      const url = item?.dataUrl;
-      // No dataUrl at all: a non-image file, or one the reader already rejected.
-      // The reader knows which; trust it over guessing 'unsupported' for both.
-      if (typeof url !== 'string' || !url.startsWith('data:image/')) {
-        excluded.push({ name: item?.name, reason: item?.excludedReason || 'unsupported' });
-        continue;
-      }
-      if (deliverableImages.length >= MAX_ATTACHED_IMAGES) {
-        excluded.push({ name: item?.name, reason: 'count' });
-        continue;
-      }
-      // Skip this one and keep going - a later, smaller image can still fit.
-      if (attachedChars + url.length > MAX_ATTACHED_IMAGE_CHARS) {
-        excluded.push({ name: item?.name, reason: 'size' });
-        continue;
-      }
-      attachedChars += url.length;
-      deliverableImages.push(url);
-    }
-    const attachedImages = deliverableImages;
-
-    const namesOf = (list) => list.map((entry) => entry.name).filter(Boolean).join(', ');
-    const tooLarge = excluded.filter((entry) => entry.reason === 'size');
-    const unsupported = excluded.filter((entry) => entry.reason === 'unsupported');
-    const overCount = excluded.filter((entry) => entry.reason === 'count');
-
     /*
-     * Nothing to send: an attachment-only turn where every attachment was excluded
-     * would otherwise post an empty message that /api/chat rejects with "Message
-     * string is required" - a dead end with the moderation error suppressed, so
-     * nothing explained it. Say which file was excluded and why.
+     * One decision, in one place: chat-attachments.js splits the composer's
+     * attachments into images, documents and exclusions with their reasons.
+     * Documents are read on the server; the model sees their text on every
+     * route. What could not travel is said up front, by name, with the reason.
      */
-    if (!text.trim() && !attachedImages.length) {
-      const explanation = tooLarge.length
-        ? `${namesOf(tooLarge) || 'That image'} is too large to send once encoded — images need to be roughly 2.5MB or smaller. Try a smaller copy, or tell me what you need and I will help.`
-        : unsupported.length
-          ? `I can read images (PNG/JPG), but not ${namesOf(unsupported) || 'that file'} — describe what you need and I will help.`
-          : 'Add a message so I know what you would like me to do.';
+    const partitioned = partitionAttachments(attachments);
+    const attachedImages = partitioned.images;
+    const excluded = partitioned.excluded;
+    // Documents stay with the conversation — the build turn after the
+    // designer's question must still have them (see carryDocuments).
+    const attachedDocuments = carryDocuments(carriedDocumentsRef, owningSessionId, partitioned.documents);
+
+    if (!text.trim() && !attachedImages.length && !attachedDocuments.length) {
       updateActiveMessages((prev) => [...prev, {
         id: createMessageId('ai'),
         sender: 'ai',
-        text: explanation,
+        text: explainNothingToSend(excluded),
         isError: true,
       }]);
       setIsGenerating(false);
       return;
     }
 
-    /*
-     * The turn IS going ahead, but not with everything that was attached. Saying so
-     * up front is the difference between a partial answer and a wrong one: without
-     * it the model answers about the images it received while the composer shows
-     * the ones it did not.
-     */
-    if (excluded.length) {
-      const parts = [];
-      if (tooLarge.length) parts.push(`${namesOf(tooLarge) || 'one image'} (too large once encoded)`);
-      if (unsupported.length) parts.push(`${namesOf(unsupported) || 'one file'} (not a readable image)`);
-      if (overCount.length) parts.push(`${namesOf(overCount) || 'the rest'} (only ${MAX_ATTACHED_IMAGES} images per turn)`);
+    const headsUp = describeExcludedAttachments(excluded);
+    if (headsUp) {
       updateActiveMessages((prev) => [...prev, {
         id: createMessageId('ai'),
         sender: 'ai',
-        text: `Heads up — I could not send ${parts.join(' and ')}. I am answering on what did go through.`,
+        text: headsUp,
         isError: true,
       }]);
     }
@@ -1196,6 +1160,7 @@ export function useChatStream({
     const requestBodyFor = (model) => ({
       message: messageForRequest,
       attachedImages,
+      attachedDocuments,
       modelId: model.id,
       modelName: model.name,
       history: cleanMessages,
@@ -1734,6 +1699,8 @@ export function useChatStream({
                   // Why the model stopped, from the provider. Rendered as a
                   // hook so a cut-off reply is visible to the golden by name.
                   ...(parsed.finish ? { finish: parsed.finish } : {}),
+                  // The server's own account of each attached document: read, or why not.
+                  ...(Array.isArray(parsed.attachments) ? { documentReads: parsed.attachments } : {}),
                   correlationId: normalizeClientCorrelationId(parsed.correlationId) || responseCorrelationId,
                   ...(parsed.inferenceRoute ? { inferenceRoute: parsed.inferenceRoute } : {}),
                   ...(travelPlaces ? { travelPlaces } : {}),
