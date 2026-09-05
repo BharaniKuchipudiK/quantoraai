@@ -128,6 +128,25 @@ test('a React 17 mount (ReactDOM.render) is carried onto the React 19 runtime by
   assert.doesNotMatch(modern.html, /__quantoraLegacyRoot/, 'a createRoot project must not pay for the shim');
 });
 
+/*
+ * The next production golden (23:27 UTC, run 33998651787) failed the same
+ * way with the React 18 spelling: `import ReactDOM from 'react-dom';
+ * ReactDOM.createRoot(root).render(<App />)` — "ne.default.createRoot is not
+ * a function", because react-dom 19 exports createRoot only from
+ * react-dom/client. Bare react-dom now carries createRoot and hydrateRoot too.
+ */
+test('createRoot reached through bare react-dom (the React 18 spelling) also compiles onto the runtime', async () => {
+  const react18Vfs = {
+    'src/main.jsx': {
+      content: "import React from 'react'; import ReactDOM from 'react-dom'; import App from './App.jsx'; ReactDOM.createRoot(document.getElementById('root')).render(<App />);",
+    },
+    'src/App.jsx': { content: "export default function App(){return <main><h1>Sunrise Bakery</h1></main>}" },
+  };
+  const result = await compilePreviewVfs(react18Vfs);
+  assert.match(result.html, /__quantoraLegacyRoot/, 'bare react-dom resolves to the shim, which carries createRoot from react-dom/client');
+  assert.match(result.html, /Sunrise Bakery/);
+});
+
 test('the legacy API creates one root per container, reuses it, hydrates, and unmounts', () => {
   const calls = [];
   const fakeRoot = (label) => ({ render: (element) => calls.push([label, 'render', element]), unmount: () => calls.push([label, 'unmount']) });
