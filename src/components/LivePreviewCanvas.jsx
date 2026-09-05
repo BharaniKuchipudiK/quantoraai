@@ -944,8 +944,13 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     setLastError(null);
     setStatus('running');
   }, []);
+  /*
+   * Name the files, not only the verdict (CLAUDE.md §8). The first reader of
+   * this line on 2026-09-05 could not tell an intake reply from a plain HTML
+   * page from a React project missing its entry — three different owners.
+   */
   const goldenRuntimeContractError = goldenTransaction && Object.keys(vfs || {}).length > 0 && !projectRuntimeActive
-    ? 'Generated files did not satisfy the React/VFS project runtime contract.'
+    ? `Generated files did not satisfy the React/VFS project runtime contract (no package.json with a src/main or src/App entry; the desk holds: ${Object.keys(vfs).slice(0, 12).join(', ')}).`
     : null;
   const previewShellReady = projectRuntimeActive || Boolean(wcUrl) || embedReady;
 

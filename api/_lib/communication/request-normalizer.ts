@@ -6,6 +6,8 @@ import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
 import { detectBuildIntent } from "../../../shared/build-intent.js";
 import { normalizeStudyRequestContext, type StudyRequestContext } from "../study-adaptive-learning.js";
 
+export type AttachedDocument = { name: string; mimeType: string; dataUrl: string; carried: boolean };
+
 export type CommunicationRequest = {
   message: string;
   sessionId: string | null;
@@ -15,6 +17,7 @@ export type CommunicationRequest = {
   studioDomain: StudioDomain | null;
   taskCategory: string;
   attachedImages: string[];
+  attachedDocuments: AttachedDocument[];
   choiceSelected: boolean;
   memoryConsented: boolean;
   sessionContext: SessionContext;
@@ -55,6 +58,26 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const attachedImages = Array.isArray(body?.attachedImages)
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)
     : [];
+  /*
+   * Documents ride in beside images as base64 data URLs and are read on the
+   * server (attachment-text.ts). Images are routed the other way, so a data
+   * URL for one is not a document. Bounds keep the body under Vercel's limit.
+   */
+  const attachedDocuments: AttachedDocument[] = Array.isArray(body?.attachedDocuments)
+    ? body.attachedDocuments
+      .filter((item: any) => item && typeof item === "object"
+        && typeof item.dataUrl === "string"
+        && /^data:[^;,]*(?:;[^,]*)?;base64,/.test(item.dataUrl)
+        && !item.dataUrl.startsWith("data:image/")
+        && item.dataUrl.length <= 4_500_000)
+      .slice(0, 4)
+      .map((item: any) => ({
+        name: String(item.name || "attachment").slice(0, 200),
+        mimeType: typeof item.mimeType === "string" ? item.mimeType.slice(0, 100) : "",
+        dataUrl: item.dataUrl as string,
+        carried: item.carried === true,
+      }))
+    : [];
   const nestedProjectId = body?.sessionContext && typeof body.sessionContext === "object"
     ? body.sessionContext.projectId
     : null;
@@ -70,6 +93,7 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
       ? body.taskCategory
       : inferredBuildMode ? "coding" : "general",
     attachedImages,
+    attachedDocuments,
     choiceSelected: body?.choiceSelected === true,
     memoryConsented: body?.memoryConsented === true,
     sessionContext: normalizeSessionContext(body?.sessionContext),

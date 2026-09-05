@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
+import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -21,7 +22,7 @@ import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
  * run and would be proving three of them. So the roster is declared, checked
  * against what actually completed, and printed last on every run, pass or fail.
  */
-const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool'];
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded'];
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -600,6 +601,114 @@ try {
     rowsAfterAdd: after.count,
     totalMatchedRows: true,
     durationMs: Date.now() - toolStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 5 — A DOCUMENT THE USER ATTACHED, READ AND BUILT FROM.
+   *
+   * 2026-09-05: four association documents attached to one chat turn were
+   * dropped in the browser as "(not a readable image)", and the model — told
+   * nothing about files it never received — asked the user how to get them.
+   * Nothing in this gate had ever attached a file.
+   *
+   * A PDF is generated here with a registration number that exists nowhere
+   * else, attached through the composer's real file input, and the ask is a
+   * page that must SHOW that number. The number can only come from the PDF,
+   * so its presence in the rendered preview proves the whole path: intake,
+   * request, server extraction, the model's context, the build. A reply that
+   * asks for the document, or a page without the number, fails by name.
+   */
+  const newChatForDocument = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForDocument, 'New Chat control is missing after the business-tool transaction.', 15_000);
+  await newChatForDocument.click();
+
+  const documentStartedAt = Date.now();
+  markActiveTransaction('document-grounded');
+  await setGoldenTransaction('document-grounded');
+  const REGISTRATION_NUMBER = `RKV-${String(Date.now()).slice(-6)}-GLD`;
+  const bylawsPdf = buildMinimalPdf(
+    `Ramakrishna Venuzia Owners Welfare Association. Registered society. Registration number ${REGISTRATION_NUMBER}. `
+    + 'Annual general meeting every March. Maintenance dues are payable quarterly.',
+  );
+  const fileInput = page.locator('.app-shell--studio input[type="file"]').first();
+  await fileInput.setInputFiles({ name: 'rkv-bylaws.pdf', mimeType: 'application/pdf', buffer: bylawsPdf });
+  const chip = page.locator('[data-quantora-attachment-chip="rkv-bylaws.pdf"]').first();
+  await visible(chip, 'The composer never showed the attached PDF as a chip.', 10_000);
+  const chipKind = await chip.getAttribute('data-quantora-attachment-kind');
+  if (chipKind !== 'document') {
+    throw new Error(`The composer took the PDF as "${chipKind}", not as a document — it would be dropped at send. Page state: ${await recordPageState()}`);
+  }
+  /*
+   * The ask takes the same shape as calculator, simple-website and
+   * business-tool, and for the same reason: setGoldenTransaction arms two
+   * contracts on the turn it precedes — the server validator owes files and
+   * forbids an intake move, and the desk refuses any non-empty VFS that is not
+   * a React/VFS project. This transaction's first run asked for "a single-file
+   * HTML page" with the canary armed; the model obeyed, and the desk failed the
+   * page by construction ("did not satisfy the React/VFS project runtime
+   * contract"). The two must agree, and deployed-gate-contract.test.js holds
+   * every armed transaction to it. The attach → question → build handoff, where
+   * the desk carries documents across turns, is proven deterministically by
+   * scripts/attachments-browser-gate.mjs; this transaction proves the document
+   * reaches the REAL model.
+   */
+  await prompt.fill('Create a small React information page for the association named in the attached bylaws PDF. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render an h1 with the association\'s exact name as written in the document and a paragraph with data-testid="reg-no" whose text is the registration number exactly as it appears in the document. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
+  await prompt.press('Enter');
+
+  // The desk says so at send time, before any model turn, so it is checked first.
+  await page.waitForTimeout(1_000);
+  const headsUp = page.locator('[data-quantora-assistant-prose]', { hasText: /could not send/i }).first();
+  if (await headsUp.isVisible().catch(() => false)) {
+    throw new Error(`The desk dropped the attached PDF before sending — the 2026-09-05 defect is back. Page state: ${await recordPageState()}`);
+  }
+
+  /*
+   * Say which half. A turn that asked for the document instead of building
+   * means the PDF's text never reached the model, and the desk's own account
+   * of what it read (data-quantora-document-reads) separates "never sent"
+   * from "sent, but unreadable".
+   */
+  const documentDiagnosis = async (why) => {
+    const state = /Page state:/.test(why) ? '' : ` Page state: ${await recordPageState()}`;
+    const snapshot = evidence.pageState || {};
+    // A request for the file, not a mention of it: a build reply that says
+    // "based on the attached document" must not read as the model asking.
+    const asked = /\b(?:attach|upload|send|share|paste|provide)\b[^.]{0,60}\b(?:document|file|pdf|bylaws)\b|\b(?:document|file|pdf|attachment)\b[^.]{0,40}\b(?:didn't|did not|never|hasn't|has not)\b[^.]{0,30}\b(?:come through|arrive|receive|reach|attach)|\bcould(?:n't| not) (?:find|see|read|access|open)\b[^.]{0,40}\b(?:document|file|pdf|attachment)\b/i
+      .test(String(snapshot.lastAssistantText || ''));
+    return (asked
+      ? 'The model asked for the document instead of building from it — the attached PDF\'s text did not reach the model. '
+      : '')
+      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. ${why}${state}`;
+  };
+  let documentCorrelationId;
+  try {
+    documentCorrelationId = await correlationForPreview(toolCorrelationId);
+  } catch (error) {
+    throw new Error(await documentDiagnosis(error?.message || String(error)));
+  }
+  markActiveTransaction('document-grounded', documentCorrelationId);
+
+  const documentFrame = await frameWith('[data-testid="reg-no"]');
+  if (!documentFrame) {
+    throw new Error(await documentDiagnosis('The document-grounded page compiled but never rendered its data-testid="reg-no" element.'));
+  }
+  const shown = (await documentFrame.locator('[data-testid="reg-no"]').first().innerText()).trim();
+  if (!shown.includes(REGISTRATION_NUMBER)) {
+    throw new Error(
+      `The page rendered but its registration number is "${shown}", not the ${REGISTRATION_NUMBER} that exists only in the attached PDF — `
+      + `the model built without reading the document. Page state: ${await recordPageState()}`,
+    );
+  }
+  await recordInteraction(documentCorrelationId, 'document-grounded');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-document-grounded.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'document-grounded',
+    correlationId: documentCorrelationId,
+    rendered: true,
+    groundedFact: true,
+    registrationNumber: REGISTRATION_NUMBER,
+    durationMs: Date.now() - documentStartedAt,
   });
   delete evidence.activeTransaction;
 

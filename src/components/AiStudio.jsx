@@ -1,4 +1,5 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { attachmentKindForFile, MAX_DOCUMENT_FILE_BYTES, MAX_IMAGE_FILE_BYTES } from '../lib/chat-attachments.js';
 import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
@@ -1475,10 +1476,20 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     const newAttachments = await Promise.all(files.map((file) => new Promise((resolve) => {
+      /*
+       * Documents travel too. Until 2026-09-05 anything that was not an image
+       * was marked unsupported here and dropped at send with the words "(not a
+       * readable image)" — four association documents in one turn — and the
+       * model, told nothing, asked the user how to get them. The kind is decided
+       * in one place (chat-attachments.js) so this intake, the send path and
+       * the copy cannot disagree.
+       */
+      const kind = attachmentKindForFile(file);
       const base = {
         name: file.name,
         size: (file.size / 1024).toFixed(1) + ' KB',
-        type: file.type.includes('image') ? 'image' : 'file'
+        type: kind === 'unsupported' ? 'file' : kind,
+        mimeType: file.type || '',
       };
       /*
        * Carry WHY there is no dataUrl. Without it a 4MB photo arrived at the
@@ -1487,11 +1498,11 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
        * wrong and unactionable, when the true answer is "that one is too big,
        * send a smaller copy".
        */
-      if (!file.type.includes('image')) {
+      if (kind === 'unsupported') {
         resolve({ ...base, excludedReason: 'unsupported' });
         return;
       }
-      if (file.size > 3 * 1024 * 1024) {
+      if (file.size > (kind === 'image' ? MAX_IMAGE_FILE_BYTES : MAX_DOCUMENT_FILE_BYTES)) {
         resolve({ ...base, excludedReason: 'size' });
         return;
       }
@@ -2408,8 +2419,27 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                          */
                         data-quantora-reply-finish={msg.sender === 'ai' && msg.finish?.kind ? msg.finish.kind : undefined}
                         data-quantora-reply-finish-reason={msg.sender === 'ai' && msg.finish?.reason ? String(msg.finish.reason) : undefined}
+                        data-quantora-document-reads={msg.sender === 'ai' && Array.isArray(msg.documentReads) && msg.documentReads.length
+                          ? `${msg.documentReads.filter((item) => item && item.ok).length}/${msg.documentReads.length}`
+                          : undefined}
                         style={{ width: '100%', overflowX: 'hidden' }}
                       >
+                        {/*
+                          * What the server could and could not read of the attached
+                          * files, from its own account — so an unreadable scan is
+                          * named here instead of surfacing as a question from the
+                          * model about files it was never given.
+                          */}
+                        {msg.sender === 'ai' && Array.isArray(msg.documentReads) && msg.documentReads.some((item) => item && !item.ok) ? (
+                          <div
+                            data-quantora-document-note="true"
+                            style={{ fontSize: '0.8rem', color: subtextColor, padding: '8px 12px', marginBottom: '10px', borderRadius: '10px', background: isLight ? '#fff7ed' : 'rgba(249, 115, 22, 0.08)', border: '1px solid rgba(249, 115, 22, 0.3)' }}
+                          >
+                            {msg.documentReads.filter((item) => item && !item.ok).map((item) => (
+                              <div key={item.name}>Could not read <strong>{item.name}</strong>: {item.detail}</div>
+                            ))}
+                          </div>
+                        ) : null}
                         {studioDomain === 'education' && msg.sender === 'ai' ? (
                           <Suspense fallback={null}>
                           <StudyMarkdown
@@ -4665,7 +4695,7 @@ Paused — ${autoPauseRef.current}.`
                   }}
                 >
                   {att.type === 'context' ? <Layers size={12} color="#8b5cf6" /> : att.type === 'image' ? <ImageIcon size={12} color="#f97316" /> : <FileText size={12} color="#0284c7" />}
-                  <span>{att.name}</span>
+                  <span data-quantora-attachment-chip={att.name} data-quantora-attachment-kind={att.type}>{att.name}</span>
                   <X
                     size={12}
                     color="#ef4444"

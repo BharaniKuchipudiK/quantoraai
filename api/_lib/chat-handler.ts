@@ -8,6 +8,7 @@ import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
 import { fetchApiGatewayKey } from "../autocomplete.js";
 import { classifyFinish, finishFromGemini, finishFromOpenRouter, truncatedArtifactError, type StreamFinish } from "./stream-finish.js";
+import { buildAttachedDocumentsBlock, readAttachedDocuments, summarizeAttachmentReads } from "./attachment-text.js";
 import { ledgerOutcomeFor } from "./model-quality-outcome.js";
 import { readByokCredentials } from "./byok-credentials.js";
 import { resolveOpenRouterEnvKey } from "./openrouter-key.js";
@@ -546,6 +547,7 @@ export default async function handler(req: any, res: any) {
       sessionContext: normalizedSessionContext,
       listeningSignals: normalizedListeningSignals,
       attachedImages: visionImages,
+      attachedDocuments,
       choiceSelected,
       buildMode,
       guidedBuild,
@@ -561,13 +563,24 @@ export default async function handler(req: any, res: any) {
         studioDomain: normalizedStudioDomain,
       })));
     const advisorTurn = advisorBlocksPreviewBuild(normalizedStudioDomain);
+    /*
+     * DOCUMENTS ARE READ HERE, ONCE, FOR EVERY ROUTE. Until 2026-09-05 the
+     * browser dropped anything that was not an image and the model — told
+     * nothing about files it never received — asked the user how to get them.
+     * The extracted text is appended to what the MODEL sees; `message` itself
+     * stays the user's words for intent, refine and policy decisions.
+     */
+    const documentReads = attachedDocuments.length ? await readAttachedDocuments(attachedDocuments) : [];
+    const attachedDocumentsBlock = buildAttachedDocumentsBlock(documentReads);
+    const attachmentSummary = summarizeAttachmentReads(documentReads);
+    const messageForModel = attachedDocumentsBlock ? `${message}\n\n${attachedDocumentsBlock}` : message;
     const previewCode = advisorTurn
       ? ""
       : (typeof req.body?.previewCode === "string" ? req.body.previewCode.trim().slice(0, 80_000) : "");
     const deskContext = advisorTurn ? null : sanitizeDeskContext(req.body?.deskContext);
     const deskBlock = formatDeskContextForPrompt(deskContext);
     const refineUserMessage = [
-      message,
+      messageForModel,
       deskBlock,
       previewCode
         ? `CURRENT RUNNING PREVIEW (source of truth — patch one existing file with filepath=, or return the full HTML document in a \`\`\`html block after a short explanation; do not claim a change unless the fenced file contains it):\n\`\`\`html\n${previewCode}\n\`\`\``
@@ -1748,6 +1761,7 @@ export default async function handler(req: any, res: any) {
         },
         conversation: conversationMetadata(fullReply, fullReplyFinish),
         finish: fullReplyFinish,
+        attachments: attachmentSummary,
         ...(travelDegraded ? { travelDegraded: true } : {}),
       });
       traceBoundary({
@@ -1798,7 +1812,7 @@ export default async function handler(req: any, res: any) {
 - You cannot read CI log contents, only their URLs, and you cannot read arbitrary files at a commit. Say so rather than guessing what a log contains.
 ` : '';
       const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona;
-      const contents = buildGeminiContents(boundedHistory, message, visionImages);
+      const contents = buildGeminiContents(boundedHistory, messageForModel, visionImages);
       let fullReply = '';
       let legacyFinishReason: string | null = null;
       const sources: Array<{ uri: string; title: string }> = [];
@@ -2028,6 +2042,7 @@ export default async function handler(req: any, res: any) {
         requestId,
         correlationId,
         finish: legacyFinish,
+        attachments: attachmentSummary,
         liveConnected: true,
         grounded: grounding && sources.length > 0,
         fallbackUsed: modelFallbackUsed,
@@ -2146,6 +2161,7 @@ export default async function handler(req: any, res: any) {
       requestId,
       correlationId,
       finish: refineFinish,
+      attachments: attachmentSummary,
       liveConnected: true,
       fallbackUsed: modelFallbackUsed,
       conversation: conversationMetadata(fullReply, refineFinish),
