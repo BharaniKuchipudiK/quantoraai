@@ -723,6 +723,102 @@ export function recordModelQualityEvent(entry: {
   });
 }
 
+/*
+ * What happened under one reference id, kept past the life of the function
+ * that logged it. Operational fields only — a boundary, a state, an engine, a
+ * status — plus the owner's sub so the person holding the reference can read
+ * it back. No prompt, no reply, no key.
+ */
+export type BoundaryEventRecord = {
+  correlationId: string;
+  boundary: string;
+  state: string;
+  transaction?: string | null;
+  route?: string | null;
+  modelId?: string | null;
+  gateway?: string | null;
+  upstreamProvider?: string | null;
+  failureDomain?: string | null;
+  quotaDomain?: string | null;
+  costClass?: string | null;
+  health?: string | null;
+  circuit?: string | null;
+  durationMs?: number | null;
+  budgetMs?: number | null;
+  statusCode?: number | null;
+  fileCount?: number | null;
+  detailCode?: string | null;
+  userSub?: string | null;
+  at?: string | null;
+};
+
+const BOUNDARY_EVENT_COLUMNS = "id,correlation_id,boundary,state,transaction,route,model_id,gateway,upstream_provider,failure_domain,quota_domain,cost_class,health,circuit,duration_ms,budget_ms,status_code,file_count,detail_code,user_sub,created_at";
+
+export function recordBoundaryEvent(event: BoundaryEventRecord): void {
+  void request("transaction_boundary_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      correlation_id: event.correlationId,
+      boundary: event.boundary,
+      state: event.state,
+      transaction: event.transaction ?? null,
+      route: event.route ?? null,
+      model_id: event.modelId ?? null,
+      gateway: event.gateway ?? null,
+      upstream_provider: event.upstreamProvider ?? null,
+      failure_domain: event.failureDomain ?? null,
+      quota_domain: event.quotaDomain ?? null,
+      cost_class: event.costClass ?? null,
+      health: event.health ?? null,
+      circuit: event.circuit ?? null,
+      duration_ms: event.durationMs ?? null,
+      budget_ms: event.budgetMs ?? null,
+      status_code: event.statusCode ?? null,
+      file_count: event.fileCount ?? null,
+      detail_code: event.detailCode ?? null,
+      user_sub: event.userSub ?? null,
+    }]),
+  });
+}
+
+/**
+ * Every event kept under one reference, oldest first. `null` means the store
+ * did not answer (unconfigured or unreachable) — which is a different fact
+ * from an empty record, and the lookup says which.
+ */
+export async function readBoundaryEvents(correlationId: string, limit = 200): Promise<BoundaryEventRecord[] | null> {
+  const res = await request(
+    `transaction_boundary_events?select=${BOUNDARY_EVENT_COLUMNS}&correlation_id=eq.${encodeURIComponent(correlationId)}&order=created_at.asc,id.asc&limit=${Math.max(1, Math.min(500, limit))}`,
+    { method: "GET" },
+  );
+  if (!res) return null;
+  const rows = await res.json().catch(() => null);
+  if (!Array.isArray(rows)) return null;
+  return rows.map((row: any) => ({
+    correlationId: String(row.correlation_id || ""),
+    boundary: String(row.boundary || ""),
+    state: String(row.state || ""),
+    transaction: row.transaction ?? null,
+    route: row.route ?? null,
+    modelId: row.model_id ?? null,
+    gateway: row.gateway ?? null,
+    upstreamProvider: row.upstream_provider ?? null,
+    failureDomain: row.failure_domain ?? null,
+    quotaDomain: row.quota_domain ?? null,
+    costClass: row.cost_class ?? null,
+    health: row.health ?? null,
+    circuit: row.circuit ?? null,
+    durationMs: row.duration_ms ?? null,
+    budgetMs: row.budget_ms ?? null,
+    statusCode: row.status_code ?? null,
+    fileCount: row.file_count ?? null,
+    detailCode: row.detail_code ?? null,
+    userSub: row.user_sub ?? null,
+    at: row.created_at ?? null,
+  }));
+}
+
 /* Real counts for the admin dashboard, replacing fabricated values. */
 export async function getGrowthSummary(): Promise<{
   totalUsers: number; newUsers7d: number; activeUsers7d: number;

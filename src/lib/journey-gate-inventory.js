@@ -862,16 +862,22 @@ export const JOURNEYS = Object.freeze([
   journey({
     id: 'turn-reference-id',
     area: 'other surfaces',
-    name: 'A turn leaves a reference id and its product events behind',
+    name: 'A turn leaves a reference id, and a failed turn\'s reference resolves to what happened',
     entry: 'src/lib/transaction-trace.js',
     hooks: ['data-quantora-correlation-id'],
     serves: ['api/_lib/transaction-trace.ts', 'api/_lib/handlers/product-event.ts'],
     gates: {
-      deterministic: ['src/lib/transaction-trace.test.js', 'api/_lib/transaction-trace.test.ts', 'src/lib/listening-layer.test.js'],
-      browser: ['scripts/second-transaction-browser-gate.mjs'],
+      deterministic: [
+        'src/lib/transaction-trace.test.js',
+        'api/_lib/transaction-trace.test.ts',
+        'src/lib/listening-layer.test.js',
+        'shared/trace-story.test.js',
+        'src/lib/trace-lookup.test.js',
+      ],
+      browser: ['scripts/second-transaction-browser-gate.mjs', 'scripts/trace-lookup-browser-gate.mjs'],
       deployed: ['golden:calculator'],
     },
-    note: 'The id is proven to exist and to travel with the turn. Resolving it to what happened is not on main yet.',
+    note: 'The lookup needs the transaction_boundary_events migration applied on the deployment; until then the desk says the trace store did not answer.',
   }),
 
   // ── platform invariants: not journeys, but every journey stands on them ──

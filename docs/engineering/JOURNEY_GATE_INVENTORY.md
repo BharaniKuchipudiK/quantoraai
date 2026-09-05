@@ -131,7 +131,7 @@ Floors that may only rise: proven ≥ 28, on the deployment ≥ 11. The gate fai
 | `admin-dashboard` | Admin: metrics, analytics, feedback triage and the model dashboard | no | `model-dashboard-ranking.test.js`, `model-lifecycle.test.js`, `model-store.test.js` | — | — | helpers only |
 | `isolated-desk-route` | Open the desk at its own address after signing in | no | `studio-isolation.test.js` | — | — | helpers only |
 | `desktop-app` | Desktop app: open a folder, edit, run a shell, use git, chat, sign out | no | `git.test.ts`, `shell.test.ts`, `workspace-policy.test.ts`, `api-proxy-policy.test.ts` | `desktop-smoke-gate.mjs` | — | proven |
-| `turn-reference-id` | A turn leaves a reference id and its product events behind | no | `transaction-trace.test.js`, `transaction-trace.test.ts`, `listening-layer.test.js` | `second-transaction-browser-gate.mjs` | `golden:calculator` | proven |
+| `turn-reference-id` | A turn leaves a reference id, and a failed turn's reference resolves to what happened | no | `transaction-trace.test.js`, `transaction-trace.test.ts`, `listening-layer.test.js`, `trace-story.test.js`, `trace-lookup.test.js` | `second-transaction-browser-gate.mjs`, `trace-lookup-browser-gate.mjs` | `golden:calculator` | proven |
 
 ## Platform invariants
 
