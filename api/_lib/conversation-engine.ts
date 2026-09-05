@@ -6,6 +6,7 @@ import { evaluateSafetyText } from "./safety-policy.js";
 import { shouldHonorGuidedBuild } from "../../shared/build-intent.js";
 import { formatPclNavigatorDirective, publicPclNavigatorMetadata } from "./pcl-navigator-adapter.js";
 import { evaluateProofOfDone } from "./outcome-contract.js";
+import { claimsCompletion } from "./completion-claim.js";
 
 export const CONVERSATION_POLICY_VERSION = "outcome-navigator-2026-08-19.3";
 
@@ -427,7 +428,13 @@ export function verifyConversationResponse(input: {
     issue(issues, "external_action_without_evidence", "failure");
   }
 
-  const claimsOutcomeDone = /(?:\b(?:i(?:'ve| have)|we(?:'ve| have))\s+(?:completed|finished)\b|\b(?:it|this|the (?:work|task|project|artifact|document|presentation|deck|site|website|app)|your (?:request|document|presentation|deck|site|website|app))\s+(?:is|has been)\s+(?:done|complete|completed|finished|ready)\b)/i.test(response);
+  /*
+   * The detector lives in completion-claim.ts and is MEASURED. The regex that
+   * used to sit here read 27% of real completion claims and falsely corrected
+   * 43% of the replies it did flag — including "I have finished reading the
+   * file you shared", which claims nothing about the work at all.
+   */
+  const claimsOutcomeDone = claimsCompletion(response);
   if (claimsOutcomeDone) {
     const proof = evaluateProofOfDone(input.snapshot);
     if (proof.status !== "verified") {
