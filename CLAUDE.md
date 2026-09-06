@@ -190,6 +190,7 @@ becomes safely more autonomous.
 | `node --test shared/trace-story.test.js` | a reference id whose account invents a cause the record does not prove — or blames the server for a request it never saw |
 | `node scripts/trace-lookup-browser-gate.mjs` | a failed turn whose reference is not the id the request carried, so no lookup could ever find it — or a "What happened?" that renders nothing |
 | `node --test api/_lib/preview-compiler.test.js` | a project the artifact contract accepts and the preview runtime refuses — a React 17 mount (`ReactDOM.render`) that dies on the React 19 runtime as "render is not a function", which a fallback engine shipped to production on 2026-09-05 |
+| `npm run test:journeys` | a user journey no gate exercises, printed as a number that may only rise — and a ledger that lies: a gate it names that does not exist or does not run, a muted CI step whose outcome nobody reads, a gate on disk that no journey claims |
 
 ### A tool description is a promise, and the model passes it on
 
@@ -240,6 +241,35 @@ way in the same afternoon:
 
 Self-healing cannot cover this class. Retries, circuit breakers and provider
 fallback all trigger on an **error**; a confidently wrong answer raises none.
+
+### Stable is a number
+
+Every gate above closes a class of defect. None of them said which of the
+platform's journeys had a gate at all, so on 2026-09-05 the attachments
+journey and the failed-turn reference — two things a user does every day —
+turned out never to have been exercised by anything, and both failed in a
+screenshot. Four journeys were guarded by the deployed golden; the platform
+has dozens.
+
+`src/lib/journey-gate-inventory.js` is the ledger: every user journey, the
+gates that exercise it at each level (deterministic, browser, deployed), and
+the floor the proven count may not fall below. `npm run test:journeys` proves
+the ledger is true in both directions — a gate it names must exist and run in
+CI, a gate on disk must be claimed by a journey, a muted CI step must have its
+outcome read — and prints the number last (today's):
+
+```
+JOURNEY COVERAGE | proven 28/56 (50%) | helpers only 23 | nothing 5 | on the deployment 11
+```
+
+**Proven** means a browser or deployed gate drove the journey itself.
+**Helpers only** means the functions behind it are tested and the journey has
+never been exercised — where the attachments path sat on the day it dropped
+four files. The generated `docs/engineering/JOURNEY_GATE_INVENTORY.md` names
+the unproven journeys; that list is the work. Built a journey? Add the row,
+gates or not — an unlisted journey is the one that fails in a screenshot.
+Added a gate? Name its journey, raise the floor, regenerate the doc. The
+floor is checked in both directions, so the number in the file is the number.
 
 Run `npm run test:all` before pushing. If you add a class of defect to this
 repo's history, add the gate that closes it in the same PR.
