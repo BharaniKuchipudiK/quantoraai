@@ -1009,9 +1009,11 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/model-execution-policy.test.ts',
         'api/_lib/server-key-resolution.test.ts',
         'src/lib/model-outcome-routing.test.js',
+        'scripts/provider-health.test.mjs',
       ],
+      deployed: ['scripts/provider-health-probe.mjs'],
     },
-    note: 'server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
+    note: 'The provider watch (2026-09-06): every half hour the production deployment\'s readiness, live Gemini probe and free OpenRouter credential probe are read and judged; a missing, refused, capped, exhausted or unreachable provider fails the scheduled run, which is what GitHub emails the owner about. server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
   }),
   journey({
     id: 'gates-anchored',

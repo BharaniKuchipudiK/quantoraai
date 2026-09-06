@@ -392,6 +392,56 @@ test("Office generation resolves Gemini through the gateway when the environment
   assert.match(String(state.body?.detail || ""), /^gemini: /);
 });
 
+test("the OpenRouter probe answers the golden canary when it spends nothing, and refuses it when generation would cost", async () => {
+  const saved = {
+    token: process.env.QUANTORA_GOLDEN_CANARY_TOKEN,
+    openRouter: process.env.OPENROUTER_API_KEY,
+  };
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-probe-test-0001";
+  process.env.OPENROUTER_API_KEY = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  global.fetch = async (url: any) => {
+    reached.push(String(url));
+    if (String(url).startsWith(String(process.env.SUPABASE_URL))) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url) === "https://openrouter.ai/api/v1/auth/key") {
+      return new Response(JSON.stringify({ data: { label: "probe", usage: 1.5, limit: 10, is_free_tier: false } }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`offline: ${String(url)} is not reachable in this test`);
+  };
+  // /api/inference-health rides on the domains function, not on pipeline (api/domains.ts).
+  const canary = { "x-quantora-golden-canary": "golden-canary-token-for-the-probe-test-0001" };
+  try {
+    const free = responseHarness();
+    await domains({
+      method: "GET", headers: canary, socket: {},
+      query: { route: "inference-health", probe: "openrouter", generate: "0" },
+    }, free.res);
+    assert.equal(free.state.status, 200, `the free probe was refused: ${JSON.stringify(free.state.body)}`);
+    assert.equal(free.state.body?.probe, "openrouter");
+    assert.equal(free.state.body?.auth?.ok, true, `the probe did not reach /auth/key: ${JSON.stringify(free.state.body)}`);
+    assert.equal(free.state.body?.auth?.remaining, 8.5);
+
+    const paid = responseHarness();
+    await domains({
+      method: "GET", headers: canary, socket: {},
+      query: { route: "inference-health", probe: "openrouter", generate: "1" },
+    }, paid.res);
+    assert.ok([401, 403].includes(Number(paid.state.status)), `generation must stay admin-only, got ${paid.state.status}`);
+    assert.ok(!reached.includes("https://openrouter.ai/api/v1/chat/completions"), "the canary must never reach a paid completion");
+  } finally {
+    global.fetch = originalFetch;
+    if (saved.token === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = saved.token;
+    if (saved.openRouter === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = saved.openRouter;
+  }
+});
+
 test("chat ignores BYOK keys placed in the JSON body", async () => {
   const { state, res } = responseHarness();
   await chat({
