@@ -268,3 +268,14 @@ test('an unfamiliar format is offered as a hint only when Google actually refuse
   assert.match(verdict, /Google rejected the key/);
   assert.match(verdict, /hint, not proof/);
 });
+
+test('a spend cap at the model list is named as billing, not as a rejected key (2026-09-06)', () => {
+  const key = describeKeyShape('AIzaSyREALKEY0001', 'env');
+  const capped = { attempted: true, ok: false, status: 403, models: [], totalListed: 0, error: 'Spend cap breached for project: projects/1053456406059 for service: generativelanguage.googleapis.com. Correlation id: 6', ms: 90 };
+  const none = { attempted: false, ok: false, status: null, model: null, chars: 0, chunks: 0, finishReason: null, blockReason: null, error: null, ms: 0 };
+  const verdict = verdictFor(key, capped, none);
+  assert.match(verdict, /spend cap/i);
+  assert.match(verdict, /billing/);
+  assert.match(verdict, /named the project/);
+  assert.doesNotMatch(verdict, /not billing|wrong secret|rejected the key/);
+});

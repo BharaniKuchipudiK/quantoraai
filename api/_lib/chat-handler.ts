@@ -51,7 +51,7 @@ import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilien
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { describeCredentialFailure, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -1137,6 +1137,8 @@ export default async function handler(req: any, res: any) {
     // and a Gemini credential exists. Otherwise fall through to text routes.
     let travelToolsEnabled = wantTravelTools && !travelToolsDeferred && Boolean(effectiveGeminiKey);
     let travelDegraded = wantTravelTools && !travelToolsEnabled;
+    // Set once a tools turn has been re-planned as text on the other gateway (see geminiTurn below).
+    let degradedAfterRefusal = false;
     /*
      * The model's GitHub tools, on the signed-in user's own connection.
      *
@@ -1644,6 +1646,10 @@ export default async function handler(req: any, res: any) {
           break;
         } catch (error: any) {
           lastRouteError = error;
+          // The engine that refused rides on the error, so the sentence the
+          // user reads names it and not the model they asked for (Auto is
+          // nobody's id). A plain string error has nowhere to carry it.
+          if (error && typeof error === 'object' && !error.gateway) error.gateway = route.gateway;
           // This rung ran and did not deliver. A Set because the HTML-recovery
           // path below re-runs the same route.
           spentEngineIds.add(route.id);
@@ -1781,7 +1787,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    if (attempts[0].provider === 'gemini') {
+    geminiTurn: if (attempts[0].provider === 'gemini') {
       if (!effectiveGeminiKey) {
         return res.status(401).json({ error: "No Google Gemini API key configured.", requiresKey: "gemini" });
       }
@@ -1870,6 +1876,7 @@ export default async function handler(req: any, res: any) {
             break;
           } catch (error) {
             lastOpenError = error;
+            if (error && typeof error === 'object' && !(error as any).gateway) (error as any).gateway = 'gemini';
             if (
               sse.isCommitted
               || index >= candidateAttempts.length - 1
@@ -1880,7 +1887,61 @@ export default async function handler(req: any, res: any) {
             ) throw error;
           }
         }
-        if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
+        if (!stream) {
+          /*
+           * DEGRADE, DO NOT DIE (2026-09-06). Every Gemini candidate refused
+           * (see shouldDegradeToolsTurn for which refusals count). On the day
+           * Google refused the project's spend cap, a Travel turn died here
+           * with a credential error while OpenRouter was planned, usable and
+           * proven on the same deployment. Re-plan text-only routes on the
+           * other gateway, tell the model its live tools are off, and leave
+           * this branch for the OpenRouter path below — whose attempts are
+           * derived from `attempts`, so the re-plan is what it runs.
+           */
+          if (shouldDegradeToolsTurn({
+            error: lastOpenError,
+            openRouterUsable,
+            committed: sse.isCommitted,
+            alreadyDegraded: degradedAfterRefusal,
+          })) {
+            const textOnly = await planInferenceRoutes({
+              primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
+              fallbackModelIds: modelRouting?.fallbackModelIds || [],
+              models: routePlanningModels,
+              paidLastResortAllowed: paidVerdict.allowed,
+              requiredCapabilities: [...textCapabilities],
+              geminiAvailable: false,
+              openRouterAvailable: openRouterUsable,
+              geminiCredentialScope: userKey ? 'user' : 'server',
+              openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+              geminiCredentialPartition: credentialCircuitPartition(userKey),
+              openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+              requestPartition: correlationId,
+              circuitStore: providerCircuitStore,
+            });
+            const openRouterOnly = textOnly.filter((route) => route.provider === 'openrouter');
+            if (openRouterOnly.length) {
+              degradedAfterRefusal = true;
+              travelToolsEnabled = false;
+              if (wantTravelTools) {
+                travelDegraded = true;
+                finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
+              }
+              trace({
+                correlationId,
+                boundary: 'inference.provider',
+                state: 'degraded',
+                transaction,
+                modelId: usedModel,
+                gateway: 'gemini',
+                detailCode: 'tools-gateway-refused-text-fallback',
+              });
+              attempts = openRouterOnly;
+              break geminiTurn;
+            }
+          }
+          throw lastOpenError || new Error('Gemini did not return a stream.');
+        }
 
         const iterator = stream[Symbol.asyncIterator]();
         let signedFunctionTurn: ReturnType<typeof extractSignedFunctionTurn> = null;
@@ -2107,6 +2168,7 @@ export default async function handler(req: any, res: any) {
         break;
       } catch (error) {
         lastError = error;
+        if (error && typeof error === 'object' && !(error as any).gateway) (error as any).gateway = 'openrouter';
         if (
           index >= openRouterAttempts.length - 1
           || !shouldFallbackBeforeStreaming(error, {
@@ -2223,7 +2285,7 @@ export default async function handler(req: any, res: any) {
       // Names the provider and separates an empty balance from a bad key. The
       // old sentence did neither, and sent somebody to re-issue a Gemini key
       // that its own dashboard showed working at 100% success.
-      ? describeCredentialFailure(err, req.body?.modelId)
+      ? describeCredentialFailure(err, req.body?.modelId, err?.gateway)
       : quotaExhausted
       /*
        * "Retry in a moment" is false when the quota is spent — retrying just
@@ -2242,7 +2304,10 @@ export default async function handler(req: any, res: any) {
         // Which contract clause, not merely that one failed.
         ...(err?.detailCode ? { detailCode: err.detailCode } : {}),
         retryable: retryableProviderFailure || artifactContractFailure,
-        provider: req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter',
+        // The gateway that actually failed when a route ran; the requested id only before any did.
+        provider: err?.gateway === 'gemini' || err?.gateway === 'openrouter'
+          ? err.gateway
+          : (req.body?.modelId?.startsWith('gemini') ? 'gemini' : 'openrouter'),
         requestId,
         correlationId,
         spentEngineIds: [...spentEngineIds],

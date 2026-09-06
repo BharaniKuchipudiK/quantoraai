@@ -365,6 +365,16 @@ export function verdictFor(key: GeminiKeyShape, list: GeminiListResult, generate
     const shapeHint = key.matchesKnownKeyFormat
       ? ''
       : ` The key also does not match any Google key format this probe knows (${key.length} chars ending ${key.last4}), so the wrong secret in the right variable is worth ruling out — though that pattern is a hint, not proof.`;
+    /*
+     * A spend cap is billing, whatever the status code says. On 2026-09-06 the
+     * list call answered "HTTP 403: Spend cap breached for project: projects/…"
+     * and the sentence below called it "not billing", sending the operator to
+     * the key page while the balance sat at $0 against the cap. Google named
+     * the project, so the key is recognised; the remedy is the billing page.
+     */
+    if (/\bspend cap (?:breached|exceeded|reached)\b/i.test(String(list.error || ''))) {
+      return `Google refused this project's spend cap at the model list (HTTP ${list.status}: ${list.error}). The key is recognised — Google named the project — so this is the project's billing cap, not the credential and not the code. Raise the cap or add credit on the Gemini API billing page; the same key then works.`;
+    }
     if (list.status === 400 || list.status === 403) {
       return `Google rejected the key when merely listing models (HTTP ${list.status}: ${list.error}). Listing consumes no quota, so this is the credential or the project — not billing and not the code.${shapeHint}`;
     }

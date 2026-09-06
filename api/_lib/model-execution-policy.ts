@@ -31,6 +31,10 @@ function providerOf(modelId: string): 'gemini' | 'openrouter' {
   return modelId.startsWith('gemini') ? 'gemini' : 'openrouter';
 }
 
+function normalizeGateway(value: unknown): 'gemini' | 'openrouter' | null {
+  return value === 'gemini' || value === 'openrouter' ? value : null;
+}
+
 /**
  * The provider REJECTED the credential (401/403) or refused it for billing (402).
  * This is not a transient condition: every retry fails identically until a human
@@ -63,7 +67,25 @@ export function isOutOfCredit(error: unknown) {
   const status = Number((error as any)?.status || 0);
   if (status === 402) return true;
   const message = String((error as any)?.message || error || '');
-  return /\b(payment required|insufficient (?:credits?|balance|funds)|out of credits?|quota exceeded for your plan)\b/i.test(message);
+  return /\b(payment required|insufficient (?:credits?|balance|funds)|out of credits?|quota exceeded for your plan)\b/i.test(message)
+    || isSpendCapBreach(error);
+}
+
+/**
+ * A SPEND CAP IS BILLING, AND GOOGLE SAYS SO WITH A 403.
+ *
+ * On 2026-09-06 Google answered every Gemini call for the production project
+ * with "HTTP 403: Spend cap breached for project: projects/… for service:
+ * generativelanguage.googleapis.com". A 403 is grouped with the rejected-key
+ * statuses, so the founder was told the credential itself had been rejected
+ * and to check the key — while the project page showed the key working and a
+ * $0 balance against a monthly cap. Google named the project in the refusal:
+ * a key it did not recognise could not have been mapped to one. The remedy is
+ * the billing page, and nothing on the key page changes anything.
+ */
+export function isSpendCapBreach(error: unknown) {
+  const message = String((error as any)?.message || (error as any)?.error || error || '');
+  return /\bspend cap (?:breached|exceeded|reached)\b/i.test(message);
 }
 
 /**
@@ -73,12 +95,32 @@ export function isOutOfCredit(error: unknown) {
  * text, so the user was left to guess between their providers — and guessed
  * wrong, because the one named nowhere is the one that failed.
  */
-export function describeCredentialFailure(error: unknown, modelId?: string) {
-  const provider = providerOf(String(modelId || ''));
+export function describeCredentialFailure(error: unknown, modelId?: string, gateway?: unknown) {
+  /*
+   * THE ENGINE THAT REFUSED, NOT THE ENGINE THAT WAS ASKED FOR.
+   *
+   * The provider used to be read off the requested model id. "Auto" is not a
+   * Gemini id, so on 2026-09-06 a turn that Gemini refused (spend cap, 403)
+   * was reported as "OpenRouter rejected the credential itself" — the one
+   * engine that had NOT failed, on a production deployment whose OpenRouter
+   * key the golden had just proven working. The route loop now stamps the
+   * gateway that actually answered onto the error; the model id is only the
+   * fallback for errors raised before any route ran.
+   */
+  const stamped = normalizeGateway(gateway) || normalizeGateway((error as any)?.gateway);
+  const provider = stamped || providerOf(String(modelId || ''));
   const name = provider === 'gemini' ? 'Google Gemini' : 'OpenRouter';
   const where = provider === 'gemini'
     ? 'GEMINI_API_KEY'
     : 'OPENROUTER_API_KEY';
+
+  if (isSpendCapBreach(error)) {
+    const status = Number((error as any)?.status || 0) || 403;
+    return `${name} refused this turn because the project's spend cap is breached (HTTP ${status}) — `
+      + `billing, not a bad key. ${name} named the project in its refusal, so the credential is recognised. `
+      + `Raise the cap or add credit on the ${name} billing page — re-issuing the key will change nothing. `
+      + `Other providers are unaffected.`;
+  }
 
   if (isOutOfCredit(error)) {
     return `${name} refused this turn for billing, not for a bad key (HTTP 402). `
@@ -93,6 +135,34 @@ export function describeCredentialFailure(error: unknown, modelId?: string) {
     + `Privacy Vault → Session-only provider keys. A key showing "Last Used: Never" `
     + `on the ${name} dashboard has never been accepted. `
     + `Providers other than ${name} are unaffected.`;
+}
+
+/**
+ * DEGRADE, DO NOT DIE (2026-09-06).
+ *
+ * A Travel turn runs its live tools on Gemini and nothing else. When Google
+ * refused the production project's spend cap, every such turn had nowhere to
+ * go and the user read a credential error — while OpenRouter, planned on the
+ * same deployment and proven by the golden minutes earlier, sat unused.
+ *
+ * A gateway that has refused THIS turn will refuse the retry too: 401, 402
+ * and 403 are the credential and its billing; 429 is its quota. Those four are
+ * the provider saying no in so many words (CLAUDE.md §5 — unambiguous
+ * evidence). A timeout or a 5xx is "we could not ask", and stays a plain
+ * failure. The other gateway can still answer in text, so the turn is
+ * re-planned there without the live tools — only before anything streamed,
+ * because a committed reply cannot be restarted on another engine, and only
+ * once, so two refusals cannot loop.
+ */
+export function shouldDegradeToolsTurn(input: {
+  error: unknown;
+  openRouterUsable: boolean;
+  committed: boolean;
+  alreadyDegraded: boolean;
+}): boolean {
+  if (input.committed || input.alreadyDegraded || !input.openRouterUsable) return false;
+  const status = Number((input.error as any)?.status || 0);
+  return status === 429 || isProviderCredentialRejection(input.error);
 }
 
 export function shouldFallbackBeforeStreaming(error: unknown, context?: FallbackContext) {

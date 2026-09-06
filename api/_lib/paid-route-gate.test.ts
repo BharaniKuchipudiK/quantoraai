@@ -268,6 +268,14 @@ test('the router reads the meter, not just the key', async () => {
     'presence is not validity — the meter has already answered by this point',
   );
   assert.match(handler, /gatewayDead !== true/, 'the plan must consult the meter fault');
-  const usableSites = handler.match(/openRouterAvailable: openRouterUsable/g) || [];
-  assert.equal(usableSites.length, 2, 'both planInferenceRoutes call sites, including the travel retry');
+  /*
+   * Every call site, not a fixed count: the third site arrived on 2026-09-06
+   * (a tools turn refused by Gemini re-plans text-only on OpenRouter), and a
+   * count of two would have failed the exact change that reads the meter
+   * correctly. The invariant is that no plan asks only whether a key exists.
+   */
+  const planSites = (handler.match(/await planInferenceRoutes\(\{/g) || []).length;
+  const usableSites = (handler.match(/openRouterAvailable: openRouterUsable/g) || []).length;
+  assert.ok(planSites >= 2, 'at least the primary plan and the travel retry');
+  assert.equal(usableSites, planSites, `every planInferenceRoutes call site reads the meter (${planSites} sites: the primary plan, the travel retry, the refused-tools re-plan)`);
 });

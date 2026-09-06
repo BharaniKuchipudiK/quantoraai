@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeCredentialFailure, isOutOfCredit, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { readFileSync } from 'node:fs';
+import { describeCredentialFailure, isOutOfCredit, isProviderCredentialRejection, isSpendCapBreach, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 
 test('retryable provider failures include endpoint loss and quota exhaustion before streaming', () => {
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('quota exceeded'), { status: 429 })), true);
@@ -106,4 +107,79 @@ test('routing still treats all three as fatal for the credential', () => {
   for (const status of [401, 402, 403]) {
     assert.equal(isProviderCredentialRejection({ status }), true, `status ${status}`);
   }
+});
+
+/*
+ * 2026-09-06: Google answered every production Gemini call with "HTTP 403:
+ * Spend cap breached for project: projects/…". The founder's chat said
+ * "OpenRouter rejected the credential itself" — wrong engine (Auto is not a
+ * Gemini id) and wrong cause (a cap is billing, not a key).
+ */
+test('a Gemini spend cap is billing, not a rejected key, and the sentence says so', () => {
+  const spendCap = { status: 403, message: 'Spend cap breached for project: projects/1053456406059 for service: generativelanguage.googleapis.com. Correlation id: 6' };
+  assert.equal(isSpendCapBreach(spendCap), true);
+  assert.equal(isOutOfCredit(spendCap), true);
+  assert.equal(isOutOfCredit({ status: 403, message: 'API key not valid. Please pass a valid API key.' }), false, 'a plain 403 is still a rejected key');
+  const text = describeCredentialFailure(spendCap, 'auto', 'gemini');
+  assert.match(text, /Google Gemini/);
+  assert.match(text, /spend cap/i);
+  assert.match(text, /billing page/);
+  assert.match(text, /named the project/);
+  assert.doesNotMatch(text, /Last Used: Never|rejected the credential itself/, 'a recognised key must not be blamed');
+  assert.doesNotMatch(text, /OpenRouter/, 'the engine that did not fail must not be named');
+});
+
+test('the engine that refused is named, not the engine the requested model id implies', () => {
+  const stamped = describeCredentialFailure({ status: 403, gateway: 'gemini' }, 'auto');
+  assert.match(stamped, /Google Gemini/);
+  assert.doesNotMatch(stamped, /OPENROUTER_API_KEY/);
+  const explicit = describeCredentialFailure({ status: 401 }, 'gemini-flash-latest', 'openrouter');
+  assert.match(explicit, /OpenRouter/, 'an explicit gateway outranks the model id');
+  const unstamped = describeCredentialFailure({ status: 401 }, 'auto');
+  assert.match(unstamped, /OpenRouter/, 'with nothing stamped, the model id still decides');
+  const junk = describeCredentialFailure({ status: 401, gateway: 'stripe' }, 'gemini-flash-latest');
+  assert.match(junk, /Google Gemini/, 'an unknown gateway word is ignored, not trusted');
+});
+
+test('the chat handler stamps the failing route\'s gateway on the error and reads it back for the sentence', () => {
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /lastRouteError = error;\n[\s\S]{0,400}?error\.gateway = route\.gateway;/, 'the main route loop stamps the gateway');
+  assert.match(handler, /lastOpenError = error;\n[^\n]*\n?[^\n]*gateway = 'gemini'/, 'the Gemini candidate loop stamps gemini');
+  assert.match(handler, /lastError = error;\n[^\n]*gateway = 'openrouter'/, 'the OpenRouter loop stamps openrouter');
+  assert.match(handler, /describeCredentialFailure\(err, req\.body\?\.modelId, err\?\.gateway\)/, 'the sentence is given the stamped gateway');
+  assert.match(handler, /provider: err\?\.gateway === 'gemini' \|\| err\?\.gateway === 'openrouter'/, 'the SSE provider field too');
+});
+
+/*
+ * DEGRADE, DO NOT DIE (2026-09-06): a Travel turn whose Gemini candidates were
+ * all refused must run as text on OpenRouter instead of ending in a
+ * credential error, while OpenRouter is usable and nothing has streamed.
+ */
+test('a tools turn refused by its gateway degrades to text on the other gateway, once, before anything streamed', () => {
+  const base = { openRouterUsable: true, committed: false, alreadyDegraded: false };
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 403, message: 'Spend cap breached for project: projects/1' } }), true, 'a spend cap');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 401 } }), true, 'a rejected key');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 402 } }), true, 'an empty balance');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 429, message: 'Your prepayment credits are depleted' } }), true, 'exhausted quota');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 503 } }), false, 'a 5xx is "could not ask", not "told no"');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { name: 'AbortError', message: 'timed out' } }), false, 'a timeout neither');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 403 }, committed: true }), false, 'a committed reply cannot restart on another engine');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 403 }, alreadyDegraded: true }), false, 'once only');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: { status: 403 }, openRouterUsable: false }), false, 'nowhere to go');
+  assert.equal(shouldDegradeToolsTurn({ ...base, error: null }), false, 'no error, no refusal');
+});
+
+test('the chat handler leaves the Gemini tools branch for the OpenRouter path when its candidates are refused', () => {
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /geminiTurn: if \(attempts\[0\]\.provider === 'gemini'\) \{/, 'the Gemini tools branch is a labelled block that can be left');
+  const stopped = handler.indexOf('if (!stream) {');
+  assert.ok(stopped > 0, 'the no-stream case is a block, not a bare throw');
+  const block = handler.slice(stopped, handler.indexOf("throw lastOpenError || new Error('Gemini did not return a stream.');", stopped));
+  assert.match(block, /shouldDegradeToolsTurn\(\{\n\s*error: lastOpenError,\n\s*openRouterUsable,\n\s*committed: sse\.isCommitted,\n\s*alreadyDegraded: degradedAfterRefusal,/, 'the pure rule decides, from the last refusal and the SSE state');
+  assert.match(block, /geminiAvailable: false,\n\s*openRouterAvailable: openRouterUsable,/, 'the re-plan is text-only on OpenRouter');
+  assert.match(block, /travelToolsEnabled = false;/, 'the live tools are off for the rest of the turn');
+  assert.match(block, /finalSystemPrompt = finalSystemPromptBase \+ TRAVEL_DEGRADED_DIRECTIVE;/, 'and the model is told so');
+  assert.match(block, /attempts = openRouterOnly;\n\s*break geminiTurn;/, 'the OpenRouter path below runs the re-plan');
+  assert.match(handler, /const openRouterAttempts = attempts\.filter\(\(attempt\) => attempt\.provider === 'openrouter'\);/, 'which derives its attempts from `attempts`');
+  assert.match(handler, /\.\.\.\(travelDegraded \? \{ travelDegraded: true \} : \{\}\),\n\s*\}\);\n\s*return;\n\s*\}[\s\S]*$/, 'the OpenRouter completion still reports travelDegraded to the desk');
 });
