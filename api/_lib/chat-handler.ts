@@ -61,7 +61,7 @@ import {
   canonicalizeModelId,
   inferenceAttemptBudgetMs,
   MIN_VIABLE_BUILD_ATTEMPT_MS,
-  maxViableBuildAttempts,
+  maxViableBuildAttempts, trimBuildLadder,
   resolveTurnBudgetMs,
   planInferenceRoutes,
   recordInferenceRouteFailure,
@@ -1293,7 +1293,8 @@ export default async function handler(req: any, res: any) {
     // this turn's budget can actually fund at build size.
     if (effectiveBuildMode && attempts.length > 1) {
       const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, turnBudgetMs));
-      if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
+      // Independence beats depth: a trimmed ladder keeps one rung on the other gateway (2026-09-06).
+      if (attempts.length > fundable) attempts = trimBuildLadder(attempts, fundable);
     }
 
     if (!attempts.length) {

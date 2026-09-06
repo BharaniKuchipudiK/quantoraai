@@ -131,6 +131,35 @@ export function resolveTurnBudgetMs(requested: unknown, ceilingMs: number): numb
   return Math.min(ceilingMs, Math.floor(asked));
 }
 
+/**
+ * INDEPENDENCE BEATS DEPTH (2026-09-06).
+ *
+ * A build turn keeps only the rungs its budget can fund (MAX_BUILD_RUNGS,
+ * MIN_VIABLE_BUILD_ATTEMPT_MS). The trim used to keep the first N rungs, and
+ * with a Gemini model pinned the first two were both Gemini — so on the day
+ * Google refused the project's spend cap, a pinned Gemini Flash build was
+ * refused twice and the OpenRouter rung at the back of the ladder, the one
+ * that would have answered, had been cut for budget. Two rungs on one dead
+ * gateway are one rung.
+ *
+ * When the kept rungs all sit on one gateway and a dropped rung on the other
+ * gateway is not circuit-open, it takes the last kept slot. The primary is
+ * never displaced: the user's pin is honoured first, and only the second
+ * chance changes. With one fundable rung there is no second chance to give.
+ */
+export function trimBuildLadder(attempts: InferenceRoute[], fundable: number): InferenceRoute[] {
+  const keep = Math.max(1, Math.floor(fundable));
+  if (attempts.length <= keep) return attempts;
+  const kept = attempts.slice(0, keep);
+  const dropped = attempts.slice(keep);
+  const gateways = new Set(kept.map((route) => route.gateway));
+  if (keep < 2 || gateways.size > 1) return kept;
+  const [only] = [...gateways];
+  const independent = dropped.find((route) => route.gateway !== only && route.circuit !== 'open');
+  if (!independent) return kept;
+  return [...kept.slice(0, keep - 1), independent];
+}
+
 export function maxViableBuildAttempts(
   totalBudgetMs: number,
   minAttemptMs: number = MIN_VIABLE_BUILD_ATTEMPT_MS,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BILLING_RESET_MS, canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT_MS, maxViableBuildAttempts, planInferenceRoutes, recordInferenceRouteFailure, summarizeInferenceReadiness } from './inference-control-plane.js';
+import { BILLING_RESET_MS, canonicalizeModelId, inferenceAttemptBudgetMs, maxViableBuildAttempts, MIN_VIABLE_BUILD_ATTEMPT_MS, planInferenceRoutes, recordInferenceRouteFailure, summarizeInferenceReadiness, trimBuildLadder } from './inference-control-plane.js';
 
 test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
@@ -502,4 +502,39 @@ test('a billing refusal holds the whole route for thirty minutes; other failures
     ['gemini:server', 5 * 60_000],
   ], 'billing holds the route key, not the quota domain, whatever the status; the rest is unchanged');
   assert.ok(recorded.every((r) => r.failureThreshold === 2), 'the threshold is unchanged');
+});
+
+/*
+ * INDEPENDENCE BEATS DEPTH (2026-09-06). With a Gemini model pinned, a build's
+ * two fundable rungs were both Gemini; Google refused the spend cap twice and
+ * the OpenRouter rung that would have answered had been trimmed for budget.
+ */
+const rung = (id: string, gateway: 'gemini' | 'openrouter', circuit: 'closed' | 'open' = 'closed') => ({ id, gateway, provider: gateway, circuit } as any);
+
+test('BUILD trim: a ladder cut to one gateway keeps one rung on the other gateway in its last slot', () => {
+  const pinnedGemini = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter')];
+  assert.deepEqual(trimBuildLadder(pinnedGemini, 2).map((r) => r.id), ['gemini-flash-latest', 'deepseek/deepseek-chat'], 'the pin stays first; the second chance is on the other gateway');
+  const pinnedOpenRouter = [rung('deepseek/deepseek-chat', 'openrouter'), rung('nvidia/nemotron-3-super-120b-a12b:free', 'openrouter'), rung('gemini-flash-latest', 'gemini')];
+  assert.deepEqual(trimBuildLadder(pinnedOpenRouter, 2).map((r) => r.id), ['deepseek/deepseek-chat', 'gemini-flash-latest'], 'and the other way round');
+});
+
+test('BUILD trim: a ladder that already spans both gateways, or fits the budget, is untouched', () => {
+  const spanning = [rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter'), rung('gemini-flash-latest', 'gemini')];
+  assert.deepEqual(trimBuildLadder(spanning, 2).map((r) => r.id), ['gemini-flash-latest', 'deepseek/deepseek-chat']);
+  const short = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini')];
+  assert.equal(trimBuildLadder(short, 2), short, 'nothing to trim, nothing to swap');
+});
+
+test('BUILD trim: one fundable rung keeps the primary, and an open circuit is never swapped in', () => {
+  const pinnedGemini = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter')];
+  assert.deepEqual(trimBuildLadder(pinnedGemini, 1).map((r) => r.id), ['gemini-flash-latest'], 'no second chance to give');
+  const openOther = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter', 'open')];
+  assert.deepEqual(trimBuildLadder(openOther, 2).map((r) => r.id), ['gemini-flash-latest', 'gemini-flash-latest'], 'a dead rung is not independence');
+});
+
+test('the chat handler trims a build ladder through trimBuildLadder, never a bare slice', async () => {
+  const { readFileSync } = await import('node:fs');
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /if \(attempts\.length > fundable\) attempts = trimBuildLadder\(attempts, fundable\);/);
+  assert.doesNotMatch(handler, /attempts = attempts\.slice\(0, fundable\)/, 'the old trim kept two rungs on one dead gateway');
 });
