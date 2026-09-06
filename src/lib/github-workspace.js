@@ -13,6 +13,38 @@
 
 export const GITHUB_CONNECT_URL = '/api/auth/github/connect';
 
+/*
+ * A rejected token is not a failed action, and must not be shown as one.
+ *
+ * The server says "GitHub rejected your connected token. Reconnect your GitHub
+ * account in Quantora." — and the destination menu rendered that as inert red
+ * text, because `connection.connected` was still true. It was: the row exists
+ * and its sealed token decrypts. readGithubConnectionSummary never asks GitHub
+ * whether the token still WORKS, so the platform went on claiming a connection
+ * GitHub had already refused, while naming a remedy the panel gave no way to
+ * reach.
+ *
+ * That is the shape this repo has an incident for: copy that instructs and a
+ * surface that cannot obey. The string match is deliberately anchored on the
+ * server's own sentence rather than on "401" or "token", so an unrelated
+ * failure never offers a reconnect that would not have helped.
+ */
+const TOKEN_REJECTED = 'GitHub rejected your connected token';
+
+export function isGithubTokenRejected(message) {
+  return String(message || '').includes(TOKEN_REJECTED);
+}
+
+/** What to tell someone whose stored authorization GitHub no longer accepts. */
+export function githubReconnectPrompt() {
+  return {
+    title: 'GitHub rejected your saved authorization',
+    detail: 'It was revoked or it expired. Reconnecting takes a few seconds and keeps your work.',
+    action: 'Reconnect GitHub',
+    href: GITHUB_CONNECT_URL,
+  };
+}
+
 export const GITHUB_ENDPOINTS = Object.freeze({
   connection: '/api/github/connection',
   disconnect: '/api/github/disconnect',

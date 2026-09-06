@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  GITHUB_CONNECT_URL,
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
   checkStateLabel,
   githubConnectionNotice,
+  githubReconnectPrompt,
+  isGithubTokenRejected,
   mergeBlockedReason,
   pullRequestStateLabel,
 } from './github-workspace.js';
@@ -60,4 +63,36 @@ test('merge is blocked on the states a reviewer should never merge through', () 
   // mergeable === null means GitHub has not finished computing. That is not a
   // conflict, and blocking on it would invent one.
   assert.equal(mergeBlockedReason({ ...green, summary: { ...green.summary, mergeable: null } }), '');
+});
+
+/*
+ * The rejection this pair exists for. The server's sentence is the anchor —
+ * matching on "401" or "token" would offer a reconnect after failures a
+ * reconnect cannot fix, and a remedy that does not work is worse than none.
+ */
+test('a rejected token is recognised from the server sentence, and nothing else is', () => {
+  assert.equal(
+    isGithubTokenRejected('GitHub rejected your connected token. Reconnect your GitHub account in Quantora.'),
+    true,
+  );
+  for (const other of [
+    'That did not complete (HTTP 500).',
+    'GitHub could not confirm your access to a/b (HTTP 403). No action was taken.',
+    'bharanikh-design/quantoraai is not visible to your connected GitHub account.',
+    'You have read access to a/b, not write.',
+    '',
+    null,
+    undefined,
+  ]) {
+    assert.equal(isGithubTokenRejected(other), false, String(other));
+  }
+});
+
+test('the reconnect prompt points at the connect route, not at prose', () => {
+  const prompt = githubReconnectPrompt();
+  assert.equal(prompt.href, GITHUB_CONNECT_URL);
+  assert.ok(prompt.action.length > 0);
+  // The old copy told the reader to reconnect "in Quantora" and gave them
+  // nowhere to do it. The prompt carries the destination itself.
+  assert.match(prompt.href, /^\/api\//);
 });
