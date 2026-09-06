@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeCredentialFailure, isOutOfCredit, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { readFileSync } from 'node:fs';
+import { describeCredentialFailure, isOutOfCredit, isProviderCredentialRejection, isSpendCapBreach, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 
 test('retryable provider failures include endpoint loss and quota exhaustion before streaming', () => {
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('quota exceeded'), { status: 429 })), true);
@@ -106,4 +107,45 @@ test('routing still treats all three as fatal for the credential', () => {
   for (const status of [401, 402, 403]) {
     assert.equal(isProviderCredentialRejection({ status }), true, `status ${status}`);
   }
+});
+
+/*
+ * 2026-09-06: Google answered every production Gemini call with "HTTP 403:
+ * Spend cap breached for project: projects/…". The founder's chat said
+ * "OpenRouter rejected the credential itself" — wrong engine (Auto is not a
+ * Gemini id) and wrong cause (a cap is billing, not a key).
+ */
+test('a Gemini spend cap is billing, not a rejected key, and the sentence says so', () => {
+  const spendCap = { status: 403, message: 'Spend cap breached for project: projects/1053456406059 for service: generativelanguage.googleapis.com. Correlation id: 6' };
+  assert.equal(isSpendCapBreach(spendCap), true);
+  assert.equal(isOutOfCredit(spendCap), true);
+  assert.equal(isOutOfCredit({ status: 403, message: 'API key not valid. Please pass a valid API key.' }), false, 'a plain 403 is still a rejected key');
+  const text = describeCredentialFailure(spendCap, 'auto', 'gemini');
+  assert.match(text, /Google Gemini/);
+  assert.match(text, /spend cap/i);
+  assert.match(text, /billing page/);
+  assert.match(text, /named the project/);
+  assert.doesNotMatch(text, /Last Used: Never|rejected the credential itself/, 'a recognised key must not be blamed');
+  assert.doesNotMatch(text, /OpenRouter/, 'the engine that did not fail must not be named');
+});
+
+test('the engine that refused is named, not the engine the requested model id implies', () => {
+  const stamped = describeCredentialFailure({ status: 403, gateway: 'gemini' }, 'auto');
+  assert.match(stamped, /Google Gemini/);
+  assert.doesNotMatch(stamped, /OPENROUTER_API_KEY/);
+  const explicit = describeCredentialFailure({ status: 401 }, 'gemini-flash-latest', 'openrouter');
+  assert.match(explicit, /OpenRouter/, 'an explicit gateway outranks the model id');
+  const unstamped = describeCredentialFailure({ status: 401 }, 'auto');
+  assert.match(unstamped, /OpenRouter/, 'with nothing stamped, the model id still decides');
+  const junk = describeCredentialFailure({ status: 401, gateway: 'stripe' }, 'gemini-flash-latest');
+  assert.match(junk, /Google Gemini/, 'an unknown gateway word is ignored, not trusted');
+});
+
+test('the chat handler stamps the failing route\'s gateway on the error and reads it back for the sentence', () => {
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /lastRouteError = error;\n[\s\S]{0,400}?error\.gateway = route\.gateway;/, 'the main route loop stamps the gateway');
+  assert.match(handler, /lastOpenError = error;\n[^\n]*\n?[^\n]*gateway = 'gemini'/, 'the Gemini candidate loop stamps gemini');
+  assert.match(handler, /lastError = error;\n[^\n]*gateway = 'openrouter'/, 'the OpenRouter loop stamps openrouter');
+  assert.match(handler, /describeCredentialFailure\(err, req\.body\?\.modelId, err\?\.gateway\)/, 'the sentence is given the stamped gateway');
+  assert.match(handler, /provider: err\?\.gateway === 'gemini' \|\| err\?\.gateway === 'openrouter'/, 'the SSE provider field too');
 });
