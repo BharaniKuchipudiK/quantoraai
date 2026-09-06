@@ -82,6 +82,12 @@ const IMPERATIVE_BUILD = /\b(build|create|make|generate|design|develop|code|prot
  *
  * Derived from the messages we already have rather than stored, so it cannot
  * drift out of step with the transcript or be lost by a reload.
+ *
+ * @param {object} [options]
+ * @param {string[]} [options.priorUserMessages] every earlier user turn, oldest first
+ * @param {boolean} [options.codingDeskOpen]
+ * @param {boolean} [options.hasDeskFiles]
+ * @param {(text: string) => boolean} [options.isCodingRequest] the strict classifier, called with each prior turn
  */
 export function isBuildSessionActive({
   priorUserMessages = [],

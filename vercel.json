@@ -231,6 +231,10 @@
       "destination": "/api/pipeline?route=classify-intent"
     },
     {
+      "source": "/api/plan-turn",
+      "destination": "/api/pipeline?route=plan-turn"
+    },
+    {
       "source": "/api/model-route-canary",
       "destination": "/api/pipeline?route=model-route-canary"
     },
