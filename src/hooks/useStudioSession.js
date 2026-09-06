@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { mergeSessionListeningSignals } from '../lib/listening-layer.js';
 import {
   STUDIO_DOMAIN_REQUEST_EVENT,
@@ -15,6 +15,7 @@ import {
 import { compactOfficeMessages } from '../lib/office-session-state.js';
 import { compactSupersededBuilds } from '../lib/session-code-budget.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
+import { describeSessionHandover } from '../lib/session-continuity.js';
 import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
 import {
@@ -326,7 +327,37 @@ export function applyMoveChatToProject({
   return { sessions: nextSessions, activeSessionId: nextActiveSessionId, changed: true };
 }
 
-function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
+/**
+ * A chat's workspace: the Coding desk is the null domain, so it needs a name
+ * of its own for grouping and for the "+" beside it in the sidebar.
+ */
+export function workspaceOfSession(session) {
+  return normalizeStudioDomain(session?.studioDomain) || 'coding';
+}
+
+/** The chats of one workspace in one project, newest first. */
+export function chatsForWorkspace(sessions, workspace, projectId) {
+  const wanted = workspace === 'coding' ? 'coding' : normalizeStudioDomain(workspace);
+  if (!wanted) return [];
+  return (Array.isArray(sessions) ? sessions : [])
+    .filter((session) => session && !session.archived
+      && (session.projectId || DEFAULT_PROJECT_ID) === (projectId || DEFAULT_PROJECT_ID)
+      && workspaceOfSession(session) === wanted)
+    .sort((left, right) => (Number(right.updatedAt || right.createdAt) || 0) - (Number(left.updatedAt || left.createdAt) || 0));
+}
+
+/**
+ * WORKSPACES OWN THEIR CHATS (2026-09-06).
+ *
+ * `deskPinned` says the workspace decided this chat's desk, not the words in
+ * it. A chat opened from a workspace (the "+" beside it, an advisor card) is
+ * pinned and never moves; the top-level New Chat is not, so a fresh general
+ * chat can still find its desk from what the person asks. Before this, a
+ * coding chat with no build yet could be moved to Travel by one trip word,
+ * because the Coding desk is the null domain and "explicit wins" never
+ * protected it.
+ */
+export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, { pinned = false } = {}) {
   const domain = normalizeStudioDomain(studioDomain);
   return {
     id: 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
@@ -336,6 +367,7 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
     messages: [defaultGreetingMsg],
     studioMode: 'ask',
     studioDomain: domain,
+    deskPinned: pinned === true,
     boundRepo: null,
     conversationContext: {},
     memoryConsented: false,
@@ -361,10 +393,32 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
  * nobody is told." Carrying the snapshot means there is nothing to warn about.
  * The old session keeps its own copy either way; nothing is moved, only copied.
  */
+/** The first message of a continued chat: where it came from and what came with it. */
+export function handoverNoteMessage({ contract, sourceSession = null, desk = null } = {}) {
+  const fromTitle = String(sourceSession?.title || '').trim();
+  const lines = describeSessionHandover(contract).lines;
+  const fileCount = desk?.vfs && typeof desk.vfs === 'object' ? Object.keys(desk.vfs).length : 0;
+  const carried = [
+    ...lines,
+    fileCount
+      ? `The desk, with ${fileCount} file${fileCount === 1 ? '' : 's'} — Preview runs the same build.`
+      : 'No files were on that desk.',
+  ];
+  return {
+    id: `handover-note-${contract?.createdAt || Date.now()}`,
+    sender: 'ai',
+    handoverNote: true,
+    text: `Continued from ${fromTitle ? `"${fromTitle}"` : 'the previous chat'}, which stays exactly as it was.\n\nCarried over:\n${carried.map((line) => `- ${line}`).join('\n')}`,
+  };
+}
+
 export function makeHandoverSession({ contract, projectId, defaultGreetingMsg, sourceSession = null } = {}) {
   if (contract?.kind !== 'session_handover' || !contract?.sourceSessionId || !projectId) return null;
   const domain = normalizeStudioDomain(contract.studioDomain);
-  const session = makeSession(projectId, defaultGreetingMsg, domain);
+  const session = makeSession(projectId, defaultGreetingMsg, domain, {
+    // A chat continued from a pinned one stays on that desk.
+    pinned: sourceSession?.id === String(contract.sourceSessionId) && sourceSession?.deskPinned === true,
+  });
   const goal = String(contract?.summary?.goal || '').trim();
   const desk = sourceSession && sourceSession.id === String(contract.sourceSessionId)
     ? sourceSession.desk
@@ -373,6 +427,10 @@ export function makeHandoverSession({ contract, projectId, defaultGreetingMsg, s
     ...session,
     ...(goal ? { title: goal.slice(0, 80) } : {}),
     ...(desk ? { desk } : {}),
+    // The new chat opens by saying what it carries. The old preview panel
+    // showed this BEFORE the click, where it was one more thing to dismiss;
+    // in the chat itself it is the context the person asked to keep.
+    messages: [defaultGreetingMsg, handoverNoteMessage({ contract, sourceSession, desk })],
     conversationContext: contract.context || {},
     parentSessionId: String(contract.sourceSessionId),
     handover: {
@@ -418,6 +476,8 @@ export function useStudioSession({ user, selectedModel }) {
     () => loadProjects()[0]?.id || DEFAULT_PROJECT_ID,
   );
   const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
+  const allChatSessionsRef = useRef(allChatSessions);
+  allChatSessionsRef.current = allChatSessions;
   const [storageFault, setStorageFault] = useState(() => readStudioStorageFault());
   useEffect(() => subscribeStudioStorageFault(setStorageFault), []);
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
@@ -687,7 +747,7 @@ export function useStudioSession({ user, selectedModel }) {
   const handleCreateAdvisorChat = useCallback((domain) => {
     const normalizedDomain = normalizeStudioDomain(domain);
     if (!normalizedDomain) return null;
-    const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain);
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain, { pinned: true });
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
       persistSessions(updated);
@@ -696,6 +756,20 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
     return newSession.id;
   }, [activeProject.id, allChatSessions, defaultGreetingMsg]);
+
+  /** A new chat inside one workspace: pinned there for life. 'coding' is the null domain. */
+  const handleCreateWorkspaceChat = useCallback((workspace) => {
+    const domain = workspace === 'coding' ? null : normalizeStudioDomain(workspace);
+    if (workspace !== 'coding' && !domain) return null;
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, domain, { pinned: true });
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
+  }, [activeProject.id, defaultGreetingMsg]);
 
   const handleCreateNewChat = useCallback(() => {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
@@ -707,7 +781,19 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
   }, [activeProject.id, defaultGreetingMsg]);
 
+  /*
+   * THE CHIP THAT DID NOTHING (2026-09-06).
+   *
+   * This callback listed activeProject.id and the greeting as its only
+   * dependencies while reading allChatSessions, so it kept the session list
+   * from the render it was created in. Every chat started after that render —
+   * the one the person was actually in — was invisible to it: the source
+   * lookup failed, the desk was never carried, and the new chat opened bare.
+   * The list is read through a ref that every render refreshes.
+   */
   const handleCreateHandoverChat = useCallback((contract) => {
+    const sessions = allChatSessionsRef.current || [];
+    const sourceSession = sessions.find((item) => item.id === contract?.sourceSessionId) || null;
     const newSession = makeHandoverSession({
       contract,
       // A handover may not move data across projects. The active project owns it.
@@ -715,11 +801,23 @@ export function useStudioSession({ user, selectedModel }) {
       defaultGreetingMsg,
       // The build comes with it. Looked up rather than passed in, so the caller
       // cannot hand over a desk belonging to a different session.
-      sourceSession: allChatSessions.find((item) => item.id === contract?.sourceSessionId) || null,
+      sourceSession,
     });
     if (!newSession) return null;
     setAllChatSessions((prev) => {
-      const updated = [newSession, ...prev];
+      // The offer is taken; the chip in the source chat has done its job.
+      const updated = [newSession, ...prev.map((item) => (
+        item.id === sourceSession?.id
+          ? {
+            ...item,
+            messages: (item.messages || []).map((message) => (
+              message?.sessionContinuity?.id === contract?.id
+                ? { ...message, sessionContinuityDismissed: true, sessionContinuityTaken: newSession.id }
+                : message
+            )),
+          }
+          : item
+      ))];
       persistSessions(updated);
       return updated;
     });
@@ -1015,6 +1113,7 @@ export function useStudioSession({ user, selectedModel }) {
     handleCreateNewChat,
     handleCreateHandoverChat,
     handleCreateAdvisorChat,
+    handleCreateWorkspaceChat,
     openAdvisorWorkspace,
     forkChatFromMessage,
     handleDeleteChat,

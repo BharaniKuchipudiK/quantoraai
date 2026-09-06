@@ -297,6 +297,27 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-sticky-browser-gate.mjs
 
+      - name: Execute session handover journey
+        id: session_handover_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/session-handover-browser-gate.mjs
+
+      - name: Execute turn planner journey
+        id: turn_planner_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/turn-planner-browser-gate.mjs
+
+      - name: Execute desk edit honesty journey
+        id: desk_edit_honesty_gate
+        continue-on-error: true
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/desk-edit-honesty-browser-gate.mjs
+
       - name: Execute code payload journey
         id: code_payload_gate
         continue-on-error: true
@@ -444,6 +465,9 @@ jobs:
           MEDIA_PROFILE_OUTCOME: ${{ steps.media_profile_gate.outcome }}
           STUDIO_OUTCOME: ${{ steps.studio_gate.outcome }}
           CODING_DESK_STICKY_OUTCOME: ${{ steps.coding_desk_sticky_gate.outcome }}
+          SESSION_HANDOVER_OUTCOME: ${{ steps.session_handover_gate.outcome }}
+          TURN_PLANNER_OUTCOME: ${{ steps.turn_planner_gate.outcome }}
+          DESK_EDIT_HONESTY_OUTCOME: ${{ steps.desk_edit_honesty_gate.outcome }}
           CODE_PAYLOAD_OUTCOME: ${{ steps.code_payload_gate.outcome }}
           SELF_HEAL_OUTCOME: ${{ steps.self_heal_gate.outcome }}
           DESK_DIFF_OUTCOME: ${{ steps.desk_diff_gate.outcome }}
@@ -462,7 +486,7 @@ jobs:
           TRACE_LOOKUP_OUTCOME: ${{ steps.trace_lookup_gate.outcome }}
         run: |
           failed=0
-          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_ELECTRICITY_OUTCOME STUDY_REPRESENTATION_OUTCOME STUDY_NOTEBOOK_OUTCOME STUDY_H14_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME QIR_CODING_RESUME_OUTCOME QIR_PRODUCTION_RECOVERY_OUTCOME ATTACHMENTS_OUTCOME TRACE_LOOKUP_OUTCOME; do
+          for gate in WORKSPACE_OUTCOME PLATFORM_OUTCOME TRAVEL_OUTCOME STUDY_OUTCOME STUDY_ELECTRICITY_OUTCOME STUDY_REPRESENTATION_OUTCOME STUDY_NOTEBOOK_OUTCOME STUDY_H14_OUTCOME FINANCE_OUTCOME MEDIA_PROFILE_OUTCOME STUDIO_OUTCOME CODING_DESK_STICKY_OUTCOME SESSION_HANDOVER_OUTCOME TURN_PLANNER_OUTCOME DESK_EDIT_HONESTY_OUTCOME CODE_PAYLOAD_OUTCOME SELF_HEAL_OUTCOME DESK_DIFF_OUTCOME DESK_JOB_OUTCOME DESK_REVIEW_PATCH_OUTCOME DESK_CHAT_CLAIM_OUTCOME CODING_DESK_FILES_OUTCOME GUIDED_INTAKE_OUTCOME CODING_DESK_CHROME_OUTCOME DESK_RAIL_SMOKE_OUTCOME PREVIEW_READY_OUTCOME PREVIEW_SHELL_MUST_START_OUTCOME QIR_CODING_RESUME_OUTCOME QIR_PRODUCTION_RECOVERY_OUTCOME ATTACHMENTS_OUTCOME TRACE_LOOKUP_OUTCOME; do
             outcome="${!gate}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then

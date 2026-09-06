@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 28, deployed: 11 });
+export const FLOORS = Object.freeze({ proven: 32, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -73,6 +73,10 @@ const journey = (row) => Object.freeze({
   serves: [],
   modelTurn: false,
   note: '',
+  // A parked journey is one a person cannot reach in this build (its surface
+  // is behind a flag, see src/lib/platform-surfaces.js): counted on its own
+  // line, never among the unproven, and its note must say why it is parked.
+  parked: false,
   ...row,
   gates: Object.freeze({
     deterministic: Object.freeze([...(row.gates?.deterministic || [])]),
@@ -237,7 +241,7 @@ export const JOURNEYS = Object.freeze([
     gates: {
       deterministic: ['api/_lib/attachment-text.test.ts', 'src/lib/chat-attachments.test.js', 'api/_lib/research-pdf-text.test.ts'],
       browser: ['scripts/attachments-browser-gate.mjs'],
-      deployed: ['golden:document-grounded'],
+      deployed: ['golden:document-grounded', 'golden:brief-with-documents'],
     },
   }),
   journey({
@@ -253,9 +257,10 @@ export const JOURNEYS = Object.freeze([
         'src/lib/turn-recovery.test.js',
         'src/lib/coding-outcome-spine.test.js',
         'src/lib/turn-escalation.test.js',
+        'src/lib/desk-edit-proof.test.js',
       ],
-      browser: ['scripts/self-heal-browser-gate.mjs', 'scripts/qir-production-recovery-browser-gate.mjs'],
-      deployed: ['golden:guided-intake'],
+      browser: ['scripts/self-heal-browser-gate.mjs', 'scripts/qir-production-recovery-browser-gate.mjs', 'scripts/desk-edit-honesty-browser-gate.mjs'],
+      deployed: ['golden:guided-intake', 'golden:iterate-heading'],
     },
   }),
   journey({
@@ -332,6 +337,20 @@ export const JOURNEYS = Object.freeze([
     note: 'The mode logic is tested; the toggle has never been clicked by a gate.',
   }),
   journey({
+    id: 'turn-lane-planned',
+    area: 'chat',
+    name: 'Send a brief and have the platform decide what to make from its meaning, not from a word',
+    entry: 'src/hooks/useChatStream.js',
+    hooks: ['data-quantora-coding-desk-nav', 'data-quantora-workspace-new-chat'],
+    modelTurn: true,
+    gates: {
+      deterministic: ['api/_lib/turn-planner.test.ts', 'src/lib/turn-plan-client.test.js', 'src/lib/office-intent.test.js', 'api/_lib/turn-plan-ledger.test.ts'],
+      browser: ['scripts/turn-planner-browser-gate.mjs'],
+      deployed: ['golden:brief-with-documents'],
+    },
+    note: 'Phase 7, first cut (2026-09-06): one model-owned lane per turn — build, office, advisor or chat — reconciled with the keyword rules, which are now the fallback and the corpus. A pinned desk never moves; a build the desk owns is never vetoed; a dead planner changes nothing. Second cut: every plan is recorded (turn_plan_events) and the admin dashboard reads the planner\'s share, its agreement with the rules, where it overruled them, and its latency.',
+  }),
+  journey({
     id: 'chat-sessions-manage',
     area: 'chat',
     name: 'Start a new chat; rename, search, archive, or file one under a project',
@@ -349,6 +368,39 @@ export const JOURNEYS = Object.freeze([
       deployed: ['golden:simple-website'],
     },
     note: 'New Chat is proven. Rename, search, archive and projects are helpers only.',
+  }),
+  journey({
+    id: 'workspace-owns-its-chats',
+    area: 'chat',
+    name: 'Open a chat inside a workspace from its "+", fold its chats, and stay on that desk',
+    entry: 'src/components/AiStudio.jsx',
+    hooks: [
+      'data-quantora-workspace-new-chat',
+      'data-quantora-workspace-collapse',
+      'data-quantora-workspace-chats',
+      'data-quantora-sidebar-chat',
+    ],
+    gates: {
+      deterministic: [
+        'src/hooks/useStudioSession.test.js',
+        'api/_lib/studio-domain-inference.test.ts',
+        'api/_lib/communication/request-normalizer.test.ts',
+      ],
+      browser: ['scripts/coding-desk-sticky-browser-gate.mjs'],
+    },
+    note: 'A chat opened from a workspace is pinned to it (2026-09-06): the resolver returns the explicit desk when pinned, and the sticky gate proves a trip question in a coding chat and a money question in a Travel chat both stay put, the chat lists under its workspace, the fold hides and restores it, and leaving a Travel chat for the Coding desk does not rewrite it.',
+  }),
+  journey({
+    id: 'long-session-continues',
+    area: 'chat',
+    name: 'Keep a long session going: old turns fold into a digest, and one click continues in a new chat that carries the goal, facts and desk',
+    entry: 'src/components/AiStudio.jsx',
+    hooks: ['data-quantora-session-continuity', 'data-quantora-session-handover-start', 'data-quantora-sidebar-chat'],
+    gates: {
+      deterministic: ['src/lib/history-budget.test.js', 'src/lib/session-continuity.test.js', 'src/hooks/useStudioSession.test.js'],
+      browser: ['scripts/session-handover-browser-gate.mjs'],
+    },
+    note: '2026-09-06: "I left out the earliest 5 messages" and a chip that opened nothing. Turns past the budget now fold into one digest; the chip is one click; the new chat opens by naming what it carried and runs the same build.',
   }),
   journey({
     id: 'fork-resume-session',
@@ -388,8 +440,9 @@ export const JOURNEYS = Object.freeze([
         'scripts/second-transaction-browser-gate.mjs',
         'scripts/studio-regression-browser-gate.mjs',
         'scripts/coding-desk-sticky-browser-gate.mjs',
+        'scripts/desk-edit-honesty-browser-gate.mjs',
       ],
-      deployed: ['golden:calculator', 'golden:simple-website', 'golden:business-tool'],
+      deployed: ['golden:calculator', 'golden:simple-website', 'golden:business-tool', 'golden:brief-with-documents', 'golden:iterate-heading'],
     },
   }),
   journey({
@@ -406,7 +459,7 @@ export const JOURNEYS = Object.freeze([
         'scripts/project-runtime-failure-browser-gate.mjs',
         'scripts/preview-shell-must-start-gate.mjs',
       ],
-      deployed: ['golden:calculator', 'scripts/deployed-shop-preview-gate.mjs'],
+      deployed: ['golden:calculator', 'golden:iterate-heading', 'scripts/deployed-shop-preview-gate.mjs'],
     },
   }),
   journey({
@@ -639,10 +692,13 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/office-output-schemas.test.js',
         'src/lib/office-briefing.test.js',
         'src/lib/office-export.test.js',
+        'src/lib/office-failure-copy.test.js',
         'src/lib/office-intent.test.js',
+        'scripts/office-words.test.mjs',
       ],
+      deployed: ['golden:office-document'],
     },
-    note: 'No gate has asked for a deck and opened the file it got.',
+    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). Its first run found the generator resolving server keys from the environment alone while chat also reads the gateway, so a preview with a gateway-held Gemini generated with no Gemini; the generator now resolves as chat does, its 502 names every provider asked, and the desk shows that detail. A deck and a workbook are still unopened.',
   }),
 
   // ── advisor desks ───────────────────────────────────────────────────────
@@ -795,16 +851,18 @@ export const JOURNEYS = Object.freeze([
     entry: 'src/components/DreamActionCanvas.jsx',
     serves: ['api/pipeline.ts'],
     modelTurn: true,
+    parked: true,
     gates: {},
-    note: 'No durable hook, no test, no gate.',
+    note: 'Parked on 2026-09-06 to keep the surface inside what the gates can prove: the tab, the landing card and the desk\'s "push to canvas" control render only with VITE_QUANTORA_EXPLORATORY_SURFACES=on. No durable hook, no test, no gate.',
   }),
   journey({
     id: 'quantum-playground',
     area: 'other surfaces',
     name: 'Quantum Playground: build a circuit and watch the state',
     entry: 'src/components/QuantumPlayground.jsx',
+    parked: true,
     gates: { deterministic: ['src/lib/quantum/statevector.test.js'] },
-    note: 'The simulator is tested; the playground has no durable hook and no gate.',
+    note: 'Parked on 2026-09-06 to keep the surface inside what the gates can prove: the tab and the landing card render only with VITE_QUANTORA_EXPLORATORY_SURFACES=on. The simulator is tested; the playground has no durable hook and no gate.',
   }),
   journey({
     id: 'privacy-vault-byok',
@@ -955,9 +1013,13 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/model-canary.test.js',
         'api/_lib/model-smoke-test.test.js',
         'api/_lib/model-execution-policy.test.ts',
+        'api/_lib/server-key-resolution.test.ts',
         'src/lib/model-outcome-routing.test.js',
+        'scripts/provider-health.test.mjs',
       ],
+      deployed: ['scripts/provider-health-probe.mjs'],
     },
+    note: 'The provider watch (2026-09-06): every half hour the production deployment\'s readiness, live Gemini probe and free OpenRouter credential probe are read and judged; a missing, refused, capped, exhausted or unreachable provider fails the scheduled run, which is what GitHub emails the owner about. server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
   }),
   journey({
     id: 'gates-anchored',
@@ -970,6 +1032,8 @@ export const JOURNEYS = Object.freeze([
         'src/lib/deployed-gate-contract.test.js',
         'scripts/golden-page-state.test.mjs',
         'scripts/golden-engine-refusal.test.mjs',
+        'scripts/golden-plan.test.mjs',
+        'scripts/zip-entry.test.mjs',
         'scripts/business-tool-reconcile.test.mjs',
         'scripts/workflow-playwright-pin.test.mjs',
       ],
@@ -995,7 +1059,8 @@ export function journeyStatus(row) {
 }
 
 export function summarizeJourneys(journeys = JOURNEYS) {
-  const user = journeys.filter((row) => row.kind !== 'platform');
+  const parkedRows = journeys.filter((row) => row.kind !== 'platform' && row.parked === true);
+  const user = journeys.filter((row) => row.kind !== 'platform' && row.parked !== true);
   const platform = journeys.filter((row) => row.kind === 'platform');
   const byStatus = { proven: [], helpers: [], nothing: [] };
   for (const row of user) byStatus[journeyStatus(row)].push(row.id);
@@ -1005,12 +1070,14 @@ export function summarizeJourneys(journeys = JOURNEYS) {
     proven: byStatus.proven.length,
     helpers: byStatus.helpers.length,
     nothing: byStatus.nothing.length,
+    parked: parkedRows.length,
     deployed: deployed.length,
     platform: platform.length,
     provenPercent: user.length ? Math.round((100 * byStatus.proven.length) / user.length) : 0,
     provenIds: byStatus.proven,
     helpersOnly: byStatus.helpers,
     unguarded: byStatus.nothing,
+    parkedIds: parkedRows.map((row) => row.id),
     deployedIds: deployed,
   };
 }
@@ -1068,6 +1135,9 @@ export function validateInventoryShape(journeys = JOURNEYS) {
     else if (seen.has(row.id)) problems.push(`journey id "${row.id}" is listed twice`);
     seen.add(row.id);
     if (!['user', 'platform'].includes(row.kind)) problems.push(`journey "${row.id}" has kind "${row.kind}"; expected user or platform`);
+    if (typeof row.parked !== 'boolean') problems.push(`journey "${row.id}" has parked "${row.parked}"; expected true or false`);
+    if (row.parked === true && row.kind === 'platform') problems.push(`journey "${row.id}" is a platform invariant and cannot be parked`);
+    if (row.parked === true && !String(row.note || '').trim()) problems.push(`journey "${row.id}" is parked without a note saying why and what brings it back`);
     if (!row.name) problems.push(`journey "${row.id}" has no name`);
     if (!row.area) problems.push(`journey "${row.id}" has no area`);
     if (!row.entry) problems.push(`journey "${row.id}" names no entry point`);
@@ -1220,7 +1290,7 @@ export function runnerRoots(runnerSource) {
 const basename = (name) => (isGoldenGate(name) ? name : name.slice(name.lastIndexOf('/') + 1));
 const cell = (names) => (names.length ? names.map((name) => `\`${basename(name)}\``).join(', ') : '—');
 const modelCell = (value) => (value === 'mixed' ? 'mixed' : value ? 'yes' : 'no');
-const STATUS_WORD = { proven: 'proven', helpers: 'helpers only', nothing: 'nothing' };
+const STATUS_WORD = { proven: 'proven', helpers: 'helpers only', nothing: 'nothing', parked: 'parked' };
 
 export function renderInventoryMarkdown(journeys = JOURNEYS, floors = FLOORS) {
   const summary = summarizeJourneys(journeys);
@@ -1233,7 +1303,7 @@ export function renderInventoryMarkdown(journeys = JOURNEYS, floors = FLOORS) {
   lines.push('');
   lines.push('<!-- Generated by `node scripts/journey-gate-inventory-gate.mjs --write` from src/lib/journey-gate-inventory.js. Do not edit by hand: the gate fails while this file is stale. -->');
   lines.push('');
-  lines.push(`**${summary.proven} of ${summary.total} user journeys are proven (${summary.provenPercent}%)** — a browser or deployed gate exercises the journey itself. ${summary.helpers} more have their helpers tested and the journey never exercised. ${summary.nothing} have nothing. ${summary.deployed} are proven against a live deployment.`);
+  lines.push(`**${summary.proven} of ${summary.total} user journeys are proven (${summary.provenPercent}%)** — a browser or deployed gate exercises the journey itself. ${summary.helpers} more have their helpers tested and the journey never exercised. ${summary.nothing} have nothing. ${summary.deployed} are proven against a live deployment.${summary.parked ? ` ${summary.parked} more are parked: hidden behind a build flag, unreachable in this build, counted apart.` : ''}`);
   lines.push('');
   lines.push(`Floors that may only rise: proven ≥ ${floors.proven}, on the deployment ≥ ${floors.deployed}. The gate fails on a drop and on a stale floor, so these are the counts.`);
   lines.push('');
@@ -1247,9 +1317,10 @@ export function renderInventoryMarkdown(journeys = JOURNEYS, floors = FLOORS) {
   lines.push('');
   lines.push('## Unproven journeys — the list to work down');
   lines.push('');
-  for (const status of ['nothing', 'helpers']) {
-    const ids = status === 'nothing' ? summary.unguarded : summary.helpersOnly;
-    lines.push(`### ${status === 'nothing' ? `Nothing (${ids.length})` : `Helpers only (${ids.length})`}`);
+  for (const status of ['nothing', 'helpers', 'parked']) {
+    const ids = status === 'nothing' ? summary.unguarded : status === 'helpers' ? summary.helpersOnly : summary.parkedIds;
+    if (status === 'parked' && !ids.length) continue;
+    lines.push(`### ${status === 'nothing' ? `Nothing (${ids.length})` : status === 'helpers' ? `Helpers only (${ids.length})` : `Parked (${ids.length}) — unreachable in this build, not counted above`}`);
     lines.push('');
     if (!ids.length) lines.push('_none_');
     for (const id of ids) {
@@ -1266,7 +1337,7 @@ export function renderInventoryMarkdown(journeys = JOURNEYS, floors = FLOORS) {
     lines.push('| journey | what a user does | model turn | deterministic | browser | deployed | status |');
     lines.push('|---|---|---|---|---|---|---|');
     for (const row of user.filter((candidate) => candidate.area === area)) {
-      lines.push(`| \`${row.id}\` | ${row.name} | ${modelCell(row.modelTurn)} | ${cell(row.gates.deterministic)} | ${cell(row.gates.browser)} | ${cell(row.gates.deployed)} | ${STATUS_WORD[journeyStatus(row)]} |`);
+      lines.push(`| \`${row.id}\` | ${row.name} | ${modelCell(row.modelTurn)} | ${cell(row.gates.deterministic)} | ${cell(row.gates.browser)} | ${cell(row.gates.deployed)} | ${row.parked ? STATUS_WORD.parked : STATUS_WORD[journeyStatus(row)]} |`);
     }
     lines.push('');
   }

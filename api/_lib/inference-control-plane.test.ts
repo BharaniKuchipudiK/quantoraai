@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT_MS, maxViableBuildAttempts, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
+import { BILLING_RESET_MS, canonicalizeModelId, inferenceAttemptBudgetMs, maxViableBuildAttempts, MIN_VIABLE_BUILD_ATTEMPT_MS, planInferenceRoutes, recordInferenceRouteFailure, summarizeInferenceReadiness, trimBuildLadder } from './inference-control-plane.js';
 
 test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
@@ -477,4 +477,130 @@ test('a refused OpenRouter gateway costs its routes, not the deployment', async 
   const nothingLeft = await summarizeInferenceReadiness({ geminiAvailable: false, openRouterAvailable: false });
   assert.equal(nothingLeft.ready, false);
   assert.equal(nothingLeft.routeCount, 0);
+});
+
+/*
+ * A BILLING REFUSAL HOLDS THE ROUTE FOR AS LONG AS MONEY TAKES (2026-09-06).
+ * Five minutes re-tried a capped Gemini project all day; thirty holds it open
+ * long enough to matter, and a top-up is noticed within the half hour.
+ */
+test('a billing refusal holds the whole route for thirty minutes; other failures keep their short resets', async () => {
+  const recorded: Array<{ key: string; resetMs: number; failureThreshold: number }> = [];
+  const store = {
+    recordFailure: async (key: string, options: { resetMs: number; failureThreshold: number }) => { recorded.push({ key, resetMs: options.resetMs, failureThreshold: options.failureThreshold }); return { open: false }; },
+  } as any;
+  const route = { id: 'gemini-flash-latest', gateway: 'gemini', circuitKey: 'gemini:server', domainCircuitKey: 'gemini:server:quota' } as any;
+  await recordInferenceRouteFailure(store, route, 403, 1, { billing: true });
+  await recordInferenceRouteFailure(store, route, 429, 2, { billing: true });
+  await recordInferenceRouteFailure(store, route, 429, 3);
+  await recordInferenceRouteFailure(store, route, 403, 4);
+  assert.equal(BILLING_RESET_MS, 30 * 60_000);
+  assert.deepEqual(recorded.map((r) => [r.key, r.resetMs]), [
+    ['gemini:server', BILLING_RESET_MS],
+    ['gemini:server', BILLING_RESET_MS],
+    ['gemini:server:quota', 60_000],
+    ['gemini:server', 5 * 60_000],
+  ], 'billing holds the route key, not the quota domain, whatever the status; the rest is unchanged');
+  assert.ok(recorded.every((r) => r.failureThreshold === 2), 'the threshold is unchanged');
+});
+
+/*
+ * INDEPENDENCE BEATS DEPTH (2026-09-06). With a Gemini model pinned, a build's
+ * two fundable rungs were both Gemini; Google refused the spend cap twice and
+ * the OpenRouter rung that would have answered had been trimmed for budget.
+ */
+const rung = (id: string, gateway: 'gemini' | 'openrouter', circuit: 'closed' | 'open' = 'closed') => ({ id, gateway, provider: gateway, circuit } as any);
+
+test('BUILD trim: a ladder cut to one gateway keeps one rung on the other gateway in its last slot', () => {
+  const pinnedGemini = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter')];
+  assert.deepEqual(trimBuildLadder(pinnedGemini, 2).map((r) => r.id), ['gemini-flash-latest', 'deepseek/deepseek-chat'], 'the pin stays first; the second chance is on the other gateway');
+  const pinnedOpenRouter = [rung('deepseek/deepseek-chat', 'openrouter'), rung('nvidia/nemotron-3-super-120b-a12b:free', 'openrouter'), rung('gemini-flash-latest', 'gemini')];
+  assert.deepEqual(trimBuildLadder(pinnedOpenRouter, 2).map((r) => r.id), ['deepseek/deepseek-chat', 'gemini-flash-latest'], 'and the other way round');
+});
+
+test('BUILD trim: a ladder that already spans both gateways, or fits the budget, is untouched', () => {
+  const spanning = [rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter'), rung('gemini-flash-latest', 'gemini')];
+  assert.deepEqual(trimBuildLadder(spanning, 2).map((r) => r.id), ['gemini-flash-latest', 'deepseek/deepseek-chat']);
+  const short = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini')];
+  assert.equal(trimBuildLadder(short, 2), short, 'nothing to trim, nothing to swap');
+});
+
+test('BUILD trim: one fundable rung keeps the primary, and an open circuit is never swapped in', () => {
+  const pinnedGemini = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter')];
+  assert.deepEqual(trimBuildLadder(pinnedGemini, 1).map((r) => r.id), ['gemini-flash-latest'], 'no second chance to give');
+  const openOther = [rung('gemini-flash-latest', 'gemini'), rung('gemini-flash-latest', 'gemini'), rung('deepseek/deepseek-chat', 'openrouter', 'open')];
+  assert.deepEqual(trimBuildLadder(openOther, 2).map((r) => r.id), ['gemini-flash-latest', 'gemini-flash-latest'], 'a dead rung is not independence');
+});
+
+test('the chat handler trims a build ladder through trimBuildLadder, never a bare slice', async () => {
+  const { readFileSync } = await import('node:fs');
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /if \(attempts\.length > fundable\) attempts = trimBuildLadder\(attempts, fundable\);/);
+  assert.doesNotMatch(handler, /attempts = attempts\.slice\(0, fundable\)/, 'the old trim kept two rungs on one dead gateway');
+});
+
+/*
+ * Phase 6: the ladder reads the ledger. A model that failed most of its recent
+ * turns moves down; a model the person named stays first; nothing is removed.
+ */
+const poorEvidence = (modelId: string) => ({
+  [modelId]: { modelId, samples: 8, successes: 2, failures: 6, failureRate: 0.75, p50LatencyMs: 1400 },
+});
+
+test('measured outcome moves a failing fallback down the free ladder and says so', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+  };
+  const plain = await planInferenceRoutes(base);
+  const secondId = plain[1].id;
+  const ranked = await planInferenceRoutes({ ...base, measuredOutcomes: poorEvidence(secondId) });
+  assert.equal(ranked[0].id, plain[0].id, 'the primary is untouched');
+  assert.notEqual(ranked[1].id, secondId, 'the failing fallback no longer comes second');
+  const moved = ranked.find((route) => route.id === secondId);
+  assert.ok(moved, 'it is still in the ladder');
+  assert.equal(moved?.demoted, 'measured-outcome');
+  assert.equal(moved?.measured?.failures, 6);
+  assert.equal(ranked.length, plain.length, 'nothing is removed');
+});
+
+test('a model the person named stays first even when the ledger is against it; Auto yields to a better-measured route', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+    measuredOutcomes: poorEvidence('nvidia/nemotron-3-super-120b-a12b:free'),
+  };
+  const pinned = await planInferenceRoutes({ ...base, autoRouting: false });
+  assert.equal(pinned[0].id, 'nvidia/nemotron-3-super-120b-a12b:free', 'their choice is tried first');
+  assert.equal(pinned[0].measured?.failureRate, 0.75, 'and the trace can say what was measured');
+
+  const auto = await planInferenceRoutes({ ...base, autoRouting: true });
+  assert.notEqual(auto[0].id, 'nvidia/nemotron-3-super-120b-a12b:free', 'Auto starts on a route the ledger has not condemned');
+  assert.equal(auto[0].demoted, undefined);
+  const demoted = auto.find((route) => route.id === 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(demoted?.demoted, 'measured-outcome', 'the requested model is still in the ladder, lower');
+  assert.equal(auto.length, pinned.length);
+});
+
+test('with no measured evidence the ladder is exactly what it was', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+  };
+  const plain = await planInferenceRoutes(base);
+  const withEmpty = await planInferenceRoutes({ ...base, measuredOutcomes: {}, autoRouting: true });
+  assert.deepEqual(withEmpty.map((route) => route.id), plain.map((route) => route.id));
+  assert.ok(withEmpty.every((route) => !route.demoted));
 });

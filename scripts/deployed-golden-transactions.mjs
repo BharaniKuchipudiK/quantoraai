@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import process from 'node:process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
+import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
-import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
+import { buildMinimalPdf, bylawsFixtureText, eventCalendarFixtureText } from './lib/minimal-pdf.mjs';
+import { wordDocumentWords } from './lib/office-words.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -23,7 +25,16 @@ import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
  * run and would be proving three of them. So the roster is declared, checked
  * against what actually completed, and printed last on every run, pass or fail.
  */
-const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded'];
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded', 'brief-with-documents', 'iterate-heading', 'office-document'];
+/*
+ * A pull request plans the first two (the deployment answers, and builds);
+ * production plans the whole roster. See scripts/lib/golden-plan.mjs for why.
+ */
+const { limit: TRANSACTION_LIMIT, planned: PLANNED_TRANSACTIONS } = planGoldenTransactions(
+  EXPECTED_TRANSACTIONS,
+  process.env.QUANTORA_GOLDEN_TRANSACTION_LIMIT,
+);
+const runs = (position) => TRANSACTION_LIMIT >= position;
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -94,6 +105,7 @@ let engineDigest = engineProbe.ok
   ? `engine=ok(${engineProbe.model || 'gemini'}${engineProbe.ms ? ` ${engineProbe.ms}ms` : ''})`
   : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
 console.log(`Engine probe before the first turn: ${engineDigest}`);
+console.log(`Transactions planned: ${PLANNED_TRANSACTIONS.join(', ')} (${TRANSACTION_LIMIT} of ${EXPECTED_TRANSACTIONS.length}${TRANSACTION_LIMIT < EXPECTED_TRANSACTIONS.length ? ', limited by QUANTORA_GOLDEN_TRANSACTION_LIMIT' : ''})`);
 /*
  * Fail in one second with the real cause, not in forty with a false one.
  *
@@ -152,6 +164,50 @@ page.on('console', (message) => {
   if (message.type() === 'error') consoleErrors.push(message.text());
 });
 page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+/*
+ * Every failed API answer: path, status, and the server's own words. The
+ * console reports "the server responded with a status of 502 ()" and nothing
+ * else — not the path, not the body — so the office-document failure of
+ * 2026-09-06 could only be read from the desk's prose, which carried the
+ * error's headline and not its cause. A JSON error body is where the server
+ * says what it tried (`stage`, `detail`); this keeps the last forty, tagged
+ * with the transaction that was running.
+ */
+let activeTransactionName = null;
+const apiFailures = [];
+page.on('response', (response) => {
+  let url;
+  try { url = new URL(response.url()); } catch { return; }
+  if (url.origin !== BASE_ORIGIN || !url.pathname.startsWith('/api/') || response.status() < 400) return;
+  const entry = { at: new Date().toISOString(), transaction: activeTransactionName, path: url.pathname, status: response.status() };
+  apiFailures.push(entry);
+  if (apiFailures.length > 40) apiFailures.shift();
+  response.text().then((body) => {
+    try {
+      const data = JSON.parse(body);
+      for (const field of ['error', 'stage', 'detail']) {
+        if (typeof data?.[field] === 'string' && data[field]) entry[field] = data[field].replace(/\s+/g, ' ').slice(0, 400);
+      }
+    } catch {
+      entry.body = String(body || '').replace(/\s+/g, ' ').slice(0, 160);
+    }
+  }).catch(() => {});
+});
+function lastApiFailure(pathPrefix, transaction = null) {
+  for (let index = apiFailures.length - 1; index >= 0; index -= 1) {
+    const entry = apiFailures[index];
+    if (!entry.path.startsWith(pathPrefix)) continue;
+    if (transaction && entry.transaction !== transaction) continue;
+    return entry;
+  }
+  return null;
+}
+function describeApiFailure(entry) {
+  if (!entry) return null;
+  const words = entry.detail || entry.error || entry.body || '';
+  return `${entry.path} answered HTTP ${entry.status}${entry.stage ? ` at ${entry.stage}` : ''}${words ? `: ${words}` : ''}`;
+}
 
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
@@ -281,10 +337,13 @@ const evidence = {
   inferenceHealth: health,
   // The engine's own answer at the start, not the configuration's promise.
   engineProbe,
+  plannedTransactions: PLANNED_TRANSACTIONS,
   transactions: [],
+  apiFailures,
 };
 
 function markActiveTransaction(name, correlationId = null) {
+  activeTransactionName = name;
   evidence.activeTransaction = { name, correlationId };
 }
 
@@ -377,6 +436,10 @@ try {
   });
   delete evidence.activeTransaction;
 
+  let websiteCorrelationId = calculatorCorrelationId;
+  let toolCorrelationId = null;
+
+  if (runs(2)) {
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after the calculator transaction.', 15_000);
   await newChat.click();
@@ -386,7 +449,7 @@ try {
   await setGoldenTransaction('simple-website');
   await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
-  const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
+  websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
   if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
@@ -422,6 +485,9 @@ try {
    * artifact canary would forbid the intake reply we are here to protect.
    * Anchored on data-quantora-* hooks only (§6).
    */
+  }
+
+  if (runs(3)) {
   const intakeStartedAt = Date.now();
   markActiveTransaction('guided-intake');
   await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
@@ -600,6 +666,9 @@ try {
    * interaction, and again after adding a deal. A hardcoded total passes the
    * first check by luck and fails the second every time.
    */
+  }
+
+  if (runs(4)) {
   const newChatForTool = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChatForTool, 'New Chat control is missing after the guided-intake transaction.', 15_000);
   await newChatForTool.click();
@@ -609,7 +678,7 @@ try {
   await setGoldenTransaction('business-tool');
   await prompt.fill('Create a small React deal pipeline tool for an IT consulting firm. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render a form with data-testid="deal-form" containing a text input data-testid="deal-name", a number input data-testid="deal-value", a select data-testid="deal-stage" offering Discovery, Proposal and Won, and a submit button data-testid="add-deal". It must render one element per deal with data-testid="deal-row", each carrying that deal\'s numeric value in a data-deal-value attribute. It must render an element data-testid="pipeline-total" showing the sum of every deal value, recomputed whenever a deal is added. Seed it with exactly two deals worth 120000 and 60000. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
-  const toolCorrelationId = await correlationForPreview(websiteCorrelationId);
+  toolCorrelationId = await correlationForPreview(websiteCorrelationId);
   markActiveTransaction('business-tool', toolCorrelationId);
 
   const toolFrame = await frameWith('[data-testid="pipeline-total"]');
@@ -702,6 +771,9 @@ try {
    * request, server extraction, the model's context, the build. A reply that
    * asks for the document, or a page without the number, fails by name.
    */
+  }
+
+  if (runs(5)) {
   const newChatForDocument = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChatForDocument, 'New Chat control is missing after the business-tool transaction.', 15_000);
   await newChatForDocument.click();
@@ -710,10 +782,7 @@ try {
   markActiveTransaction('document-grounded');
   await setGoldenTransaction('document-grounded');
   const REGISTRATION_NUMBER = `RKV-${String(Date.now()).slice(-6)}-GLD`;
-  const bylawsPdf = buildMinimalPdf(
-    `Ramakrishna Venuzia Owners Welfare Association. Registered society. Registration number ${REGISTRATION_NUMBER}. `
-    + 'Annual general meeting every March. Maintenance dues are payable quarterly.',
-  );
+  const bylawsPdf = buildMinimalPdf(bylawsFixtureText(REGISTRATION_NUMBER));
   const fileInput = page.locator('.app-shell--studio input[type="file"]').first();
   await fileInput.setInputFiles({ name: 'rkv-bylaws.pdf', mimeType: 'application/pdf', buffer: bylawsPdf });
   const chip = page.locator('[data-quantora-attachment-chip="rkv-bylaws.pdf"]').first();
@@ -780,7 +849,10 @@ try {
   if (!shown.includes(REGISTRATION_NUMBER)) {
     throw new Error(
       `The page rendered but its registration number is "${shown}", not the ${REGISTRATION_NUMBER} that exists only in the attached PDF — `
-      + `the model built without reading the document. Page state: ${await recordPageState()}`,
+      + (REGISTRATION_NUMBER.startsWith(shown) && shown.length >= 4
+        ? 'a prefix of it: the document reached the model cut short (2026-09-06: pdf.js returns nothing past the page edge, and the fixture wrote one line off it). '
+        : 'the model built without reading the document. ')
+      + `Page state: ${await recordPageState()}`,
     );
   }
   await recordInteraction(documentCorrelationId, 'document-grounded');
@@ -794,18 +866,319 @@ try {
     durationMs: Date.now() - documentStartedAt,
   });
   delete evidence.activeTransaction;
+  }
+
+  /*
+   * TRANSACTION 6 — THE BRIEF PEOPLE ACTUALLY SEND, WITH THE DOCUMENTS THEY ATTACH.
+   *
+   * 2026-09-06: a founder attached an association's documents and asked for a
+   * website in plain words. The desk read "excel-like" in the brief and sent
+   * the whole thing to the workbook generator, which ran out of host time, and
+   * the person read "Failed to generate document" for a website ask. Every
+   * transaction above is a specified-tool prompt; none of them is this brief.
+   * This one is: two attached PDFs, a natural ask that mentions a spreadsheet
+   * as a LOOK, no canary armed. It must end in a site that shows facts that
+   * exist only in the documents — the registration number from one PDF, the
+   * event from the other — with an intake question or two allowed on the way,
+   * and never an Office file. The Office generator is watched at the wire, so
+   * the 2026-09-06 defect fails by its own name and not as a missing page.
+   */
+  if (runs(6)) {
+  const newChatForBrief = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForBrief, 'New Chat control is missing after the document-grounded transaction.', 15_000);
+  await newChatForBrief.click();
+
+  const briefStartedAt = Date.now();
+  markActiveTransaction('brief-with-documents');
+  await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
+  const BRIEF_REGISTRATION = `RKV-${String(Date.now()).slice(-6)}-BRF`;
+  const BRIEF_EVENT_CODE = `GH-${String(Date.now()).slice(-5)}`;
+  const BRIEF_EVENT_NAME = 'Golden Harvest Fair';
+  const briefFileInput = page.locator('.app-shell--studio input[type="file"]').first();
+  await briefFileInput.setInputFiles([
+    { name: 'association-bylaws.pdf', mimeType: 'application/pdf', buffer: buildMinimalPdf(bylawsFixtureText(BRIEF_REGISTRATION)) },
+    { name: 'event-calendar.pdf', mimeType: 'application/pdf', buffer: buildMinimalPdf(eventCalendarFixtureText(BRIEF_EVENT_CODE)) },
+  ]);
+  for (const fileName of ['association-bylaws.pdf', 'event-calendar.pdf']) {
+    const briefChip = page.locator(`[data-quantora-attachment-chip="${fileName}"]`).first();
+    await visible(briefChip, `The composer never showed ${fileName} as a chip.`, 10_000);
+    const chipKind = await briefChip.getAttribute('data-quantora-attachment-kind');
+    if (chipKind !== 'document') {
+      throw new Error(`The composer took ${fileName} as "${chipKind}", not as a document — it would be dropped at send. Page state: ${await recordPageState()}`);
+    }
+  }
+  let officeGenerationRequested = false;
+  const officeWatch = (request) => { if (/\/api\/generate-office\b/.test(request.url())) officeGenerationRequested = true; };
+  page.on('request', officeWatch);
+  await prompt.fill('Build a website for the association described in the attached documents. The home page must show the association\'s name and its registration number exactly as written in the bylaws, and an Events section that lists every event from the attached calendar by its exact name and event code. Lay the members section out like an Excel tracker with columns for name, flat number and dues status. Keep it simple, clean and mobile friendly.');
+  await prompt.press('Enter');
+  await page.waitForTimeout(1_000);
+  const briefHeadsUp = page.locator('[data-quantora-assistant-prose]', { hasText: /could not send/i }).first();
+  if (await briefHeadsUp.isVisible().catch(() => false)) {
+    throw new Error(`The desk dropped an attached PDF before sending — the 2026-09-05 defect is back. Page state: ${await recordPageState()}`);
+  }
+
+  /**
+   * The first rendered frame — never the desk's own, whose transcript may
+   * quote the documents back — whose text carries every fact, or null.
+   */
+  const frameShowing = async (facts) => {
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      const text = await frame.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
+      if (facts.every((fact) => text.includes(fact))) return frame;
+    }
+    return null;
+  };
+  const BRIEF_FACTS = [BRIEF_REGISTRATION, BRIEF_EVENT_NAME, BRIEF_EVENT_CODE];
+  const briefModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const briefFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  const briefPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  let briefFrame = null;
+  let briefModalAnswers = 0;
+  // Two turns' worth of clock: an intake question may precede the build.
+  const briefDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  while (Date.now() < briefDeadline) {
+    if (officeGenerationRequested) {
+      throw new Error(
+        'The website brief was sent to the OFFICE GENERATOR — the desk read "Excel" in a website ask and chose a '
+        + `workbook over the site (the 2026-09-06 defect). Page state: ${await recordPageState()}`,
+      );
+    }
+    if (await briefFailed.isVisible().catch(() => false)) {
+      throw new Error(
+        'The brief-with-documents turn FAILED outright — a website ask with documents must end in a question or a site, '
+        + `never a dead turn. Page state: ${await recordPageState()}`,
+      );
+    }
+    briefFrame = await frameShowing(BRIEF_FACTS);
+    if (briefFrame) break;
+    if (await briefModal.isVisible().catch(() => false)) {
+      if (briefModalAnswers >= 3) {
+        throw new Error(`The desk asked ${briefModalAnswers + 1} questions about the brief without ever building. Page state: ${await recordPageState()}`);
+      }
+      briefModalAnswers += 1;
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await page.waitForTimeout(500);
+  }
+  page.off('request', officeWatch);
+  if (!briefFrame) {
+    /*
+     * WHICH fact is missing decides who fixes it: the number is in one PDF and
+     * the event in the other, so a page with one and not the other read one
+     * document and dropped the second; a page with neither built without
+     * reading; no page at all is the turn.
+     */
+    const withNumber = Boolean(await frameShowing([BRIEF_REGISTRATION]));
+    const withEvent = Boolean(await frameShowing([BRIEF_EVENT_NAME, BRIEF_EVENT_CODE]));
+    const state = await recordPageState();
+    const snapshot = evidence.pageState || {};
+    throw new Error(
+      (withNumber && !withEvent
+        ? `The site shows the registration number but not the event ${BRIEF_EVENT_NAME} ${BRIEF_EVENT_CODE} — the second attached PDF did not reach the build. `
+        : !withNumber && withEvent
+          ? `The site shows the event but not the registration number ${BRIEF_REGISTRATION} — the first attached PDF did not reach the build. `
+          : snapshot.previewMounted
+            ? `A site rendered but shows neither ${BRIEF_REGISTRATION} nor ${BRIEF_EVENT_NAME} ${BRIEF_EVENT_CODE} — the model built without reading the documents. `
+            : `No site rendered within ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s (${briefModalAnswers} intake question(s) answered). `)
+      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. Page state: ${state}`,
+    );
+  }
+  const briefCorrelationId = await briefPreview.getAttribute('data-quantora-correlation-id').catch(() => null);
+  markActiveTransaction('brief-with-documents', briefCorrelationId);
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-brief-with-documents.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'brief-with-documents',
+    correlationId: briefCorrelationId,
+    rendered: true,
+    groundedFacts: BRIEF_FACTS.length,
+    modalAnswers: briefModalAnswers,
+    officeGenerationRequested,
+    durationMs: Date.now() - briefStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 7 — THE SECOND TURN, WHICH IS WHERE PEOPLE ACTUALLY LIVE.
+   *
+   * Nothing deployed had ever sent a follow-up into a built site. The whole
+   * point of a desk is the second ask — change this, add that — and the
+   * classes that break it are invisible on a first turn: the build session
+   * not recognised, the edit rebuilt from scratch, the preview not
+   * re-rendered. One edit, one exact fact to find afterwards. The heading is
+   * looked for in the rendered site itself, whether the desk re-rendered
+   * under a new correlation id or patched the running preview in place.
+   */
+  }
+
+  if (runs(7)) {
+  const iterateStartedAt = Date.now();
+  markActiveTransaction('iterate-heading');
+  const NEW_HEADING = `Golden Harvest Community Portal ${String(Date.now()).slice(-4)}`;
+  await prompt.fill(`Change the main heading at the top of the home page to read exactly: ${NEW_HEADING}. Keep everything else exactly as it is.`);
+  await prompt.press('Enter');
+  /** Every h1 and h2 in every rendered frame but the desk's own. */
+  const headingsShown = async () => {
+    const seen = [];
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      seen.push(...(await frame.locator('h1, h2').allInnerTexts().catch(() => [])));
+    }
+    return seen.map((text) => text.trim());
+  };
+  const iterateFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  // Two attempts' worth of clock: a fileless edit reply is retried once (2026-09-06).
+  const iterateDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  let headingFound = false;
+  while (Date.now() < iterateDeadline) {
+    if (await iterateFailed.isVisible().catch(() => false)) {
+      throw new Error(`The follow-up edit turn FAILED before the site changed. Page state: ${await recordPageState()}`);
+    }
+    if ((await headingsShown()).includes(NEW_HEADING)) { headingFound = true; break; }
+    await page.waitForTimeout(500);
+  }
+  if (!headingFound) {
+    /*
+     * WHICH half: the first run of this transaction (2026-09-06) found the
+     * model DESCRIBING the edit — "I've updated the main heading…" — and
+     * returning no files, and the desk closing the turn as done on the files
+     * from the turn before. A claim without a changed site is that class by
+     * name; a site that changed to the wrong heading is the model's.
+     */
+    const state = await recordPageState();
+    const snapshot = evidence.pageState || {};
+    const claimed = /\b(?:updated|changed|replaced|renamed|set)\b/i.test(String(snapshot.lastAssistantText || ''));
+    throw new Error(
+      `The follow-up edit did not land: no heading reads "${NEW_HEADING}" after ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s; `
+      + `headings seen: ${JSON.stringify((await headingsShown()).slice(0, 6))}. `
+      + (claimed
+        ? 'The reply CLAIMS the change was made while the site shows the old heading — a fileless edit reply accepted as done (src/lib/desk-edit-proof.js closes this class). '
+        : '')
+      + `Page state: ${state}`,
+    );
+  }
+  const iterateCorrelationId = await page.locator('[data-quantora-real-project-preview="true"]').first()
+    .getAttribute('data-quantora-correlation-id').catch(() => null);
+  markActiveTransaction('iterate-heading', iterateCorrelationId);
+  if (iterateCorrelationId) await recordInteraction(iterateCorrelationId, 'iterate-heading');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-iterate-heading.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'iterate-heading',
+    correlationId: iterateCorrelationId,
+    rendered: true,
+    headingChanged: true,
+    durationMs: Date.now() - iterateStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 8 — AN OFFICE FILE, OPENED.
+   *
+   * "No gate has asked for a deck and opened the file it got" was the ledger's
+   * own note on the Office journey. The generator's failure of 2026-09-06 —
+   * the host clock running out behind "Failed to generate document" — was on
+   * a turn that should never have reached it, but the path itself had never
+   * been proven in production either. A one-page Word document is asked for
+   * with the briefing skipped, the card's Download is clicked, and the file
+   * the browser received is opened: word/document.xml must carry the title.
+   */
+  }
+
+  if (runs(8)) {
+  const newChatForOffice = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForOffice, 'New Chat control is missing after the iterate-heading transaction.', 15_000);
+  await newChatForOffice.click();
+
+  const officeStartedAt = Date.now();
+  markActiveTransaction('office-document');
+  const OFFICE_TITLE = `Golden Canary Brief GC-${String(Date.now()).slice(-6)}`;
+  await prompt.fill(`Create a one-page Word document titled exactly "${OFFICE_TITLE}" with two short paragraphs introducing a neighbourhood bakery. Generate the file now; do not ask me any questions first.`);
+  await prompt.press('Enter');
+  const officeCard = page.locator('[data-quantora-office-card="true"]').last();
+  const officeModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const officeFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  let officeModalAnswers = 0;
+  let officeReady = false;
+  // A briefing round may precede generation, and generation has its own clock.
+  const officeDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  while (Date.now() < officeDeadline) {
+    if (await officeFailed.isVisible().catch(() => false)) {
+      const state = await recordPageState();
+      const snapshot = evidence.pageState || {};
+      // The generator's own account first — path, status, stage, and the
+      // providers it asked or refused to ask — then the desk's sentence: "ran
+      // out of host time" and "Please sign in" are different defects, and
+      // between them the two name which.
+      const generatorAnswer = describeApiFailure(lastApiFailure('/api/generate-office', 'office-document'));
+      throw new Error(`The Office turn FAILED. ${generatorAnswer ? `${generatorAnswer}. ` : ''}Desk showed: ${String(snapshot.lastAssistantText || '').replace(/\s+/g, ' ').slice(0, 220)}. Page state: ${state}`);
+    }
+    if (await officeCard.isVisible().catch(() => false)) { officeReady = true; break; }
+    if (await officeModal.isVisible().catch(() => false)) {
+      if (officeModalAnswers >= 3) {
+        throw new Error(`The Office briefing asked ${officeModalAnswers + 1} questions without ever generating. Page state: ${await recordPageState()}`);
+      }
+      officeModalAnswers += 1;
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await page.waitForTimeout(500);
+  }
+  if (!officeReady) {
+    throw new Error(`No Office card appeared within ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s (${officeModalAnswers} briefing answer(s)). Page state: ${await recordPageState()}`);
+  }
+  const officeKind = await officeCard.getAttribute('data-quantora-office-kind');
+  if (officeKind !== 'word') {
+    throw new Error(`The desk generated a "${officeKind || 'unknown'}" file for a Word ask. Page state: ${await recordPageState()}`);
+  }
+  const downloadEvent = page.waitForEvent('download', { timeout: 30_000 });
+  await officeCard.locator('[data-quantora-office-download="true"]').first().click();
+  const download = await downloadEvent;
+  const downloadedPath = `${ARTIFACT_DIR}/deployed-golden-office-document.docx`;
+  await download.saveAs(downloadedPath);
+  const docxBytes = readFileSync(downloadedPath);
+  // The words wherever the writer put them: <w:t> runs in document.xml, or
+  // the HTML altChunk part the platform's writer defers to. The first run
+  // read document.xml alone and found "" on a file Word opens with the title.
+  const wordFile = wordDocumentWords(docxBytes);
+  if (wordFile === null) {
+    throw new Error(`The downloaded file (${download.suggestedFilename()}, ${docxBytes.length} bytes) is not a Word document: it has no word/document.xml.`);
+  }
+  // Runs may split a title, and a style may case it: compare the words alone.
+  const squash = (value) => String(value).replace(/\s+/g, '').toLowerCase();
+  if (!squash(wordFile.words).includes(squash(OFFICE_TITLE))) {
+    const partsRead = wordFile.parts.map((part) => `${part.name} (${part.missing ? 'missing' : `${part.words.split(/\s+/).filter(Boolean).length} words`})`).join(', ');
+    throw new Error(`The Word document opened but does not carry the title "${OFFICE_TITLE}". Parts read: ${partsRead}. Its text begins: ${wordFile.words.slice(0, 160)}`);
+  }
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-office-document.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'office-document',
+    fileName: download.suggestedFilename(),
+    bytes: docxBytes.length,
+    opened: true,
+    titleFound: true,
+    modalAnswers: officeModalAnswers,
+    durationMs: Date.now() - officeStartedAt,
+  });
+  delete evidence.activeTransaction;
+  }
 
   /*
    * Thrown, not warned, and thrown INSIDE the try so it is reported by the same
    * verdict machinery as any other failure. A run that quietly covers less than
-   * it claims is a worse outcome than a run that fails.
+   * it PLANNED is a worse outcome than a run that fails — and the plan itself
+   * is printed above and carried in the evidence, so a two-transaction pull
+   * request run can never read as a five-transaction production one.
    */
   const ran = evidence.transactions.map((entry) => entry.name);
-  const missing = EXPECTED_TRANSACTIONS.filter((name) => !ran.includes(name));
+  const missing = PLANNED_TRANSACTIONS.filter((name) => !ran.includes(name));
   if (missing.length) {
     throw new Error(
-      `The golden reported success while ${missing.length} transaction(s) never ran: ${missing.join(', ')}. `
-      + `Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
+      `The golden reported success while ${missing.length} planned transaction(s) never ran: ${missing.join(', ')}. `
+      + `Planned: ${PLANNED_TRANSACTIONS.join(', ')}. Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
     );
   }
 
@@ -856,6 +1229,9 @@ try {
    * off at "previewMou" — the exact field being looked for.
    */
   const state = evidence.pageState || {};
+  // The last failed API answer of the failed transaction — path, status and
+  // the server's stage. The console said "502 ()" and no more.
+  const failedApi = lastApiFailure('/api/', evidence.activeTransaction?.name || null);
   const digest = [
     `preview=${state.previewMounted ? 'mounted' : 'absent'}`,
     state.previewCompiling ? 'compiling' : null,
@@ -864,12 +1240,13 @@ try {
     typeof state.buildJobs === 'number' ? `buildJobs=${state.buildJobs}` : null,
     state.previewCorrelationId ? `previewCid=${state.previewCorrelationId}` : null,
     state.storageFault ? `storageFault` : null,
+    failedApi ? `api=${failedApi.status} ${failedApi.path}${failedApi.stage ? `@${failedApi.stage}` : ''}` : null,
     engineDigest,
   ].filter(Boolean).join(' ');
   const verdict = `GOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
     + ` | completed: ${done}`
     + (digest ? ` | state: ${digest}` : '')
-    + ` | why: ${oneLine(error?.message || error).slice(0, 160)}`;
+    + ` | why: ${oneLine(error?.message || error).slice(0, 240)}`;
   console.error(`\n${verdict}`);
   /*
    * AND WRITTEN OUT, because printing it here was not enough.

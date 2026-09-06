@@ -7,6 +7,7 @@ import youtubeValidate from "./_lib/handlers/youtube-validate.js";
 import previewImage from "./_lib/handlers/preview-image.js";
 import account from "./_lib/handlers/account.js";
 import classifyIntent from "./_lib/handlers/classify-intent.js";
+import planTurn from "./_lib/handlers/plan-turn.js";
 import modelRouteCanary from "./_lib/handlers/model-route-canary.js";
 import { applyCors, clientIp, isRateLimited } from "./_lib/rate-limit.js";
 import { getSessionUser } from "./_lib/session.js";
@@ -146,6 +147,7 @@ export default async function handler(req: any, res: any) {
   if (routed === "preview-image") return previewImage(req, res);
   if (routed === "account") return account(req, res);
   if (routed === "classify-intent") return classifyIntent(req, res);
+  if (routed === "plan-turn") return planTurn(req, res);
   if (routed === "model-route-canary") return modelRouteCanary(req, res);
 
   if (routed === 'trace') {

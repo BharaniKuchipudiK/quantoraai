@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import ProfilePictureEditor from './ProfilePictureEditor.jsx';
 import { useProfileAvatar } from '../hooks/useProfileAvatar.js';
+import { exploratorySurfacesEnabled } from '../lib/platform-surfaces.js';
 import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDown, CheckCircle2, Zap, Lock, LogOut, Trash2, ShieldAlert, Key, Sun, Moon, Laptop, Download, Activity } from 'lucide-react';
 
 const PROFILE_MENU_WIDTH = 320;
@@ -262,6 +263,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               {compact ? 'Studio' : 'AI Studio'}
             </button>
 
+            {exploratorySurfacesEnabled() && (<>
             <button
               onClick={() => setActiveTab('canvas')}
               style={{
@@ -301,6 +303,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               <Cpu size={16} />
               {compact ? 'Quantum' : 'Quantum Playground'}
             </button>
+            </>)}
           </nav>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: subtextColor, background: navBg, border: `1px solid ${navBorder}`, padding: '6px 14px', borderRadius: '20px' }}>

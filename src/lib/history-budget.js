@@ -72,46 +72,71 @@ function summarizeBulk(message) {
 }
 
 /**
- * Fit a transcript inside the byte budget, losing as little meaning as possible.
- *
- * @returns {{ history: object[], trimmed: number, dropped: number, bytes: number }}
+ * Older turns beyond this many are carried as one-line digests, whatever their
+ * size. The server keeps the last 100 items and silently cuts the rest; this
+ * keeps the request under that line with the shape of the conversation intact.
  */
-export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET } = {}) {
+export const HISTORY_ITEM_BUDGET = 80;
+export const HISTORY_DIGEST_ID = 'history-digest';
+const DIGEST_LINE_CHARS = 140;
+
+function digestLine(message) {
+  const who = message?.sender === 'user' ? 'You' : 'Quantora';
+  const text = String(message?.text || '').replace(/\s+/g, ' ').trim();
+  const body = text.length > DIGEST_LINE_CHARS ? `${text.slice(0, DIGEST_LINE_CHARS - 1)}…` : text;
+  return `- ${who}: ${body || '(no text)'}`;
+}
+
+/*
+ * COMPACTION, NOT DELETION (2026-09-06).
+ *
+ * Turns past the budget used to be dropped whole, and the person was told "I
+ * left out the earliest 5 messages". A long build session loses its opening
+ * brief that way — the one message that says what the site is for — and every
+ * later answer drifts. Now the oldest turns fold into one digest message at the
+ * head of the history: one line each, who said it and the first 140 characters.
+ * The model keeps the shape of the conversation; the request stays small.
+ */
+function digestMessage(compacted) {
+  const n = compacted.length;
+  return {
+    id: HISTORY_DIGEST_ID,
+    sender: 'ai',
+    text: `Earlier in this conversation (${n} turn${n === 1 ? '' : 's'} compacted to keep the request sendable; the files they produced are still on the desk):\n${compacted.map(digestLine).join('\n')}`,
+    __digest: true,
+    __compacted: n,
+  };
+}
+
+/** Fold the oldest `count` non-digest turns of `working` into its digest. */
+function compactOldest(working, compacted, count) {
+  const moved = working.slice(0, count);
+  const rest = working.slice(count);
+  const all = [...compacted, ...moved];
+  return { working: [digestMessage(all), ...rest], compacted: all };
+}
+
+/**
+ * Fit a transcript inside the byte and item budgets, losing as little meaning as possible.
+ *
+ * @returns {{ history: object[], trimmed: number, dropped: number, compacted: number, bytes: number }}
+ *   `dropped` counts the turns no longer sent verbatim — they live on in the
+ *   digest, and the name is kept so older readers of this result still work.
+ */
+export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET, maxItems = HISTORY_ITEM_BUDGET } = {}) {
   const all = Array.isArray(messages) ? messages : [];
-  if (!all.length) return { history: [], trimmed: 0, dropped: 0, bytes: 0 };
+  if (!all.length) return { history: [], trimmed: 0, dropped: 0, compacted: 0, bytes: 0 };
 
   let working = all;
+  let compacted = [];
+  let trimmed = 0;
   let bytes = sizeOf(working);
-  if (bytes <= maxBytes) return { history: working, trimmed: 0, dropped: 0, bytes };
 
   // 1. Summarise bulk in everything but the recent tail.
-  const tailStart = Math.max(0, working.length - VERBATIM_TAIL);
-  let trimmed = 0;
-  working = working.map((message, index) => {
-    if (index >= tailStart) return message;
-    const next = summarizeBulk(message);
-    if (next !== message) trimmed += 1;
-    return next;
-  });
-  bytes = sizeOf(working);
-  if (bytes <= maxBytes) return { history: working, trimmed, dropped: 0, bytes };
-
-  // 2. Still too large: drop oldest whole turns, never the last exchange.
-  let dropped = 0;
-  while (working.length > 2 && bytes > maxBytes) {
-    working = working.slice(1);
-    dropped += 1;
-    bytes = sizeOf(working);
-  }
-
-  /*
-   * 3. A single turn can still exceed the budget on its own — one enormous
-   * pasted file, or an image inlined as a data URI. Summarising the last
-   * exchange is a real loss, and it is a smaller loss than a request that
-   * cannot be sent at all.
-   */
   if (bytes > maxBytes) {
-    working = working.map((message) => {
+    const tailStart = Math.max(0, working.length - VERBATIM_TAIL);
+    working = working.map((message, index) => {
+      if (index >= tailStart) return message;
       const next = summarizeBulk(message);
       if (next !== message) trimmed += 1;
       return next;
@@ -119,7 +144,39 @@ export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET } 
     bytes = sizeOf(working);
   }
 
-  return { history: working, trimmed, dropped, bytes };
+  // 2. Too many items: fold the oldest into the digest so the server never cuts silently.
+  if (working.length > maxItems) {
+    ({ working, compacted } = compactOldest(working, compacted, working.length - maxItems + 1));
+    bytes = sizeOf(working);
+  }
+
+  // 3. Still too large: fold the oldest whole turns, never the last exchange.
+  const turnsBeyondDigest = () => working.length - (compacted.length ? 1 : 0);
+  while (turnsBeyondDigest() > 2 && bytes > maxBytes) {
+    const digestOffset = compacted.length ? 1 : 0;
+    const moved = working.slice(digestOffset, digestOffset + 1);
+    compacted = [...compacted, ...moved];
+    working = [digestMessage(compacted), ...working.slice(digestOffset + 1)];
+    bytes = sizeOf(working);
+  }
+
+  /*
+   * 4. A single turn can still exceed the budget on its own — one enormous
+   * pasted file, or an image inlined as a data URI. Summarising the last
+   * exchange is a real loss, and it is a smaller loss than a request that
+   * cannot be sent at all.
+   */
+  if (bytes > maxBytes) {
+    working = working.map((message) => {
+      if (message.__digest) return message;
+      const next = summarizeBulk(message);
+      if (next !== message) trimmed += 1;
+      return next;
+    });
+    bytes = sizeOf(working);
+  }
+
+  return { history: working, trimmed, dropped: compacted.length, compacted: compacted.length, bytes };
 }
 
 /**
@@ -133,11 +190,11 @@ export function budgetHistory(messages = [], { maxBytes = HISTORY_BYTE_BUDGET } 
  * time it happens, or the platform is quietly forgetting and letting somebody
  * wonder why it stopped remembering.
  */
-export function describeHistoryBudget({ trimmed = 0, dropped = 0 } = {}) {
-  if (!trimmed && !dropped) return '';
+export function describeHistoryBudget({ trimmed = 0, dropped = 0, compacted = null } = {}) {
+  const folded = compacted === null ? dropped : compacted;
+  if (!trimmed && !folded) return '';
   const parts = [];
-  if (dropped) parts.push(`the earliest ${dropped} message${dropped === 1 ? '' : 's'}`);
-  if (trimmed) parts.push(`the long output of ${trimmed} earlier turn${trimmed === 1 ? '' : 's'}`);
-  return `This conversation got large enough to stop sending, so I left out ${parts.join(' and ')}. Everything built is still on the desk — only the transcript was shortened.`;
+  if (folded) parts.push(`folded the earliest ${folded} message${folded === 1 ? '' : 's'} into one-line summaries`);
+  if (trimmed) parts.push(`shortened the long output of ${trimmed} earlier turn${trimmed === 1 ? '' : 's'}`);
+  return `This conversation got large enough to stop sending as it was, so I ${parts.join(' and ')}. Nothing is forgotten outright, and everything built is still on the desk.`;
 }
-

@@ -1,3 +1,4 @@
+import { isMeasuredPoor, rankByMeasuredOutcome, type MeasuredOutcome, type MeasuredOutcomeMap } from './measured-outcome.js';
 import type { AtomicProviderCircuitStore, ProviderCircuitState } from './provider-resilience.js';
 
 export type InferenceGateway = 'gemini' | 'openrouter';
@@ -6,6 +7,10 @@ export type InferenceCostClass = 'free' | 'low' | 'standard' | 'unknown';
 
 export type InferenceRoute = {
   id: string;
+  /** What the ledger measured for this model inside the window, when anything was. */
+  measured?: MeasuredOutcome;
+  /** Set when measured outcome moved this route down the ladder. */
+  demoted?: 'measured-outcome';
   provider: InferenceGateway;
   gateway: InferenceGateway;
   upstreamProvider: string;
@@ -55,6 +60,18 @@ export type InferencePlanInput = {
    */
   paidLastResortModelId?: string;
   paidLastResortAllowed?: boolean;
+  /**
+   * Phase 6: what the ledger measured in the last window, per model. Routes
+   * with unambiguous poor evidence move down the free ladder; with no evidence
+   * the order is exactly what it was.
+   */
+  measuredOutcomes?: MeasuredOutcomeMap;
+  /**
+   * True when the person chose Auto rather than a model. Only then may the
+   * measured outcome move the FIRST attempt: a model somebody picked by name is
+   * tried first even when the ledger is against it — their choice, reported.
+   */
+  autoRouting?: boolean;
 };
 
 const GEMINI_STABLE = 'gemini-flash-latest';
@@ -129,6 +146,35 @@ export function resolveTurnBudgetMs(requested: unknown, ceilingMs: number): numb
   const asked = Number(requested);
   if (!Number.isFinite(asked) || asked <= 0) return ceilingMs;
   return Math.min(ceilingMs, Math.floor(asked));
+}
+
+/**
+ * INDEPENDENCE BEATS DEPTH (2026-09-06).
+ *
+ * A build turn keeps only the rungs its budget can fund (MAX_BUILD_RUNGS,
+ * MIN_VIABLE_BUILD_ATTEMPT_MS). The trim used to keep the first N rungs, and
+ * with a Gemini model pinned the first two were both Gemini — so on the day
+ * Google refused the project's spend cap, a pinned Gemini Flash build was
+ * refused twice and the OpenRouter rung at the back of the ladder, the one
+ * that would have answered, had been cut for budget. Two rungs on one dead
+ * gateway are one rung.
+ *
+ * When the kept rungs all sit on one gateway and a dropped rung on the other
+ * gateway is not circuit-open, it takes the last kept slot. The primary is
+ * never displaced: the user's pin is honoured first, and only the second
+ * chance changes. With one fundable rung there is no second chance to give.
+ */
+export function trimBuildLadder(attempts: InferenceRoute[], fundable: number): InferenceRoute[] {
+  const keep = Math.max(1, Math.floor(fundable));
+  if (attempts.length <= keep) return attempts;
+  const kept = attempts.slice(0, keep);
+  const dropped = attempts.slice(keep);
+  const gateways = new Set(kept.map((route) => route.gateway));
+  if (keep < 2 || gateways.size > 1) return kept;
+  const [only] = [...gateways];
+  const independent = dropped.find((route) => route.gateway !== only && route.circuit !== 'open');
+  if (!independent) return kept;
+  return [...kept.slice(0, keep - 1), independent];
 }
 
 export function maxViableBuildAttempts(
@@ -380,7 +426,28 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     return COST_RANK[left.costClass] - COST_RANK[right.costClass];
   });
 
-  const freeLadder = [selected, ...rest];
+  /*
+   * Phase 6: the ledger's word, applied last so it never overrides independence
+   * or declared health — it only moves a route that has been failing most of
+   * its recent turns behind the ones that have not.
+   */
+  const rankedRest = rankByMeasuredOutcome(rest, input.measuredOutcomes);
+  const selectedEvidence = input.measuredOutcomes?.[selected.id];
+  // The first attempt carries its evidence too, so the trace can say what was
+  // measured for the model that ran — pinned or not.
+  let first: InferenceRoute = selectedEvidence ? { ...selected, measured: selectedEvidence } : selected;
+  let ladderRest: InferenceRoute[] = rankedRest;
+  if (input.autoRouting === true && isMeasuredPoor(input.measuredOutcomes?.[selected.id])) {
+    const better = rankedRest.find((route) => !route.demoted && route.circuit !== 'open');
+    if (better) {
+      first = better;
+      ladderRest = [
+        ...rankedRest.filter((route) => route.id !== better.id),
+        { ...selected, measured: input.measuredOutcomes![selected.id], demoted: 'measured-outcome' as const },
+      ];
+    }
+  }
+  const freeLadder = [first, ...ladderRest];
 
   // Reserve the last rung for a paid rescue when the account has opted in and
   // the meter permits it. The free ladder always runs first and takes every
@@ -450,18 +517,30 @@ export async function summarizeInferenceReadiness(input: {
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const ROUTE_RESET_MS = 5 * 60_000;
 const DOMAIN_RESET_MS = 60_000;
+/**
+ * A billing refusal (spend cap breached, credits depleted, 402) changes only
+ * when a person pays. Five minutes re-tried a capped Gemini project all day on
+ * 2026-09-06, a wasted round trip on every turn that hit the reset; thirty
+ * holds the route open long enough to matter and short enough that a top-up
+ * is noticed within the half hour without anyone restarting anything.
+ */
+export const BILLING_RESET_MS = 30 * 60_000;
 
 export async function recordInferenceRouteFailure(
   store: AtomicProviderCircuitStore,
   route: InferenceRoute,
   status: number,
   now = Date.now(),
+  options: { billing?: boolean } = {},
 ) {
-  const key = status === 429 ? route.domainCircuitKey : route.circuitKey;
+  // A billing refusal is about the credential's account, not one model's
+  // quota domain — the whole route holds, for as long as money takes.
+  const billing = options.billing === true;
+  const key = status === 429 && !billing ? route.domainCircuitKey : route.circuitKey;
   return store.recordFailure(key, {
     now,
     failureThreshold: CIRCUIT_FAILURE_THRESHOLD,
-    resetMs: status === 429 ? DOMAIN_RESET_MS : ROUTE_RESET_MS,
+    resetMs: billing ? BILLING_RESET_MS : status === 429 ? DOMAIN_RESET_MS : ROUTE_RESET_MS,
   });
 }
 

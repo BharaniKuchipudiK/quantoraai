@@ -66,7 +66,7 @@ import { describeQirDurability } from '../lib/qir-durability.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
-import { useStudioSession, DEFAULT_PROJECT_ID } from '../hooks/useStudioSession.js';
+import { chatsForWorkspace, useStudioSession, DEFAULT_PROJECT_ID } from '../hooks/useStudioSession.js';
 import {
   loadStudioSidebarSections,
   persistStudioSidebarSections,
@@ -97,7 +97,7 @@ import { shouldApplyPromptPolishResult } from '../lib/prompt-polish-guard.js';
 import { shouldKeepWorkspaceForPrompt } from '../lib/workspace-intent.js';
 import { recordClientBoundary } from '../lib/transaction-trace.js';
 import { fetchTraceStory } from '../lib/trace-lookup.js';
-import { sessionHandoverLabel, describeSessionHandover } from '../lib/session-continuity.js';
+import { sessionHandoverLabel } from '../lib/session-continuity.js';
 import { studyAwaitsAnswer } from '../lib/study-conversation-loop.js';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
 import { withoutPrivateStudyInstructions } from '../lib/study-private-instructions.js';
@@ -361,6 +361,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     handleCreateNewChat,
     handleCreateHandoverChat,
     handleCreateAdvisorChat,
+    handleCreateWorkspaceChat,
     handleDeleteChat,
     handleMoveChatToProject,
     handleRenameChat,
@@ -852,13 +853,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [messages, studioDomain]);
 
   const openCodingDesk = useCallback(() => {
-    if (!canAutoOpenCodeWorkspace(studioDomain)) {
-      handleCreateNewChat();
-      setStudioDomain(null);
-    }
+    /*
+     * From an advisor desk this opens a chat that belongs to the Coding desk,
+     * pinned there. It used to create a plain chat and then setStudioDomain(null)
+     * — which wrote to the chat being LEFT, because the active id had not moved
+     * yet: the Travel chat you came from silently became a coding chat.
+     */
+    if (!canAutoOpenCodeWorkspace(studioDomain)) handleCreateWorkspaceChat('coding');
     setCodingDeskOpen(true);
     if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
-  }, [studioDomain, handleCreateNewChat, setStudioDomain]);
+  }, [studioDomain, handleCreateWorkspaceChat]);
 
   /*
    * One effect owns the strip: open the active pane, then drop tabs the VFS no
@@ -1538,7 +1542,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * with no way back. The chip now opens what it would carry; only the second
    * click commits.
    */
-  const [pendingHandover, setPendingHandover] = useState(null);
 
   /*
    * The session goal had no way to close. On an advisor workspace it is sticky
@@ -2610,7 +2613,11 @@ Paused — ${autoPauseRef.current}.`
 
                       {/* Render Dedicated Office Download Card */}
                       {msg.officeAttachment && (
-                        <div style={{
+                        <div
+                          data-quantora-office-card="true"
+                          data-quantora-office-kind={msg.officeAttachment.kind || msg.officeAttachment.format || 'office'}
+                          data-quantora-office-file={msg.officeAttachment.fileName || ''}
+                          style={{
                           marginTop: '20px',
                           padding: '24px',
                           background: isLight ? '#ffffff' : '#0f172a',
@@ -2644,6 +2651,7 @@ Paused — ${autoPauseRef.current}.`
                             </div>
                           </div>
                           <button
+                            data-quantora-office-download="true"
                             onClick={() => {
                               try {
                                 downloadOfficeArtifact(resolveOfficeDownloadPayload(msg.officeAttachment, messages));
@@ -2809,10 +2817,9 @@ Paused — ${autoPauseRef.current}.`
                           >
                             <button
                               type="button"
-                              onClick={() => setPendingHandover(
-                                pendingHandover?.id === msg.sessionContinuity.id ? null : msg.sessionContinuity,
-                              )}
-                              title={sessionHandoverLabel(msg.sessionContinuity)}
+                              data-quantora-session-handover-start="true"
+                              onClick={() => handleCreateHandoverChat(msg.sessionContinuity)}
+                              title={`${sessionHandoverLabel(msg.sessionContinuity)} — opens a new chat that carries this one's goal, facts and desk`}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -2844,85 +2851,6 @@ Paused — ${autoPauseRef.current}.`
                             >
                               <X size={13} />
                             </button>
-                          </div>
-                        ) : null}
-                        {msg.sessionContinuity
-                          && !msg.sessionContinuityDismissed
-                          && pendingHandover?.id === msg.sessionContinuity.id ? (
-                          <div
-                            data-quantora-handover-preview="true"
-                            style={{
-                              marginTop: '8px',
-                              padding: '12px 14px',
-                              borderRadius: '12px',
-                              border: isLight ? '1px solid #fed7aa' : '1px solid rgba(249,115,22,0.3)',
-                              background: isLight ? '#fffbf5' : 'rgba(249,115,22,0.06)',
-                              fontSize: '0.8rem',
-                              color: textColor,
-                              lineHeight: 1.55,
-                            }}
-                          >
-                            <div style={{ color: subtextColor, marginBottom: '8px' }}>
-                              {describeSessionHandover(pendingHandover).reason}
-                            </div>
-                            {describeSessionHandover(pendingHandover).carried > 0 ? (
-                              <>
-                                <div style={{ fontWeight: 700, marginBottom: '6px' }}>
-                                  This is what moves to the new chat:
-                                </div>
-                                <ul style={{ margin: '0 0 10px', paddingLeft: '18px' }}>
-                                  {describeSessionHandover(pendingHandover).lines.map((line, i) => (
-                                    <li key={i} style={{ marginBottom: '3px' }}>{line}</li>
-                                  ))}
-                                </ul>
-                              </>
-                            ) : (
-                              <div style={{ marginBottom: '10px' }}>
-                                Nothing has been recorded to carry across yet — the new chat would start empty.
-                                Everything above stays in this one.
-                              </div>
-                            )}
-                            <div style={{ color: subtextColor, marginBottom: '10px' }}>
-                              This chat stays exactly as it is. Nothing here is deleted.
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const contract = pendingHandover;
-                                  setPendingHandover(null);
-                                  handleCreateHandoverChat(contract);
-                                }}
-                                style={{
-                                  padding: '6px 12px',
-                                  borderRadius: '999px',
-                                  border: 'none',
-                                  background: '#f97316',
-                                  color: '#fff',
-                                  fontSize: '0.76rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Start the new chat
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setPendingHandover(null)}
-                                style={{
-                                  padding: '6px 12px',
-                                  borderRadius: '999px',
-                                  border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.15)',
-                                  background: 'transparent',
-                                  color: subtextColor,
-                                  fontSize: '0.76rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                Keep going here
-                              </button>
-                            </div>
                           </div>
                         ) : null}
                         {continueSet?.items?.length > 0 && (
@@ -3667,6 +3595,88 @@ Paused — ${autoPauseRef.current}.`
     );
   };
 
+  /*
+   * WORKSPACES OWN THEIR CHATS (2026-09-06). Each workspace row in the sidebar
+   * carries a "+" that opens a new chat pinned to that workspace, a fold that
+   * hides its chats, and — unfolded — the chats of that workspace in the open
+   * project. A chat opened here never moves to another desk, whatever it says.
+   */
+  const WORKSPACE_FOLD_KEY = 'quantora_workspace_collapsed_v1';
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(WORKSPACE_FOLD_KEY) || '{}');
+      return stored && typeof stored === 'object' ? stored : {};
+    } catch {
+      return {};
+    }
+  });
+  const toggleWorkspaceFold = useCallback((workspace) => {
+    setCollapsedWorkspaces((prev) => {
+      const next = { ...prev, [workspace]: !prev[workspace] };
+      try { localStorage.setItem(WORKSPACE_FOLD_KEY, JSON.stringify(next)); } catch { /* storage is a convenience */ }
+      return next;
+    });
+  }, []);
+  const openWorkspaceChat = useCallback((workspace) => {
+    /*
+     * The new session carries its own desk (null for coding), and studioDomain
+     * follows the active session, so nothing is set here: setStudioDomain
+     * would write to the chat being LEFT, since the active id has not moved yet.
+     */
+    handleCreateWorkspaceChat(workspace);
+    if (workspace === 'coding') setCodingDeskOpen(true);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
+  }, [handleCreateWorkspaceChat]);
+  const workspaceIconButtonStyle = {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'transparent',
+    color: subtextColor,
+    border: 'none',
+    borderRadius: '6px',
+    padding: '2px',
+    cursor: 'pointer',
+  };
+  const renderWorkspaceControls = (workspace, label) => {
+    const folded = collapsedWorkspaces[workspace] === true;
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, paddingRight: '4px' }}>
+        <button
+          type="button"
+          data-quantora-workspace-new-chat={workspace}
+          title={`New chat in ${label}`}
+          aria-label={`New chat in ${label}`}
+          onClick={(event) => { event.stopPropagation(); openWorkspaceChat(workspace); }}
+          style={workspaceIconButtonStyle}
+        >
+          <Plus size={13} />
+        </button>
+        <button
+          type="button"
+          data-quantora-workspace-collapse={workspace}
+          aria-expanded={!folded}
+          title={folded ? `Show ${label} chats` : `Hide ${label} chats`}
+          aria-label={folded ? `Show ${label} chats` : `Hide ${label} chats`}
+          onClick={(event) => { event.stopPropagation(); toggleWorkspaceFold(workspace); }}
+          style={workspaceIconButtonStyle}
+        >
+          {folded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+        </button>
+      </span>
+    );
+  };
+  const renderWorkspaceChats = (workspace) => {
+    if (collapsedWorkspaces[workspace] === true) return null;
+    const chats = chatsForWorkspace(allChatSessions, workspace, activeProject?.id).slice(0, 20);
+    if (!chats.length) return null;
+    return (
+      <div data-quantora-workspace-chats={workspace} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', marginBottom: '2px' }}>
+        {chats.map((session) => renderChatRow(session))}
+      </div>
+    );
+  };
   const isCodingDesk = canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen;
 
   /*
@@ -4006,20 +4016,35 @@ Paused — ${autoPauseRef.current}.`
           </button>
           {sidebarSections.agents ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
-          <div
-            data-quantora-coding-desk-nav="true"
-            onClick={openCodingDesk}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              fontSize: '0.82rem',
-              ...navRowStyle(isCodingDesk),
-            }}
-          >
-            <div style={{ flexShrink: 0, color: isCodingDesk ? '#f97316' : subtextColor }}><Code2 size={15} /></div>
-            <span>Coding desk</span>
+          {/*
+            The "+" and the fold sit BESIDE the row, never inside it. As
+            siblings, a click aimed at the row cannot land on them: the
+            sidebar narrows from 260px to 220px when the desk opens, and a
+            click point computed a frame earlier at the row's centre came to
+            rest on the "+" once the row had moved — a new pinned chat opened
+            and the build's Preview was left in the chat behind it (two CI
+            runs and one in three local runs, 2026-09-06).
+          */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <div
+              data-quantora-coding-desk-nav="true"
+              onClick={openCodingDesk}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                fontSize: '0.82rem',
+                flex: '1 1 auto',
+                minWidth: 0,
+                ...navRowStyle(isCodingDesk),
+              }}
+            >
+              <div style={{ flexShrink: 0, color: isCodingDesk ? '#f97316' : subtextColor }}><Code2 size={15} /></div>
+              <span>Coding desk</span>
+            </div>
+            {renderWorkspaceControls('coding', 'Coding desk')}
           </div>
+          {renderWorkspaceChats('coding')}
           {[
             { domain: 'travel', title: 'Travel Advisor', icon: <Globe size={15} /> },
             { domain: 'finance', title: 'Finance Advisor', icon: <PieChart size={15} /> },
@@ -4029,6 +4054,7 @@ Paused — ${autoPauseRef.current}.`
             const selected = studioDomain === card.domain;
             return (
             <div key={card.domain}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             <div
               data-quantora-advisor={card.domain}
               data-quantora-active-specialist={selected ? card.domain : undefined}
@@ -4041,6 +4067,8 @@ Paused — ${autoPauseRef.current}.`
                 alignItems: 'center',
                 gap: '10px',
                 fontSize: '0.82rem',
+                flex: '1 1 auto',
+                minWidth: 0,
                 ...navRowStyle(selected),
               }}
               onMouseEnter={(e) => {
@@ -4055,6 +4083,9 @@ Paused — ${autoPauseRef.current}.`
               <div style={{ flexShrink: 0, color: selected ? '#f97316' : subtextColor }}>{card.icon}</div>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
             </div>
+            {renderWorkspaceControls(card.domain, card.title)}
+            </div>
+            {renderWorkspaceChats(card.domain)}
             </div>
             );
           })}

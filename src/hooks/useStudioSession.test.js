@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMoveChatToProject, DEFAULT_PROJECT_ID, makeHandoverSession } from './useStudioSession.js';
+import { applyMoveChatToProject, chatsForWorkspace, DEFAULT_PROJECT_ID, handoverNoteMessage, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
 
 const greeting = { id: 1, sender: 'ai', text: 'Hello', type: 'greeting' };
 
@@ -95,7 +95,12 @@ test('handover creates a child chat in the owning project without copying transc
   assert.equal(session.parentSessionId, 'old');
   assert.equal(session.title, 'Master forces');
   assert.deepEqual(session.conversationContext, { goal: 'Master forces', facts: ['Free-body diagrams next'] });
-  assert.deepEqual(session.messages, [greeting]);
+  // The transcript stays behind; the chat opens by saying what came with it.
+  assert.equal(session.messages.length, 2);
+  assert.deepEqual(session.messages[0], greeting);
+  assert.equal(session.messages[1].handoverNote, true);
+  assert.match(session.messages[1].text, /Continued from the previous chat, which stays exactly as it was\./);
+  assert.match(session.messages[1].text, /- Goal: Master forces\n- Free-body diagrams next\n- No files were on that desk\./);
 });
 
 /*
@@ -128,7 +133,24 @@ test('the build travels with the handover, because the transcript is what got to
   });
   assert.deepEqual(session.desk, DESK, 'the new session opens on the same build');
   assert.equal(session.handover.deskCarried, true);
-  assert.deepEqual(session.messages, [greeting], 'and still without the transcript');
+  assert.equal(session.messages.length, 2, 'and still without the transcript');
+  assert.match(session.messages[1].text, /- The desk, with 1 file — Preview runs the same build\./);
+});
+
+test('a chat continued from a pinned chat stays pinned, and names the chat it came from', () => {
+  const session = makeHandoverSession({
+    projectId: 'project-1',
+    defaultGreetingMsg: greeting,
+    contract: HANDOVER,
+    sourceSession: { id: 'old', title: 'Coffee shop site', desk: DESK, deskPinned: true },
+  });
+  assert.equal(session.deskPinned, true);
+  assert.match(session.messages[1].text, /^Continued from "Coffee shop site"/);
+  const unpinned = makeHandoverSession({ projectId: 'project-1', defaultGreetingMsg: greeting, contract: HANDOVER, sourceSession: { id: 'old' } });
+  assert.equal(unpinned.deskPinned, false);
+  const note = handoverNoteMessage({ contract: HANDOVER, sourceSession: null, desk: null });
+  assert.equal(note.sender, 'ai');
+  assert.match(note.text, /Carried over:\n- Goal: Coffee shop\n- No files were on that desk\./);
 });
 
 test('a handover cannot take a desk belonging to a different session', () => {
@@ -151,4 +173,38 @@ test('a source session with no build hands over nothing, and says so', () => {
   });
   assert.equal(session.desk, undefined);
   assert.equal(session.handover.deskCarried, false);
+});
+
+/*
+ * WORKSPACES OWN THEIR CHATS (2026-09-06): a chat opened inside a workspace
+ * is pinned there; the top-level New Chat is not.
+ */
+test('a workspace chat is pinned to its desk and a top-level chat is not', () => {
+  const coding = makeSession(DEFAULT_PROJECT_ID, greeting, null, { pinned: true });
+  assert.equal(coding.studioDomain, null);
+  assert.equal(coding.deskPinned, true);
+  assert.equal(workspaceOfSession(coding), 'coding');
+  const trip = makeSession(DEFAULT_PROJECT_ID, greeting, 'travel', { pinned: true });
+  assert.equal(trip.studioDomain, 'travel');
+  assert.equal(trip.deskPinned, true);
+  assert.equal(workspaceOfSession(trip), 'travel');
+  const general = makeSession(DEFAULT_PROJECT_ID, greeting, null);
+  assert.equal(general.deskPinned, false, 'the top-level New Chat may still find its desk from the message');
+  assert.equal(workspaceOfSession({ studioDomain: 'nonsense' }), 'coding', 'an unknown domain reads as the coding desk');
+});
+
+test('chats are grouped per workspace within the active project, newest first, archived ones left out', () => {
+  const sessions = [
+    { id: 'c1', projectId: 'p1', studioDomain: null, updatedAt: 10 },
+    { id: 'c2', projectId: 'p1', studioDomain: null, updatedAt: 30 },
+    { id: 't1', projectId: 'p1', studioDomain: 'travel', updatedAt: 20 },
+    { id: 'other', projectId: 'p2', studioDomain: null, updatedAt: 40 },
+    { id: 'gone', projectId: 'p1', studioDomain: null, updatedAt: 50, archived: true },
+    { id: 'old', projectId: 'p1', studioDomain: null, createdAt: 5 },
+  ];
+  assert.deepEqual(chatsForWorkspace(sessions, 'coding', 'p1').map((s) => s.id), ['c2', 'c1', 'old']);
+  assert.deepEqual(chatsForWorkspace(sessions, 'travel', 'p1').map((s) => s.id), ['t1']);
+  assert.deepEqual(chatsForWorkspace(sessions, 'finance', 'p1'), []);
+  assert.deepEqual(chatsForWorkspace(sessions, 'nonsense', 'p1'), [], 'an unknown workspace has no chats');
+  assert.deepEqual(chatsForWorkspace(undefined, 'coding', 'p1'), []);
 });

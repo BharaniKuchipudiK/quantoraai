@@ -2,7 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { createHash, randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
-import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { isStoreConfigured, readModelQualityEvents, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { readMeasuredOutcomes } from "./measured-outcome.js";
 import { isProjectStoreConfigured, readProjectContext } from "./project-store.js";
 import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
@@ -51,7 +52,7 @@ import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilien
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { describeCredentialFailure, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isBillingRefusal, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -61,7 +62,7 @@ import {
   canonicalizeModelId,
   inferenceAttemptBudgetMs,
   MIN_VIABLE_BUILD_ATTEMPT_MS,
-  maxViableBuildAttempts,
+  maxViableBuildAttempts, trimBuildLadder,
   resolveTurnBudgetMs,
   planInferenceRoutes,
   recordInferenceRouteFailure,
@@ -1247,11 +1248,21 @@ export default async function handler(req: any, res: any) {
      */
     const openRouterUsable = Boolean(effectiveOpenRouterKey)
       && paidVerdict.meterFault?.gatewayDead !== true;
+    /*
+     * Phase 6: the ledger's last half hour, read once per turn (cached a
+     * minute per instance) and handed to every plan this turn makes. A model
+     * that failed most of its recent turns moves down the ladder; a model the
+     * person named stays first regardless — their choice, and the trace says
+     * what was measured.
+     */
+    const measuredOutcomes = await readMeasuredOutcomes(readModelQualityEvents);
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: routePlanningModels,
       paidLastResortAllowed: paidVerdict.allowed,
+      measuredOutcomes,
+      autoRouting: autoModelRequest,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
@@ -1272,6 +1283,8 @@ export default async function handler(req: any, res: any) {
         primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
         fallbackModelIds: modelRouting?.fallbackModelIds || [],
         models: routePlanningModels,
+        measuredOutcomes,
+        autoRouting: autoModelRequest,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
         openRouterAvailable: openRouterUsable,
@@ -1293,7 +1306,8 @@ export default async function handler(req: any, res: any) {
     // this turn's budget can actually fund at build size.
     if (effectiveBuildMode && attempts.length > 1) {
       const fundable = maxViableBuildAttempts(remainingBudgetMs(startTime, turnBudgetMs));
-      if (attempts.length > fundable) attempts = attempts.slice(0, fundable);
+      // Independence beats depth: a trimmed ladder keeps one rung on the other gateway (2026-09-06).
+      if (attempts.length > fundable) attempts = trimBuildLadder(attempts, fundable);
     }
 
     if (!attempts.length) {
@@ -1663,7 +1677,7 @@ export default async function handler(req: any, res: any) {
           // use this turn's independent fallback, but must not poison the
           // shared operational health circuit for unrelated users.
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
-            await recordInferenceRouteFailure(providerCircuitStore, route, status);
+            await recordInferenceRouteFailure(providerCircuitStore, route, status, Date.now(), { billing: isBillingRefusal(error) });
           }
           trace({
             correlationId,
@@ -1909,6 +1923,8 @@ export default async function handler(req: any, res: any) {
               fallbackModelIds: modelRouting?.fallbackModelIds || [],
               models: routePlanningModels,
               paidLastResortAllowed: paidVerdict.allowed,
+              measuredOutcomes,
+              autoRouting: autoModelRequest,
               requiredCapabilities: [...textCapabilities],
               geminiAvailable: false,
               openRouterAvailable: openRouterUsable,

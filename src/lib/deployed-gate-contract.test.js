@@ -300,7 +300,7 @@ test('an attached document reaches the model, and the desk says what was read', 
   assert.match(snapshot, /documentReads:/);
   const gate = read('scripts/deployed-golden-transactions.mjs');
   assert.match(gate, /setInputFiles\(\{ name: 'rkv-bylaws\.pdf'/, 'the golden must attach a real file through the composer');
-  assert.match(gate, /'document-grounded'\]/, 'and the roster must demand it ran');
+  assert.match(gate, /const EXPECTED_TRANSACTIONS = \[[^\]]*'document-grounded'[^\]]*\]/, 'and the roster must demand it ran');
 });
 
 /*
@@ -351,7 +351,7 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
   assert.match(gate, /engine=ok\(/, 'a healthy engine is named');
   assert.match(gate, /engine=FAILED\(/, 'a dead engine is named with its status and reason');
   assert.match(gate, /engineDigest,\n\s*\]\.filter\(Boolean\)\.join\(' '\)/, 'the digest is part of the failure verdict, not only the evidence JSON');
-  assert.match(gate, /engineProbe,\n\s*transactions: \[\]/, 'and the evidence carries the whole report');
+  assert.match(gate, /engineProbe,\n\s*plannedTransactions: PLANNED_TRANSACTIONS,\n\s*transactions: \[\]/, 'and the evidence carries the whole report, and what this run planned');
   /*
    * WHEN A REFUSAL IS FATAL (2026-09-06). The first version stopped on any
    * 401/403/429 — right for a preview, whose only engine is Gemini, and blind
@@ -373,4 +373,29 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
   const handler = read('api/_lib/handlers/inference-health.ts');
   const probeBranch = handler.slice(handler.indexOf("=== 'gemini'"), handler.indexOf('probe: \'gemini\''));
   assert.match(probeBranch, /if \(!isGoldenCanaryRequest\(req\)\) \{\s*const failure = await authenticateAdminRequest\(req\)/, 'the canary reads the probe; everyone else still needs admin');
+});
+
+/*
+ * A PULL REQUEST PLANS TWO, PRODUCTION PLANS FIVE (2026-09-06). Two thirds of
+ * the month's Gemini bill belonged to the key the PR previews use: about
+ * seventy golden runs in fifteen hours, five build-size turns each. The plan
+ * is a prefix of the roster, printed and carried in the evidence, and the
+ * roster check holds the run to exactly what it planned.
+ */
+test('a pull request golden plans two transactions, a production golden five, and the run is held to its plan', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const workflow = read('.github/workflows/deployed-golden-transactions.yml');
+  assert.match(
+    workflow,
+    /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ github\.event_name == 'pull_request' && \(contains\(github\.event\.pull_request\.title, '\[golden:all\]'\) && '99' \|\| '2'\) \|\| '99' \}\}/,
+    'the workflow sets the limit per event: two on a pull request, everything on production, and everything once on a pull request titled [golden:all]',
+  );
+  assert.match(gate, /planGoldenTransactions\(\n\s*EXPECTED_TRANSACTIONS,\n\s*process\.env\.QUANTORA_GOLDEN_TRANSACTION_LIMIT,\n\s*\)/, 'the gate plans from the roster and the variable');
+  for (const position of [2, 3, 4, 5]) {
+    assert.match(gate, new RegExp(`if \\(runs\\(${position}\\)\\) \\{`), `transaction ${position} runs only when planned`);
+  }
+  assert.match(gate, /const missing = PLANNED_TRANSACTIONS\.filter\(\(name\) => !ran\.includes\(name\)\);/, 'the roster check holds the run to its plan');
+  assert.match(gate, /Transactions planned: \$\{PLANNED_TRANSACTIONS\.join/, 'and the plan is printed before the first turn');
+  const plan = read('scripts/lib/golden-plan.mjs');
+  assert.match(plan, /parsed >= 1 \? Math\.min\(all\.length, Math\.floor\(parsed\)\) : all\.length/, 'anything but a positive number means the whole roster');
 });

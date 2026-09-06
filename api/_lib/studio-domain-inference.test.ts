@@ -210,3 +210,17 @@ test('history still reinforces a desk the current message names, and still break
   assert.equal(inferStudioDomain({ explicit: null, message: 'add the hotel cost to my budget', history: travelHistory }), 'travel');
   assert.equal(inferStudioDomain({ explicit: null, message: 'add the hotel cost to my budget', history: [] }), null, 'with no history the tie stays a tie');
 });
+
+/*
+ * WORKSPACES OWN THEIR CHATS (2026-09-06). A chat opened inside a workspace is
+ * pinned there for life. The Coding desk is the null domain, so before this
+ * a coding chat with no build yet could be moved to Travel by one trip word.
+ */
+test('a pinned chat never moves, whatever the message says; an unpinned one still can', () => {
+  const trip = 'help me plan a trip with hotels and flights';
+  assert.equal(inferStudioDomain({ explicit: null, pinned: true, message: trip }), null, 'a pinned coding chat stays coding');
+  assert.equal(inferStudioDomain({ explicit: 'travel', pinned: true, message: 'help me with my taxes and portfolio' }), 'travel', 'a pinned trip stays a trip');
+  assert.equal(inferStudioDomain({ explicit: null, pinned: false, message: trip }), 'travel', 'an unpinned general chat still finds its desk');
+  assert.equal(resolveTurnStudioDomain({ explicit: null, pinned: true, message: trip, history: [], isCodingRequest: false, hasCodingWorkspace: false }), null, 'the client turn resolver honours the pin');
+  assert.equal(resolveTurnStudioDomain({ explicit: null, message: trip, history: [], isCodingRequest: false, hasCodingWorkspace: false }), 'travel', 'and without it behaves as before');
+});

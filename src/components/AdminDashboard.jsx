@@ -280,6 +280,7 @@ const TechnicalPredictiveTab = ({ metrics }) => {
         studyRepresentationCoverage={metrics.studyRepresentationCoverage}
         window={metrics.window}
         daily={metrics.daily}
+        turnPlans={metrics.turnPlans}
         isLight={isLight}
       />
     </div>

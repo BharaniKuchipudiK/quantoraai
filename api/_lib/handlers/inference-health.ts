@@ -102,8 +102,17 @@ export default async function handler(req: any, res: any) {
    * money.
    */
   if (String(req.query?.probe || '') === 'openrouter') {
-    const failure = await authenticateAdminRequest(req);
-    if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+    const generate = String(req.query?.generate ?? '0') === '1';
+    /*
+     * The scheduled provider probe (scripts/provider-health-probe.mjs) reads
+     * this with the golden canary, the way the golden reads the Gemini probe:
+     * /auth/key spends nothing and the report carries no secret. Generation
+     * costs money and stays admin-only whoever asks.
+     */
+    if (generate || !isGoldenCanaryRequest(req)) {
+      const failure = await authenticateAdminRequest(req);
+      if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+    }
 
     const envKey = resolveOpenRouterEnvKey();
     let key: string | null = envKey || null;
@@ -119,7 +128,7 @@ export default async function handler(req: any, res: any) {
       key,
       source,
       model: typeof req.query?.model === 'string' && req.query.model ? req.query.model : null,
-      generate: String(req.query?.generate ?? '0') === '1',
+      generate,
     });
     return res.status(200).json({ probe: 'openrouter', ...report });
   }

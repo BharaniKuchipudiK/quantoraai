@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { assertJourneyEntry } from './lib/parked-surfaces.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -178,7 +179,7 @@ try {
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into neutral Studio.');
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into neutral Studio.');
-  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from neutral Studio.');
+  await assertJourneyEntry(page, visible, 'neutral Studio');
   await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
 
   const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();

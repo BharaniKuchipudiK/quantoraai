@@ -189,3 +189,13 @@ test("a cold tax and portfolio question from empty chat can still open Finance",
 
   assert.equal(request.studioDomain, "finance");
 });
+
+test("a pinned coding chat stays coding on the server too, whatever the message says", () => {
+  const trip = "help me plan a trip with hotels and flights";
+  const pinned = normalizeCommunicationRequest({ message: trip, studioDomain: null, studioDomainPinned: true });
+  assert.equal(pinned.studioDomain, null);
+  const unpinned = normalizeCommunicationRequest({ message: trip, studioDomain: null });
+  assert.equal(unpinned.studioDomain, "travel", "an unpinned general chat still finds its desk");
+  const pinnedTrip = normalizeCommunicationRequest({ message: "help me with my taxes and portfolio", studioDomain: "travel", studioDomainPinned: true });
+  assert.equal(pinnedTrip.studioDomain, "travel");
+});

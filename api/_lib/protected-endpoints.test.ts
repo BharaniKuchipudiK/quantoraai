@@ -9,6 +9,7 @@ import generateOffice from "../generate-office.js";
 import pipeline from "../pipeline.js";
 import studyEvidence from "../study-evidence.js";
 import studyAssessment from "../study-assessment.js";
+import { clearGatewayCredentialCache } from "./credential-broker.js";
 
 process.env.SESSION_SECRET = "12345678901234567890123456789012";
 process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -273,6 +274,172 @@ test("Office generation revokes blocked signed-in sessions before using server k
 
   assert.equal(state.status, 403);
   assert.equal(state.body?.sessionRevoked, true);
+});
+
+test("Office generation lets the golden canary use server keys, as chat does", async () => {
+  const savedToken = process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+  const savedGemini = process.env.GEMINI_API_KEY;
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-office-test-0001";
+  process.env.GEMINI_API_KEY = "sk-server-gemini";
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  // Supabase answers empty (no stored canary user, nothing rate-limited);
+  // every provider is offline, so the turn cannot succeed — the question is
+  // only whether the canary got PAST the sign-in refusal to a provider at all.
+  global.fetch = async (url: any) => {
+    reached.push(String(url));
+    if (String(url).startsWith(String(process.env.SUPABASE_URL))) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("offline: no provider is reachable in this test");
+  };
+
+  const { state, res } = responseHarness();
+  try {
+    await generateOffice({
+      method: "POST",
+      headers: { "x-quantora-golden-canary": "golden-canary-token-for-the-office-test-0001" },
+      socket: {},
+      body: {
+        format: "word",
+        operation: "create",
+        prompt: "Write a one-page brief about reliability.",
+      },
+    }, res);
+  } finally {
+    global.fetch = originalFetch;
+    if (savedToken === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = savedToken;
+    if (savedGemini === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedGemini;
+  }
+
+  assert.notEqual(state.status, 401, `the canary was refused as anonymous: ${JSON.stringify(state.body)}`);
+  assert.notEqual(state.body?.requiresAuth, true);
+  assert.ok(
+    reached.some((url) => !url.startsWith(String(process.env.SUPABASE_URL))),
+    `the handler never reached a provider — the canary did not get server keys (status ${state.status}: ${JSON.stringify(state.body)})`,
+  );
+});
+
+test("Office generation resolves Gemini through the gateway when the environment holds no key, as chat does", async () => {
+  const saved = {
+    token: process.env.QUANTORA_GOLDEN_CANARY_TOKEN,
+    gemini: process.env.GEMINI_API_KEY,
+    openRouter: process.env.OPENROUTER_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+  };
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-office-test-0002";
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  clearGatewayCredentialCache();
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  const gatewayReads: string[] = [];
+  // The pull-request previews of 2026-09-06: no model key in the environment,
+  // Gemini's in the Supabase gateway. Chat ran on it; the Office generator
+  // never asked, and failed its Word file with no Gemini at all.
+  global.fetch = async (url: any) => {
+    const target = String(url);
+    reached.push(target);
+    if (target.startsWith(String(process.env.SUPABASE_URL))) {
+      if (target.includes("/rest/v1/api_gateway_keys?")) {
+        gatewayReads.push(target);
+        const rows = target.includes("provider=eq.GEMINI") ? [{ api_key: "gateway-held-gemini-key" }] : [];
+        return new Response(JSON.stringify(rows), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("offline: no provider is reachable in this test");
+  };
+
+  const { state, res } = responseHarness();
+  try {
+    await generateOffice({
+      method: "POST",
+      headers: { "x-quantora-golden-canary": "golden-canary-token-for-the-office-test-0002" },
+      socket: {},
+      body: {
+        format: "word",
+        operation: "create",
+        prompt: "Write a one-page brief about reliability.",
+      },
+    }, res);
+  } finally {
+    global.fetch = originalFetch;
+    clearGatewayCredentialCache();
+    if (saved.token === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = saved.token;
+    for (const [name, value] of [["GEMINI_API_KEY", saved.gemini], ["OPENROUTER_API_KEY", saved.openRouter], ["ANTHROPIC_API_KEY", saved.anthropic]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+
+  assert.ok(
+    gatewayReads.some((target) => target.includes("provider=eq.GEMINI")),
+    `the handler never asked the gateway for Gemini: ${gatewayReads.join(", ") || "no gateway read at all"}`,
+  );
+  assert.notEqual(state.status, 401, `with no key in the environment the handler refused instead of using the gateway's Gemini: ${JSON.stringify(state.body)}`);
+  assert.ok(
+    reached.some((target) => target.includes("generativelanguage.googleapis.com")),
+    `the gateway's Gemini key never reached Gemini (status ${state.status}: ${JSON.stringify(state.body)})`,
+  );
+  // And the failure names the provider it asked, not only its headline.
+  assert.equal(state.status, 502, JSON.stringify(state.body));
+  assert.equal(state.body?.stage, "provider");
+  assert.match(String(state.body?.detail || ""), /^gemini: /);
+});
+
+test("the OpenRouter probe answers the golden canary when it spends nothing, and refuses it when generation would cost", async () => {
+  const saved = {
+    token: process.env.QUANTORA_GOLDEN_CANARY_TOKEN,
+    openRouter: process.env.OPENROUTER_API_KEY,
+  };
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-probe-test-0001";
+  process.env.OPENROUTER_API_KEY = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  global.fetch = async (url: any) => {
+    reached.push(String(url));
+    if (String(url).startsWith(String(process.env.SUPABASE_URL))) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url) === "https://openrouter.ai/api/v1/auth/key") {
+      return new Response(JSON.stringify({ data: { label: "probe", usage: 1.5, limit: 10, is_free_tier: false } }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`offline: ${String(url)} is not reachable in this test`);
+  };
+  // /api/inference-health rides on the domains function, not on pipeline (api/domains.ts).
+  const canary = { "x-quantora-golden-canary": "golden-canary-token-for-the-probe-test-0001" };
+  try {
+    const free = responseHarness();
+    await domains({
+      method: "GET", headers: canary, socket: {},
+      query: { route: "inference-health", probe: "openrouter", generate: "0" },
+    }, free.res);
+    assert.equal(free.state.status, 200, `the free probe was refused: ${JSON.stringify(free.state.body)}`);
+    assert.equal(free.state.body?.probe, "openrouter");
+    assert.equal(free.state.body?.auth?.ok, true, `the probe did not reach /auth/key: ${JSON.stringify(free.state.body)}`);
+    assert.equal(free.state.body?.auth?.remaining, 8.5);
+
+    const paid = responseHarness();
+    await domains({
+      method: "GET", headers: canary, socket: {},
+      query: { route: "inference-health", probe: "openrouter", generate: "1" },
+    }, paid.res);
+    assert.ok([401, 403].includes(Number(paid.state.status)), `generation must stay admin-only, got ${paid.state.status}`);
+    assert.ok(!reached.includes("https://openrouter.ai/api/v1/chat/completions"), "the canary must never reach a paid completion");
+  } finally {
+    global.fetch = originalFetch;
+    if (saved.token === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = saved.token;
+    if (saved.openRouter === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = saved.openRouter;
+  }
 });
 
 test("chat ignores BYOK keys placed in the JSON body", async () => {

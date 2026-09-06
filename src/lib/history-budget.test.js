@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HISTORY_BYTE_BUDGET, budgetHistory } from './history-budget.js';
+import { HISTORY_BYTE_BUDGET, HISTORY_ITEM_BUDGET, HISTORY_DIGEST_ID, budgetHistory, describeHistoryBudget } from './history-budget.js';
 
 /**
  * The bug this exists to stop.
@@ -101,4 +101,45 @@ test('one enormous turn is summarised rather than making the request unsendable'
   const result = budgetHistory([ask(1), page(6_000_000)]);
   assert.ok(result.bytes <= HISTORY_BYTE_BUDGET);
   assert.ok(result.history.length >= 1);
+});
+
+/*
+ * COMPACTION, NOT DELETION (2026-09-06).
+ *
+ * "I left out the earliest 5 messages" took the opening brief — the one turn
+ * that says what the site is for — out of a build session, and every later
+ * answer drifted. The oldest turns now fold into one digest at the head of
+ * the history: who said it and the first 140 characters, oldest first.
+ */
+test('turns past the budget fold into a digest that names each of them, oldest first', () => {
+  const messages = Array.from({ length: 100 }, (_, i) => (i % 2 ? page(200_000) : ask(i)));
+  messages.push(ask(999));
+  const result = budgetHistory(messages);
+  assert.ok(result.bytes <= HISTORY_BYTE_BUDGET);
+  assert.ok(result.compacted > 0, 'something had to fold');
+  assert.equal(result.dropped, result.compacted, 'the old name reads the same number');
+  const digest = result.history[0];
+  assert.equal(digest.id, HISTORY_DIGEST_ID);
+  assert.equal(digest.__compacted, result.compacted);
+  assert.match(digest.text, /^Earlier in this conversation \(\d+ turns compacted/);
+  assert.match(digest.text, /\n- You: build me a page 0\n- Quantora: <!DOCTYPE html>x{20,}…/, 'the first folded turns are the oldest, in order');
+  assert.equal(result.history[result.history.length - 1].text, 'build me a page 999', 'the last exchange is verbatim');
+  assert.equal(result.history.filter((m) => m.__digest).length, 1, 'one digest, at the head');
+});
+
+test('more items than the server keeps fold into the digest instead of being cut silently', () => {
+  const messages = Array.from({ length: 150 }, (_, i) => (i % 2 ? { sender: 'ai', text: `answer ${i}` } : ask(i)));
+  const result = budgetHistory(messages);
+  assert.ok(result.history.length <= HISTORY_ITEM_BUDGET, `${result.history.length} items would be cut by the server`);
+  assert.equal(result.compacted, 150 - HISTORY_ITEM_BUDGET + 1);
+  assert.match(result.history[0].text, /- You: build me a page 0\n- Quantora: answer 1\n/);
+  assert.equal(result.history[result.history.length - 1].text, 'answer 149', 'the newest turn is verbatim');
+});
+
+test('the notice says folded, never left out', () => {
+  assert.match(describeHistoryBudget({ trimmed: 0, dropped: 5, compacted: 5 }), /folded the earliest 5 messages into one-line summaries/);
+  assert.match(describeHistoryBudget({ trimmed: 2, dropped: 0, compacted: 0 }), /shortened the long output of 2 earlier turns/);
+  assert.match(describeHistoryBudget({ trimmed: 1, compacted: 1 }), /Nothing is forgotten outright/);
+  assert.doesNotMatch(describeHistoryBudget({ dropped: 3 }), /left out/);
+  assert.equal(describeHistoryBudget({}), '');
 });

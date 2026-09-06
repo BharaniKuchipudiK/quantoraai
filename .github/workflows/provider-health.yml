@@ -1,0 +1,63 @@
+name: Provider health
+
+# The provider watch. On 2026-09-06 Gemini's project spend cap was hit in
+# the night and production answered "no healthy AI route" until a screenshot
+# arrived in the morning: self-healing triggers on an error inside a turn,
+# and nothing watched the providers between turns. Every half hour this reads
+# the production deployment's own probes — readiness, a live Gemini turn, the
+# free OpenRouter credential check — and FAILS when a provider is missing,
+# refused, capped, exhausted or unreachable. A failed scheduled run is what
+# GitHub emails the owner about; a green one is silent. The verdict is the
+# last line of the log.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-health
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Provider health probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # No dependency install: the probe is Node and fetch, so the only thing
+      # that can fail here is the deployment it watches.
+      - name: Read the production providers
+        id: provider_health
+        env:
+          QUANTORA_E2E_BASE_URL: https://quantoraai.app
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/provider-health-probe.mjs
+
+      - name: Keep the probe's evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-health-${{ github.run_id }}
+          path: artifacts/provider-health
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: The verdict, last
+        if: always()
+        run: |
+          if [ -f artifacts/provider-health/verdict.txt ]; then
+            cat artifacts/provider-health/verdict.txt
+          fi

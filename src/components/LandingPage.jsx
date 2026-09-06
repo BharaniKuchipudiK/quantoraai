@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { QuantoraFullLogoSvg } from './QuantoraLogoSvg';
 import GuestBuildPreview, { GUEST_DEMO_PROMPT } from './GuestBuildPreview';
+import { exploratorySurfacesEnabled } from '../lib/platform-surfaces.js';
 import {
   ArrowRight,
   Sun,
@@ -367,6 +368,9 @@ const PLATFORM_MODULES = [
     body: 'Simulate Qiskit circuits and inspect quantum states in the browser.',
   },
 ];
+
+/** Parked surfaces (src/lib/platform-surfaces.js): their cards render only when the build shows them. */
+const PARKED_MODULE_TAGS = ['Canvas', 'Quantum'];
 
 function SelfHealConsole({ isLight }) {
   const { surface, panel, border, muted, ink } = mockTokens(isLight);
@@ -739,12 +743,14 @@ export default function LandingPage({ onLaunchStudio, onStartBuild, onOpenAuth, 
               <p className="landing-section__eyebrow">Platform</p>
               <h2 className="landing-section__title" style={{ color: textColor }}>More than a prompt box.</h2>
               <p className="landing-section__lead" style={{ color: subtextColor }}>
-                Studio for everyday outcomes. Canvas for architecture. Quantum for exploration. All free to start.
+                {exploratorySurfacesEnabled()
+                  ? 'Studio for everyday outcomes. Canvas for architecture. Quantum for exploration. All free to start.'
+                  : 'Studio for everyday outcomes, and a desk for every kind of work. All free to start.'}
               </p>
             </div>
           </Reveal>
           <div className="landing-features__grid">
-            {PLATFORM_MODULES.map((mod, i) => {
+            {PLATFORM_MODULES.filter((mod) => exploratorySurfacesEnabled() || !PARKED_MODULE_TAGS.includes(mod.tag)).map((mod, i) => {
               const Icon = mod.icon;
               return (
                 <Reveal key={mod.title} delay={i * 50}>
