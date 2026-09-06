@@ -51,7 +51,7 @@ import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilien
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { describeCredentialFailure, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isBillingRefusal, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -1663,7 +1663,7 @@ export default async function handler(req: any, res: any) {
           // use this turn's independent fallback, but must not poison the
           // shared operational health circuit for unrelated users.
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
-            await recordInferenceRouteFailure(providerCircuitStore, route, status);
+            await recordInferenceRouteFailure(providerCircuitStore, route, status, Date.now(), { billing: isBillingRefusal(error) });
           }
           trace({
             correlationId,

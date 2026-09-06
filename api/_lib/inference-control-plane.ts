@@ -450,18 +450,30 @@ export async function summarizeInferenceReadiness(input: {
 const CIRCUIT_FAILURE_THRESHOLD = 2;
 const ROUTE_RESET_MS = 5 * 60_000;
 const DOMAIN_RESET_MS = 60_000;
+/**
+ * A billing refusal (spend cap breached, credits depleted, 402) changes only
+ * when a person pays. Five minutes re-tried a capped Gemini project all day on
+ * 2026-09-06, a wasted round trip on every turn that hit the reset; thirty
+ * holds the route open long enough to matter and short enough that a top-up
+ * is noticed within the half hour without anyone restarting anything.
+ */
+export const BILLING_RESET_MS = 30 * 60_000;
 
 export async function recordInferenceRouteFailure(
   store: AtomicProviderCircuitStore,
   route: InferenceRoute,
   status: number,
   now = Date.now(),
+  options: { billing?: boolean } = {},
 ) {
-  const key = status === 429 ? route.domainCircuitKey : route.circuitKey;
+  // A billing refusal is about the credential's account, not one model's
+  // quota domain — the whole route holds, for as long as money takes.
+  const billing = options.billing === true;
+  const key = status === 429 && !billing ? route.domainCircuitKey : route.circuitKey;
   return store.recordFailure(key, {
     now,
     failureThreshold: CIRCUIT_FAILURE_THRESHOLD,
-    resetMs: status === 429 ? DOMAIN_RESET_MS : ROUTE_RESET_MS,
+    resetMs: billing ? BILLING_RESET_MS : status === 429 ? DOMAIN_RESET_MS : ROUTE_RESET_MS,
   });
 }
 

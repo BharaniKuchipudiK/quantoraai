@@ -162,6 +162,24 @@ export const RESERVE_USD = 1;
 const TTL_MS = 60_000;
 let cache: { at: number; key: string; verdict: PaidRouteVerdict } | null = null;
 
+/**
+ * THE PLATFORM'S OWN CEILING (2026-09-06).
+ *
+ * The production OpenRouter key carries no limit on the provider's side, so
+ * the meter read "$29.19 spent, no ceiling set on this key" and paid routes
+ * were always allowed — the platform had no number of its own to stop at.
+ * OPENROUTER_SPEND_CEILING_USD is that number. It caps the key's own limit
+ * when both exist and stands in when the key has none; the reserve logic
+ * below then applies to whichever is lower. Unset, blank or not a positive
+ * number means no ceiling, exactly as before.
+ */
+export function platformSpendCeilingUsd(env: Record<string, string | undefined> = process.env): number | null {
+  const raw = String(env.OPENROUTER_SPEND_CEILING_USD || "").trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function decidePaidRoute(auth: {
   ok: boolean;
   usage: number | null;
@@ -170,7 +188,7 @@ export function decidePaidRoute(auth: {
   /* Carried, not summarised. These two are why the refusal below is actionable. */
   status?: number | null;
   error?: string | null;
-}): PaidRouteVerdict {
+}, { ceilingUsd = null }: { ceilingUsd?: number | null } = {}): PaidRouteVerdict {
   if (!auth?.ok) {
     const meterFault = classifyMeterFault(auth || {});
     return {
@@ -184,7 +202,14 @@ export function decidePaidRoute(auth: {
     };
   }
   const spentUsd = typeof auth.usage === "number" ? auth.usage : null;
-  const limitUsd = typeof auth.limit === "number" ? auth.limit : null;
+  const keyLimitUsd = typeof auth.limit === "number" ? auth.limit : null;
+  const platformCeiling = typeof ceilingUsd === "number" && Number.isFinite(ceilingUsd) && ceilingUsd > 0 ? ceilingUsd : null;
+  const limitUsd = platformCeiling === null
+    ? keyLimitUsd
+    : keyLimitUsd === null ? platformCeiling : Math.min(keyLimitUsd, platformCeiling);
+  const ceilingWord = platformCeiling !== null && (keyLimitUsd === null || platformCeiling <= keyLimitUsd)
+    ? " (the platform's own ceiling)"
+    : "";
 
   /*
    * A null limit means the account is uncapped, not that nothing is left. That
@@ -192,7 +217,7 @@ export function decidePaidRoute(auth: {
    * (limit - usage) and a null limit would have read as a negative balance.
    */
   if (limitUsd === null) {
-    return { allowed: true, reason: "no ceiling set on this key", spentUsd, limitUsd: null, remainingUsd: null, meterFault: null };
+    return { allowed: true, reason: "no ceiling set on this key, and none set by the platform (OPENROUTER_SPEND_CEILING_USD)", spentUsd, limitUsd: null, remainingUsd: null, meterFault: null };
   }
   if (spentUsd === null) {
     /*
@@ -207,14 +232,14 @@ export function decidePaidRoute(auth: {
   if (remainingUsd <= RESERVE_USD) {
     return {
       allowed: false,
-      reason: `$${remainingUsd.toFixed(2)} left of $${limitUsd.toFixed(2)} — paid routes are held back so free ones keep working`,
+      reason: `$${remainingUsd.toFixed(2)} left of $${limitUsd.toFixed(2)}${ceilingWord} — paid routes are held back so free ones keep working`,
       spentUsd,
       limitUsd,
       remainingUsd,
       meterFault: null,
     };
   }
-  return { allowed: true, reason: `$${remainingUsd.toFixed(2)} of $${limitUsd.toFixed(2)} remaining`, spentUsd, limitUsd, remainingUsd, meterFault: null };
+  return { allowed: true, reason: `$${remainingUsd.toFixed(2)} of $${limitUsd.toFixed(2)}${ceilingWord} remaining`, spentUsd, limitUsd, remainingUsd, meterFault: null };
 }
 
 /** The live verdict for this key. Never throws: an error is a refusal. */
@@ -243,7 +268,7 @@ export async function paidRouteAllowed(
   if (cache && cache.key === token && now - cache.at < TTL_MS) return cache.verdict;
   try {
     const auth = await checkOpenRouterKey(token, fetchFn ? { fetchFn } : undefined);
-    const verdict = decidePaidRoute(auth);
+    const verdict = decidePaidRoute(auth, { ceilingUsd: platformSpendCeilingUsd() });
     /*
      * Cached when the PROVIDER ANSWERED, not merely when it approved.
      *

@@ -67,8 +67,21 @@ export function isOutOfCredit(error: unknown) {
   const status = Number((error as any)?.status || 0);
   if (status === 402) return true;
   const message = String((error as any)?.message || error || '');
-  return /\b(payment required|insufficient (?:credits?|balance|funds)|out of credits?|quota exceeded for your plan)\b/i.test(message)
+  return /\b(payment required|insufficient (?:credits?|balance|funds)|out of credits?|quota exceeded for your plan|(?:prepayment )?credits? (?:are|is) depleted)\b/i.test(message)
     || isSpendCapBreach(error);
+}
+
+/**
+ * A refusal that no retry and no other model on the same gateway can change:
+ * the account behind the credential is out of money (402, "credits are
+ * depleted", a spend cap). It is the one failure worth holding a route open
+ * for longer than the ordinary five minutes, because the cause changes only
+ * when a person pays — see BILLING_RESET_MS in the control plane. A bare 401
+ * or 403 is NOT counted: OpenRouter answers 403 to a moderation-flagged
+ * prompt, and one user's prompt must not black out a gateway for everyone.
+ */
+export function isBillingRefusal(error: unknown) {
+  return isOutOfCredit(error);
 }
 
 /**

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT_MS, maxViableBuildAttempts, planInferenceRoutes, summarizeInferenceReadiness } from './inference-control-plane.js';
+import { BILLING_RESET_MS, canonicalizeModelId, inferenceAttemptBudgetMs, MIN_VIABLE_BUILD_ATTEMPT_MS, maxViableBuildAttempts, planInferenceRoutes, recordInferenceRouteFailure, summarizeInferenceReadiness } from './inference-control-plane.js';
 
 test('the first attempt keeps its generous slice', () => {
   // The chosen model is the most likely to succeed; squeezing it to make room
@@ -477,4 +477,29 @@ test('a refused OpenRouter gateway costs its routes, not the deployment', async 
   const nothingLeft = await summarizeInferenceReadiness({ geminiAvailable: false, openRouterAvailable: false });
   assert.equal(nothingLeft.ready, false);
   assert.equal(nothingLeft.routeCount, 0);
+});
+
+/*
+ * A BILLING REFUSAL HOLDS THE ROUTE FOR AS LONG AS MONEY TAKES (2026-09-06).
+ * Five minutes re-tried a capped Gemini project all day; thirty holds it open
+ * long enough to matter, and a top-up is noticed within the half hour.
+ */
+test('a billing refusal holds the whole route for thirty minutes; other failures keep their short resets', async () => {
+  const recorded: Array<{ key: string; resetMs: number; failureThreshold: number }> = [];
+  const store = {
+    recordFailure: async (key: string, options: { resetMs: number; failureThreshold: number }) => { recorded.push({ key, resetMs: options.resetMs, failureThreshold: options.failureThreshold }); return { open: false }; },
+  } as any;
+  const route = { id: 'gemini-flash-latest', gateway: 'gemini', circuitKey: 'gemini:server', domainCircuitKey: 'gemini:server:quota' } as any;
+  await recordInferenceRouteFailure(store, route, 403, 1, { billing: true });
+  await recordInferenceRouteFailure(store, route, 429, 2, { billing: true });
+  await recordInferenceRouteFailure(store, route, 429, 3);
+  await recordInferenceRouteFailure(store, route, 403, 4);
+  assert.equal(BILLING_RESET_MS, 30 * 60_000);
+  assert.deepEqual(recorded.map((r) => [r.key, r.resetMs]), [
+    ['gemini:server', BILLING_RESET_MS],
+    ['gemini:server', BILLING_RESET_MS],
+    ['gemini:server:quota', 60_000],
+    ['gemini:server', 5 * 60_000],
+  ], 'billing holds the route key, not the quota domain, whatever the status; the rest is unchanged');
+  assert.ok(recorded.every((r) => r.failureThreshold === 2), 'the threshold is unchanged');
 });
