@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
+import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
 import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
 
@@ -24,6 +25,15 @@ import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
  * against what actually completed, and printed last on every run, pass or fail.
  */
 const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded'];
+/*
+ * A pull request plans the first two (the deployment answers, and builds);
+ * production plans all five. See scripts/lib/golden-plan.mjs for why.
+ */
+const { limit: TRANSACTION_LIMIT, planned: PLANNED_TRANSACTIONS } = planGoldenTransactions(
+  EXPECTED_TRANSACTIONS,
+  process.env.QUANTORA_GOLDEN_TRANSACTION_LIMIT,
+);
+const runs = (position) => TRANSACTION_LIMIT >= position;
 
 const BASE_URL = String(process.env.QUANTORA_E2E_BASE_URL || '').replace(/\/+$/, '');
 const CANARY_TOKEN = String(process.env.QUANTORA_GOLDEN_CANARY_TOKEN || '');
@@ -94,6 +104,7 @@ let engineDigest = engineProbe.ok
   ? `engine=ok(${engineProbe.model || 'gemini'}${engineProbe.ms ? ` ${engineProbe.ms}ms` : ''})`
   : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
 console.log(`Engine probe before the first turn: ${engineDigest}`);
+console.log(`Transactions planned: ${PLANNED_TRANSACTIONS.join(', ')} (${TRANSACTION_LIMIT} of ${EXPECTED_TRANSACTIONS.length}${TRANSACTION_LIMIT < EXPECTED_TRANSACTIONS.length ? ', limited by QUANTORA_GOLDEN_TRANSACTION_LIMIT' : ''})`);
 /*
  * Fail in one second with the real cause, not in forty with a false one.
  *
@@ -281,6 +292,7 @@ const evidence = {
   inferenceHealth: health,
   // The engine's own answer at the start, not the configuration's promise.
   engineProbe,
+  plannedTransactions: PLANNED_TRANSACTIONS,
   transactions: [],
 };
 
@@ -377,6 +389,10 @@ try {
   });
   delete evidence.activeTransaction;
 
+  let websiteCorrelationId = calculatorCorrelationId;
+  let toolCorrelationId = null;
+
+  if (runs(2)) {
   const newChat = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChat, 'New Chat control is missing after the calculator transaction.', 15_000);
   await newChat.click();
@@ -386,7 +402,7 @@ try {
   await setGoldenTransaction('simple-website');
   await prompt.fill('Create a simple polished one-page React website for a neighborhood bakery. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. The rendered page must contain an h1 with the exact text "Sunrise Bakery" and a visible button with data-testid="website-cta" labeled "View today’s menu". Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
-  const websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
+  websiteCorrelationId = await correlationForPreview(calculatorCorrelationId);
   markActiveTransaction('simple-website', websiteCorrelationId);
   const websiteFrame = await frameWith('h1');
   if (!websiteFrame) throw new Error(`Website artifact compiled, but its rendered DOM never appeared. Page state: ${await recordPageState()}`);
@@ -422,6 +438,9 @@ try {
    * artifact canary would forbid the intake reply we are here to protect.
    * Anchored on data-quantora-* hooks only (§6).
    */
+  }
+
+  if (runs(3)) {
   const intakeStartedAt = Date.now();
   markActiveTransaction('guided-intake');
   await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
@@ -600,6 +619,9 @@ try {
    * interaction, and again after adding a deal. A hardcoded total passes the
    * first check by luck and fails the second every time.
    */
+  }
+
+  if (runs(4)) {
   const newChatForTool = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChatForTool, 'New Chat control is missing after the guided-intake transaction.', 15_000);
   await newChatForTool.click();
@@ -609,7 +631,7 @@ try {
   await setGoldenTransaction('business-tool');
   await prompt.fill('Create a small React deal pipeline tool for an IT consulting firm. Return a Vite-style VFS project with package.json, src/main.jsx, src/App.jsx, and src/styles.css in fenced code blocks with filepath attributes. Import React and react-dom from their bare package names; do not return index.html or use any CDN. It must render a form with data-testid="deal-form" containing a text input data-testid="deal-name", a number input data-testid="deal-value", a select data-testid="deal-stage" offering Discovery, Proposal and Won, and a submit button data-testid="add-deal". It must render one element per deal with data-testid="deal-row", each carrying that deal\'s numeric value in a data-deal-value attribute. It must render an element data-testid="pipeline-total" showing the sum of every deal value, recomputed whenever a deal is added. Seed it with exactly two deals worth 120000 and 60000. Use only React, react-dom, semantic text, and CSS. Do not import any icon, image, asset, or other third-party package, and do not use asset URLs, localStorage, sessionStorage, fetch, or undeclared variables.');
   await prompt.press('Enter');
-  const toolCorrelationId = await correlationForPreview(websiteCorrelationId);
+  toolCorrelationId = await correlationForPreview(websiteCorrelationId);
   markActiveTransaction('business-tool', toolCorrelationId);
 
   const toolFrame = await frameWith('[data-testid="pipeline-total"]');
@@ -702,6 +724,9 @@ try {
    * request, server extraction, the model's context, the build. A reply that
    * asks for the document, or a page without the number, fails by name.
    */
+  }
+
+  if (runs(5)) {
   const newChatForDocument = page.getByRole('button', { name: /New Chat/i }).first();
   await visible(newChatForDocument, 'New Chat control is missing after the business-tool transaction.', 15_000);
   await newChatForDocument.click();
@@ -794,18 +819,21 @@ try {
     durationMs: Date.now() - documentStartedAt,
   });
   delete evidence.activeTransaction;
+  }
 
   /*
    * Thrown, not warned, and thrown INSIDE the try so it is reported by the same
    * verdict machinery as any other failure. A run that quietly covers less than
-   * it claims is a worse outcome than a run that fails.
+   * it PLANNED is a worse outcome than a run that fails — and the plan itself
+   * is printed above and carried in the evidence, so a two-transaction pull
+   * request run can never read as a five-transaction production one.
    */
   const ran = evidence.transactions.map((entry) => entry.name);
-  const missing = EXPECTED_TRANSACTIONS.filter((name) => !ran.includes(name));
+  const missing = PLANNED_TRANSACTIONS.filter((name) => !ran.includes(name));
   if (missing.length) {
     throw new Error(
-      `The golden reported success while ${missing.length} transaction(s) never ran: ${missing.join(', ')}. `
-      + `Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
+      `The golden reported success while ${missing.length} planned transaction(s) never ran: ${missing.join(', ')}. `
+      + `Planned: ${PLANNED_TRANSACTIONS.join(', ')}. Completed: ${ran.join(', ') || 'none'}. A suite that silently covers less than it claims is worse than a red one.`,
     );
   }
 

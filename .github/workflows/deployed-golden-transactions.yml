@@ -160,6 +160,10 @@ jobs:
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
+          # A pull request proves the deployment answers and builds (two
+          # transactions); a production deploy proves all five. The five on
+          # every push of every PR were two thirds of the month's Gemini bill.
+          QUANTORA_GOLDEN_TRANSACTION_LIMIT: ${{ github.event_name == 'pull_request' && '2' || '5' }}
         run: node scripts/deployed-golden-transactions.mjs
 
       # if: always() so a failing golden above does not TAKE THIS SIGNAL WITH
