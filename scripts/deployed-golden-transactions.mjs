@@ -165,6 +165,50 @@ page.on('console', (message) => {
 });
 page.on('pageerror', (error) => consoleErrors.push(error.message));
 
+/*
+ * Every failed API answer: path, status, and the server's own words. The
+ * console reports "the server responded with a status of 502 ()" and nothing
+ * else — not the path, not the body — so the office-document failure of
+ * 2026-09-06 could only be read from the desk's prose, which carried the
+ * error's headline and not its cause. A JSON error body is where the server
+ * says what it tried (`stage`, `detail`); this keeps the last forty, tagged
+ * with the transaction that was running.
+ */
+let activeTransactionName = null;
+const apiFailures = [];
+page.on('response', (response) => {
+  let url;
+  try { url = new URL(response.url()); } catch { return; }
+  if (url.origin !== BASE_ORIGIN || !url.pathname.startsWith('/api/') || response.status() < 400) return;
+  const entry = { at: new Date().toISOString(), transaction: activeTransactionName, path: url.pathname, status: response.status() };
+  apiFailures.push(entry);
+  if (apiFailures.length > 40) apiFailures.shift();
+  response.text().then((body) => {
+    try {
+      const data = JSON.parse(body);
+      for (const field of ['error', 'stage', 'detail']) {
+        if (typeof data?.[field] === 'string' && data[field]) entry[field] = data[field].replace(/\s+/g, ' ').slice(0, 400);
+      }
+    } catch {
+      entry.body = String(body || '').replace(/\s+/g, ' ').slice(0, 160);
+    }
+  }).catch(() => {});
+});
+function lastApiFailure(pathPrefix, transaction = null) {
+  for (let index = apiFailures.length - 1; index >= 0; index -= 1) {
+    const entry = apiFailures[index];
+    if (!entry.path.startsWith(pathPrefix)) continue;
+    if (transaction && entry.transaction !== transaction) continue;
+    return entry;
+  }
+  return null;
+}
+function describeApiFailure(entry) {
+  if (!entry) return null;
+  const words = entry.detail || entry.error || entry.body || '';
+  return `${entry.path} answered HTTP ${entry.status}${entry.stage ? ` at ${entry.stage}` : ''}${words ? `: ${words}` : ''}`;
+}
+
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
 });
@@ -295,9 +339,11 @@ const evidence = {
   engineProbe,
   plannedTransactions: PLANNED_TRANSACTIONS,
   transactions: [],
+  apiFailures,
 };
 
 function markActiveTransaction(name, correlationId = null) {
+  activeTransactionName = name;
   evidence.activeTransaction = { name, correlationId };
 }
 
@@ -1062,9 +1108,12 @@ try {
     if (await officeFailed.isVisible().catch(() => false)) {
       const state = await recordPageState();
       const snapshot = evidence.pageState || {};
-      // The desk's own sentence first: "ran out of host time" and "Please sign
-      // in" are different defects, and the failure copy names which.
-      throw new Error(`The Office turn FAILED: ${String(snapshot.lastAssistantText || '').replace(/\s+/g, ' ').slice(0, 220)}. Page state: ${state}`);
+      // The generator's own account first — path, status, stage, and the
+      // providers it asked or refused to ask — then the desk's sentence: "ran
+      // out of host time" and "Please sign in" are different defects, and
+      // between them the two name which.
+      const generatorAnswer = describeApiFailure(lastApiFailure('/api/generate-office', 'office-document'));
+      throw new Error(`The Office turn FAILED. ${generatorAnswer ? `${generatorAnswer}. ` : ''}Desk showed: ${String(snapshot.lastAssistantText || '').replace(/\s+/g, ' ').slice(0, 220)}. Page state: ${state}`);
     }
     if (await officeCard.isVisible().catch(() => false)) { officeReady = true; break; }
     if (await officeModal.isVisible().catch(() => false)) {
@@ -1177,6 +1226,9 @@ try {
    * off at "previewMou" — the exact field being looked for.
    */
   const state = evidence.pageState || {};
+  // The last failed API answer of the failed transaction — path, status and
+  // the server's stage. The console said "502 ()" and no more.
+  const failedApi = lastApiFailure('/api/', evidence.activeTransaction?.name || null);
   const digest = [
     `preview=${state.previewMounted ? 'mounted' : 'absent'}`,
     state.previewCompiling ? 'compiling' : null,
@@ -1185,12 +1237,13 @@ try {
     typeof state.buildJobs === 'number' ? `buildJobs=${state.buildJobs}` : null,
     state.previewCorrelationId ? `previewCid=${state.previewCorrelationId}` : null,
     state.storageFault ? `storageFault` : null,
+    failedApi ? `api=${failedApi.status} ${failedApi.path}${failedApi.stage ? `@${failedApi.stage}` : ''}` : null,
     engineDigest,
   ].filter(Boolean).join(' ');
   const verdict = `GOLDEN VERDICT | failed at: ${evidence.activeTransaction?.name || 'unknown'}`
     + ` | completed: ${done}`
     + (digest ? ` | state: ${digest}` : '')
-    + ` | why: ${oneLine(error?.message || error).slice(0, 160)}`;
+    + ` | why: ${oneLine(error?.message || error).slice(0, 240)}`;
   console.error(`\n${verdict}`);
   /*
    * AND WRITTEN OUT, because printing it here was not enough.

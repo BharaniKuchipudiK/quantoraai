@@ -10,6 +10,8 @@ import {
   OFFICE_MAX_ATTEMPTS,
   OFFICE_MAX_FULL_PROVIDER_CALLS,
   OFFICE_PROXY_BUDGET_MS,
+  describeOfficeProviderOutcome,
+  officeFailoverRefusalReason,
   officeGenerationMaxAttempts,
   officeModelCallBudgetMs,
   officeProviderOrder,
@@ -92,4 +94,37 @@ test('Office generate, compile, and client abort constants stay pinned like BUIL
   assert.match(stream, /OFFICE_CLIENT_GENERATE_ABORT_MS/);
   assert.match(officeExport, /OFFICE_CLIENT_COMPILE_ABORT_MS/);
   assert.doesNotMatch(officeExport, /90_000/);
+});
+
+test('the failover refusal reason is the failover decision, in words', () => {
+  const cases = [
+    { providersTried: 0, remainingMs: 40_000 },
+    { providersTried: 1, firstElapsedMs: OFFICE_FAST_FAILOVER_MS - 1, remainingMs: 40_000 },
+    { providersTried: 1, firstElapsedMs: 20_000, remainingMs: 40_000 },
+    { providersTried: 1, firstElapsedMs: 1_000, remainingMs: 10_000 },
+    { providersTried: 2, firstElapsedMs: 500, remainingMs: 40_000 },
+  ];
+  for (const input of cases) {
+    assert.equal(officeFailoverRefusalReason(input) === null, shouldOfficeProviderFailover(input), JSON.stringify(input));
+  }
+  assert.match(officeFailoverRefusalReason({ providersTried: 1, firstElapsedMs: 20_000, remainingMs: 40_000 }), /first miss took 20s/);
+  assert.match(officeFailoverRefusalReason({ providersTried: 1, firstElapsedMs: 1_000, remainingMs: 10_000 }), /10s of host clock remained/);
+  assert.match(officeFailoverRefusalReason({ providersTried: 2, firstElapsedMs: 500, remainingMs: 40_000 }), /one failover per attempt/);
+});
+
+test('a provider outcome names every provider asked and why the rest were not', () => {
+  assert.equal(describeOfficeProviderOutcome({ failures: ['anthropic: Anthropic HTTP 401'] }), 'anthropic: Anthropic HTTP 401');
+  assert.equal(
+    describeOfficeProviderOutcome({
+      failures: ['anthropic: Anthropic HTTP 401'],
+      untried: ['gemini', 'openrouter'],
+      refusal: 'the first miss took 21s and only a miss under 8s may fail over',
+    }),
+    'anthropic: Anthropic HTTP 401 — gemini, openrouter not asked: the first miss took 21s and only a miss under 8s may fail over',
+  );
+  assert.equal(
+    describeOfficeProviderOutcome({ failures: ['gemini: 429 quota', 'openrouter: Missing Authentication header'] }),
+    'gemini: 429 quota | openrouter: Missing Authentication header',
+  );
+  assert.equal(describeOfficeProviderOutcome({}), 'no provider was asked');
 });

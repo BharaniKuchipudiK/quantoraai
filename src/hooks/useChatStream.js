@@ -8,6 +8,7 @@ import { carryDocuments, describeExcludedAttachments, explainNothingToSend, part
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { officePclMemory } from '../lib/office-session-state.js';
+import { officeFailureMessage } from '../lib/office-failure-copy.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
@@ -834,7 +835,7 @@ export function useChatStream({
             ? 'The document generator ran out of host time before a file could be compiled. This is Quantora hitting the platform clock, not a missing API key. Shorten the brief and try once.'
             : 'The server hit an error generating the document. Please try again.');
         }
-        if (!res.ok) throw new Error(data.error || 'Compilation failed');
+        if (!res.ok) throw new Error(officeFailureMessage(data));
         if (!cacheOfficeArtifact(data)) {
           throw new Error('The generated Office artifact failed client envelope verification.');
         }

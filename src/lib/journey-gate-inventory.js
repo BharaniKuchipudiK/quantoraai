@@ -688,11 +688,12 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/office-output-schemas.test.js',
         'src/lib/office-briefing.test.js',
         'src/lib/office-export.test.js',
+        'src/lib/office-failure-copy.test.js',
         'src/lib/office-intent.test.js',
       ],
       deployed: ['golden:office-document'],
     },
-    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). A deck and a workbook are still unopened.',
+    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). Its first run found the generator resolving server keys from the environment alone while chat also reads the gateway, so a preview with a gateway-held Gemini generated with no Gemini; the generator now resolves as chat does, its 502 names every provider asked, and the desk shows that detail. A deck and a workbook are still unopened.',
   }),
 
   // ── advisor desks ───────────────────────────────────────────────────────
@@ -1005,9 +1006,11 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/model-canary.test.js',
         'api/_lib/model-smoke-test.test.js',
         'api/_lib/model-execution-policy.test.ts',
+        'api/_lib/server-key-resolution.test.ts',
         'src/lib/model-outcome-routing.test.js',
       ],
     },
+    note: 'server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
   }),
   journey({
     id: 'gates-anchored',

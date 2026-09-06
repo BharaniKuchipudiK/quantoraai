@@ -34,7 +34,11 @@ import { getSessionUser } from './_lib/session.js';
 import { requireActiveSession } from './_lib/authz.js';
 import { isGoldenCanaryRequest } from './_lib/transaction-trace.js';
 import { readByokCredentials } from './_lib/byok-credentials.js';
+import { fetchGatewayCredential } from './_lib/credential-broker.js';
+import { resolveOpenRouterEnvKey } from './_lib/openrouter-key.js';
 import {
+  describeOfficeProviderOutcome,
+  officeFailoverRefusalReason,
   officeGenerationMaxAttempts,
   officeModelCallBudgetMs,
   officeProviderOrder,
@@ -165,10 +169,11 @@ export default async function handler(req, res) {
     mayUseServerKeys = true;
   }
 
+  const serverKeys = await resolveOfficeServerKeys(mayUseServerKeys);
   const modelKeys = {
-    anthropic: anthropicUserKey || (mayUseServerKeys ? process.env.ANTHROPIC_API_KEY || null : null),
-    gemini: userKey || (mayUseServerKeys ? process.env.GEMINI_API_KEY || null : null),
-    openRouter: openRouterKey || (mayUseServerKeys ? process.env.OPENROUTER_API_KEY || null : null),
+    anthropic: anthropicUserKey || serverKeys.anthropic,
+    gemini: userKey || serverKeys.gemini,
+    openRouter: openRouterKey || serverKeys.openRouter,
   };
   const hasAnyModelKey = Boolean(modelKeys.anthropic || modelKeys.gemini || modelKeys.openRouter);
   if (!isCompileRequest && !hasAnyModelKey) {
@@ -696,6 +701,32 @@ function buildRepairContext(format, candidate, errorText) {
   return `SEMANTIC REPAIR PASS — DO NOT RESTART THE DECK\nThe previous candidate is structurally valid JSON but failed Quantora's hard Presentation V2 semantic gate. Repair this SAME candidate. Preserve every slide and field that is not implicated by the failures. Populate the correct structured items for each semantic composition, or change a slide to a truthful composition when evidence is unavailable. Never invent numeric data.\nGATEKEEPER FAILURES:\n${String(errorText || '')}\nINVALID TRANSPORT CANDIDATE:\n${JSON.stringify(candidate)}`;
 }
 
+/*
+ * Server keys resolve the way /api/chat resolves them: the environment first,
+ * then the Supabase gateway. This handler read process.env alone, so a
+ * deployment holding its Gemini key in the gateway — the pull-request previews
+ * do; inference-health reports geminiVia "supabase-api-gateway" there — chatted
+ * on Gemini and generated Office files with no Gemini at all. The deployed
+ * golden's office-document transaction found it on 2026-09-06. An OpenRouter
+ * value of the wrong shape is ignored here as chat ignores it, so an impostor
+ * env var cannot block the gateway either. Anthropic stays an environment
+ * key, as chat's planner paths read it: no provider path is added here that
+ * production does not already walk.
+ */
+async function resolveOfficeServerKeys(mayUseServerKeys: boolean): Promise<{ anthropic: string | null; gemini: string | null; openRouter: string | null }> {
+  if (!mayUseServerKeys) return { anthropic: null, gemini: null, openRouter: null };
+  const viaGateway = (id: 'GEMINI' | 'OPENROUTER') => fetchGatewayCredential(id).catch(() => null);
+  const [gemini, openRouter] = await Promise.all([
+    process.env.GEMINI_API_KEY?.trim() || viaGateway('GEMINI'),
+    resolveOpenRouterEnvKey() || viaGateway('OPENROUTER'),
+  ]);
+  return {
+    anthropic: process.env.ANTHROPIC_API_KEY?.trim() || null,
+    gemini: gemini || null,
+    openRouter: openRouter || null,
+  };
+}
+
 async function generateJsonSchema(prompt, format, history, modelKeys, lastError, attemptIndex = 0, sessionContext = null, revision = null, repairCandidate = null, startedAt = Date.now()) {
   const priorContext = buildOfficeHistoryContext(history);
   const session = buildSessionGenerationContext(sessionContext);
@@ -715,29 +746,38 @@ async function generateJsonSchema(prompt, format, history, modelKeys, lastError,
   if (modelKeys?.openRouter) available.push('openrouter');
   if (!available.length) throw new Error('No model credential available for Office generation.');
 
-  let lastProviderError: any;
   const ordered = officeProviderOrder(available, attemptIndex);
   let providersTried = 0;
   let firstElapsedMs = 0;
   const firstStartedAt = Date.now();
+  // Every provider asked and what it said; every provider not asked and why.
+  // The thrown error is the 502's `detail`, and the detail is the diagnosis.
+  const failures: string[] = [];
+  const untried: string[] = [];
+  let refusal: string | null = null;
   for (const provider of ordered) {
     const remainingMs = remainingOfficeBudgetMs(startedAt);
     if (providersTried > 0) {
       firstElapsedMs = Date.now() - firstStartedAt;
-      if (!shouldOfficeProviderFailover({ providersTried, firstElapsedMs, remainingMs })) break;
+      if (!shouldOfficeProviderFailover({ providersTried, firstElapsedMs, remainingMs })) {
+        refusal = refusal || officeFailoverRefusalReason({ providersTried, firstElapsedMs, remainingMs });
+        untried.push(provider);
+        continue;
+      }
     }
     try {
       if (provider === 'anthropic') return await callAnthropic(systemPrompt, promptWithContext, modelKeys.anthropic, format);
       if (provider === 'gemini') return await callGemini(systemPrompt, promptWithContext, modelKeys.gemini, format, remainingMs);
       return await callOpenRouter(systemPrompt, promptWithContext, modelKeys.openRouter, format);
     } catch (error: any) {
-      lastProviderError = error;
       providersTried += 1;
       if (providersTried === 1) firstElapsedMs = Date.now() - firstStartedAt;
-      console.warn(`Office generation provider '${provider}' failed:`, String(error?.message || error));
+      const said = String(error?.message || error);
+      failures.push(`${provider}: ${said}`);
+      console.warn(`Office generation provider '${provider}' failed:`, said);
     }
   }
-  throw lastProviderError || new Error('All Office generation providers failed.');
+  throw new Error(describeOfficeProviderOutcome({ failures, untried, refusal }));
 }
 
 async function callAnthropic(systemPrompt, promptWithContext, anthropicKey, format) {

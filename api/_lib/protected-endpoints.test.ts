@@ -9,6 +9,7 @@ import generateOffice from "../generate-office.js";
 import pipeline from "../pipeline.js";
 import studyEvidence from "../study-evidence.js";
 import studyAssessment from "../study-assessment.js";
+import { clearGatewayCredentialCache } from "./credential-broker.js";
 
 process.env.SESSION_SECRET = "12345678901234567890123456789012";
 process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -319,6 +320,76 @@ test("Office generation lets the golden canary use server keys, as chat does", a
     reached.some((url) => !url.startsWith(String(process.env.SUPABASE_URL))),
     `the handler never reached a provider — the canary did not get server keys (status ${state.status}: ${JSON.stringify(state.body)})`,
   );
+});
+
+test("Office generation resolves Gemini through the gateway when the environment holds no key, as chat does", async () => {
+  const saved = {
+    token: process.env.QUANTORA_GOLDEN_CANARY_TOKEN,
+    gemini: process.env.GEMINI_API_KEY,
+    openRouter: process.env.OPENROUTER_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+  };
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-office-test-0002";
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  clearGatewayCredentialCache();
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  const gatewayReads: string[] = [];
+  // The pull-request previews of 2026-09-06: no model key in the environment,
+  // Gemini's in the Supabase gateway. Chat ran on it; the Office generator
+  // never asked, and failed its Word file with no Gemini at all.
+  global.fetch = async (url: any) => {
+    const target = String(url);
+    reached.push(target);
+    if (target.startsWith(String(process.env.SUPABASE_URL))) {
+      if (target.includes("/rest/v1/api_gateway_keys?")) {
+        gatewayReads.push(target);
+        const rows = target.includes("provider=eq.GEMINI") ? [{ api_key: "gateway-held-gemini-key" }] : [];
+        return new Response(JSON.stringify(rows), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("offline: no provider is reachable in this test");
+  };
+
+  const { state, res } = responseHarness();
+  try {
+    await generateOffice({
+      method: "POST",
+      headers: { "x-quantora-golden-canary": "golden-canary-token-for-the-office-test-0002" },
+      socket: {},
+      body: {
+        format: "word",
+        operation: "create",
+        prompt: "Write a one-page brief about reliability.",
+      },
+    }, res);
+  } finally {
+    global.fetch = originalFetch;
+    clearGatewayCredentialCache();
+    if (saved.token === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = saved.token;
+    for (const [name, value] of [["GEMINI_API_KEY", saved.gemini], ["OPENROUTER_API_KEY", saved.openRouter], ["ANTHROPIC_API_KEY", saved.anthropic]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+
+  assert.ok(
+    gatewayReads.some((target) => target.includes("provider=eq.GEMINI")),
+    `the handler never asked the gateway for Gemini: ${gatewayReads.join(", ") || "no gateway read at all"}`,
+  );
+  assert.notEqual(state.status, 401, `with no key in the environment the handler refused instead of using the gateway's Gemini: ${JSON.stringify(state.body)}`);
+  assert.ok(
+    reached.some((target) => target.includes("generativelanguage.googleapis.com")),
+    `the gateway's Gemini key never reached Gemini (status ${state.status}: ${JSON.stringify(state.body)})`,
+  );
+  // And the failure names the provider it asked, not only its headline.
+  assert.equal(state.status, 502, JSON.stringify(state.body));
+  assert.equal(state.body?.stage, "provider");
+  assert.match(String(state.body?.detail || ""), /^gemini: /);
 });
 
 test("chat ignores BYOK keys placed in the JSON body", async () => {
