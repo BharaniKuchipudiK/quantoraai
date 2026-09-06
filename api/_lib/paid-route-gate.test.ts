@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RESERVE_USD, decidePaidRoute, describePaidHold, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
+import { RESERVE_USD, decidePaidRoute, platformSpendCeilingUsd, describePaidHold, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
 
 /*
  * The cost-control subsystem was written, tested and called by nothing:
@@ -278,4 +278,51 @@ test('the router reads the meter, not just the key', async () => {
   const usableSites = (handler.match(/openRouterAvailable: openRouterUsable/g) || []).length;
   assert.ok(planSites >= 2, 'at least the primary plan and the travel retry');
   assert.equal(usableSites, planSites, `every planInferenceRoutes call site reads the meter (${planSites} sites: the primary plan, the travel retry, the refused-tools re-plan)`);
+});
+
+/*
+ * THE PLATFORM'S OWN CEILING (2026-09-06). The production key carries no
+ * limit on OpenRouter's side, so the meter read "$29.19 spent, no ceiling set
+ * on this key" and nothing on our side could ever say stop.
+ */
+test('a platform ceiling stands in for a key without one, and caps a key with a higher one', () => {
+  const uncapped = { ok: true, usage: 29.19, limit: null };
+  const before = decidePaidRoute(uncapped);
+  assert.equal(before.allowed, true);
+  assert.match(before.reason, /none set by the platform \(OPENROUTER_SPEND_CEILING_USD\)/, 'unset stays uncapped, and says where the number would go');
+
+  const capped = decidePaidRoute(uncapped, { ceilingUsd: 40 });
+  assert.equal(capped.allowed, true);
+  assert.equal(capped.limitUsd, 40);
+  assert.equal(capped.remainingUsd, 10.81);
+  assert.match(capped.reason, /the platform's own ceiling/);
+
+  const nearlySpent = decidePaidRoute({ ok: true, usage: 39.5, limit: null }, { ceilingUsd: 40 });
+  assert.equal(nearlySpent.allowed, false, 'the reserve holds paid routes back before the ceiling is hit');
+  assert.match(nearlySpent.reason, /left of \$40\.00 \(the platform's own ceiling\)/);
+
+  const keyLower = decidePaidRoute({ ok: true, usage: 5, limit: 20 }, { ceilingUsd: 40 });
+  assert.equal(keyLower.limitUsd, 20, 'the lower of the two wins');
+  assert.doesNotMatch(keyLower.reason, /platform's own ceiling/, 'and the sentence names the key when the key is the binding one');
+  const ceilingLower = decidePaidRoute({ ok: true, usage: 5, limit: 100 }, { ceilingUsd: 40 });
+  assert.equal(ceilingLower.limitUsd, 40);
+  assert.match(ceilingLower.reason, /platform's own ceiling/);
+});
+
+test('the ceiling is read from OPENROUTER_SPEND_CEILING_USD and ignores anything that is not a positive number', () => {
+  assert.equal(platformSpendCeilingUsd({}), null);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '' }), null);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '40' }), 40);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: ' 12.5 ' }), 12.5);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '0' }), null);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '-3' }), null);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: 'forty' }), null);
+  assert.equal(decidePaidRoute({ ok: true, usage: 1, limit: null }, { ceilingUsd: null }).limitUsd, null);
+});
+
+test('the live verdict applies the platform ceiling', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const gate = readFileSync(path.join(import.meta.dirname, 'paid-route-gate.ts'), 'utf8');
+  assert.match(gate, /decidePaidRoute\(auth, \{ ceilingUsd: platformSpendCeilingUsd\(\) \}\)/);
 });
