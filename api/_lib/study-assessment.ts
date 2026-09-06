@@ -30,10 +30,24 @@ import { resolveStudyTransferAttempt } from './study-transfer-intelligence.js';
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const ATTEMPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OPTION_ID = /^[a-z0-9][a-z0-9._:-]*$/i;
+const ITEM_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]*@[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const MAX_SESSION_EXCLUSIONS = 20;
 const ATTEMPT_TTL_MS = 15 * 60 * 1000;
 
 function clean(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function normalizeExcludedItemRefs(value: unknown): string[] | null {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > MAX_SESSION_EXCLUSIONS) return null;
+  const refs: string[] = [];
+  for (const raw of value) {
+    const ref = clean(raw, 220);
+    if (!ITEM_REF.test(ref)) return null;
+    if (!refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
 }
 
 export type StudyAssessmentIssueRequest = {
@@ -41,6 +55,13 @@ export type StudyAssessmentIssueRequest = {
   conceptKey: string;
   conceptLabel: string;
   sessionId: string;
+  /**
+   * Session-local reservation only. The browser may ask the server to skip
+   * already-issued item/version refs, but it can never make an unreleased or
+   * previously-submitted item eligible. Server governance and freshness remain
+   * authoritative.
+   */
+  excludeItemRefs?: string[];
 };
 
 export type StudyAssessmentGradeRequest = {
@@ -57,8 +78,11 @@ export function normalizeStudyAssessmentRequest(
     const conceptKey = clean(input.conceptKey, 160).toLowerCase();
     const conceptLabel = clean(input.conceptLabel, 300).replace(/[%*]/g, "");
     const sessionId = clean(input.sessionId, 128);
-    if (!conceptKey || !conceptLabel || !SESSION_ID.test(sessionId)) return null;
-    return { action: "issue", conceptKey, conceptLabel, sessionId };
+    const excludeItemRefs = normalizeExcludedItemRefs(input.excludeItemRefs);
+    if (!conceptKey || !conceptLabel || !SESSION_ID.test(sessionId) || excludeItemRefs === null) return null;
+    const request: StudyAssessmentIssueRequest = { action: "issue", conceptKey, conceptLabel, sessionId };
+    if (excludeItemRefs.length) request.excludeItemRefs = excludeItemRefs;
+    return request;
   }
   if (input.action === "grade") {
     const attemptId = clean(input.attemptId, 64).toLowerCase();
@@ -181,6 +205,13 @@ export default async function studyAssessmentHandler(req: any, res: any) {
         });
       }
       item = transfer.plan.item;
+      if (request.excludeItemRefs?.includes(`${item.key}@${item.version}`)) {
+        return res.status(422).json({
+          error: "No additional fresh governed transfer item is available for this assessment session.",
+          code: "verified_transfer_unavailable",
+          fallbackAllowed: true,
+        });
+      }
       attemptConcept = transfer.plan.targetConcept;
       evidenceKind = 'transfer';
       evidenceConceptId = concept.id;
@@ -205,7 +236,8 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       // The V7 grading RPC treats one learner + item/version as the independence
       // boundary across all evidence kinds and concepts. Ask only about the
       // governed candidates we might issue; this stays exact without a history
-      // scan or a correctness-breaking pagination cap.
+      // scan or a correctness-breaking pagination cap. Session-local exclusions
+      // can only remove candidates; they can never make an unsafe item eligible.
       const usedItemRefs = await readStudyUsedAssessmentItemRefs(
         userSub,
         candidates.map((candidate) => `${candidate.key}@${candidate.version}`),
@@ -213,6 +245,7 @@ export default async function studyAssessmentHandler(req: any, res: any) {
       if (usedItemRefs === null) {
         return res.status(503).json({ error: "Verified Study item freshness could not be checked right now." });
       }
+      for (const itemRef of request.excludeItemRefs || []) usedItemRefs.add(itemRef);
 
       item = selectStudyAssessmentItem({
         items: candidates,
