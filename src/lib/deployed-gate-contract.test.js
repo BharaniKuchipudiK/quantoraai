@@ -352,8 +352,24 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
   assert.match(gate, /engine=FAILED\(/, 'a dead engine is named with its status and reason');
   assert.match(gate, /engineDigest,\n\s*\]\.filter\(Boolean\)\.join\(' '\)/, 'the digest is part of the failure verdict, not only the evidence JSON');
   assert.match(gate, /engineProbe,\n\s*transactions: \[\]/, 'and the evidence carries the whole report');
-  assert.match(gate, /\[401, 403, 429\]\.includes\(Number\(engineProbe\.status\)\)/, 'a refused credential stops the run before the first turn; anything less ambiguous does not');
-  assert.match(gate, /try \{\n(?:\s*\/\*[\s\S]*?\*\/\n)?(?:\s*\/\/[^\n]*\n)*\s*evidence\.activeTransaction = \{ name: 'engine-probe', correlationId: null \};\n\s*if \(engineProbe\.httpStatus === 200/, 'the refusal is thrown INSIDE the try, so the verdict line and evidence are still written (§8)');
+  /*
+   * WHEN A REFUSAL IS FATAL (2026-09-06). The first version stopped on any
+   * 401/403/429 — right for a preview, whose only engine is Gemini, and blind
+   * on production, which plans OpenRouter behind it: five minutes after a
+   * production run proved three transactions on the fallback while Gemini
+   * answered "403: Spend cap breached", the next run stopped at engine-probe
+   * and proved nothing. The decision lives in one pure function the gate
+   * calls, and it reads the health snapshot's own words — a key that exists
+   * and is refused is not a fallback, and neither is a key the planner
+   * offers no route on.
+   */
+  assert.match(gate, /import \{ engineRefusalStopsRun \} from '\.\/lib\/golden-engine-refusal\.mjs'/, 'the gate delegates the stop decision to the pure helper');
+  assert.match(gate, /const refusal = engineRefusalStopsRun\(engineProbe, health\);\n\s*evidence\.engineRefusal = refusal;\n\s*if \(refusal\.stop\) \{\n\s*throw new Error/, 'a fatal refusal stops the run before the first turn, and the decision rides in the evidence');
+  assert.match(gate, /engineDigest = `\$\{engineDigest\} fallback=\$\{refusal\.fallback\}`/, 'a run that continues on the fallback says so in the verdict\'s state digest');
+  const refusalRule = read('scripts/lib/golden-engine-refusal.mjs');
+  assert.match(refusalRule, /REFUSAL_STATUSES = Object\.freeze\(\[401, 403, 429\]\)/, 'a refusal is a credential-level status; anything less ambiguous does not stop the run');
+  assert.match(refusalRule, /health\?\.openRouterConfigured === true\n\s*&& health\?\.openRouterCredentialRefused !== true\n\s*&& Number\(health\?\.routeCount\) > 1/, 'the fallback must be present, not refused, and planned as a route');
+  assert.match(gate, /try \{\n(?:\s*\/\*[\s\S]*?\*\/\n)?(?:\s*\/\/[^\n]*\n)*\s*evidence\.activeTransaction = \{ name: 'engine-probe', correlationId: null \};\n\s*const refusal = engineRefusalStopsRun/, 'the refusal is thrown INSIDE the try, so the verdict line and evidence are still written (§8)');
   const handler = read('api/_lib/handlers/inference-health.ts');
   const probeBranch = handler.slice(handler.indexOf("=== 'gemini'"), handler.indexOf('probe: \'gemini\''));
   assert.match(probeBranch, /if \(!isGoldenCanaryRequest\(req\)\) \{\s*const failure = await authenticateAdminRequest\(req\)/, 'the canary reads the probe; everyone else still needs admin');

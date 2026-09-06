@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
+import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
 import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
 
@@ -89,7 +90,7 @@ const engineProbe = await (async () => {
     return { httpStatus: null, ok: false, model: null, listOk: false, listed: null, status: null, error: error?.message || String(error), ms: null, verdict: null };
   }
 })();
-const engineDigest = engineProbe.ok
+let engineDigest = engineProbe.ok
   ? `engine=ok(${engineProbe.model || 'gemini'}${engineProbe.ms ? ` ${engineProbe.ms}ms` : ''})`
   : `engine=FAILED(${engineProbe.status || engineProbe.httpStatus || 'no-answer'}${engineProbe.error ? `: ${String(engineProbe.error).replace(/\s+/g, ' ').slice(0, 120)}` : ''})`;
 console.log(`Engine probe before the first turn: ${engineDigest}`);
@@ -297,6 +298,15 @@ try {
    * probe endpoint unreachable — is recorded and the transactions still run,
    * because that evidence is not unambiguous (§5).
    *
+   * UNLESS the deployment has a second engine a turn can reach. Production
+   * plans OpenRouter behind Gemini, and on 2026-09-06 the first version of
+   * this stop blinded the gate to that path five minutes after a run had
+   * proved three transactions on it — the same path whose React 17 mounts
+   * had just broken production (#560). scripts/lib/golden-engine-refusal.mjs
+   * decides, from the health snapshot's own words: a refusal is fatal only
+   * when no other route exists; otherwise the run continues on the fallback
+   * and the verdict's state digest says so ("fallback=openrouter").
+   *
    * INSIDE the try, deliberately: the first version threw above it and the
    * run ended with a stack trace and no GOLDEN VERDICT line, no verdict file
    * and no evidence JSON — the gate said less at the moment it knew most (§8).
@@ -306,8 +316,16 @@ try {
   // Not a transaction (the roster test reads markActiveTransaction), but the
   // verdict's "failed at:" must still name where the run stopped.
   evidence.activeTransaction = { name: 'engine-probe', correlationId: null };
-  if (engineProbe.httpStatus === 200 && !engineProbe.ok && [401, 403, 429].includes(Number(engineProbe.status))) {
-    throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${engineProbe.verdict || ''}`.trim());
+  const refusal = engineRefusalStopsRun(engineProbe, health);
+  evidence.engineRefusal = refusal;
+  if (refusal.stop) {
+    throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${refusal.reason} ${engineProbe.verdict || ''}`.trim());
+  }
+  if (refusal.refused) {
+    // The verdict's state digest must say the transactions ran on the
+    // fallback, or a pass here would read as Gemini answering.
+    engineDigest = `${engineDigest} fallback=${refusal.fallback}`;
+    console.log(`Engine refused; the transactions run on the fallback engine. ${refusal.reason}`);
   }
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
