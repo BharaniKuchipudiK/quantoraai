@@ -1,4 +1,5 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
+import type { StudyActiveLearningContext } from './study-active-learning-context.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import {
@@ -6,7 +7,7 @@ import {
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-04.1';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-07.1';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -31,6 +32,7 @@ export type StudyTeachingRepresentationFallback =
 
 export type StudyTeachingRequestedMode =
   | 'visual'
+  | 'animation'
   | 'graph'
   | 'worked_example'
   | 'story'
@@ -52,6 +54,7 @@ export type StudyTeachingRepresentationPlan = {
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
 type StudyRepresentationCapability = NonNullable<ReturnType<typeof resolveStudyRepresentationCapability>>;
 
+const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive animation)\b/i;
 const VISUAL_REQUEST = /\b(?:image|images|picture|pictures|diagram|diagrams|visual|visually|show me|draw|sketch)\b/i;
 const GRAPH_REQUEST = /\b(?:graph|plot|chart)\b/i;
 const WORKED_EXAMPLE_REQUEST = /\b(?:worked example|example|show me how|step[- ]by[- ]step)\b/i;
@@ -62,6 +65,7 @@ const STRUGGLE = /\b(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:
 const GRAPH_SEMANTICS = /\b(?:slope|axis|axes|trend|correlation|distribution|velocity[- ]time|displacement[- ]time|distance[- ]time|acceleration[- ]time|function|curve|coordinates?|quadrant|unit circle|trigonometry|trig|sine|cosine|tangent)\b/i;
 
 function requestedMode(message: string): StudyTeachingRequestedMode {
+  if (ANIMATION_REQUEST.test(message)) return 'animation';
   if (GRAPH_REQUEST.test(message)) return 'graph';
   if (VISUAL_REQUEST.test(message)) return 'visual';
   if (WORKED_EXAMPLE_REQUEST.test(message)) return 'worked_example';
@@ -71,12 +75,6 @@ function requestedMode(message: string): StudyTeachingRequestedMode {
   return null;
 }
 
-/**
- * Project the one authoritative verified learner model into a representation.
- * This is deliberately a pure projection: it creates no learner state and
- * writes nothing. Current explicit requests and fresh struggle signals are
- * handled first; verified state changes the otherwise-stable teaching path.
- */
 function planForVerifiedLearnerState(
   learnerModel: StudyLearnerModel,
   capability: StudyRepresentationCapability | null,
@@ -91,62 +89,20 @@ function planForVerifiedLearnerState(
   switch (learnerModel.nextLearningMove.type) {
     case 'diagnose_misconception':
     case 'confirm_misconception':
-      return {
-        ...common,
-        primaryRepresentation: 'comparison',
-        learnerAction: 'compare',
-        rendererRequired: false,
-        rendererKind: null,
-      };
+      return { ...common, primaryRepresentation: 'comparison', learnerAction: 'compare', rendererRequired: false, rendererKind: null };
     case 'guided_repair':
       return capability
-        ? {
-            ...common,
-            primaryRepresentation: capability.representation,
-            learnerAction: 'predict',
-            rendererRequired: true,
-            rendererKind: capability.rendererKind,
-          }
-        : {
-            ...common,
-            primaryRepresentation: 'worked_example',
-            learnerAction: 'calculate',
-            rendererRequired: false,
-            rendererKind: null,
-          };
+        ? { ...common, primaryRepresentation: capability.representation, learnerAction: 'predict', rendererRequired: true, rendererKind: capability.rendererKind }
+        : { ...common, primaryRepresentation: 'worked_example', learnerAction: 'calculate', rendererRequired: false, rendererKind: null };
     case 'vary_evidence':
-      return {
-        ...common,
-        primaryRepresentation: 'worked_example',
-        learnerAction: 'calculate',
-        rendererRequired: false,
-        rendererKind: null,
-      };
+      return { ...common, primaryRepresentation: 'worked_example', learnerAction: 'calculate', rendererRequired: false, rendererKind: null };
     case 'retention_probe':
-      return {
-        ...common,
-        primaryRepresentation: 'governed_assessment',
-        learnerAction: 'retrieve',
-        rendererRequired: false,
-        rendererKind: null,
-      };
+      return { ...common, primaryRepresentation: 'governed_assessment', learnerAction: 'retrieve', rendererRequired: false, rendererKind: null };
     case 'transfer_task':
-      return {
-        ...common,
-        primaryRepresentation: 'governed_assessment',
-        learnerAction: 'explain',
-        rendererRequired: false,
-        rendererKind: null,
-      };
+      return { ...common, primaryRepresentation: 'governed_assessment', learnerAction: 'explain', rendererRequired: false, rendererKind: null };
     case 'independent_retrieval':
     default:
-      return {
-        ...common,
-        primaryRepresentation: 'interactive_probe',
-        learnerAction: 'retrieve',
-        rendererRequired: false,
-        rendererKind: null,
-      };
+      return { ...common, primaryRepresentation: 'interactive_probe', learnerAction: 'retrieve', rendererRequired: false, rendererKind: null };
   }
 }
 
@@ -156,12 +112,14 @@ export function planStudyTeachingRepresentation(input: {
   history?: HistoryItem[];
   intervention?: StudyLearningIntervention | null;
   learnerModel?: StudyLearnerModel | null;
+  activeLearningContext?: StudyActiveLearningContext | null;
 }): StudyTeachingRepresentationPlan {
   const message = String(input.message || '').trim();
   const contextText = String(input.contextText || '').trim();
   const context = `${contextText}\n${message}`.trim();
   const requested = requestedMode(message);
-  const capability = resolveStudyRepresentationCapability(context);
+  const active = input.activeLearningContext || null;
+  const capability = active?.representationCapability || resolveStudyRepresentationCapability(context);
   const emitCoverage = (available: boolean, rendererKind: StudyRepresentationRendererKind | null = null) => {
     emitStudyLearningFlowMetric({
       metric: 'representation_coverage',
@@ -170,11 +128,40 @@ export function planStudyTeachingRepresentation(input: {
     });
   };
 
+  // Meta-learning turns must not inherit a subject picture from old lesson text.
+  // A study plan or progress/gap review is about the learning process, not a
+  // request to reteach the most recently mentioned concept.
+  if (active && (active.mode === 'meta_planning' || active.mode === 'progress_review')
+    && (requested === null || requested === 'visual' || requested === 'graph' || requested === 'animation')) {
+    return {
+      version: STUDY_TEACHING_REPRESENTATION_VERSION,
+      requestedMode: requested,
+      primaryRepresentation: 'concise_text',
+      learnerAction: 'explain',
+      rendererRequired: false,
+      rendererKind: null,
+      fallback: requested ? 'requested_mode_unsupported' : 'none',
+      reason: requested ? 'explicit_request' : 'default_teaching',
+    };
+  }
+
+  if (requested === 'animation') {
+    const animationCapability = capability?.rendererKind === 'newton-lab' ? capability : null;
+    emitCoverage(Boolean(animationCapability), animationCapability?.rendererKind || null);
+    return {
+      version: STUDY_TEACHING_REPRESENTATION_VERSION,
+      requestedMode: requested,
+      primaryRepresentation: animationCapability ? 'simulation_or_lab' : 'concise_text',
+      learnerAction: 'predict',
+      rendererRequired: Boolean(animationCapability),
+      rendererKind: animationCapability?.rendererKind || null,
+      fallback: animationCapability ? 'none' : (context ? 'renderer_unavailable' : 'concept_ambiguous'),
+      reason: 'explicit_request',
+    };
+  }
+
   if (requested === 'graph') {
-    // The request word "graph" is not evidence that a graph is semantically
-    // appropriate. Require graph semantics from established lesson context or
-    // from additional semantic words in the current learner message.
-    const contextCapability = resolveStudyRepresentationCapability(contextText);
+    const contextCapability = active?.representationCapability || resolveStudyRepresentationCapability(contextText);
     const graphCapability = contextCapability?.representation === 'graph' ? contextCapability : null;
     const graphAvailable = Boolean(graphCapability) || GRAPH_SEMANTICS.test(message);
     emitCoverage(graphAvailable, graphCapability?.rendererKind || (graphAvailable ? 'graph' : null));
@@ -205,55 +192,16 @@ export function planStudyTeachingRepresentation(input: {
   }
 
   if (requested === 'worked_example') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: requested,
-      primaryRepresentation: 'worked_example',
-      learnerAction: 'calculate',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'explicit_request',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: requested, primaryRepresentation: 'worked_example', learnerAction: 'calculate', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'explicit_request' };
   }
-
   if (requested === 'story') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: requested,
-      primaryRepresentation: 'story_analogy',
-      learnerAction: 'explain',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'explicit_request',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: requested, primaryRepresentation: 'story_analogy', learnerAction: 'explain', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'explicit_request' };
   }
-
   if (requested === 'comparison') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: requested,
-      primaryRepresentation: 'comparison',
-      learnerAction: 'compare',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'explicit_request',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: requested, primaryRepresentation: 'comparison', learnerAction: 'compare', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'explicit_request' };
   }
-
   if (requested === 'concise') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: requested,
-      primaryRepresentation: 'concise_text',
-      learnerAction: 'explain',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'explicit_request',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: requested, primaryRepresentation: 'concise_text', learnerAction: 'explain', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'explicit_request' };
   }
 
   const intervention = input.intervention || evaluateStudyLearningIntervention({
@@ -262,62 +210,21 @@ export function planStudyTeachingRepresentation(input: {
   });
 
   if (intervention.action === 'guided_reconstruction') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: null,
-      primaryRepresentation: 'interactive_probe',
-      learnerAction: 'predict',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'struggle_repair',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: null, primaryRepresentation: 'interactive_probe', learnerAction: 'predict', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'struggle_repair' };
   }
-
   if (intervention.action === 'change_representation') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: null,
-      primaryRepresentation: capability?.representation || 'worked_example',
-      learnerAction: capability ? 'predict' : 'calculate',
-      rendererRequired: Boolean(capability),
-      rendererKind: capability?.rendererKind || null,
-      fallback: 'none',
-      reason: 'struggle_repair',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: null, primaryRepresentation: capability?.representation || 'worked_example', learnerAction: capability ? 'predict' : 'calculate', rendererRequired: Boolean(capability), rendererKind: capability?.rendererKind || null, fallback: 'none', reason: 'struggle_repair' };
   }
-
   if (intervention.action === 'offer_reference') {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: null,
-      primaryRepresentation: 'reference',
-      learnerAction: 'retrieve',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'struggle_repair',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: null, primaryRepresentation: 'reference', learnerAction: 'retrieve', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'struggle_repair' };
   }
-
   if (intervention.action === 'compress' || STRUGGLE.test(message)) {
-    return {
-      version: STUDY_TEACHING_REPRESENTATION_VERSION,
-      requestedMode: null,
-      primaryRepresentation: 'concise_text',
-      learnerAction: 'explain',
-      rendererRequired: false,
-      rendererKind: null,
-      fallback: 'none',
-      reason: 'struggle_repair',
-    };
+    return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: null, primaryRepresentation: 'concise_text', learnerAction: 'explain', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'struggle_repair' };
   }
 
   if (input.learnerModel) {
     const verified = planForVerifiedLearnerState(input.learnerModel, capability);
-    if (verified.rendererRequired || verified.fallback === 'renderer_unavailable') {
-      emitCoverage(verified.rendererRequired, verified.rendererKind);
-    }
+    if (verified.rendererRequired || verified.fallback === 'renderer_unavailable') emitCoverage(verified.rendererRequired, verified.rendererKind);
     return verified;
   }
 
