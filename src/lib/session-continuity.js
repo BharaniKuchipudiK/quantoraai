@@ -25,11 +25,19 @@ function boundedText(value, max) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 }
 
-function pressureLevel(ratio, historyResult) {
-  if (historyResult?.trimmed > 0 || historyResult?.dropped > 0 || ratio >= CONTEXT_PRESSURE_HANDOVER_RATIO) {
+/*
+ * Once this many turns have been folded into the digest, the session is old
+ * enough that a fresh chat seeded with its goal, facts and desk answers
+ * better than a request that opens with forty one-line summaries. Below it,
+ * compaction is the platform doing its job, not a reason to move.
+ */
+export const COMPACTED_HANDOVER_TURNS = 40;
+
+function pressureLevel(ratio, { trimmed = 0, compacted = 0 } = {}) {
+  if (ratio >= CONTEXT_PRESSURE_HANDOVER_RATIO || compacted >= COMPACTED_HANDOVER_TURNS) {
     return 'handover_recommended';
   }
-  if (ratio >= CONTEXT_PRESSURE_WATCH_RATIO) return 'watch';
+  if (ratio >= CONTEXT_PRESSURE_WATCH_RATIO || trimmed > 0 || compacted > 0) return 'watch';
   return 'stable';
 }
 
@@ -41,16 +49,26 @@ function pressureLevel(ratio, historyResult) {
 export function assessSessionContinuity({ messages = [], historyResult = null } = {}) {
   const transcript = Array.isArray(messages) ? messages : [];
   const rawBytes = serializedBytes(transcript);
-  const byteRatio = rawBytes / HISTORY_BYTE_BUDGET;
-  const itemRatio = transcript.length / SESSION_MESSAGE_LIMIT;
+  /*
+   * Measured on what the next request would carry, AFTER the budget has
+   * trimmed and folded — compaction is what relieves pressure, so a measure
+   * taken before it would recommend leaving a chat the platform can still run.
+   */
+  const sentBytes = Number.isFinite(historyResult?.bytes) && historyResult.bytes > 0 ? historyResult.bytes : rawBytes;
+  const sentItems = Array.isArray(historyResult?.history) ? historyResult.history.length : transcript.length;
+  const trimmed = Number(historyResult?.trimmed) || 0;
+  const compacted = Number(historyResult?.compacted ?? historyResult?.dropped) || 0;
+  const byteRatio = sentBytes / HISTORY_BYTE_BUDGET;
+  const itemRatio = sentItems / SESSION_MESSAGE_LIMIT;
   const pressureRatio = Math.max(byteRatio, itemRatio);
-  const level = pressureLevel(pressureRatio, historyResult);
+  const level = pressureLevel(pressureRatio, { trimmed, compacted });
   const reasons = [];
 
   if (byteRatio >= CONTEXT_PRESSURE_WATCH_RATIO) reasons.push('history_bytes');
   if (itemRatio >= CONTEXT_PRESSURE_WATCH_RATIO) reasons.push('history_items');
-  if (historyResult?.trimmed > 0) reasons.push('history_trimmed');
-  if (historyResult?.dropped > 0) reasons.push('history_dropped');
+  if (trimmed > 0) reasons.push('history_trimmed');
+  if (compacted > 0) reasons.push('history_compacted');
+  if (compacted >= COMPACTED_HANDOVER_TURNS) reasons.push('history_long');
 
   return Object.freeze({
     version: SESSION_CONTINUITY_VERSION,
@@ -63,8 +81,11 @@ export function assessSessionContinuity({ messages = [], historyResult = null } 
       historyItems: transcript.length,
       historyItemLimit: SESSION_MESSAGE_LIMIT,
       pressureRatio: Number(pressureRatio.toFixed(4)),
-      trimmedItems: Number(historyResult?.trimmed) || 0,
-      droppedItems: Number(historyResult?.dropped) || 0,
+      trimmedItems: trimmed,
+      // Kept under its old name for readers of earlier contracts: these turns
+      // were folded into the digest, not thrown away.
+      droppedItems: compacted,
+      compactedItems: compacted,
     },
   });
 }
@@ -240,7 +261,7 @@ export function describeSessionHandover(contract) {
     // Said plainly, because a handover offered after a trim means the current
     // chat has ALREADY lost detail — that is the reason to move, not a footnote.
     reason: dropped || trimmed
-      ? `This chat has grown past what one request can carry, so ${dropped ? `${dropped} older turn${dropped === 1 ? '' : 's'}` : 'older detail'} ${dropped ? 'were' : 'was'} already shortened to keep it working.`
-      : 'This chat is close to the size where older turns start getting shortened.',
+      ? `This chat has grown past what one request can carry, so ${dropped ? `${dropped} older turn${dropped === 1 ? '' : 's'} ${dropped === 1 ? 'is' : 'are'} already folded into one-line summaries` : 'older output was already shortened'} to keep it working.`
+      : 'This chat is close to the size where older turns start getting folded into summaries.',
   };
 }
