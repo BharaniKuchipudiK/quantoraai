@@ -300,7 +300,7 @@ test('an attached document reaches the model, and the desk says what was read', 
   assert.match(snapshot, /documentReads:/);
   const gate = read('scripts/deployed-golden-transactions.mjs');
   assert.match(gate, /setInputFiles\(\{ name: 'rkv-bylaws\.pdf'/, 'the golden must attach a real file through the composer');
-  assert.match(gate, /'document-grounded'\]/, 'and the roster must demand it ran');
+  assert.match(gate, /const EXPECTED_TRANSACTIONS = \[[^\]]*'document-grounded'[^\]]*\]/, 'and the roster must demand it ran');
 });
 
 /*
@@ -385,7 +385,11 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
 test('a pull request golden plans two transactions, a production golden five, and the run is held to its plan', () => {
   const gate = read('scripts/deployed-golden-transactions.mjs');
   const workflow = read('.github/workflows/deployed-golden-transactions.yml');
-  assert.match(workflow, /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ github\.event_name == 'pull_request' && '2' \|\| '5' \}\}/, 'the workflow sets the limit per event');
+  assert.match(
+    workflow,
+    /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ github\.event_name == 'pull_request' && \(contains\(github\.event\.pull_request\.title, '\[golden:all\]'\) && '99' \|\| '2'\) \|\| '99' \}\}/,
+    'the workflow sets the limit per event: two on a pull request, everything on production, and everything once on a pull request titled [golden:all]',
+  );
   assert.match(gate, /planGoldenTransactions\(\n\s*EXPECTED_TRANSACTIONS,\n\s*process\.env\.QUANTORA_GOLDEN_TRANSACTION_LIMIT,\n\s*\)/, 'the gate plans from the roster and the variable');
   for (const position of [2, 3, 4, 5]) {
     assert.match(gate, new RegExp(`if \\(runs\\(${position}\\)\\) \\{`), `transaction ${position} runs only when planned`);

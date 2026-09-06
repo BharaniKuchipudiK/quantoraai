@@ -3,10 +3,12 @@ import { useRef } from 'react';
 import { OFFICE_CLIENT_GENERATE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
 import { consumeOfficeToolSelection, detectOfficeIntent } from '../lib/office-intent.js';
 import { requestTurnPlan, turnPlanOverrides, turnPlanRequest } from '../lib/turn-plan-client.js';
+import { UNCHANGED_DESK_FAILURE_DETAIL, deskChangedThisTurn } from '../lib/desk-edit-proof.js';
 import { carryDocuments, describeExcludedAttachments, explainNothingToSend, partitionAttachments } from '../lib/chat-attachments.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
 import { officePclMemory } from '../lib/office-session-state.js';
+import { officeFailureMessage } from '../lib/office-failure-copy.js';
 import { normalizeAssistantResponse, sanitizeAssistantStream } from '../lib/assistant-response-normalizer.js';
 import { captureUserAnswerAsContext, mergeSessionContext } from '../lib/session-context.js';
 import { deriveStudioMission } from '../lib/studio-mission.js';
@@ -700,7 +702,22 @@ export function useChatStream({
      */
     const deskPinned = activeDeskPinned(chatSessions, activeSessionId);
     const pinnedDeskName = deskPinned ? (studioDomain || 'coding') : null;
-    const deskHasFilesForPlan = Object.keys(vfs || {}).length > 0;
+    /*
+     * THE DESK HOLDS A BUILD when it holds files OR a single-file site.
+     *
+     * 2026-09-06, the deployed golden's second-turn transaction, second run:
+     * the site built from the documents was a single HTML artifact, so the
+     * desk had no VFS files, so "the desk owns a build" read false, so the
+     * planner's "chat" for "change the heading" stood, and the person got a
+     * paragraph saying the heading was changed while the site kept its old
+     * one. A follow-up on a desk that shows a site is that site's turn,
+     * whatever shape the site took and whatever a model says.
+     */
+    const deskHoldsBuild = Boolean(
+      (typeof canvasCode === 'string' && canvasCode.trim())
+      || (vfs && Object.keys(vfs).length > 0),
+    );
+    const deskHasFilesForPlan = deskHoldsBuild;
     const chosenOfficeKind = consumeOfficeToolSelection();
     const lanePlan = chosenOfficeKind ? null : await requestTurnPlan(turnPlanRequest({
       text,
@@ -721,7 +738,7 @@ export function useChatStream({
         m.id === userMsg.id ? { ...m, lanePlan: { lane: lanePlan.lane, officeKind: lanePlan.officeKind, source: lanePlan.source } } : m
       )));
     }
-    const lanePlanOverrides = turnPlanOverrides(lanePlan, { chosenOfficeKind, pinnedDesk: pinnedDeskName, currentDesk: studioDomain });
+    const lanePlanOverrides = turnPlanOverrides(lanePlan, { chosenOfficeKind, pinnedDesk: pinnedDeskName, currentDesk: studioDomain, buildOwned: deskHoldsBuild });
     const explicitOfficeKind = chosenOfficeKind
       || (lanePlan ? lanePlanOverrides.officeKind : detectOfficeIntent({ messages: [{ sender: 'user', text }] }));
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);
@@ -818,7 +835,7 @@ export function useChatStream({
             ? 'The document generator ran out of host time before a file could be compiled. This is Quantora hitting the platform clock, not a missing API key. Shorten the brief and try once.'
             : 'The server hit an error generating the document. Please try again.');
         }
-        if (!res.ok) throw new Error(data.error || 'Compilation failed');
+        if (!res.ok) throw new Error(officeFailureMessage(data));
         if (!cacheOfficeArtifact(data)) {
           throw new Error('The generated Office artifact failed client envelope verification.');
         }
@@ -940,13 +957,14 @@ export function useChatStream({
     const buildSessionActive = isBuildSessionActive({
       priorUserMessages: messages.filter((m) => m.sender === 'user').map((m) => m.text),
       codingDeskOpen: Boolean(codingDeskOpen),
-      hasDeskFiles: Object.keys(vfs || {}).length > 0,
+      hasDeskFiles: deskHoldsBuild,
       isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
     });
+    // A plan may add the build lane; on a desk that holds a build it may not remove it (lanePlanOverrides).
     const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk,
-    }) || lanePlan?.lane === 'build';
+    }) || lanePlan?.lane === 'build' || lanePlanOverrides.isCodingRequest === true;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
@@ -1982,6 +2000,20 @@ export function useChatStream({
             );
             // Skills-first may already have proved a shop on the desk while the model
             // returned prose — prove that VFS before declaring no-preview.
+            /*
+             * BUT ONLY A DESK THIS TURN CHANGED CAN VOUCH FOR IT (2026-09-06).
+             *
+             * `vfs` here is the desk as the turn found it. On a follow-up ("change
+             * the heading") the model can answer in prose, return no files, and
+             * the proof below passes on the files from the turn BEFORE — the
+             * deployed golden's first second-turn transaction watched the desk
+             * close such a turn as done while the site stayed as it was. So the
+             * shortcut needs the desk to differ from how the turn found it, or
+             * skills to have repaired it; otherwise the turn is an unfulfilled
+             * edit and takes the same retry a fileless first build takes, with a
+             * brief that says what went wrong (src/lib/desk-edit-proof.js).
+             */
+            let unchangedDeskProse = false;
             if (turnPlan?.isCodingTurn) {
               const seededProof = proveCodingTurn({
                 plan: turnPlan,
@@ -1991,7 +2023,13 @@ export function useChatStream({
                 allowRepair: true,
                 sessionId: activeSessionId,
               });
-              if (codingTurnMayClaimSuccess(seededProof)) {
+              const deskVouches = deskChangedThisTurn({
+                before: vfs || {},
+                after: seededProof?.vfs || {},
+                repaired: seededProof?.repaired === true,
+              });
+              if (codingTurnMayClaimSuccess(seededProof) && !deskVouches.changed) unchangedDeskProse = true;
+              if (codingTurnMayClaimSuccess(seededProof) && deskVouches.changed) {
                 if (typeof onCodingTurnProved === 'function') {
                   try { onCodingTurnProved(seededProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
@@ -2028,7 +2066,7 @@ export function useChatStream({
               maxAttempts: escalation.maxAttempts,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
-              failureDetail: 'the reply was a chat plan with no runnable files',
+              failureDetail: unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files',
             });
             if (recovery.retry) {
               applyRecoveryRepairs(recovery);
@@ -2037,7 +2075,7 @@ export function useChatStream({
             }
             // No authored scaffold here either: a build that produced no files is
             // reported as the failure it is, via resolveCodingTurnOutcome below.
-            qirFail('contract', 'the reply was a chat plan with no runnable files', missionSpent());
+            qirFail('contract', unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files', missionSpent());
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {

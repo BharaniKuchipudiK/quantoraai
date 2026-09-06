@@ -64,3 +64,11 @@ test('overrides: the planner adds lanes and never removes what the desk owns or 
   // A chat plan in an unpinned advisor chat keeps the chat's desk.
   assert.equal(turnPlanOverrides(chat, { currentDesk: 'finance' }).desk, undefined);
 });
+
+test('a chat plan cannot veto a build the desk already owns, and a pinned advisor desk is left alone', () => {
+  const chatPlan = { lane: 'chat', desk: null, officeKind: null, buildMode: false, confidence: 0.95, source: 'planner', agreed: false, reason: 'a question' };
+  assert.equal(turnPlanOverrides(chatPlan, { buildOwned: true }).isCodingRequest, true, 'the desk shows a site: the follow-up is its turn');
+  assert.equal(turnPlanOverrides(chatPlan, { buildOwned: true, pinnedDesk: 'coding' }).isCodingRequest, true);
+  assert.equal(turnPlanOverrides(chatPlan, { buildOwned: false }).isCodingRequest, false, 'an empty desk takes the plan at its word');
+  assert.equal(turnPlanOverrides(chatPlan, { buildOwned: true, pinnedDesk: 'travel' }).isCodingRequest, false, 'a pinned advisor desk is not a build');
+});

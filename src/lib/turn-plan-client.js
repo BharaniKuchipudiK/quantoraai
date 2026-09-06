@@ -90,14 +90,24 @@ export async function requestTurnPlan(request, { fetchFn = typeof fetch === 'fun
  * What a plan may change on the turn. Pure, so the policy is testable apart
  * from the hook: the planner adds lanes and never removes what a desk owns.
  */
-export function turnPlanOverrides(plan, { chosenOfficeKind = null, deterministicBuild = false, pinnedDesk = null, currentDesk = null } = {}) {
+export function turnPlanOverrides(plan, { chosenOfficeKind = null, deterministicBuild = false, pinnedDesk = null, currentDesk = null, buildOwned = false } = {}) {
   if (chosenOfficeKind) {
     // A kind picked by hand is not a guess; the planner does not second-guess it.
     return { officeKind: chosenOfficeKind, isCodingRequest: false, desk: currentDesk, applied: false };
   }
   if (!plan) return { officeKind: undefined, isCodingRequest: deterministicBuild, desk: undefined, applied: false };
   const officeKind = plan.lane === 'office' ? plan.officeKind : null;
-  const isCodingRequest = deterministicBuild || plan.lane === 'build';
+  /*
+   * The second invariant, on the client as on the server: a build the desk
+   * already owns is never vetoed. A "chat" plan for "change the heading" on
+   * a desk that shows a site (files or a single HTML page) is still that
+   * site's turn — the server reconciles the same way, and a client that did
+   * not would take the model's word over the desk (2026-09-06, second run).
+   */
+  const advisorPinned = Boolean(pinnedDesk) && pinnedDesk !== 'coding';
+  const isCodingRequest = deterministicBuild
+    || plan.lane === 'build'
+    || (buildOwned && plan.lane === 'chat' && !advisorPinned);
   let desk;
   if (pinnedDesk) desk = undefined; // the resolver keeps the pin; the plan cannot move it
   else if (plan.lane === 'advisor' && ADVISOR_DESKS.has(plan.desk)) desk = plan.desk;

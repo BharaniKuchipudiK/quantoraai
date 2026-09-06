@@ -289,6 +289,17 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     if (html) pushHtmlToEmbedRef.current?.(html);
   }, [embedSrc, remountPreviewShell]);
 
+  /*
+   * The page the shell currently shows. A shell that has painted a page cannot
+   * be repainted by a message: render() replaces the shell's document with
+   * document.write, and the listener that took the first message goes with
+   * it. On 2026-09-06 the deployed golden's second turn — "change the
+   * heading" on a single-file site — reached the desk, changed the code prop,
+   * fired the push, and the frame kept the first page. A CHANGED page
+   * therefore reloads the shell, which pushes on load exactly as the first
+   * page was pushed; the same page re-pushed (assembly churn) still posts.
+   */
+  const lastPushedHtmlRef = useRef('');
   const pushHtmlToEmbed = useCallback((html) => {
     const frame = iframeRef.current;
     if (!frame?.contentWindow || !html) return;
@@ -310,6 +321,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     frame.contentWindow.postMessage({ __quantoraPreviewHtml: injectPreviewHarness(preparedHtml) }, '*');
     previewHtmlPushedAtRef.current = Date.now();
     lastPreviewAliveAtRef.current = Date.now();
+    lastPushedHtmlRef.current = html;
   }, []);
   const pushHtmlToEmbedRef = useRef(pushHtmlToEmbed);
   pushHtmlToEmbedRef.current = pushHtmlToEmbed;
@@ -403,8 +415,14 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
     stylingFailedRef.current = false;
     healingRef.current = false;
     if (!sameAssembly) setStatus('running');
+    if (lastPushedHtmlRef.current && lastPushedHtmlRef.current !== currentCode) {
+      // A different page than the one on screen: reload the shell (see lastPushedHtmlRef).
+      lastPushedHtmlRef.current = '';
+      remountPreviewShell();
+      return;
+    }
     pushHtmlToEmbed(currentCode);
-  }, [currentCode, embedReady, pushHtmlToEmbed, assemblyKey]);
+  }, [currentCode, embedReady, pushHtmlToEmbed, assemblyKey, remountPreviewShell]);
 
   const requestRepair = useCallback(async (brokenCode, message, attempts) => {
     const res = await fetch('/api/chat', {
