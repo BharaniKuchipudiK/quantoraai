@@ -740,6 +740,66 @@ export function recordModelQualityEvent(entry: {
 }
 
 /*
+ * One row per turn plan (Phase 7): the lane the planner chose, whether the
+ * planner or the rules chose it, whether they agreed, and how long the
+ * planner took. Lanes, a source, a number and a short error class — no prompt,
+ * no reply, no user. Fire-and-forget like the quality ledger: a slow store
+ * never slows a turn.
+ */
+export function recordTurnPlanEvent(entry: {
+  lane: string;
+  desk?: string | null;
+  officeKind?: string | null;
+  source: "planner" | "fallback";
+  agreed: boolean;
+  confidence?: number | null;
+  deterministicLane: string;
+  plannerMs?: number | null;
+  plannerError?: string | null;
+  pinnedDesk?: string | null;
+}): void {
+  void request("turn_plan_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      lane: entry.lane,
+      desk: entry.desk || null,
+      office_kind: entry.officeKind || null,
+      source: entry.source,
+      agreed: entry.agreed === true,
+      confidence: Number.isFinite(Number(entry.confidence)) ? Number(entry.confidence) : null,
+      deterministic_lane: entry.deterministicLane,
+      planner_ms: Number.isFinite(Number(entry.plannerMs)) ? Math.round(Number(entry.plannerMs)) : null,
+      planner_error: entry.plannerError ? String(entry.plannerError).slice(0, 160) : null,
+      pinned_desk: entry.pinnedDesk || null,
+    }]),
+  });
+}
+
+export type TurnPlanEventRow = {
+  lane: string;
+  source: string;
+  agreed: boolean | null;
+  confidence: number | null;
+  deterministic_lane: string;
+  planner_ms: number | null;
+  planner_error: string | null;
+  created_at: string | null;
+};
+
+/** The recent plans, newest first, capped; empty on any fault, never a throw. */
+export async function readTurnPlanEvents(sinceIso: string, limit = 1000): Promise<TurnPlanEventRow[]> {
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const response = await request(
+    `turn_plan_events?select=lane,source,agreed,confidence,deterministic_lane,planner_ms,planner_error,created_at&created_at=gte.${since}&order=created_at.desc&limit=${Math.max(1, Math.min(5000, Number(limit) || 1000))}`,
+    { method: "GET" },
+  );
+  if (!response) return [];
+  const rows = await response.json().catch(() => []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+/*
  * What happened under one reference id, kept past the life of the function
  * that logged it. Operational fields only — a boundary, a state, an engine, a
  * status — plus the owner's sub so the person holding the reference can read

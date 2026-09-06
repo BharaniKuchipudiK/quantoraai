@@ -1,6 +1,7 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
 import { authenticateAdminRequest } from "../admin-auth.js";
-import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured } from "../store.js";
+import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured, readTurnPlanEvents } from "../store.js";
+import { TURN_PLAN_WINDOW_HOURS, describeTurnPlans, summarizeTurnPlans } from "../turn-plan-ledger.js";
 import { getProductInsights } from "../product-analytics.js";
 import { getTechnicalInsights } from "../technical-analytics.js";
 import { reportStudyRepresentationCoverage } from "../study-representation-coverage.js";
@@ -24,11 +25,14 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const [growth, series, suggestionAcceptance] = await Promise.all([
+  const [growth, series, suggestionAcceptance, turnPlanRows] = await Promise.all([
     getGrowthSummary(),
     getDailySeries(14),
     getSuggestionAcceptance(),
+    readTurnPlanEvents(new Date(Date.now() - TURN_PLAN_WINDOW_HOURS * 3_600_000).toISOString()),
   ]);
+  const turnPlanSummary = summarizeTurnPlans(turnPlanRows);
+  const turnPlanSource = !isStoreConfigured() ? 'not_configured' : (turnPlanRows.length ? 'measured' : 'no-rows');
   const product = await getProductInsights(growth);
   const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
 
@@ -67,6 +71,12 @@ export default async function handler(req: any, res: any) {
     /* PCL North-Star (Roadmap 9.1): per-surface 7-day proactive-suggestion
      * acceptance rate — the honest measure of whether the PCL adds value. */
     suggestionAcceptance: suggestionAcceptance ?? [],
+
+    /* Phase 7, measured: what the turn planner did in the last 24 hours —
+     * how often it decided, how often it agreed with the rules it replaced,
+     * where it overruled them, and its latency. 'no-rows' says the table is
+     * empty or missing; it is never reported as a perfect planner. */
+    turnPlans: { ...turnPlanSummary, windowHours: TURN_PLAN_WINDOW_HOURS, source: turnPlanSource, line: describeTurnPlans(turnPlanSummary, turnPlanSource) },
 
     /*
      * Capability catalog, not live traffic. Operators can see which Study
