@@ -137,6 +137,34 @@ export function describeCredentialFailure(error: unknown, modelId?: string, gate
     + `Providers other than ${name} are unaffected.`;
 }
 
+/**
+ * DEGRADE, DO NOT DIE (2026-09-06).
+ *
+ * A Travel turn runs its live tools on Gemini and nothing else. When Google
+ * refused the production project's spend cap, every such turn had nowhere to
+ * go and the user read a credential error — while OpenRouter, planned on the
+ * same deployment and proven by the golden minutes earlier, sat unused.
+ *
+ * A gateway that has refused THIS turn will refuse the retry too: 401, 402
+ * and 403 are the credential and its billing; 429 is its quota. Those four are
+ * the provider saying no in so many words (CLAUDE.md §5 — unambiguous
+ * evidence). A timeout or a 5xx is "we could not ask", and stays a plain
+ * failure. The other gateway can still answer in text, so the turn is
+ * re-planned there without the live tools — only before anything streamed,
+ * because a committed reply cannot be restarted on another engine, and only
+ * once, so two refusals cannot loop.
+ */
+export function shouldDegradeToolsTurn(input: {
+  error: unknown;
+  openRouterUsable: boolean;
+  committed: boolean;
+  alreadyDegraded: boolean;
+}): boolean {
+  if (input.committed || input.alreadyDegraded || !input.openRouterUsable) return false;
+  const status = Number((input.error as any)?.status || 0);
+  return status === 429 || isProviderCredentialRejection(input.error);
+}
+
 export function shouldFallbackBeforeStreaming(error: unknown, context?: FallbackContext) {
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);
