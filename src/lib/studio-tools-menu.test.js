@@ -6,8 +6,12 @@ import {
   STUDIO_PLUS_ACTION,
 } from './studio-tools-menu.js';
 
+function items(domain) {
+  return studioToolsMenuGroups(domain).flatMap((group) => group.items);
+}
+
 function ids(domain) {
-  return studioToolsMenuGroups(domain).flatMap((group) => group.items.map((item) => item.id));
+  return items(domain).map((item) => item.id);
 }
 
 test('Studio plus Travel opens the Travel advisor instead of mixing a trip prompt into Studio', () => {
@@ -25,28 +29,34 @@ test('Studio plus Travel opens the Travel advisor instead of mixing a trip promp
   });
 });
 
-test('Study secondary actions stay compact and do not duplicate the primary focus controls', () => {
-  const studyIds = ids('education');
+test('Study plus exposes one truthful door per learner action without duplicating AI interventions', () => {
+  const studyItems = items('education');
+  const studyIds = studyItems.map((item) => item.id);
   assert.deepEqual(studyIds, [
     'new-topic',
-    'study-icebreaker',
+    'study-assessment',
     'study-flashcards',
-    'study-apply',
-    'study-plan',
-    'study-notes',
+    'study-notebook',
   ]);
-  assert.equal(studyIds.includes('study-explain'), false);
-  assert.equal(studyIds.includes('study-quiz'), false);
+  for (const duplicate of ['study-icebreaker', 'study-apply', 'study-plan', 'study-notes', 'study-explain', 'study-quiz']) {
+    assert.equal(studyIds.includes(duplicate), false);
+  }
+  const assessment = studyItems.find((item) => item.id === 'study-assessment');
+  const notebook = studyItems.find((item) => item.id === 'study-notebook');
+  assert.equal(assessment?.surface, 'assessment');
+  assert.equal(assessment?.requiresTopic, true);
+  assert.equal(notebook?.surface, 'notebook');
+  assert.equal(notebook?.requiresTopic, true);
 });
 
-test('Study menu labels stay topic-neutral while the resolved action receives context', () => {
-  const notes = studioToolsMenuGroups('education', "Newton's Laws of Motion")
+test('Study menu labels stay topic-neutral while conversational actions still receive context', () => {
+  const flashcards = studioToolsMenuGroups('education', "Newton's Laws of Motion")
     .flatMap((group) => group.items)
-    .find((item) => item.id === 'study-notes');
-  assert.equal(notes.subtitle.includes('Newton'), false);
+    .find((item) => item.id === 'study-flashcards');
+  assert.equal(flashcards.subtitle.includes('Newton'), false);
 
   const action = resolveStudioPlusAction(
-    'study-notes',
+    'study-flashcards',
     'education',
     'Thermodynamics',
     { sendLead: 'Stay at CBSE Class 10 depth only.' },
@@ -54,25 +64,17 @@ test('Study menu labels stay topic-neutral while the resolved action receives co
   assert.equal(action.kind, STUDIO_PLUS_ACTION.PROMPT);
   assert.match(action.text, /Class 10/);
   assert.match(action.text, /Thermodynamics/);
-  assert.equal(action.visibleText, 'Turn our work on Thermodynamics into concise notes.');
+  assert.match(action.visibleText, /Thermodynamics/);
   assert.doesNotMatch(action.visibleText, /Class 10|Do not|conversation/i);
 });
 
-test('Study icebreaker remains Study-scoped and context-driven', () => {
+test('hidden legacy Study resolvers remain compatible without returning to the visible menu', () => {
   const action = resolveStudioPlusAction('study-icebreaker', 'education', 'kinematics');
   assert.equal(action.kind, STUDIO_PLUS_ACTION.PROMPT);
-  /*
-   * Assert the BEHAVIOUR, not one phrasing of it. This used to pin the literal
-   * "signal that I am ready" wording, which the human-tutor rewrite replaced
-   * with a diagnostic question that serves the same purpose — and which the
-   * Study contamination cleanup independently flags as a private-instruction
-   * marker that should never reach a learner. Pinning the sentence made the
-   * test guard a copy of the intent instead of the intent: the tutor must ask
-   * one question and stop rather than dumping the lesson.
-   */
   assert.match(action.text, /ask ONE short question/i);
   assert.match(action.text, /STOP\. Do not dump the lesson/i);
   assert.match(action.text, /Do not plan trips/i);
+  assert.equal(ids('education').includes('study-icebreaker'), false);
 });
 
 test('Study menu work leaves Travel, Finance, Research, and general catalogs unchanged', () => {

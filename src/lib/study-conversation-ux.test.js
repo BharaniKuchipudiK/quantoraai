@@ -92,9 +92,10 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
   assert.match(markdown, /<StudyFlashcards/);
 });
 
-test('Study keeps exactly three permanent learner moves and moves secondary tools behind the Hub', () => {
+test('Study keeps three permanent lesson moves while plus and AI have distinct jobs', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
+  const plus = read('src/lib/studio-tools-menu.js');
   const history = read('src/components/StudyAssessmentHistory.jsx');
   const notebook = read('src/components/StudyNotebook.jsx');
 
@@ -103,9 +104,21 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
   assert.match(shell, />\s*Practice\s*</);
   assert.match(shell, /:\s*'Check'/);
 
-  for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
+  for (const label of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?', 'Assessment history']) {
     assert.match(hub, new RegExp(escapeRegExp(label)));
   }
+  for (const duplicated of ['Notebook', 'Flashcards', 'Make concise notes']) {
+    assert.doesNotMatch(hub, new RegExp(`label:\\s*['"]${escapeRegExp(duplicated)}['"]`));
+  }
+
+  for (const title of ['New topic', 'Assessment', 'Flashcards', 'Notebook']) {
+    assert.match(plus, new RegExp(`title:\\s*['"]${escapeRegExp(title)}['"]`));
+  }
+  for (const removed of ['Icebreaker', 'Apply', 'Plan', 'Notes']) {
+    const visibleEducationCatalog = plus.slice(plus.indexOf("if (studioDomain === 'education')"), plus.indexOf("if (studioDomain === 'finance'"));
+    assert.doesNotMatch(visibleEducationCatalog, new RegExp(`title:\\s*['"]${escapeRegExp(removed)}['"]`));
+  }
+
   for (const label of ['Notebook', 'Assessment history', 'Explain differently', 'Show visually', 'Real world', 'Mini practice', 'Quick sketch', 'Did you know?', 'Where next?']) {
     assert.doesNotMatch(shell, new RegExp(`${escapeRegExp(label)}\\s*<\\/button>`));
   }
@@ -123,16 +136,44 @@ test('Study keeps exactly three permanent learner moves and moves secondary tool
   assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
 });
 
-test('H1 Study controls are monochrome and do not revive the legacy accent palette', () => {
+test('Study plus surfaces are acknowledged by mounted consumers and generic Assessment never implies retry', () => {
+  const menu = read('src/components/StudioToolsMenu.jsx');
+  const shell = read('src/components/StudyTutorShell.jsx');
+  const hub = read('src/components/StudyHubLauncher.jsx');
+  const navigation = read('src/lib/study-surface-navigation.js');
+
+  assert.match(menu, /item\?\.requiresTopic && !hasStudyTopic/);
+  assert.match(menu, /disabled=\{disabled\}/);
+  assert.match(menu, /Start a Study topic first\./);
+  assert.match(menu, /if \(compactStudy && item\?\.surface\) \{[\s\S]*if \(requestStudySurface\(item\.surface\)\) onClose\?\.\(\);[\s\S]*return;/);
+
+  assert.match(navigation, /ASSESSMENT:\s*'assessment'/);
+  assert.match(navigation, /NOTEBOOK:\s*'notebook'/);
+  assert.match(navigation, /handled:\s*false/);
+  assert.match(navigation, /return detail\.handled === true/);
+
+  assert.match(shell, /STUDY_SURFACE\.ASSESSMENT/);
+  assert.match(shell, /event\.detail\.handled = true/);
+  assert.match(shell, /completedCheck && assessment\?\.item && assessment\?\.result[\s\S]*setActivity\('check'\)/);
+  assert.match(shell, /requestCheck\(\{ explicitRetry: false \}\)/);
+  assert.match(shell, /onClick=\{\(\) => requestCheck\(\{ explicitRetry: completedCheck \}\)\}/);
+
+  assert.match(hub, /STUDY_SURFACE\.NOTEBOOK/);
+  assert.match(hub, /event\.detail\.handled = true/);
+  assert.match(hub, /setSurface\('notebook'\)/);
+});
+
+test('H1 Study controls stay restrained while the dedicated Study AI launcher carries brand color', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const css = read('src/components/study-h1.css');
   const historyCss = read('src/components/study-assessment-history.css');
   const notebookCss = read('src/components/study-notebook.css');
-  const h1 = `${shell}\n${hub}\n${css}\n${historyCss}\n${notebookCss}`;
+  const contentControls = `${shell}\n${hub}\n${historyCss}\n${notebookCss}`;
 
-  assert.doesNotMatch(h1, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
+  assert.doesNotMatch(contentControls, /#f97316|#fff7ed|#ecfdf5|#fde68a|#92400e|#6ee7b7|#fcd34d/i);
   assert.match(css, /--study-h1-strong: #111111/);
+  assert.match(css, /\.study-h1-hub__launcher[\s\S]*linear-gradient\(135deg,[\s\S]*#d946ef[\s\S]*#6366f1[\s\S]*#22d3ee/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /focus-visible/);
 });
