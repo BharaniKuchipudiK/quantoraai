@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inferStudioDomain, resolveTurnStudioDomain } from './studio-domain-inference.js';
+import { inferStudioDomain, resolveTurnStudioDomain, turnDomainSessionPatch } from './studio-domain-inference.js';
+import type { StudioDomain } from '../../shared/studio/domains.js';
 
 test('hotels plus a city in ordinary Studio chat is Travel, even with a typo', () => {
   assert.equal(
@@ -223,4 +224,74 @@ test('a pinned chat never moves, whatever the message says; an unpinned one stil
   assert.equal(inferStudioDomain({ explicit: null, pinned: false, message: trip }), 'travel', 'an unpinned general chat still finds its desk');
   assert.equal(resolveTurnStudioDomain({ explicit: null, pinned: true, message: trip, history: [], isCodingRequest: false, hasCodingWorkspace: false }), null, 'the client turn resolver honours the pin');
   assert.equal(resolveTurnStudioDomain({ explicit: null, message: trip, history: [], isCodingRequest: false, hasCodingWorkspace: false }), 'travel', 'and without it behaves as before');
+});
+
+/*
+ * MEMBERSHIP IS NOT ROUTING (2026-09-06).
+ *
+ * Reported: "when I click on New chat and start working, suddenly this chat
+ * jumps to a different Workspace, its no longer a new chat and becomes part
+ * of Travel Workspace and sometimes goes to Study Tutor."
+ *
+ * The turn's inferred desk was written to the session as `studioDomain`, the
+ * field the sidebar groups by, so the FIRST message of a general chat moved
+ * it. These hold the separation that fixed it: inference still runs and still
+ * routes the turn, and it may never decide which workspace owns the chat.
+ */
+test('the turn router may never move a chat between workspaces', () => {
+  // The exact opening messages that moved a New Chat, one per advisor desk.
+  const reported: Array<[string, StudioDomain]> = [
+    ['help me plan a trip to Kyoto', 'travel'],
+    ['I want to learn calculus', 'education'],
+    ['can you help me study for my exam', 'education'],
+    ['what should I do about my budget', 'finance'],
+    ['do some research on solid state batteries', 'research'],
+  ];
+  for (const [message, expected] of reported) {
+    const turnDomain = resolveTurnStudioDomain({
+      explicit: null, message, history: [], isCodingRequest: false, hasCodingWorkspace: false, pinned: false,
+    });
+    assert.equal(turnDomain, expected, `"${message}" should still ROUTE to ${expected}`);
+
+    const patch = turnDomainSessionPatch({ turnDomain, sessionDomain: null, pinned: false });
+    assert.ok(
+      !('studioDomain' in patch),
+      `"${message}" wrote studioDomain=${(patch as Record<string, unknown>).studioDomain} onto the session, `
+      + 'which is the field the sidebar groups by: the chat leaves the list the person started it in. '
+      + 'Membership changes only by an explicit action (the "+" beside a workspace, an advisor card, a move). '
+      + 'Record the desk as inferredDomain instead.',
+    );
+    assert.equal(patch.inferredDomain, expected, `"${message}" should still be REMEMBERED as ${expected} for routing`);
+  }
+});
+
+test('a remembered desk keeps routing a thread whose later turns say nothing', () => {
+  // Turn two of a trip conversation: no travel word of its own, and long
+  // enough that the short-follow-up rule does not carry it either.
+  const vague = 'what would you suggest for someone travelling with two small children and a lot of luggage to carry';
+  assert.equal(
+    resolveTurnStudioDomain({ explicit: null, message: vague, history: [], isCodingRequest: false, hasCodingWorkspace: false }),
+    null,
+    'on its own this message names no desk',
+  );
+  assert.equal(
+    resolveTurnStudioDomain({ explicit: 'travel', message: vague, history: [], isCodingRequest: false, hasCodingWorkspace: false }),
+    'travel',
+    'the remembered desk is what keeps the travel tools on turn two',
+  );
+});
+
+test('a pinned chat records no routing memory, and an unchanged desk writes nothing', () => {
+  assert.deepEqual(
+    turnDomainSessionPatch({ turnDomain: 'travel', sessionDomain: null, pinned: true }),
+    {},
+    'a pinned chat\'s workspace already decided',
+  );
+  assert.deepEqual(
+    turnDomainSessionPatch({ turnDomain: 'travel', sessionDomain: 'travel', pinned: false }),
+    {},
+    'no write when the turn matches the desk the chat is already on',
+  );
+  assert.deepEqual(turnDomainSessionPatch({ turnDomain: null, sessionDomain: null, pinned: false }), {});
+  assert.deepEqual(turnDomainSessionPatch({ turnDomain: 'nonsense', sessionDomain: null, pinned: false }), {});
 });

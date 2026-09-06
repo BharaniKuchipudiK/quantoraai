@@ -192,6 +192,7 @@ function loadSessions(defaultGreeting) {
           ...session,
           projectId: session.projectId || DEFAULT_PROJECT_ID,
           studioDomain: normalizeStudioDomain(session.studioDomain),
+          inferredDomain: normalizeStudioDomain(session.inferredDomain),
         }));
       }
     }
@@ -351,11 +352,16 @@ export function chatsForWorkspace(sessions, workspace, projectId) {
  *
  * `deskPinned` says the workspace decided this chat's desk, not the words in
  * it. A chat opened from a workspace (the "+" beside it, an advisor card) is
- * pinned and never moves; the top-level New Chat is not, so a fresh general
- * chat can still find its desk from what the person asks. Before this, a
- * coding chat with no build yet could be moved to Travel by one trip word,
- * because the Coding desk is the null domain and "explicit wins" never
- * protected it.
+ * pinned and never moves. Before this, a coding chat with no build yet could
+ * be moved to Travel by one trip word, because the Coding desk is the null
+ * domain and "explicit wins" never protected it.
+ *
+ * The top-level New Chat is NOT pinned, and that no longer means it can be
+ * moved: since 2026-09-06 inference writes `inferredDomain` (routing memory)
+ * rather than `studioDomain` (membership), so an unpinned chat still finds
+ * the desk that answers it best and still never leaves the list it was
+ * started in. Unpinned now means "no workspace has claimed this chat yet",
+ * which is the state a general chat is supposed to be in.
  */
 export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, { pinned = false } = {}) {
   const domain = normalizeStudioDomain(studioDomain);
@@ -367,6 +373,13 @@ export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, 
     messages: [defaultGreetingMsg],
     studioMode: 'ask',
     studioDomain: domain,
+    /*
+     * Membership, not routing. `studioDomain` is what the sidebar groups by,
+     * so only a person may set it; `inferredDomain` is where the turn router
+     * remembers the desk this thread has been answering as. See
+     * `turnDomainSessionPatch` in shared/studio/domain-inference.ts.
+     */
+    inferredDomain: null,
     deskPinned: pinned === true,
     boundRepo: null,
     conversationContext: {},
@@ -497,6 +510,13 @@ export function useStudioSession({ user, selectedModel }) {
   const messages = activeSession.messages || [defaultGreetingMsg];
   const studioMode = activeSession.studioMode || 'ask';
   const studioDomain = normalizeStudioDomain(activeSession.studioDomain);
+  /*
+   * The desk the CHROME shows, which is not the workspace that OWNS the chat.
+   * A general chat asking about taxes still opens the Finance Advisor for the
+   * turn; it just no longer moves out of the list the person started it in.
+   * The sidebar groups by `studioDomain` alone — see turnDomainSessionPatch.
+   */
+  const effectiveStudioDomain = studioDomain || normalizeStudioDomain(activeSession.inferredDomain);
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || EMPTY_CONVERSATION_CONTEXT;
   const listeningSignals = activeSession.listeningSignals || EMPTY_LISTENING_SIGNALS;
@@ -873,8 +893,8 @@ export function useStudioSession({ user, selectedModel }) {
   }, [activeSessionId]);
 
   useEffect(() => {
-    publishStudioDomainState(studioDomain);
-  }, [activeSessionId, studioDomain]);
+    publishStudioDomainState(effectiveStudioDomain);
+  }, [activeSessionId, effectiveStudioDomain]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;

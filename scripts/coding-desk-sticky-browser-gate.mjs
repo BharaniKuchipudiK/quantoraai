@@ -256,6 +256,45 @@ try {
   const domainBackInTravel = await workspaceDomain();
   if (domainBackInTravel !== 'travel') throw new Error(`Leaving the Travel chat for the Coding desk rewrote its desk to "${domainBackInTravel || '(empty)'}".`);
 
+  /*
+   * 6. THE TOP-LEVEL NEW CHAT DOES NOT LEAVE (2026-09-06).
+   *
+   * Reported: "when I click on New chat and start working, suddenly this chat
+   * jumps to a different Workspace ... becomes part of Travel Workspace and
+   * sometimes goes to Study Tutor." The turn's inferred desk was written to
+   * the session as studioDomain — the field the sidebar groups by — so the
+   * FIRST message moved the chat out of the list it was started in.
+   *
+   * Mutation note: restore `studioDomain: turnDomain` at the updateActiveSession
+   * call in useChatStream and this step fails as "jumped to travel".
+   */
+  // Anchored on the durable hook, not the words on the button (CLAUDE.md §6).
+  const topLevelNewChat = page.locator('[data-quantora-new-chat="true"]').first();
+  await visible(topLevelNewChat, 'The top-level New Chat button is missing.');
+  await topLevelNewChat.click();
+  await page.waitForTimeout(400);
+  const tripInGeneral = 'help me plan a trip to Kyoto with hotels and flights';
+  await prompt.fill(tripInGeneral);
+  await prompt.press('Enter');
+  await page.getByText(tripInGeneral, { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await page.waitForTimeout(600);
+  /*
+   * Membership is where the sidebar FILES the chat, not which advisor chrome
+   * the turn opened. The Travel desk answering a trip question is the feature;
+   * the chat leaving the list the person started it in is the defect. So this
+   * asserts the lists, and deliberately does not assert `data-quantora-domain`
+   * — the cold-advisor step above owns that, and the two must not contradict.
+   */
+  for (const domain of advisorDomains) {
+    if (await page.locator(`[data-quantora-workspace-chats="${domain}"] [data-quantora-sidebar-chat]`, { hasText: /plan a trip to Kyoto/i }).count()) {
+      throw new Error(`A chat started from the top-level New Chat was filed under ${domain}; the person started it in the general list and it left.`);
+    }
+  }
+  const generalRow = page.locator('[data-quantora-workspace-chats="coding"] [data-quantora-sidebar-chat]', { hasText: /plan a trip to Kyoto/i });
+  if (!(await generalRow.count())) {
+    throw new Error('A chat started from the top-level New Chat is no longer in the general list either — it was filed somewhere the person did not put it.');
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/coding-desk-sticky-pass.png', fullPage: true }).catch(() => {});
   console.log('Coding desk sticky browser gate passed.');

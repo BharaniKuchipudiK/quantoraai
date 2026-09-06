@@ -388,7 +388,7 @@ export const JOURNEYS = Object.freeze([
       ],
       browser: ['scripts/coding-desk-sticky-browser-gate.mjs'],
     },
-    note: 'A chat opened from a workspace is pinned to it (2026-09-06): the resolver returns the explicit desk when pinned, and the sticky gate proves a trip question in a coding chat and a money question in a Travel chat both stay put, the chat lists under its workspace, the fold hides and restores it, and leaving a Travel chat for the Coding desk does not rewrite it.',
+    note: 'A chat opened from a workspace is pinned to it (2026-09-06): the resolver returns the explicit desk when pinned, and the sticky gate proves a trip question in a coding chat and a money question in a Travel chat both stay put, the chat lists under its workspace, the fold hides and restores it, and leaving a Travel chat for the Coding desk does not rewrite it. Membership is also separated from routing (2026-09-06): the turn router writes inferredDomain, never studioDomain, so a top-level New Chat asking about a trip still opens the Travel desk for the turn and is never filed out of the general list — step 6 of the sticky gate asserts the sidebar lists, and turnDomainSessionPatch is held to never emit a studioDomain key.',
   }),
   journey({
     id: 'long-session-continues',
