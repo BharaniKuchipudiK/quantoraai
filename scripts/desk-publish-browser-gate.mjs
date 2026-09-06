@@ -17,7 +17,8 @@
  *   1. A two-file site built in the desk renders in Preview.
  *   2. Share link posts the built code with the share confirmation header,
  *      puts the returned URL on the clipboard, and says so by the Publish
- *      control.
+ *      control — and when the browser refuses the write, offers the link to
+ *      copy by hand instead of claiming a copy.
  *   3. Publish to Vercel opens its dialog, takes a project name, posts with
  *      the publish confirmation header, asks for domain ideas, and shows the
  *      live URL.
@@ -236,6 +237,23 @@ try {
     if (!/Link copied/i.test(label) || !label.includes(SHARE_URL)) throw new Error(`The share notice reads "${label}"; expected "Link copied" and the URL ${SHARE_URL}.`);
     const clipboard = await page.evaluate(() => navigator.clipboard.readText()).catch(() => null);
     if (clipboard !== SHARE_URL) throw new Error(`The clipboard holds ${JSON.stringify(clipboard)}, not the share URL ${SHARE_URL}.`);
+    // The other branch: a browser that refuses the write. The notice must not
+    // claim a copy that did not happen; it offers the link to copy by hand.
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new Error('clipboard refused by the gate'));
+    });
+    await openPublishMenu();
+    await publishMenu().locator('button', { hasText: /Share link/i }).first().click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-quantora-share-notice="true"]')?.getAttribute('data-quantora-share-copied') === 'false',
+      null,
+      { timeout: 15_000 },
+    ).catch(() => {});
+    const refusedLabel = (await notice.innerText().catch(() => '')).trim();
+    if (/Link copied/i.test(refusedLabel)) throw new Error(`With the clipboard refused the notice still claims "${refusedLabel}".`);
+    if (!/Copy this link/i.test(refusedLabel) || !refusedLabel.includes(SHARE_URL)) throw new Error(`With the clipboard refused the notice reads "${refusedLabel}"; expected "Copy this link" and the URL ${SHARE_URL} (alerts: ${JSON.stringify(evidence.alerts)}).`);
+    const shares = evidence.deployRequests.filter((entry) => entry.confirmed === 'share-preview-button').length;
+    if (shares !== 2) throw new Error(`Expected two share requests (clipboard granted, then refused); saw ${shares}.`);
   });
 
   await step('Publish to Vercel takes a name, posts with its confirmation, and shows the live URL', async () => {

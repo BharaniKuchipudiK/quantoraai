@@ -910,14 +910,18 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
       if (!deployRes.ok) throw new Error(deployData.error || 'Share failed');
 
       setShareResult({ url: deployData.url, projectName: deployData.projectName });
+      // "Link copied" is a claim about the person's clipboard: it is made only
+      // when the write succeeded, and whoever shows the notice is told which.
+      let copied = false;
       try {
         await navigator.clipboard.writeText(deployData.url);
+        copied = true;
         setShareCopied(true);
         setTimeout(() => setShareCopied(false), 2500);
       } catch {
-        /* clipboard blocked */
+        /* clipboard blocked: the notice offers the link to copy by hand */
       }
-      onShareComplete?.({ url: deployData.url, projectName: deployData.projectName });
+      onShareComplete?.({ url: deployData.url, projectName: deployData.projectName, copied });
     } catch (err) {
       const message = err.message || 'Could not create share link';
       if (message.toLowerCase().includes('sign in')) {

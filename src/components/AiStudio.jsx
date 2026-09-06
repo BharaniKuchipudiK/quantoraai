@@ -1,4 +1,5 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { shareNoticeText } from '../lib/share-notice.js';
 import { attachmentKindForFile, MAX_DOCUMENT_FILE_BYTES, MAX_IMAGE_FILE_BYTES } from '../lib/chat-attachments.js';
 import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
@@ -5778,10 +5779,11 @@ Paused — ${autoPauseRef.current}.`
                   {deskShareNotice ? (
                     <div
                       data-quantora-share-notice="true"
+                      data-quantora-share-copied={deskShareNotice.copied ? 'true' : 'false'}
                       title={deskShareNotice.url}
-                      style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 39, whiteSpace: 'nowrap', background: isLight ? '#ffffff' : '#0f172a', border: '1px solid rgba(2, 132, 199, 0.45)', color: '#0284c7', padding: '6px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700, boxShadow: '0 12px 32px rgba(0,0,0,0.28)' }}
+                      style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 39, whiteSpace: 'nowrap', userSelect: 'text', background: isLight ? '#ffffff' : '#0f172a', border: '1px solid rgba(2, 132, 199, 0.45)', color: '#0284c7', padding: '6px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700, boxShadow: '0 12px 32px rgba(0,0,0,0.28)' }}
                     >
-                      Link copied · {deskShareNotice.url}
+                      {shareNoticeText(deskShareNotice)}
                     </div>
                   ) : null}
                   {deskPublishMenuOpen ? (
