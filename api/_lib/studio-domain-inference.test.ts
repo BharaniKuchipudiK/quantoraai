@@ -175,3 +175,33 @@ test('mutation: without codingWorkspace lock, advisor cues would steal the turn'
     null,
   );
 });
+
+/*
+ * 2026-09-06: a new chat asked for interview preparation for an aviation data
+ * job and was answered on the Travel desk. The message has no signal for any
+ * desk; a trip discussed earlier in the thread scored the floor on its own.
+ */
+test('history alone never moves a chat onto a desk: the current message must carry a signal', () => {
+  const travelHistory = [
+    { sender: 'user', text: 'Plan a trip to Tokyo in November, flights from Singapore and a hotel near Shinjuku' },
+    { sender: 'ai', text: 'Here is an itinerary with flights and hotels for your trip.' },
+  ];
+  const interviewPrep = 'help me with the key areas of focus for preparing for an interview : Below is the JD for the role. '
+    + 'Key Responsibilities Support data extraction, cleansing, transformation, and reporting activities. '
+    + 'Maintain and improve Aviation datasets, dashboards, and analytics. Support system implementations, User Acceptance Testing (UAT), and change rollouts.';
+  assert.equal(inferStudioDomain({ explicit: null, message: interviewPrep, history: travelHistory }), null, 'an earlier trip must not turn interview preparation into Travel');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'what is the capital of France', history: travelHistory }), null, 'nor a plain question');
+  assert.equal(resolveTurnStudioDomain({ explicit: null, message: interviewPrep, history: travelHistory, isCodingRequest: false, hasCodingWorkspace: false }), null, 'the client turn resolver agrees');
+});
+
+test('history still reinforces a desk the current message names, and still breaks ties', () => {
+  const travelHistory = [
+    { sender: 'user', text: 'Plan a trip to Tokyo in November, flights from Singapore and a hotel near Shinjuku' },
+    { sender: 'ai', text: 'Here is an itinerary with flights and hotels for your trip.' },
+  ];
+  assert.equal(inferStudioDomain({ explicit: null, message: 'what about the hotels?', history: travelHistory }), 'travel', 'a follow-up that says so stays with the trip');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'help me with my taxes now', history: travelHistory }), 'finance', 'a desk the message names beats a desk only history names');
+  // One travel word and one finance word: history decides, as before.
+  assert.equal(inferStudioDomain({ explicit: null, message: 'add the hotel cost to my budget', history: travelHistory }), 'travel');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'add the hotel cost to my budget', history: [] }), null, 'with no history the tie stays a tie');
+});

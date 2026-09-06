@@ -72,6 +72,15 @@ function signalScore(profile: DomainSignalProfile, current: string, prior: strin
   return score;
 }
 
+/** The current message's own signal for a desk, with history left out. */
+function currentTurnScore(profile: DomainSignalProfile, current: string): number {
+  let score = 0;
+  for (const pattern of profile.patterns) {
+    if (pattern.test(current)) score += CURRENT_TURN_WEIGHT;
+  }
+  return score;
+}
+
 /** Strong coding nouns — excludes advisor-ambiguous words like portfolio. */
 const STRONG_CODING_NOUN = /\b(app|application|web ?site|website|landing page|web ?page|html|preview|calculator|dashboard|component|widget|todo(?:s| list)?|timer|stopwatch|game|storefront|boutique|shop)\b/i;
 
@@ -131,8 +140,26 @@ export function inferStudioDomain(input: {
   // preview/VFS) is live, keyword inference must not swap the whole studio.
   if (input.codingWorkspace || hasCodingDeskContext(current, prior)) return null;
 
+  /*
+   * THE CURRENT MESSAGE MUST SAY SO (2026-09-06).
+   *
+   * History used to be able to move a chat on its own: with no explicit desk,
+   * one travel word in an earlier turn scored the floor by itself, so a new
+   * message with no signal for any desk — an interview-preparation question
+   * about an aviation data job — was routed to Travel by a trip discussed
+   * before it. The rule this file already states, "a Study thread about force
+   * must not become Travel because the word trip appeared", was true only for
+   * an explicit desk. Now a desk is a candidate only when the current message
+   * carries at least one of its signals; history still reinforces a candidate
+   * and still breaks ties between candidates, and it still cannot promote one.
+   */
   const ranked = DOMAIN_SIGNAL_REGISTRY
-    .map((profile) => ({ domain: profile.domain, score: signalScore(profile, current, prior) }))
+    .map((profile) => ({
+      domain: profile.domain,
+      current: currentTurnScore(profile, current),
+      score: signalScore(profile, current, prior),
+    }))
+    .filter((entry) => entry.current >= CURRENT_TURN_WEIGHT)
     .sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
