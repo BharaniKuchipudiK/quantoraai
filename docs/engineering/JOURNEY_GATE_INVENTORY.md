@@ -147,6 +147,6 @@ Not journeys, and not counted above, but every journey stands on them.
 | `hostile-reply-safety` | A hostile or malformed model reply cannot destroy the build | `pipeline-stress.mjs`, `never-discard-model-output.test.js`, `chat-turn-safety.test.js` | — | — |
 | `experience-budget` | The shell, a workspace switch and the input stay inside their time budgets | — | `platform-experience-browser-gate.mjs` | — |
 | `models-governed` | Models are listed, canaried, routed and retired on evidence | `model-canary.test.js`, `model-smoke-test.test.js`, `model-execution-policy.test.ts`, `model-outcome-routing.test.js` | — | — |
-| `gates-anchored` | The gates anchor on hooks the app publishes, read the page state the desk writes, and pin the browser they run | `deployed-gate-contract.test.js`, `golden-page-state.test.mjs`, `golden-engine-refusal.test.mjs`, `business-tool-reconcile.test.mjs`, `workflow-playwright-pin.test.mjs` | — | — |
+| `gates-anchored` | The gates anchor on hooks the app publishes, read the page state the desk writes, and pin the browser they run | `deployed-gate-contract.test.js`, `golden-page-state.test.mjs`, `golden-engine-refusal.test.mjs`, `golden-plan.test.mjs`, `business-tool-reconcile.test.mjs`, `workflow-playwright-pin.test.mjs` | — | — |
 | `inventory-true` | This ledger names only gates that exist and run, claims every gate on disk, and its number is true | `journey-gate-inventory-gate.mjs`, `journey-gate-inventory.test.js` | — | — |
 
