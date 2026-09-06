@@ -142,8 +142,16 @@ export function inferStudioDomain(input: {
   message?: unknown;
   history?: unknown;
   codingWorkspace?: boolean;
+  /**
+   * A chat created inside a workspace belongs to it for life (2026-09-06).
+   * The Coding desk is the null domain, so "explicit wins" never protected
+   * it: a coding chat with no build yet could be moved to Travel by one
+   * trip word. Pinned means the workspace decided, whatever the message.
+   */
+  pinned?: boolean;
 }): StudioDomain | null {
   const explicit = normalizeStudioDomain(input.explicit);
+  if (input.pinned === true) return explicit;
   // Session desk wins: a Study thread about "force" must not become Travel
   // because the word "trip" appeared, and a trip must not become a tutor.
   if (explicit) return explicit;
@@ -196,11 +204,13 @@ export function resolveTurnStudioDomain(input: {
   history?: unknown;
   isCodingRequest?: boolean;
   hasCodingWorkspace?: boolean;
+  pinned?: boolean;
 } = {}): StudioDomain | null {
   return inferStudioDomain({
     explicit: input.explicit,
     message: input.message,
     history: input.history,
     codingWorkspace: Boolean(input.isCodingRequest || input.hasCodingWorkspace),
+    pinned: input.pinned === true,
   });
 }
