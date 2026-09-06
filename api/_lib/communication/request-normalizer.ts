@@ -46,6 +46,8 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const buildMode = body?.buildMode === true || inferredBuildMode || body?.refineMode === true;
   const studioDomain = inferStudioDomain({
     explicit: body?.studioDomain,
+    // A chat created inside a workspace stays there; the client says so.
+    pinned: body?.studioDomainPinned === true,
     message,
     history: body?.history,
     codingWorkspace: buildMode

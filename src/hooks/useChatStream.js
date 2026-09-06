@@ -259,6 +259,12 @@ function activeStudioDomain(chatSessions, activeSessionId) {
   return session?.studioDomain || null;
 }
 
+/** Whether the workspace, not the words, decides this chat's desk (see makeSession). */
+function activeDeskPinned(chatSessions, activeSessionId) {
+  const session = (chatSessions || []).find((candidate) => candidate?.id === activeSessionId);
+  return session?.deskPinned === true;
+}
+
 /*
  * The one-tap continuation offered when a reply dies mid-stream. It carries the
  * partial answer forward rather than restarting the job, so the person never has
@@ -987,12 +993,14 @@ export function useChatStream({
         targetModel = autoTarget(rerouteId, autoResolvedLabel);
       }
     }
+    const deskPinned = activeDeskPinned(chatSessions, activeSessionId);
     const turnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
       message: visibleUserText,
       history: messages,
       isCodingRequest,
       hasCodingWorkspace,
+      pinned: deskPinned,
     }) || studioDomain;
     const qirTurn = createQirTurnJournal({ isCodingRequest, studioDomain: turnDomain, qirCoding });
     const codingSpineOwns = qirTurn.owns;
@@ -1169,6 +1177,7 @@ export function useChatStream({
       sessionContext: turnContext,
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
+      studioDomainPinned: deskPinned,
       ...buildStudyAdaptiveRequestContext({ studioDomain: turnDomain, brief: studyBriefForRequest }),
       buildMode: isCodingRequest,
       /*
