@@ -51,7 +51,7 @@ import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilien
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
-import { describeCredentialFailure, isProviderCredentialRejection, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
   isTravelToolExecutionDeferred,
@@ -1137,6 +1137,8 @@ export default async function handler(req: any, res: any) {
     // and a Gemini credential exists. Otherwise fall through to text routes.
     let travelToolsEnabled = wantTravelTools && !travelToolsDeferred && Boolean(effectiveGeminiKey);
     let travelDegraded = wantTravelTools && !travelToolsEnabled;
+    // Set once a tools turn has been re-planned as text on the other gateway (see geminiTurn below).
+    let degradedAfterRefusal = false;
     /*
      * The model's GitHub tools, on the signed-in user's own connection.
      *
@@ -1785,7 +1787,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    if (attempts[0].provider === 'gemini') {
+    geminiTurn: if (attempts[0].provider === 'gemini') {
       if (!effectiveGeminiKey) {
         return res.status(401).json({ error: "No Google Gemini API key configured.", requiresKey: "gemini" });
       }
@@ -1885,7 +1887,61 @@ export default async function handler(req: any, res: any) {
             ) throw error;
           }
         }
-        if (!stream) throw lastOpenError || new Error('Gemini did not return a stream.');
+        if (!stream) {
+          /*
+           * DEGRADE, DO NOT DIE (2026-09-06). Every Gemini candidate refused
+           * (see shouldDegradeToolsTurn for which refusals count). On the day
+           * Google refused the project's spend cap, a Travel turn died here
+           * with a credential error while OpenRouter was planned, usable and
+           * proven on the same deployment. Re-plan text-only routes on the
+           * other gateway, tell the model its live tools are off, and leave
+           * this branch for the OpenRouter path below — whose attempts are
+           * derived from `attempts`, so the re-plan is what it runs.
+           */
+          if (shouldDegradeToolsTurn({
+            error: lastOpenError,
+            openRouterUsable,
+            committed: sse.isCommitted,
+            alreadyDegraded: degradedAfterRefusal,
+          })) {
+            const textOnly = await planInferenceRoutes({
+              primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
+              fallbackModelIds: modelRouting?.fallbackModelIds || [],
+              models: routePlanningModels,
+              paidLastResortAllowed: paidVerdict.allowed,
+              requiredCapabilities: [...textCapabilities],
+              geminiAvailable: false,
+              openRouterAvailable: openRouterUsable,
+              geminiCredentialScope: userKey ? 'user' : 'server',
+              openRouterCredentialScope: openRouterKey ? 'user' : 'server',
+              geminiCredentialPartition: credentialCircuitPartition(userKey),
+              openRouterCredentialPartition: credentialCircuitPartition(openRouterKey),
+              requestPartition: correlationId,
+              circuitStore: providerCircuitStore,
+            });
+            const openRouterOnly = textOnly.filter((route) => route.provider === 'openrouter');
+            if (openRouterOnly.length) {
+              degradedAfterRefusal = true;
+              travelToolsEnabled = false;
+              if (wantTravelTools) {
+                travelDegraded = true;
+                finalSystemPrompt = finalSystemPromptBase + TRAVEL_DEGRADED_DIRECTIVE;
+              }
+              trace({
+                correlationId,
+                boundary: 'inference.provider',
+                state: 'degraded',
+                transaction,
+                modelId: usedModel,
+                gateway: 'gemini',
+                detailCode: 'tools-gateway-refused-text-fallback',
+              });
+              attempts = openRouterOnly;
+              break geminiTurn;
+            }
+          }
+          throw lastOpenError || new Error('Gemini did not return a stream.');
+        }
 
         const iterator = stream[Symbol.asyncIterator]();
         let signedFunctionTurn: ReturnType<typeof extractSignedFunctionTurn> = null;
