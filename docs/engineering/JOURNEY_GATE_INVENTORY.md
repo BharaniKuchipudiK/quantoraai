@@ -107,7 +107,7 @@ Floors that may only rise: proven ≥ 32, on the deployment ≥ 13. The gate fai
 | `github-import-repo` | Import an existing repository into the desk | no | `github-import.test.js`, `github-checkout.test.ts`, `repository-preview.test.ts`, `github-intelligence.test.ts` | — | — | helpers only |
 | `github-push` | Push the desk files to a new or existing repository | no | `github-push-payload.test.js`, `github-write-authorization.test.ts`, `github-write-seam-gate.mjs` | — | — | helpers only |
 | `github-pull-requests` | Open, review, comment on and merge pull requests from the desk | no | `github-write-authorization.test.ts`, `github-tool-promise.test.ts`, `github-write-seam-gate.mjs` | — | — | helpers only |
-| `office-artifacts` | Generate and download a PowerPoint, Excel, Word or PDF file | yes | `office-artifact.test.js`, `office-generation-budget.test.js`, `office-output-schemas.test.js`, `office-briefing.test.js`, `office-export.test.js`, `office-failure-copy.test.js`, `office-intent.test.js` | — | `golden:office-document` | proven |
+| `office-artifacts` | Generate and download a PowerPoint, Excel, Word or PDF file | yes | `office-artifact.test.js`, `office-generation-budget.test.js`, `office-output-schemas.test.js`, `office-briefing.test.js`, `office-export.test.js`, `office-failure-copy.test.js`, `office-intent.test.js`, `office-words.test.mjs` | — | `golden:office-document` | proven |
 
 ### advisor desks
 

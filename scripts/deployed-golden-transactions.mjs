@@ -8,7 +8,7 @@ import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
 import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
 import { buildMinimalPdf, bylawsFixtureText, eventCalendarFixtureText } from './lib/minimal-pdf.mjs';
-import { readZipEntryText, xmlText } from './lib/zip-entry.mjs';
+import { wordDocumentWords } from './lib/office-words.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -1140,15 +1140,18 @@ try {
   const downloadedPath = `${ARTIFACT_DIR}/deployed-golden-office-document.docx`;
   await download.saveAs(downloadedPath);
   const docxBytes = readFileSync(downloadedPath);
-  const documentXml = readZipEntryText(docxBytes, 'word/document.xml');
-  if (documentXml === null) {
+  // The words wherever the writer put them: <w:t> runs in document.xml, or
+  // the HTML altChunk part the platform's writer defers to. The first run
+  // read document.xml alone and found "" on a file Word opens with the title.
+  const wordFile = wordDocumentWords(docxBytes);
+  if (wordFile === null) {
     throw new Error(`The downloaded file (${download.suggestedFilename()}, ${docxBytes.length} bytes) is not a Word document: it has no word/document.xml.`);
   }
   // Runs may split a title, and a style may case it: compare the words alone.
   const squash = (value) => String(value).replace(/\s+/g, '').toLowerCase();
-  const documentWords = xmlText(documentXml);
-  if (!squash(documentWords).includes(squash(OFFICE_TITLE))) {
-    throw new Error(`The Word document opened but does not carry the title "${OFFICE_TITLE}". Its text begins: ${documentWords.slice(0, 160)}`);
+  if (!squash(wordFile.words).includes(squash(OFFICE_TITLE))) {
+    const partsRead = wordFile.parts.map((part) => `${part.name} (${part.missing ? 'missing' : `${part.words.split(/\s+/).filter(Boolean).length} words`})`).join(', ');
+    throw new Error(`The Word document opened but does not carry the title "${OFFICE_TITLE}". Parts read: ${partsRead}. Its text begins: ${wordFile.words.slice(0, 160)}`);
   }
   await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-office-document.png`, fullPage: true });
   evidence.transactions.push({

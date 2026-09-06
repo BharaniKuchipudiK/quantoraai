@@ -3,6 +3,7 @@ import test from 'node:test';
 import { crc32 } from 'node:zlib';
 import { deflateRawSync } from 'node:zlib';
 import { listZipEntries, readZipEntry, readZipEntryText, xmlText } from './lib/zip-entry.mjs';
+import { wordDocumentWords } from './lib/office-words.mjs';
 
 /**
  * A zip written by hand, the way a generator writes one: a local header and
@@ -75,6 +76,13 @@ test('reads a stored and a deflated entry back out of a zip by name', () => {
   assert.equal(readZipEntryText(zip, '[Content_Types].xml'), '<Types/>');
   assert.equal(readZipEntryText(zip, 'word/document.xml'), DOCUMENT_XML);
   assert.equal(xmlText(readZipEntryText(zip, 'word/document.xml')), 'Golden Canary Brief GC-123456 Second paragraph.');
+  // A Word file written from runs keeps its words in document.xml, and the
+  // words reader says so.
+  assert.deepEqual(wordDocumentWords(zip), {
+    words: 'Golden Canary Brief GC-123456 Second paragraph.',
+    parts: [{ name: 'word/document.xml', words: 'Golden Canary Brief GC-123456 Second paragraph.' }],
+  });
+  assert.equal(wordDocumentWords(buildZip([{ name: 'a.txt', content: 'a', method: 0 }])), null);
 });
 
 test('a missing entry is null, and a file that is not a zip says so', () => {

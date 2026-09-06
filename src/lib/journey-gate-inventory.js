@@ -690,6 +690,7 @@ export const JOURNEYS = Object.freeze([
         'src/lib/office-export.test.js',
         'src/lib/office-failure-copy.test.js',
         'src/lib/office-intent.test.js',
+        'scripts/office-words.test.mjs',
       ],
       deployed: ['golden:office-document'],
     },
