@@ -326,7 +326,37 @@ export function applyMoveChatToProject({
   return { sessions: nextSessions, activeSessionId: nextActiveSessionId, changed: true };
 }
 
-function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
+/**
+ * A chat's workspace: the Coding desk is the null domain, so it needs a name
+ * of its own for grouping and for the "+" beside it in the sidebar.
+ */
+export function workspaceOfSession(session) {
+  return normalizeStudioDomain(session?.studioDomain) || 'coding';
+}
+
+/** The chats of one workspace in one project, newest first. */
+export function chatsForWorkspace(sessions, workspace, projectId) {
+  const wanted = workspace === 'coding' ? 'coding' : normalizeStudioDomain(workspace);
+  if (!wanted) return [];
+  return (Array.isArray(sessions) ? sessions : [])
+    .filter((session) => session && !session.archived
+      && (session.projectId || DEFAULT_PROJECT_ID) === (projectId || DEFAULT_PROJECT_ID)
+      && workspaceOfSession(session) === wanted)
+    .sort((left, right) => (Number(right.updatedAt || right.createdAt) || 0) - (Number(left.updatedAt || left.createdAt) || 0));
+}
+
+/**
+ * WORKSPACES OWN THEIR CHATS (2026-09-06).
+ *
+ * `deskPinned` says the workspace decided this chat's desk, not the words in
+ * it. A chat opened from a workspace (the "+" beside it, an advisor card) is
+ * pinned and never moves; the top-level New Chat is not, so a fresh general
+ * chat can still find its desk from what the person asks. Before this, a
+ * coding chat with no build yet could be moved to Travel by one trip word,
+ * because the Coding desk is the null domain and "explicit wins" never
+ * protected it.
+ */
+export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, { pinned = false } = {}) {
   const domain = normalizeStudioDomain(studioDomain);
   return {
     id: 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
@@ -336,6 +366,7 @@ function makeSession(projectId, defaultGreetingMsg, studioDomain = null) {
     messages: [defaultGreetingMsg],
     studioMode: 'ask',
     studioDomain: domain,
+    deskPinned: pinned === true,
     boundRepo: null,
     conversationContext: {},
     memoryConsented: false,
@@ -687,7 +718,7 @@ export function useStudioSession({ user, selectedModel }) {
   const handleCreateAdvisorChat = useCallback((domain) => {
     const normalizedDomain = normalizeStudioDomain(domain);
     if (!normalizedDomain) return null;
-    const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain);
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain, { pinned: true });
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
       persistSessions(updated);
@@ -696,6 +727,20 @@ export function useStudioSession({ user, selectedModel }) {
     setActiveSessionId(newSession.id);
     return newSession.id;
   }, [activeProject.id, allChatSessions, defaultGreetingMsg]);
+
+  /** A new chat inside one workspace: pinned there for life. 'coding' is the null domain. */
+  const handleCreateWorkspaceChat = useCallback((workspace) => {
+    const domain = workspace === 'coding' ? null : normalizeStudioDomain(workspace);
+    if (workspace !== 'coding' && !domain) return null;
+    const newSession = makeSession(activeProject.id, defaultGreetingMsg, domain, { pinned: true });
+    setAllChatSessions((prev) => {
+      const updated = [newSession, ...prev];
+      persistSessions(updated);
+      return updated;
+    });
+    setActiveSessionId(newSession.id);
+    return newSession.id;
+  }, [activeProject.id, defaultGreetingMsg]);
 
   const handleCreateNewChat = useCallback(() => {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
@@ -1015,6 +1060,7 @@ export function useStudioSession({ user, selectedModel }) {
     handleCreateNewChat,
     handleCreateHandoverChat,
     handleCreateAdvisorChat,
+    handleCreateWorkspaceChat,
     openAdvisorWorkspace,
     forkChatFromMessage,
     handleDeleteChat,

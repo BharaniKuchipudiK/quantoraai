@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 28, deployed: 11 });
+export const FLOORS = Object.freeze({ proven: 29, deployed: 11 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -349,6 +349,27 @@ export const JOURNEYS = Object.freeze([
       deployed: ['golden:simple-website'],
     },
     note: 'New Chat is proven. Rename, search, archive and projects are helpers only.',
+  }),
+  journey({
+    id: 'workspace-owns-its-chats',
+    area: 'chat',
+    name: 'Open a chat inside a workspace from its "+", fold its chats, and stay on that desk',
+    entry: 'src/components/AiStudio.jsx',
+    hooks: [
+      'data-quantora-workspace-new-chat',
+      'data-quantora-workspace-collapse',
+      'data-quantora-workspace-chats',
+      'data-quantora-sidebar-chat',
+    ],
+    gates: {
+      deterministic: [
+        'src/hooks/useStudioSession.test.js',
+        'api/_lib/studio-domain-inference.test.ts',
+        'api/_lib/communication/request-normalizer.test.ts',
+      ],
+      browser: ['scripts/coding-desk-sticky-browser-gate.mjs'],
+    },
+    note: 'A chat opened from a workspace is pinned to it (2026-09-06): the resolver returns the explicit desk when pinned, and the sticky gate proves a trip question in a coding chat and a money question in a Travel chat both stay put, the chat lists under its workspace, the fold hides and restores it, and leaving a Travel chat for the Coding desk does not rewrite it.',
   }),
   journey({
     id: 'fork-resume-session',

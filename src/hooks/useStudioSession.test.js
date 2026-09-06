@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMoveChatToProject, DEFAULT_PROJECT_ID, makeHandoverSession } from './useStudioSession.js';
+import { applyMoveChatToProject, chatsForWorkspace, DEFAULT_PROJECT_ID, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
 
 const greeting = { id: 1, sender: 'ai', text: 'Hello', type: 'greeting' };
 
@@ -151,4 +151,38 @@ test('a source session with no build hands over nothing, and says so', () => {
   });
   assert.equal(session.desk, undefined);
   assert.equal(session.handover.deskCarried, false);
+});
+
+/*
+ * WORKSPACES OWN THEIR CHATS (2026-09-06): a chat opened inside a workspace
+ * is pinned there; the top-level New Chat is not.
+ */
+test('a workspace chat is pinned to its desk and a top-level chat is not', () => {
+  const coding = makeSession(DEFAULT_PROJECT_ID, greeting, null, { pinned: true });
+  assert.equal(coding.studioDomain, null);
+  assert.equal(coding.deskPinned, true);
+  assert.equal(workspaceOfSession(coding), 'coding');
+  const trip = makeSession(DEFAULT_PROJECT_ID, greeting, 'travel', { pinned: true });
+  assert.equal(trip.studioDomain, 'travel');
+  assert.equal(trip.deskPinned, true);
+  assert.equal(workspaceOfSession(trip), 'travel');
+  const general = makeSession(DEFAULT_PROJECT_ID, greeting, null);
+  assert.equal(general.deskPinned, false, 'the top-level New Chat may still find its desk from the message');
+  assert.equal(workspaceOfSession({ studioDomain: 'nonsense' }), 'coding', 'an unknown domain reads as the coding desk');
+});
+
+test('chats are grouped per workspace within the active project, newest first, archived ones left out', () => {
+  const sessions = [
+    { id: 'c1', projectId: 'p1', studioDomain: null, updatedAt: 10 },
+    { id: 'c2', projectId: 'p1', studioDomain: null, updatedAt: 30 },
+    { id: 't1', projectId: 'p1', studioDomain: 'travel', updatedAt: 20 },
+    { id: 'other', projectId: 'p2', studioDomain: null, updatedAt: 40 },
+    { id: 'gone', projectId: 'p1', studioDomain: null, updatedAt: 50, archived: true },
+    { id: 'old', projectId: 'p1', studioDomain: null, createdAt: 5 },
+  ];
+  assert.deepEqual(chatsForWorkspace(sessions, 'coding', 'p1').map((s) => s.id), ['c2', 'c1', 'old']);
+  assert.deepEqual(chatsForWorkspace(sessions, 'travel', 'p1').map((s) => s.id), ['t1']);
+  assert.deepEqual(chatsForWorkspace(sessions, 'finance', 'p1'), []);
+  assert.deepEqual(chatsForWorkspace(sessions, 'nonsense', 'p1'), [], 'an unknown workspace has no chats');
+  assert.deepEqual(chatsForWorkspace(undefined, 'coding', 'p1'), []);
 });

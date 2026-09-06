@@ -169,6 +169,93 @@ try {
     throw new Error(`Cold finance question did not open Finance Advisor (saw "${domainAfterColdFinance || '(empty)'}").`);
   }
 
+  /*
+   * WORKSPACES OWN THEIR CHATS (2026-09-06).
+   *
+   * A chat opened from a workspace — the "+" beside it in the sidebar — is
+   * pinned there for life, is listed under it, and folds with it. Before this,
+   * a coding chat with no build yet was moved to Travel by one trip word: the
+   * Coding desk is the null domain, so "explicit wins" never protected it. And
+   * leaving an advisor chat for the Coding desk rewrote the chat being left,
+   * because the domain write landed on the still-active old session.
+   *
+   * Mutation notes: with `pinned` ignored by the resolver (or not sent by
+   * useChatStream), step 1 fails as "jumped to travel"; with openCodingDesk's
+   * old setStudioDomain(null) restored, step 5 fails because the Travel chat
+   * is no longer listed under the Travel Advisor.
+   */
+  const advisorDomains = ['finance', 'travel', 'education', 'research'];
+  const workspaceDomain = () => page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
+  async function assertNoAdvisor(label) {
+    await page.waitForTimeout(600);
+    const domain = await workspaceDomain();
+    if (advisorDomains.includes(domain)) throw new Error(`Chat opened from the Coding desk jumped to ${domain} after: ${label}`);
+    for (const specialist of advisorDomains) {
+      if (await page.locator(`[data-quantora-active-specialist="${specialist}"]`).count()) {
+        throw new Error(`${specialist} specialist stole a chat opened from the Coding desk after: ${label}`);
+      }
+    }
+  }
+
+  // 1. "+" beside the Coding desk opens a coding chat; a trip question stays in it.
+  const codingPlus = page.locator('[data-quantora-workspace-new-chat="coding"]').first();
+  await visible(codingPlus, 'The "+" beside the Coding desk is missing.');
+  await codingPlus.click();
+  await assertNoAdvisor('clicking "+" beside the Coding desk');
+  const pinnedTrip = 'help me plan a trip with hotels and flights';
+  await prompt.fill(pinnedTrip);
+  await prompt.press('Enter');
+  await page.getByText(pinnedTrip, { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await assertNoAdvisor(`"${pinnedTrip}" in a chat opened from the Coding desk`);
+
+  // 2. The chat is listed under the Coding desk, and nowhere else.
+  const codingList = page.locator('[data-quantora-workspace-chats="coding"]');
+  const pinnedTripRow = codingList.locator('[data-quantora-sidebar-chat]', { hasText: /help me plan a trip/i });
+  if (!(await pinnedTripRow.count())) throw new Error('The chat opened from the Coding desk is not listed under the Coding desk.');
+  for (const domain of advisorDomains) {
+    if (await page.locator(`[data-quantora-workspace-chats="${domain}"] [data-quantora-sidebar-chat]`, { hasText: /help me plan a trip/i }).count()) {
+      throw new Error(`The chat opened from the Coding desk is listed under ${domain}.`);
+    }
+  }
+
+  // 3. The fold beside the desk hides its chats and brings them back.
+  const codingFold = page.locator('[data-quantora-workspace-collapse="coding"]').first();
+  await visible(codingFold, 'The fold beside the Coding desk is missing.');
+  await codingFold.click();
+  await page.waitForTimeout(250);
+  if (await codingList.count()) throw new Error('Folding the Coding desk did not hide its chats.');
+  if ((await codingFold.getAttribute('aria-expanded')) !== 'false') throw new Error('The folded Coding desk still says it is expanded.');
+  if (advisorDomains.includes(await workspaceDomain())) throw new Error('Folding the Coding desk changed the open chat.');
+  await codingFold.click();
+  await page.waitForTimeout(250);
+  if (!(await pinnedTripRow.count())) throw new Error('Unfolding the Coding desk did not bring its chats back.');
+
+  // 4. "+" beside the Travel Advisor opens a Travel chat; a money question stays in it.
+  const travelPlus = page.locator('[data-quantora-workspace-new-chat="travel"]').first();
+  await visible(travelPlus, 'The "+" beside the Travel Advisor is missing.');
+  await travelPlus.click();
+  await page.waitForTimeout(400);
+  const domainAfterTravelPlus = await workspaceDomain();
+  if (domainAfterTravelPlus !== 'travel') throw new Error(`"+" beside the Travel Advisor opened "${domainAfterTravelPlus || '(empty)'}" instead of travel.`);
+  const pinnedMoney = 'keep this under budget for my investment portfolio and taxes';
+  await prompt.fill(pinnedMoney);
+  await prompt.press('Enter');
+  await page.getByText(pinnedMoney, { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await page.waitForTimeout(800);
+  const domainAfterPinnedMoney = await workspaceDomain();
+  if (domainAfterPinnedMoney !== 'travel') throw new Error(`A chat opened from the Travel Advisor jumped to "${domainAfterPinnedMoney || '(empty)'}" on a money question.`);
+  const travelRow = page.locator('[data-quantora-workspace-chats="travel"] [data-quantora-sidebar-chat]', { hasText: /under budget/i }).first();
+  await visible(travelRow, 'The chat opened from the Travel Advisor is not listed under the Travel Advisor.');
+
+  // 5. Leaving the Travel chat for the Coding desk must not rewrite the Travel chat.
+  await page.locator('[data-quantora-coding-desk-nav="true"]').click();
+  await assertNoAdvisor('clicking the Coding desk row from a Travel chat');
+  await visible(travelRow, 'Leaving the Travel chat for the Coding desk took it off the Travel Advisor list.');
+  await travelRow.click();
+  await page.waitForTimeout(400);
+  const domainBackInTravel = await workspaceDomain();
+  if (domainBackInTravel !== 'travel') throw new Error(`Leaving the Travel chat for the Coding desk rewrote its desk to "${domainBackInTravel || '(empty)'}".`);
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/coding-desk-sticky-pass.png', fullPage: true }).catch(() => {});
   console.log('Coding desk sticky browser gate passed.');
