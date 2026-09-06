@@ -92,6 +92,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
   useEffect(() => {
     const handleSurfaceRequest = (event) => {
       if (event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
+      event.detail.handled = true;
       setSurface('notebook');
       setOpen(true);
     };
