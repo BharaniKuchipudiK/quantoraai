@@ -53,6 +53,8 @@ export default function StudioToolsMenu({
 }) {
   const [pos, setPos] = useState({ left: 16, bottom: 88 });
   const compactStudy = studioDomain === 'education';
+  const normalizedTopic = String(topic || '').trim();
+  const hasStudyTopic = Boolean(normalizedTopic && normalizedTopic.toLowerCase() !== 'this topic');
 
   useLayoutEffect(() => {
     if (!isOpen || typeof window === 'undefined') return undefined;
@@ -87,6 +89,7 @@ export default function StudioToolsMenu({
   const selectTool = (selection) => {
     const item = selection && typeof selection === 'object' ? selection : null;
     const toolId = item?.id || String(selection || '');
+    if (compactStudy && item?.requiresTopic && !hasStudyTopic) return;
     if (compactStudy && item?.surface && requestStudySurface(item.surface)) {
       onClose?.();
       return;
@@ -153,12 +156,17 @@ export default function StudioToolsMenu({
   const StudyAction = ({ item }) => {
     const Icon = ICONS[item.icon] || Sparkles;
     const isWide = item.id === 'new-topic' || item.id === 'study-notebook';
+    const disabled = Boolean(item.requiresTopic && !hasStudyTopic);
+    const title = disabled ? 'Start a Study topic first.' : item.subtitle;
     return (
       <button
         type="button"
         data-quantora-plus-item={item.id}
         data-quantora-study-surface={item.surface || undefined}
-        title={item.subtitle}
+        data-quantora-study-requires-topic={item.requiresTopic ? 'true' : undefined}
+        title={title}
+        aria-label={item.title}
+        disabled={disabled}
         onClick={() => selectTool(item)}
         style={{
           gridColumn: isWide ? '1 / -1' : 'auto',
@@ -173,7 +181,8 @@ export default function StudioToolsMenu({
             ? (isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)')
             : (isLight ? '#fff' : 'rgba(255,255,255,0.035)'),
           color: textColor,
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.48 : 1,
           textAlign: 'left',
           fontFamily: 'inherit',
         }}
