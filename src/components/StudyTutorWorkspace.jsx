@@ -35,8 +35,16 @@ function emptyAssessmentSession() {
     completed: 0,
     correctCount: 0,
     results: [],
+    batchItems: [],
+    submitting: false,
     error: '',
   };
+}
+
+function assessmentItemRef(item) {
+  const key = String(item?.itemKey || '').trim();
+  const version = String(item?.itemVersion || '').trim();
+  return key && version ? `${key}@${version}` : '';
 }
 
 function assessmentAvailabilityMessage(code) {
@@ -189,16 +197,79 @@ export default function StudyTutorWorkspace({
     }
   }, [assessment.attemptId, assessment.item?.options, assessment.result, assessment.status]);
 
+  const issueAssessmentBatch = useCallback(async (targetCount) => {
+    if (!brief?.conceptId || !activeSessionId) {
+      return { items: [], error: assessmentAvailabilityMessage('verified_assessment_unavailable') };
+    }
+    const generation = assessmentGeneration.current;
+    const items = [];
+    const exclusions = [];
+
+    if (assessment?.item && assessment?.attemptId && !assessment?.result) {
+      items.push({ attemptId: assessment.attemptId, item: assessment.item });
+      const ref = assessmentItemRef(assessment.item);
+      if (ref) exclusions.push(ref);
+    }
+
+    while (items.length < targetCount) {
+      try {
+        const issued = await requestStudyAssessment({
+          conceptId: brief.conceptId,
+          conceptLabel: brief.label,
+          sessionId: activeSessionId,
+          excludeItemRefs: exclusions,
+        });
+        if (assessmentGeneration.current !== generation) return { items: [], stale: true };
+        const ref = assessmentItemRef(issued.item);
+        if (!ref || exclusions.includes(ref)) {
+          return { items, error: 'Quantora stopped because the reviewed question bank returned a duplicate reservation.' };
+        }
+        items.push({ attemptId: issued.attemptId, item: issued.item });
+        exclusions.push(ref);
+      } catch (error) {
+        if (assessmentGeneration.current !== generation) return { items: [], stale: true };
+        if (error?.fallbackAllowed) {
+          return {
+            items,
+            error: items.length < targetCount ? assessmentAvailabilityMessage(error.code) : '',
+          };
+        }
+        return { items, error: error?.message || 'The reviewed assessment could not be prepared.' };
+      }
+    }
+    return { items, error: '' };
+  }, [activeSessionId, assessment?.attemptId, assessment?.item, assessment?.result, brief?.conceptId, brief?.label]);
+
   const startAssessmentSession = useCallback(async (config) => {
     const targetCount = Math.max(1, Math.min(20, Number(config?.questionCount) || 5));
-    const feedback = config?.feedback === 'at_end' ? 'at_end' : 'after_each';
+    const presentation = config?.presentation === 'all_at_once' ? 'all_at_once' : 'one_at_a_time';
+    const feedback = presentation === 'all_at_once'
+      ? 'at_end'
+      : config?.feedback === 'at_end' ? 'at_end' : 'after_each';
     const base = {
       ...emptyAssessmentSession(),
       phase: 'loading',
       targetCount,
+      presentation,
       feedback,
     };
     setAssessmentSession(base);
+
+    if (presentation === 'all_at_once') {
+      const prepared = await issueAssessmentBatch(targetCount);
+      if (prepared?.stale) return;
+      if (!prepared.items.length) {
+        setAssessmentSession((current) => ({ ...current, phase: 'summary', error: prepared.error || assessmentAvailabilityMessage('verified_assessment_unavailable') }));
+        return;
+      }
+      setAssessmentSession((current) => ({
+        ...current,
+        phase: 'batch',
+        batchItems: prepared.items,
+        error: prepared.error || '',
+      }));
+      return;
+    }
 
     // If a governed quick check is already active, continue that exact server
     // attempt as question one rather than creating a conflicting second attempt.
@@ -217,7 +288,7 @@ export default function StudyTutorWorkspace({
       phase: 'summary',
       error: outcome?.error || assessmentAvailabilityMessage(outcome?.code),
     }));
-  }, [assessment?.attemptId, assessment?.item, assessment?.result, handleRequestAssessment]);
+  }, [assessment?.attemptId, assessment?.item, assessment?.result, handleRequestAssessment, issueAssessmentBatch]);
 
   const answerAssessmentSession = useCallback(async (optionId) => {
     const attemptId = assessment?.attemptId || '';
@@ -261,6 +332,58 @@ export default function StudyTutorWorkspace({
       error: outcome?.error || assessmentAvailabilityMessage(outcome?.code),
     }));
   }, [assessmentSession.completed, assessmentSession.targetCount, handleRequestAssessment]);
+
+  const submitAssessmentBatch = useCallback(async (answers) => {
+    const batchItems = assessmentSession.batchItems || [];
+    if (!batchItems.length || assessmentSession.submitting) return;
+    const generation = assessmentGeneration.current;
+    setAssessmentSession((current) => ({ ...current, submitting: true }));
+
+    const results = [];
+    let failure = '';
+    let lastResolved = null;
+    for (const entry of batchItems) {
+      const optionId = String(answers?.[entry.attemptId] || '');
+      if (!optionId) {
+        failure = 'Every question needs an answer before the assessment can be completed.';
+        break;
+      }
+      try {
+        const result = await gradeStudyAssessment({ attemptId: entry.attemptId, optionId });
+        if (assessmentGeneration.current !== generation) return;
+        results.push({
+          attemptId: entry.attemptId,
+          prompt: entry.item.prompt,
+          correct: result.correct,
+          explanation: result.explanation || 'Answer recorded.',
+        });
+        lastResolved = { entry, optionId, result };
+      } catch (error) {
+        failure = error?.message || 'One or more answers could not be recorded.';
+        break;
+      }
+    }
+
+    if (lastResolved) {
+      setAssessment({
+        ...EMPTY_ASSESSMENT,
+        status: 'graded',
+        item: lastResolved.entry.item,
+        attemptId: lastResolved.entry.attemptId,
+        selectedOptionId: lastResolved.optionId,
+        result: lastResolved.result,
+      });
+    }
+    setAssessmentSession((current) => ({
+      ...current,
+      phase: 'summary',
+      submitting: false,
+      completed: results.length,
+      correctCount: results.filter((entry) => entry.correct).length,
+      results,
+      error: failure || current.error,
+    }));
+  }, [assessmentSession.batchItems, assessmentSession.submitting]);
 
   const resetAssessmentSession = useCallback(() => {
     dispatchLoop({ type: 'ADVANCE' });
@@ -319,6 +442,7 @@ export default function StudyTutorWorkspace({
           onStart={startAssessmentSession}
           onAnswer={answerAssessmentSession}
           onNext={nextAssessmentSessionQuestion}
+          onSubmitBatch={submitAssessmentBatch}
           onReset={resetAssessmentSession}
         />
       ) : null}
