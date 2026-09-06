@@ -185,7 +185,7 @@ if (write) {
 }
 
 /* The verdict, last. */
-const digest = `proven ${summary.proven}/${summary.total} (${summary.provenPercent}%) | helpers only ${summary.helpers} | nothing ${summary.nothing} | on the deployment ${summary.deployed}`;
+const digest = `proven ${summary.proven}/${summary.total} (${summary.provenPercent}%) | helpers only ${summary.helpers} | nothing ${summary.nothing}${summary.parked ? ` | parked ${summary.parked}` : ''} | on the deployment ${summary.deployed}`;
 if (problems.length) {
   console.error(`\nJourney-gate inventory FAILED — ${problems.length} problem(s):\n`);
   for (const problem of problems) console.error(`  - ${problem}`);
@@ -196,4 +196,5 @@ if (problems.length) {
 console.log(`Journey-gate inventory passed — ${JOURNEYS.length} rows (${summary.total} user journeys, ${summary.platform} platform invariants), ${claimedFiles.size} gate files and ${roster.length} golden transactions all exist, run, and are claimed.`);
 if (summary.unguarded.length) console.log(`  nothing:      ${summary.unguarded.join(', ')}`);
 if (summary.helpersOnly.length) console.log(`  helpers only: ${summary.helpersOnly.join(', ')}`);
+if (summary.parkedIds.length) console.log(`  parked (unreachable in this build): ${summary.parkedIds.join(', ')}`);
 console.log(`JOURNEY COVERAGE | ${digest}`);
