@@ -136,13 +136,16 @@ test('Study keeps three permanent lesson moves while plus and AI have distinct j
   assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
 });
 
-test('Study plus surfaces open the existing governed Assessment and Notebook instead of duplicate implementations', () => {
+test('Study plus surfaces open existing governed features and cannot become dead controls before context exists', () => {
   const menu = read('src/components/StudioToolsMenu.jsx');
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const navigation = read('src/lib/study-surface-navigation.js');
 
   assert.match(menu, /requestStudySurface\(item\.surface\)/);
+  assert.match(menu, /item\?\.requiresTopic && !hasStudyTopic/);
+  assert.match(menu, /disabled=\{disabled\}/);
+  assert.match(menu, /Start a Study topic first\./);
   assert.match(navigation, /ASSESSMENT:\s*'assessment'/);
   assert.match(navigation, /NOTEBOOK:\s*'notebook'/);
   assert.match(shell, /STUDY_SURFACE\.ASSESSMENT/);
