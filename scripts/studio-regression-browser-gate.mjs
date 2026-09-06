@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 import { listingShowsGeneratedProjectFile } from '../src/lib/studio-workspace-tree.js';
+import { assertJourneyEntry } from './lib/parked-surfaces.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
@@ -245,7 +246,7 @@ try {
 
   if (await page.locator('[data-quantora-sidebar-profile]').count()) throw new Error('Duplicate Profile entry leaked into the Studio sidebar.');
   if (await page.locator('[data-quantora-sidebar-canvas]').count()) throw new Error('Duplicate Canvas entry leaked into the Studio sidebar.');
-  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas entry is missing.');
+  await assertJourneyEntry(page, visible, 'Studio');
 
   const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
   await visible(profile, 'Header Profile entry is missing.');

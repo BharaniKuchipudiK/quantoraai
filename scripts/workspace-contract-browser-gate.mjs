@@ -4,6 +4,7 @@ import process from 'node:process';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 import { STUDIO_DOMAIN, studioDomainPolicy } from '../src/lib/studio-domain-policy.js';
+import { assertJourneyEntry } from './lib/parked-surfaces.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = process.env.QUANTORA_E2E_ARTIFACT_DIR || 'artifacts/e2e';
@@ -111,7 +112,7 @@ try {
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
   await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
-  await visible(page.getByRole('button', { name: /^Journey$/i }).first(), 'Global Journey/Canvas navigation is missing from Studio.');
+  await assertJourneyEntry(page, visible, 'Studio');
   const headerProfile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
   await visible(headerProfile, 'Global Profile control is missing from Studio.');
 
