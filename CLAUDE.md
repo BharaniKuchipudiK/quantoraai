@@ -125,6 +125,7 @@ This is the single richest source of "green locally, broken in production" here:
 |---|---|---|---|---|
 | `./x` (no extension) | resolves | resolves | never sees `api/` | **fails** |
 | default import of an ESM-only package | typed as callable | interops | never sees `api/` | **fails** |
+| a file a dependency loads by computed `import()` (pdfjs's worker) | present | present | never sees `api/` | **absent from the bundle** — name it in `vercel.json` `includeFiles` |
 
 When in doubt about production behaviour, the deployed gate is the only
 authority. Local green is necessary, never sufficient.
@@ -186,6 +187,9 @@ becomes safely more autonomous.
 | `node scripts/attachments-browser-gate.mjs` | the composer or the send path dropping an attached document, the desk hiding what it could not read, or a document forgotten by the build turn after the designer's question |
 | `node --test src/lib/travel-comprehension.test.js` | a desk that answers confidently without understanding the question |
 | `npm run test:github-writes` | a GitHub mutation that runs on a session alone, without asking GitHub whether this user may make it |
+| `node --test shared/trace-story.test.js` | a reference id whose account invents a cause the record does not prove — or blames the server for a request it never saw |
+| `node scripts/trace-lookup-browser-gate.mjs` | a failed turn whose reference is not the id the request carried, so no lookup could ever find it — or a "What happened?" that renders nothing |
+| `node --test api/_lib/preview-compiler.test.js` | a project the artifact contract accepts and the preview runtime refuses — a React 17 mount (`ReactDOM.render`) that dies on the React 19 runtime as "render is not a function", which a fallback engine shipped to production on 2026-09-05 |
 
 ### A tool description is a promise, and the model passes it on
 

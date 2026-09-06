@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { compilePreviewVfs, ensureReactNamespaceBinding } from './preview-compiler.js';
+import { compilePreviewVfs, createLegacyReactDomApi, ensureReactNamespaceBinding } from './preview-compiler.js';
 
 // P0 release guard: this test exercises the exact self-hosted compiler used by Studio.
 const calculatorVfs = {
@@ -97,4 +97,82 @@ test('preview compiler rejects storage APIs unavailable to an opaque-origin ifra
     () => compilePreviewVfs({ 'src/main.jsx': { content: "localStorage.getItem('theme')" } }),
     /cannot use localStorage or sessionStorage/i,
   );
+});
+
+/*
+ * 2026-09-05, production, run 33998084340: with Gemini refusing, the website
+ * transaction was built by a fallback engine that wrote the React 17 mount —
+ * `import ReactDOM from 'react-dom'; ReactDOM.render(<App />, root)`. The
+ * artifact contract accepts that as a mount (build-artifact-contract.ts) and
+ * the desk sees "its own mount" and injects none (project-runtime-preview.js),
+ * so the project reached the iframe intact — where React 19 has no
+ * ReactDOM.render, and the preview died with
+ * "Uncaught TypeError: re.default.render is not a function". Two surfaces
+ * agreed the project was runnable; the runtime disagreed. The compiler now
+ * resolves a bare `react-dom` import to a shim that carries the legacy API on
+ * top of react-dom/client, so the authored files stay untouched and still run.
+ */
+const legacyMountVfs = {
+  'package.json': { content: JSON.stringify({ dependencies: { react: '^17.0.2', 'react-dom': '^17.0.2' } }) },
+  'src/main.jsx': {
+    content: "import React from 'react'; import ReactDOM from 'react-dom'; import App from './App.jsx'; ReactDOM.render(<App />, document.getElementById('root'));",
+  },
+  'src/App.jsx': { content: "export default function App(){return <main><h1>Sunrise Bakery</h1></main>}" },
+};
+
+test('a React 17 mount (ReactDOM.render) is carried onto the React 19 runtime by the legacy react-dom shim', async () => {
+  const legacy = await compilePreviewVfs(legacyMountVfs);
+  assert.match(legacy.html, /__quantoraLegacyRoot/, 'the bundle must carry the legacy shim when a project imports bare react-dom');
+  assert.match(legacy.html, /Sunrise Bakery/);
+  const modern = await compilePreviewVfs(calculatorVfs);
+  assert.doesNotMatch(modern.html, /__quantoraLegacyRoot/, 'a createRoot project must not pay for the shim');
+});
+
+/*
+ * The next production golden (23:27 UTC, run 33998651787) failed the same
+ * way with the React 18 spelling: `import ReactDOM from 'react-dom';
+ * ReactDOM.createRoot(root).render(<App />)` — "ne.default.createRoot is not
+ * a function", because react-dom 19 exports createRoot only from
+ * react-dom/client. Bare react-dom now carries createRoot and hydrateRoot too.
+ */
+test('createRoot reached through bare react-dom (the React 18 spelling) also compiles onto the runtime', async () => {
+  const react18Vfs = {
+    'src/main.jsx': {
+      content: "import React from 'react'; import ReactDOM from 'react-dom'; import App from './App.jsx'; ReactDOM.createRoot(document.getElementById('root')).render(<App />);",
+    },
+    'src/App.jsx': { content: "export default function App(){return <main><h1>Sunrise Bakery</h1></main>}" },
+  };
+  const result = await compilePreviewVfs(react18Vfs);
+  assert.match(result.html, /__quantoraLegacyRoot/, 'bare react-dom resolves to the shim, which carries createRoot from react-dom/client');
+  assert.match(result.html, /Sunrise Bakery/);
+});
+
+test('the legacy API creates one root per container, reuses it, hydrates, and unmounts', () => {
+  const calls = [];
+  const fakeRoot = (label) => ({ render: (element) => calls.push([label, 'render', element]), unmount: () => calls.push([label, 'unmount']) });
+  const client = {
+    createRoot: (container) => { calls.push(['createRoot', container.id]); return fakeRoot(`root:${container.id}`); },
+    hydrateRoot: (container, element) => { calls.push(['hydrateRoot', container.id, element]); return fakeRoot(`hydrated:${container.id}`); },
+  };
+  const dom = { default: { createPortal: () => 'portal', version: '19.0.1' }, createPortal: () => 'portal', version: '19.0.1' };
+  const api = createLegacyReactDomApi(client, dom);
+  const container = { id: 'root' };
+
+  api.render('<App 1>', container);
+  api.render('<App 2>', container);
+  assert.deepEqual(calls, [['createRoot', 'root'], ['root:root', 'render', '<App 1>'], ['root:root', 'render', '<App 2>']], 'a second render reuses the root instead of creating another');
+
+  assert.equal(api.unmountComponentAtNode(container), true);
+  assert.equal(api.unmountComponentAtNode(container), false, 'nothing left to unmount answers false, as React 17 did');
+  assert.deepEqual(calls.at(-1), ['root:root', 'unmount']);
+
+  const other = { id: 'other' };
+  api.hydrate('<Server />', other);
+  assert.deepEqual(calls.at(-1), ['hydrated:other', 'render', '<Server />'], 'hydrate goes through hydrateRoot');
+  assert.deepEqual(calls.at(-2), ['hydrateRoot', 'other', '<Server />']);
+
+  assert.equal(api.namespace.render, api.render, 'the default export carries render, as ReactDOM.render expects');
+  assert.equal(api.namespace.createPortal(), 'portal', 'the default export still carries everything react-dom exports');
+  assert.equal(api.namespace.createRoot, client.createRoot, 'createRoot is reachable from bare react-dom too');
+  assert.equal(api.namespace.version, '19.0.1');
 });
