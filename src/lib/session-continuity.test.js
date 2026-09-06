@@ -26,13 +26,42 @@ test('message count can signal pressure even when turns are short', () => {
   assert.ok(pressure.reasons.includes('history_items'));
 });
 
-test('actual trimming always recommends handover', () => {
+test('trimming alone is a watch, not a reason to leave: the session keeps working', () => {
+  // 2026-09-06: "left out the earliest 5 messages" plus a chip that did nothing.
+  // Trimmed output and folded turns are the platform carrying a long session;
+  // the offer to move comes when the request is still near its ceiling AFTER
+  // that work, or when the digest has grown into a wall of summaries.
   const pressure = assessSessionContinuity({
     messages: [user('continue')],
-    historyResult: { trimmed: 1, dropped: 0 },
+    historyResult: { trimmed: 1, dropped: 0, compacted: 0, bytes: 2_000, history: [user('continue')] },
   });
-  assert.equal(pressure.recommendHandover, true);
+  assert.equal(pressure.level, 'watch');
+  assert.equal(pressure.recommendHandover, false);
   assert.ok(pressure.reasons.includes('history_trimmed'));
+});
+
+test('a digest of forty folded turns recommends a fresh chat seeded from this one', () => {
+  const pressure = assessSessionContinuity({
+    messages: Array.from({ length: 120 }, (_, index) => index % 2 ? ai('ok') : user(`step ${index}`)),
+    historyResult: { trimmed: 0, dropped: 41, compacted: 41, bytes: 20_000, history: Array.from({ length: 80 }, () => user('x')) },
+  });
+  assert.equal(pressure.level, 'handover_recommended');
+  assert.ok(pressure.reasons.includes('history_long'));
+  assert.equal(pressure.metrics.compactedItems, 41);
+  assert.equal(pressure.metrics.droppedItems, 41, 'the old name still reads the same number');
+});
+
+test('pressure is measured on what would be SENT, after the budget folded the past', () => {
+  // A raw transcript of 2MB that the budget brought down to 300KB is a working
+  // session, not one to abandon.
+  const bulky = Array.from({ length: 30 }, (_, index) => index % 2 ? ai('x'.repeat(70_000)) : user(`ask ${index}`));
+  const pressure = assessSessionContinuity({
+    messages: bulky,
+    historyResult: { trimmed: 12, dropped: 0, compacted: 0, bytes: 300_000, history: bulky },
+  });
+  assert.equal(pressure.recommendHandover, false);
+  assert.equal(pressure.level, 'watch');
+  assert.ok(pressure.metrics.pressureRatio < 0.85);
 });
 
 test('handover carries bounded meaning, unresolved intent, and no transcript bulk', () => {
@@ -119,12 +148,12 @@ test('the offer agrees with what assessSessionContinuity actually measured', () 
   assert.equal(quiet.recommendHandover, false);
   assert.equal(shouldOfferSessionHandover([], quiet), false);
 
-  const trimmed = assessSessionContinuity({
+  const folded = assessSessionContinuity({
     messages: [{ sender: 'user', text: 'hi' }],
-    historyResult: { trimmed: 2, dropped: 0 },
+    historyResult: { trimmed: 0, dropped: 45, compacted: 45, bytes: 30_000, history: [{ sender: 'user', text: 'hi' }] },
   });
-  assert.equal(trimmed.recommendHandover, true);
-  assert.equal(shouldOfferSessionHandover([], trimmed), true);
+  assert.equal(folded.recommendHandover, true);
+  assert.equal(shouldOfferSessionHandover([], folded), true);
 });
 
 test('a handover says what it carries before it carries it', () => {

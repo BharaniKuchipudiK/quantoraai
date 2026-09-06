@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 29, deployed: 11 });
+export const FLOORS = Object.freeze({ proven: 30, deployed: 11 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -370,6 +370,18 @@ export const JOURNEYS = Object.freeze([
       browser: ['scripts/coding-desk-sticky-browser-gate.mjs'],
     },
     note: 'A chat opened from a workspace is pinned to it (2026-09-06): the resolver returns the explicit desk when pinned, and the sticky gate proves a trip question in a coding chat and a money question in a Travel chat both stay put, the chat lists under its workspace, the fold hides and restores it, and leaving a Travel chat for the Coding desk does not rewrite it.',
+  }),
+  journey({
+    id: 'long-session-continues',
+    area: 'chat',
+    name: 'Keep a long session going: old turns fold into a digest, and one click continues in a new chat that carries the goal, facts and desk',
+    entry: 'src/components/AiStudio.jsx',
+    hooks: ['data-quantora-session-continuity', 'data-quantora-session-handover-start', 'data-quantora-sidebar-chat'],
+    gates: {
+      deterministic: ['src/lib/history-budget.test.js', 'src/lib/session-continuity.test.js', 'src/hooks/useStudioSession.test.js'],
+      browser: ['scripts/session-handover-browser-gate.mjs'],
+    },
+    note: '2026-09-06: "I left out the earliest 5 messages" and a chip that opened nothing. Turns past the budget now fold into one digest; the chip is one click; the new chat opens by naming what it carried and runs the same build.',
   }),
   journey({
     id: 'fork-resume-session',

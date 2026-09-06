@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMoveChatToProject, chatsForWorkspace, DEFAULT_PROJECT_ID, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
+import { applyMoveChatToProject, chatsForWorkspace, DEFAULT_PROJECT_ID, handoverNoteMessage, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
 
 const greeting = { id: 1, sender: 'ai', text: 'Hello', type: 'greeting' };
 
@@ -95,7 +95,12 @@ test('handover creates a child chat in the owning project without copying transc
   assert.equal(session.parentSessionId, 'old');
   assert.equal(session.title, 'Master forces');
   assert.deepEqual(session.conversationContext, { goal: 'Master forces', facts: ['Free-body diagrams next'] });
-  assert.deepEqual(session.messages, [greeting]);
+  // The transcript stays behind; the chat opens by saying what came with it.
+  assert.equal(session.messages.length, 2);
+  assert.deepEqual(session.messages[0], greeting);
+  assert.equal(session.messages[1].handoverNote, true);
+  assert.match(session.messages[1].text, /Continued from the previous chat, which stays exactly as it was\./);
+  assert.match(session.messages[1].text, /- Goal: Master forces\n- Free-body diagrams next\n- No files were on that desk\./);
 });
 
 /*
@@ -128,7 +133,24 @@ test('the build travels with the handover, because the transcript is what got to
   });
   assert.deepEqual(session.desk, DESK, 'the new session opens on the same build');
   assert.equal(session.handover.deskCarried, true);
-  assert.deepEqual(session.messages, [greeting], 'and still without the transcript');
+  assert.equal(session.messages.length, 2, 'and still without the transcript');
+  assert.match(session.messages[1].text, /- The desk, with 1 file — Preview runs the same build\./);
+});
+
+test('a chat continued from a pinned chat stays pinned, and names the chat it came from', () => {
+  const session = makeHandoverSession({
+    projectId: 'project-1',
+    defaultGreetingMsg: greeting,
+    contract: HANDOVER,
+    sourceSession: { id: 'old', title: 'Coffee shop site', desk: DESK, deskPinned: true },
+  });
+  assert.equal(session.deskPinned, true);
+  assert.match(session.messages[1].text, /^Continued from "Coffee shop site"/);
+  const unpinned = makeHandoverSession({ projectId: 'project-1', defaultGreetingMsg: greeting, contract: HANDOVER, sourceSession: { id: 'old' } });
+  assert.equal(unpinned.deskPinned, false);
+  const note = handoverNoteMessage({ contract: HANDOVER, sourceSession: null, desk: null });
+  assert.equal(note.sender, 'ai');
+  assert.match(note.text, /Carried over:\n- Goal: Coffee shop\n- No files were on that desk\./);
 });
 
 test('a handover cannot take a desk belonging to a different session', () => {
