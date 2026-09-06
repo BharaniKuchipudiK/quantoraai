@@ -90,8 +90,8 @@ export default function StudioToolsMenu({
     const item = selection && typeof selection === 'object' ? selection : null;
     const toolId = item?.id || String(selection || '');
     if (compactStudy && item?.requiresTopic && !hasStudyTopic) return;
-    if (compactStudy && item?.surface && requestStudySurface(item.surface)) {
-      onClose?.();
+    if (compactStudy && item?.surface) {
+      if (requestStudySurface(item.surface)) onClose?.();
       return;
     }
     rememberOfficeToolSelection(toolId);
