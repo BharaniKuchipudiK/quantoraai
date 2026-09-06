@@ -538,3 +538,69 @@ test('the chat handler trims a build ladder through trimBuildLadder, never a bar
   assert.match(handler, /if \(attempts\.length > fundable\) attempts = trimBuildLadder\(attempts, fundable\);/);
   assert.doesNotMatch(handler, /attempts = attempts\.slice\(0, fundable\)/, 'the old trim kept two rungs on one dead gateway');
 });
+
+/*
+ * Phase 6: the ladder reads the ledger. A model that failed most of its recent
+ * turns moves down; a model the person named stays first; nothing is removed.
+ */
+const poorEvidence = (modelId: string) => ({
+  [modelId]: { modelId, samples: 8, successes: 2, failures: 6, failureRate: 0.75, p50LatencyMs: 1400 },
+});
+
+test('measured outcome moves a failing fallback down the free ladder and says so', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+  };
+  const plain = await planInferenceRoutes(base);
+  const secondId = plain[1].id;
+  const ranked = await planInferenceRoutes({ ...base, measuredOutcomes: poorEvidence(secondId) });
+  assert.equal(ranked[0].id, plain[0].id, 'the primary is untouched');
+  assert.notEqual(ranked[1].id, secondId, 'the failing fallback no longer comes second');
+  const moved = ranked.find((route) => route.id === secondId);
+  assert.ok(moved, 'it is still in the ladder');
+  assert.equal(moved?.demoted, 'measured-outcome');
+  assert.equal(moved?.measured?.failures, 6);
+  assert.equal(ranked.length, plain.length, 'nothing is removed');
+});
+
+test('a model the person named stays first even when the ledger is against it; Auto yields to a better-measured route', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+    measuredOutcomes: poorEvidence('nvidia/nemotron-3-super-120b-a12b:free'),
+  };
+  const pinned = await planInferenceRoutes({ ...base, autoRouting: false });
+  assert.equal(pinned[0].id, 'nvidia/nemotron-3-super-120b-a12b:free', 'their choice is tried first');
+  assert.equal(pinned[0].measured?.failureRate, 0.75, 'and the trace can say what was measured');
+
+  const auto = await planInferenceRoutes({ ...base, autoRouting: true });
+  assert.notEqual(auto[0].id, 'nvidia/nemotron-3-super-120b-a12b:free', 'Auto starts on a route the ledger has not condemned');
+  assert.equal(auto[0].demoted, undefined);
+  const demoted = auto.find((route) => route.id === 'nvidia/nemotron-3-super-120b-a12b:free');
+  assert.equal(demoted?.demoted, 'measured-outcome', 'the requested model is still in the ladder, lower');
+  assert.equal(auto.length, pinned.length);
+});
+
+test('with no measured evidence the ladder is exactly what it was', async () => {
+  const base = {
+    primaryModelId: 'nvidia/nemotron-3-super-120b-a12b:free',
+    fallbackModelIds: ['deepseek/deepseek-chat', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    geminiCredentialScope: 'server' as const,
+    openRouterCredentialScope: 'server' as const,
+  };
+  const plain = await planInferenceRoutes(base);
+  const withEmpty = await planInferenceRoutes({ ...base, measuredOutcomes: {}, autoRouting: true });
+  assert.deepEqual(withEmpty.map((route) => route.id), plain.map((route) => route.id));
+  assert.ok(withEmpty.every((route) => !route.demoted));
+});

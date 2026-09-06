@@ -701,6 +701,22 @@ export async function recordStudySelfConfidenceEvent(entry: {
  * IP address is stored. This is intentionally operational data only: did a
  * model complete, was a fallback needed, and did the user mark it useful?
  */
+/**
+ * The measured window the router reads (Phase 6): model, outcome, latency and
+ * time only, newest first, capped so one turn never pulls a day of rows.
+ * Empty on any fault — no store, a slow store, a bad row — never a throw.
+ */
+export async function readModelQualityEvents(sinceIso: string, limit = 400): Promise<Array<{ model_id: string; outcome: string; latency_ms: number | null; created_at: string | null }>> {
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const response = await request(
+    `model_quality_events?select=model_id,outcome,latency_ms,created_at&created_at=gte.${since}&order=created_at.desc&limit=${Math.max(1, Math.min(2000, Number(limit) || 400))}`,
+    { method: "GET" },
+  );
+  if (!response) return [];
+  const rows = await response.json().catch(() => []);
+  return Array.isArray(rows) ? rows : [];
+}
+
 export function recordModelQualityEvent(entry: {
   requestId: string;
   modelId: string;

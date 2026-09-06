@@ -2,7 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { createHash, randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
-import { isStoreConfigured, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { isStoreConfigured, readModelQualityEvents, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { readMeasuredOutcomes } from "./measured-outcome.js";
 import { isProjectStoreConfigured, readProjectContext } from "./project-store.js";
 import { requireActiveSession } from "./authz.js";
 import { getRequestGeo } from "./geo.js";
@@ -1247,11 +1248,21 @@ export default async function handler(req: any, res: any) {
      */
     const openRouterUsable = Boolean(effectiveOpenRouterKey)
       && paidVerdict.meterFault?.gatewayDead !== true;
+    /*
+     * Phase 6: the ledger's last half hour, read once per turn (cached a
+     * minute per instance) and handed to every plan this turn makes. A model
+     * that failed most of its recent turns moves down the ladder; a model the
+     * person named stays first regardless — their choice, and the trace says
+     * what was measured.
+     */
+    const measuredOutcomes = await readMeasuredOutcomes(readModelQualityEvents);
     let attempts = await planInferenceRoutes({
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: routePlanningModels,
       paidLastResortAllowed: paidVerdict.allowed,
+      measuredOutcomes,
+      autoRouting: autoModelRequest,
       requiredCapabilities: travelToolsEnabled
         ? ['text', 'travel-tools']
         : [...textCapabilities],
@@ -1272,6 +1283,8 @@ export default async function handler(req: any, res: any) {
         primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
         fallbackModelIds: modelRouting?.fallbackModelIds || [],
         models: routePlanningModels,
+        measuredOutcomes,
+        autoRouting: autoModelRequest,
         requiredCapabilities: [...textCapabilities],
         geminiAvailable: forceOpenRouter ? false : Boolean(effectiveGeminiKey),
         openRouterAvailable: openRouterUsable,
@@ -1910,6 +1923,8 @@ export default async function handler(req: any, res: any) {
               fallbackModelIds: modelRouting?.fallbackModelIds || [],
               models: routePlanningModels,
               paidLastResortAllowed: paidVerdict.allowed,
+              measuredOutcomes,
+              autoRouting: autoModelRequest,
               requiredCapabilities: [...textCapabilities],
               geminiAvailable: false,
               openRouterAvailable: openRouterUsable,

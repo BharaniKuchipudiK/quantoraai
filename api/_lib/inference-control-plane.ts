@@ -1,3 +1,4 @@
+import { isMeasuredPoor, rankByMeasuredOutcome, type MeasuredOutcome, type MeasuredOutcomeMap } from './measured-outcome.js';
 import type { AtomicProviderCircuitStore, ProviderCircuitState } from './provider-resilience.js';
 
 export type InferenceGateway = 'gemini' | 'openrouter';
@@ -6,6 +7,10 @@ export type InferenceCostClass = 'free' | 'low' | 'standard' | 'unknown';
 
 export type InferenceRoute = {
   id: string;
+  /** What the ledger measured for this model inside the window, when anything was. */
+  measured?: MeasuredOutcome;
+  /** Set when measured outcome moved this route down the ladder. */
+  demoted?: 'measured-outcome';
   provider: InferenceGateway;
   gateway: InferenceGateway;
   upstreamProvider: string;
@@ -55,6 +60,18 @@ export type InferencePlanInput = {
    */
   paidLastResortModelId?: string;
   paidLastResortAllowed?: boolean;
+  /**
+   * Phase 6: what the ledger measured in the last window, per model. Routes
+   * with unambiguous poor evidence move down the free ladder; with no evidence
+   * the order is exactly what it was.
+   */
+  measuredOutcomes?: MeasuredOutcomeMap;
+  /**
+   * True when the person chose Auto rather than a model. Only then may the
+   * measured outcome move the FIRST attempt: a model somebody picked by name is
+   * tried first even when the ledger is against it — their choice, reported.
+   */
+  autoRouting?: boolean;
 };
 
 const GEMINI_STABLE = 'gemini-flash-latest';
@@ -409,7 +426,28 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
     return COST_RANK[left.costClass] - COST_RANK[right.costClass];
   });
 
-  const freeLadder = [selected, ...rest];
+  /*
+   * Phase 6: the ledger's word, applied last so it never overrides independence
+   * or declared health — it only moves a route that has been failing most of
+   * its recent turns behind the ones that have not.
+   */
+  const rankedRest = rankByMeasuredOutcome(rest, input.measuredOutcomes);
+  const selectedEvidence = input.measuredOutcomes?.[selected.id];
+  // The first attempt carries its evidence too, so the trace can say what was
+  // measured for the model that ran — pinned or not.
+  let first: InferenceRoute = selectedEvidence ? { ...selected, measured: selectedEvidence } : selected;
+  let ladderRest: InferenceRoute[] = rankedRest;
+  if (input.autoRouting === true && isMeasuredPoor(input.measuredOutcomes?.[selected.id])) {
+    const better = rankedRest.find((route) => !route.demoted && route.circuit !== 'open');
+    if (better) {
+      first = better;
+      ladderRest = [
+        ...rankedRest.filter((route) => route.id !== better.id),
+        { ...selected, measured: input.measuredOutcomes![selected.id], demoted: 'measured-outcome' as const },
+      ];
+    }
+  }
+  const freeLadder = [first, ...ladderRest];
 
   // Reserve the last rung for a paid rescue when the account has opted in and
   // the meter permits it. The free ladder always runs first and takes every
