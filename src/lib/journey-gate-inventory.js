@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 31, deployed: 11 });
+export const FLOORS = Object.freeze({ proven: 32, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -237,7 +237,7 @@ export const JOURNEYS = Object.freeze([
     gates: {
       deterministic: ['api/_lib/attachment-text.test.ts', 'src/lib/chat-attachments.test.js', 'api/_lib/research-pdf-text.test.ts'],
       browser: ['scripts/attachments-browser-gate.mjs'],
-      deployed: ['golden:document-grounded'],
+      deployed: ['golden:document-grounded', 'golden:brief-with-documents'],
     },
   }),
   journey({
@@ -341,6 +341,7 @@ export const JOURNEYS = Object.freeze([
     gates: {
       deterministic: ['api/_lib/turn-planner.test.ts', 'src/lib/turn-plan-client.test.js', 'src/lib/office-intent.test.js'],
       browser: ['scripts/turn-planner-browser-gate.mjs'],
+      deployed: ['golden:brief-with-documents'],
     },
     note: 'Phase 7, first cut (2026-09-06): one model-owned lane per turn — build, office, advisor or chat — reconciled with the keyword rules, which are now the fallback and the corpus. A pinned desk never moves; a build the desk owns is never vetoed; a dead planner changes nothing.',
   }),
@@ -435,7 +436,7 @@ export const JOURNEYS = Object.freeze([
         'scripts/studio-regression-browser-gate.mjs',
         'scripts/coding-desk-sticky-browser-gate.mjs',
       ],
-      deployed: ['golden:calculator', 'golden:simple-website', 'golden:business-tool'],
+      deployed: ['golden:calculator', 'golden:simple-website', 'golden:business-tool', 'golden:brief-with-documents', 'golden:iterate-heading'],
     },
   }),
   journey({
@@ -452,7 +453,7 @@ export const JOURNEYS = Object.freeze([
         'scripts/project-runtime-failure-browser-gate.mjs',
         'scripts/preview-shell-must-start-gate.mjs',
       ],
-      deployed: ['golden:calculator', 'scripts/deployed-shop-preview-gate.mjs'],
+      deployed: ['golden:calculator', 'golden:iterate-heading', 'scripts/deployed-shop-preview-gate.mjs'],
     },
   }),
   journey({
@@ -687,8 +688,9 @@ export const JOURNEYS = Object.freeze([
         'src/lib/office-export.test.js',
         'src/lib/office-intent.test.js',
       ],
+      deployed: ['golden:office-document'],
     },
-    note: 'No gate has asked for a deck and opened the file it got.',
+    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). A deck and a workbook are still unopened.',
   }),
 
   // ── advisor desks ───────────────────────────────────────────────────────
@@ -1017,6 +1019,7 @@ export const JOURNEYS = Object.freeze([
         'scripts/golden-page-state.test.mjs',
         'scripts/golden-engine-refusal.test.mjs',
         'scripts/golden-plan.test.mjs',
+        'scripts/zip-entry.test.mjs',
         'scripts/business-tool-reconcile.test.mjs',
         'scripts/workflow-playwright-pin.test.mjs',
       ],

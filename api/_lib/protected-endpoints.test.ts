@@ -275,6 +275,52 @@ test("Office generation revokes blocked signed-in sessions before using server k
   assert.equal(state.body?.sessionRevoked, true);
 });
 
+test("Office generation lets the golden canary use server keys, as chat does", async () => {
+  const savedToken = process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+  const savedGemini = process.env.GEMINI_API_KEY;
+  process.env.QUANTORA_GOLDEN_CANARY_TOKEN = "golden-canary-token-for-the-office-test-0001";
+  process.env.GEMINI_API_KEY = "sk-server-gemini";
+  const originalFetch = global.fetch;
+  const reached: string[] = [];
+  // Supabase answers empty (no stored canary user, nothing rate-limited);
+  // every provider is offline, so the turn cannot succeed — the question is
+  // only whether the canary got PAST the sign-in refusal to a provider at all.
+  global.fetch = async (url: any) => {
+    reached.push(String(url));
+    if (String(url).startsWith(String(process.env.SUPABASE_URL))) {
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error("offline: no provider is reachable in this test");
+  };
+
+  const { state, res } = responseHarness();
+  try {
+    await generateOffice({
+      method: "POST",
+      headers: { "x-quantora-golden-canary": "golden-canary-token-for-the-office-test-0001" },
+      socket: {},
+      body: {
+        format: "word",
+        operation: "create",
+        prompt: "Write a one-page brief about reliability.",
+      },
+    }, res);
+  } finally {
+    global.fetch = originalFetch;
+    if (savedToken === undefined) delete process.env.QUANTORA_GOLDEN_CANARY_TOKEN;
+    else process.env.QUANTORA_GOLDEN_CANARY_TOKEN = savedToken;
+    if (savedGemini === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedGemini;
+  }
+
+  assert.notEqual(state.status, 401, `the canary was refused as anonymous: ${JSON.stringify(state.body)}`);
+  assert.notEqual(state.body?.requiresAuth, true);
+  assert.ok(
+    reached.some((url) => !url.startsWith(String(process.env.SUPABASE_URL))),
+    `the handler never reached a provider — the canary did not get server keys (status ${state.status}: ${JSON.stringify(state.body)})`,
+  );
+});
+
 test("chat ignores BYOK keys placed in the JSON body", async () => {
   const { state, res } = responseHarness();
   await chat({

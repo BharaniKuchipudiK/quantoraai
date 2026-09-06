@@ -82,3 +82,14 @@ export function bylawsFixtureText(registrationNumber) {
   return `Ramakrishna Venuzia Owners Welfare Association. Registered society. Registration number ${registrationNumber}. `
     + 'Annual general meeting every March. Maintenance dues are payable quarterly.';
 }
+
+/**
+ * A second document for the same association, carrying a fact the bylaws do
+ * not: one event, by name and code. A site built from both documents shows
+ * both facts; a site missing this one read only the first attachment.
+ */
+export function eventCalendarFixtureText(eventCode) {
+  return 'Event calendar of the Ramakrishna Venuzia Owners Welfare Association. '
+    + `Golden Harvest Fair (event code ${eventCode}) on 14 November in the community hall, 10am to 4pm. `
+    + 'Annual general meeting in March. Diwali lights evening in October.';
+}

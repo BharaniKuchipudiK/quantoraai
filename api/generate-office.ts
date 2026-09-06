@@ -32,6 +32,7 @@ import { PRESENTATION_CANVAS } from './_lib/presentation-layout.js';
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { getSessionUser } from './_lib/session.js';
 import { requireActiveSession } from './_lib/authz.js';
+import { isGoldenCanaryRequest } from './_lib/transaction-trace.js';
 import { readByokCredentials } from './_lib/byok-credentials.js';
 import {
   officeGenerationMaxAttempts,
@@ -152,7 +153,12 @@ export default async function handler(req, res) {
    */
   let sessionUser = getSessionUser(req);
   let mayUseServerKeys = false;
-  if (sessionUser) {
+  // The golden canary generates with server keys the way it chats with them:
+  // requireActiveSession resolves it to the frozen synthetic identity (a real
+  // session always wins there), so the deployed golden can ask for a Word
+  // file and open the one it gets. Without this the canary read as anonymous
+  // and every Office turn it sent was refused with "Please sign in".
+  if (sessionUser || isGoldenCanaryRequest(req)) {
     const auth = await requireActiveSession(req, res);
     if (!auth.ok) return;
     sessionUser = auth.value.sessionUser;

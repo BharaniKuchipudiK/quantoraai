@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import process from 'node:process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { pageStateSnapshot } from './lib/golden-page-state.mjs';
 import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
 import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
-import { buildMinimalPdf, bylawsFixtureText } from './lib/minimal-pdf.mjs';
+import { buildMinimalPdf, bylawsFixtureText, eventCalendarFixtureText } from './lib/minimal-pdf.mjs';
+import { readZipEntryText, xmlText } from './lib/zip-entry.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -24,10 +25,10 @@ import { buildMinimalPdf, bylawsFixtureText } from './lib/minimal-pdf.mjs';
  * run and would be proving three of them. So the roster is declared, checked
  * against what actually completed, and printed last on every run, pass or fail.
  */
-const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded'];
+const EXPECTED_TRANSACTIONS = ['calculator', 'simple-website', 'guided-intake', 'business-tool', 'document-grounded', 'brief-with-documents', 'iterate-heading', 'office-document'];
 /*
  * A pull request plans the first two (the deployment answers, and builds);
- * production plans all five. See scripts/lib/golden-plan.mjs for why.
+ * production plans the whole roster. See scripts/lib/golden-plan.mjs for why.
  */
 const { limit: TRANSACTION_LIMIT, planned: PLANNED_TRANSACTIONS } = planGoldenTransactions(
   EXPECTED_TRANSACTIONS,
@@ -817,6 +818,283 @@ try {
     groundedFact: true,
     registrationNumber: REGISTRATION_NUMBER,
     durationMs: Date.now() - documentStartedAt,
+  });
+  delete evidence.activeTransaction;
+  }
+
+  /*
+   * TRANSACTION 6 — THE BRIEF PEOPLE ACTUALLY SEND, WITH THE DOCUMENTS THEY ATTACH.
+   *
+   * 2026-09-06: a founder attached an association's documents and asked for a
+   * website in plain words. The desk read "excel-like" in the brief and sent
+   * the whole thing to the workbook generator, which ran out of host time, and
+   * the person read "Failed to generate document" for a website ask. Every
+   * transaction above is a specified-tool prompt; none of them is this brief.
+   * This one is: two attached PDFs, a natural ask that mentions a spreadsheet
+   * as a LOOK, no canary armed. It must end in a site that shows facts that
+   * exist only in the documents — the registration number from one PDF, the
+   * event from the other — with an intake question or two allowed on the way,
+   * and never an Office file. The Office generator is watched at the wire, so
+   * the 2026-09-06 defect fails by its own name and not as a missing page.
+   */
+  if (runs(6)) {
+  const newChatForBrief = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForBrief, 'New Chat control is missing after the document-grounded transaction.', 15_000);
+  await newChatForBrief.click();
+
+  const briefStartedAt = Date.now();
+  markActiveTransaction('brief-with-documents');
+  await page.evaluate(() => sessionStorage.removeItem('quantora_golden_transaction'));
+  const BRIEF_REGISTRATION = `RKV-${String(Date.now()).slice(-6)}-BRF`;
+  const BRIEF_EVENT_CODE = `GH-${String(Date.now()).slice(-5)}`;
+  const BRIEF_EVENT_NAME = 'Golden Harvest Fair';
+  const briefFileInput = page.locator('.app-shell--studio input[type="file"]').first();
+  await briefFileInput.setInputFiles([
+    { name: 'association-bylaws.pdf', mimeType: 'application/pdf', buffer: buildMinimalPdf(bylawsFixtureText(BRIEF_REGISTRATION)) },
+    { name: 'event-calendar.pdf', mimeType: 'application/pdf', buffer: buildMinimalPdf(eventCalendarFixtureText(BRIEF_EVENT_CODE)) },
+  ]);
+  for (const fileName of ['association-bylaws.pdf', 'event-calendar.pdf']) {
+    const briefChip = page.locator(`[data-quantora-attachment-chip="${fileName}"]`).first();
+    await visible(briefChip, `The composer never showed ${fileName} as a chip.`, 10_000);
+    const chipKind = await briefChip.getAttribute('data-quantora-attachment-kind');
+    if (chipKind !== 'document') {
+      throw new Error(`The composer took ${fileName} as "${chipKind}", not as a document — it would be dropped at send. Page state: ${await recordPageState()}`);
+    }
+  }
+  let officeGenerationRequested = false;
+  const officeWatch = (request) => { if (/\/api\/generate-office\b/.test(request.url())) officeGenerationRequested = true; };
+  page.on('request', officeWatch);
+  await prompt.fill('Build a website for the association described in the attached documents. The home page must show the association\'s name and its registration number exactly as written in the bylaws, and an Events section that lists every event from the attached calendar by its exact name and event code. Lay the members section out like an Excel tracker with columns for name, flat number and dues status. Keep it simple, clean and mobile friendly.');
+  await prompt.press('Enter');
+  await page.waitForTimeout(1_000);
+  const briefHeadsUp = page.locator('[data-quantora-assistant-prose]', { hasText: /could not send/i }).first();
+  if (await briefHeadsUp.isVisible().catch(() => false)) {
+    throw new Error(`The desk dropped an attached PDF before sending — the 2026-09-05 defect is back. Page state: ${await recordPageState()}`);
+  }
+
+  /**
+   * The first rendered frame — never the desk's own, whose transcript may
+   * quote the documents back — whose text carries every fact, or null.
+   */
+  const frameShowing = async (facts) => {
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      const text = await frame.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
+      if (facts.every((fact) => text.includes(fact))) return frame;
+    }
+    return null;
+  };
+  const BRIEF_FACTS = [BRIEF_REGISTRATION, BRIEF_EVENT_NAME, BRIEF_EVENT_CODE];
+  const briefModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const briefFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  const briefPreview = page.locator('[data-quantora-real-project-preview="true"]').first();
+  let briefFrame = null;
+  let briefModalAnswers = 0;
+  // Two turns' worth of clock: an intake question may precede the build.
+  const briefDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  while (Date.now() < briefDeadline) {
+    if (officeGenerationRequested) {
+      throw new Error(
+        'The website brief was sent to the OFFICE GENERATOR — the desk read "Excel" in a website ask and chose a '
+        + `workbook over the site (the 2026-09-06 defect). Page state: ${await recordPageState()}`,
+      );
+    }
+    if (await briefFailed.isVisible().catch(() => false)) {
+      throw new Error(
+        'The brief-with-documents turn FAILED outright — a website ask with documents must end in a question or a site, '
+        + `never a dead turn. Page state: ${await recordPageState()}`,
+      );
+    }
+    briefFrame = await frameShowing(BRIEF_FACTS);
+    if (briefFrame) break;
+    if (await briefModal.isVisible().catch(() => false)) {
+      if (briefModalAnswers >= 3) {
+        throw new Error(`The desk asked ${briefModalAnswers + 1} questions about the brief without ever building. Page state: ${await recordPageState()}`);
+      }
+      briefModalAnswers += 1;
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await page.waitForTimeout(500);
+  }
+  page.off('request', officeWatch);
+  if (!briefFrame) {
+    /*
+     * WHICH fact is missing decides who fixes it: the number is in one PDF and
+     * the event in the other, so a page with one and not the other read one
+     * document and dropped the second; a page with neither built without
+     * reading; no page at all is the turn.
+     */
+    const withNumber = Boolean(await frameShowing([BRIEF_REGISTRATION]));
+    const withEvent = Boolean(await frameShowing([BRIEF_EVENT_NAME, BRIEF_EVENT_CODE]));
+    const state = await recordPageState();
+    const snapshot = evidence.pageState || {};
+    throw new Error(
+      (withNumber && !withEvent
+        ? `The site shows the registration number but not the event ${BRIEF_EVENT_NAME} ${BRIEF_EVENT_CODE} — the second attached PDF did not reach the build. `
+        : !withNumber && withEvent
+          ? `The site shows the event but not the registration number ${BRIEF_REGISTRATION} — the first attached PDF did not reach the build. `
+          : snapshot.previewMounted
+            ? `A site rendered but shows neither ${BRIEF_REGISTRATION} nor ${BRIEF_EVENT_NAME} ${BRIEF_EVENT_CODE} — the model built without reading the documents. `
+            : `No site rendered within ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s (${briefModalAnswers} intake question(s) answered). `)
+      + `Document reads published by the desk: ${JSON.stringify(snapshot.documentReads ?? null)}. Page state: ${state}`,
+    );
+  }
+  const briefCorrelationId = await briefPreview.getAttribute('data-quantora-correlation-id').catch(() => null);
+  markActiveTransaction('brief-with-documents', briefCorrelationId);
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-brief-with-documents.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'brief-with-documents',
+    correlationId: briefCorrelationId,
+    rendered: true,
+    groundedFacts: BRIEF_FACTS.length,
+    modalAnswers: briefModalAnswers,
+    officeGenerationRequested,
+    durationMs: Date.now() - briefStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 7 — THE SECOND TURN, WHICH IS WHERE PEOPLE ACTUALLY LIVE.
+   *
+   * Nothing deployed had ever sent a follow-up into a built site. The whole
+   * point of a desk is the second ask — change this, add that — and the
+   * classes that break it are invisible on a first turn: the build session
+   * not recognised, the edit rebuilt from scratch, the preview not
+   * re-rendered. One edit, one exact fact to find afterwards. The heading is
+   * looked for in the rendered site itself, whether the desk re-rendered
+   * under a new correlation id or patched the running preview in place.
+   */
+  }
+
+  if (runs(7)) {
+  const iterateStartedAt = Date.now();
+  markActiveTransaction('iterate-heading');
+  const NEW_HEADING = `Golden Harvest Community Portal ${String(Date.now()).slice(-4)}`;
+  await prompt.fill(`Change the main heading at the top of the home page to read exactly: ${NEW_HEADING}. Keep everything else exactly as it is.`);
+  await prompt.press('Enter');
+  /** Every h1 and h2 in every rendered frame but the desk's own. */
+  const headingsShown = async () => {
+    const seen = [];
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      seen.push(...(await frame.locator('h1, h2').allInnerTexts().catch(() => [])));
+    }
+    return seen.map((text) => text.trim());
+  };
+  const iterateFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  const iterateDeadline = Date.now() + TURN_TIMEOUT_MS;
+  let headingFound = false;
+  while (Date.now() < iterateDeadline) {
+    if (await iterateFailed.isVisible().catch(() => false)) {
+      throw new Error(`The follow-up edit turn FAILED before the site changed. Page state: ${await recordPageState()}`);
+    }
+    if ((await headingsShown()).includes(NEW_HEADING)) { headingFound = true; break; }
+    await page.waitForTimeout(500);
+  }
+  if (!headingFound) {
+    throw new Error(
+      `The follow-up edit did not land: no heading reads "${NEW_HEADING}" after ${Math.round(TURN_TIMEOUT_MS / 1000)}s; `
+      + `headings seen: ${JSON.stringify((await headingsShown()).slice(0, 6))}. Page state: ${await recordPageState()}`,
+    );
+  }
+  const iterateCorrelationId = await page.locator('[data-quantora-real-project-preview="true"]').first()
+    .getAttribute('data-quantora-correlation-id').catch(() => null);
+  markActiveTransaction('iterate-heading', iterateCorrelationId);
+  if (iterateCorrelationId) await recordInteraction(iterateCorrelationId, 'iterate-heading');
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-iterate-heading.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'iterate-heading',
+    correlationId: iterateCorrelationId,
+    rendered: true,
+    headingChanged: true,
+    durationMs: Date.now() - iterateStartedAt,
+  });
+  delete evidence.activeTransaction;
+
+  /*
+   * TRANSACTION 8 — AN OFFICE FILE, OPENED.
+   *
+   * "No gate has asked for a deck and opened the file it got" was the ledger's
+   * own note on the Office journey. The generator's failure of 2026-09-06 —
+   * the host clock running out behind "Failed to generate document" — was on
+   * a turn that should never have reached it, but the path itself had never
+   * been proven in production either. A one-page Word document is asked for
+   * with the briefing skipped, the card's Download is clicked, and the file
+   * the browser received is opened: word/document.xml must carry the title.
+   */
+  }
+
+  if (runs(8)) {
+  const newChatForOffice = page.getByRole('button', { name: /New Chat/i }).first();
+  await visible(newChatForOffice, 'New Chat control is missing after the iterate-heading transaction.', 15_000);
+  await newChatForOffice.click();
+
+  const officeStartedAt = Date.now();
+  markActiveTransaction('office-document');
+  const OFFICE_TITLE = `Golden Canary Brief GC-${String(Date.now()).slice(-6)}`;
+  await prompt.fill(`Create a one-page Word document titled exactly "${OFFICE_TITLE}" with two short paragraphs introducing a neighbourhood bakery. Generate the file now; do not ask me any questions first.`);
+  await prompt.press('Enter');
+  const officeCard = page.locator('[data-quantora-office-card="true"]').last();
+  const officeModal = page.locator('[data-quantora-decision-modal="true"]').first();
+  const officeFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
+  let officeModalAnswers = 0;
+  let officeReady = false;
+  // A briefing round may precede generation, and generation has its own clock.
+  const officeDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
+  while (Date.now() < officeDeadline) {
+    if (await officeFailed.isVisible().catch(() => false)) {
+      const state = await recordPageState();
+      const snapshot = evidence.pageState || {};
+      // The desk's own sentence first: "ran out of host time" and "Please sign
+      // in" are different defects, and the failure copy names which.
+      throw new Error(`The Office turn FAILED: ${String(snapshot.lastAssistantText || '').replace(/\s+/g, ' ').slice(0, 220)}. Page state: ${state}`);
+    }
+    if (await officeCard.isVisible().catch(() => false)) { officeReady = true; break; }
+    if (await officeModal.isVisible().catch(() => false)) {
+      if (officeModalAnswers >= 3) {
+        throw new Error(`The Office briefing asked ${officeModalAnswers + 1} questions without ever generating. Page state: ${await recordPageState()}`);
+      }
+      officeModalAnswers += 1;
+      await page.locator('[data-quantora-decision-option]').first().click();
+      await page.waitForTimeout(500);
+      continue;
+    }
+    await page.waitForTimeout(500);
+  }
+  if (!officeReady) {
+    throw new Error(`No Office card appeared within ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s (${officeModalAnswers} briefing answer(s)). Page state: ${await recordPageState()}`);
+  }
+  const officeKind = await officeCard.getAttribute('data-quantora-office-kind');
+  if (officeKind !== 'word') {
+    throw new Error(`The desk generated a "${officeKind || 'unknown'}" file for a Word ask. Page state: ${await recordPageState()}`);
+  }
+  const downloadEvent = page.waitForEvent('download', { timeout: 30_000 });
+  await officeCard.locator('[data-quantora-office-download="true"]').first().click();
+  const download = await downloadEvent;
+  const downloadedPath = `${ARTIFACT_DIR}/deployed-golden-office-document.docx`;
+  await download.saveAs(downloadedPath);
+  const docxBytes = readFileSync(downloadedPath);
+  const documentXml = readZipEntryText(docxBytes, 'word/document.xml');
+  if (documentXml === null) {
+    throw new Error(`The downloaded file (${download.suggestedFilename()}, ${docxBytes.length} bytes) is not a Word document: it has no word/document.xml.`);
+  }
+  // Runs may split a title, and a style may case it: compare the words alone.
+  const squash = (value) => String(value).replace(/\s+/g, '').toLowerCase();
+  const documentWords = xmlText(documentXml);
+  if (!squash(documentWords).includes(squash(OFFICE_TITLE))) {
+    throw new Error(`The Word document opened but does not carry the title "${OFFICE_TITLE}". Its text begins: ${documentWords.slice(0, 160)}`);
+  }
+  await page.screenshot({ path: `${ARTIFACT_DIR}/deployed-golden-office-document.png`, fullPage: true });
+  evidence.transactions.push({
+    name: 'office-document',
+    fileName: download.suggestedFilename(),
+    bytes: docxBytes.length,
+    opened: true,
+    titleFound: true,
+    modalAnswers: officeModalAnswers,
+    durationMs: Date.now() - officeStartedAt,
   });
   delete evidence.activeTransaction;
   }

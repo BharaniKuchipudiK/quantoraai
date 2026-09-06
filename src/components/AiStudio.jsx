@@ -2613,7 +2613,11 @@ Paused — ${autoPauseRef.current}.`
 
                       {/* Render Dedicated Office Download Card */}
                       {msg.officeAttachment && (
-                        <div style={{
+                        <div
+                          data-quantora-office-card="true"
+                          data-quantora-office-kind={msg.officeAttachment.kind || msg.officeAttachment.format || 'office'}
+                          data-quantora-office-file={msg.officeAttachment.fileName || ''}
+                          style={{
                           marginTop: '20px',
                           padding: '24px',
                           background: isLight ? '#ffffff' : '#0f172a',
@@ -2647,6 +2651,7 @@ Paused — ${autoPauseRef.current}.`
                             </div>
                           </div>
                           <button
+                            data-quantora-office-download="true"
                             onClick={() => {
                               try {
                                 downloadOfficeArtifact(resolveOfficeDownloadPayload(msg.officeAttachment, messages));
