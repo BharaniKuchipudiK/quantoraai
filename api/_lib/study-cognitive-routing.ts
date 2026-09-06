@@ -155,7 +155,7 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
   const rendererInstruction = interpretation.representation.rendererRequired
     ? interpretation.representation.rendererKind === 'newton-lab'
-      ? 'yes — render the native Newton interaction by including exactly one <quantora-study-lab kind="newton" /> tag; do not replace it with prose frames or claim a video was streamed'
+      ? 'yes — render the native Newton third-law interaction by including exactly one <quantora-study-lab kind="newton-third-law" /> tag; do not replace it with prose frames or claim a video was streamed'
       : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
     : 'no — do NOT emit <quantora-study-picture> or <quantora-study-lab> tags for this turn; the presentation layer must not invent a subject visual';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
@@ -254,7 +254,5 @@ export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInter
     capabilities: interpretation.capabilities,
     responseMode: interpretation.responseMode,
     requiresVerification: interpretation.requiresVerification,
-    activeLearningMode: interpretation.activeLearningContext.mode,
-    conceptResolution: interpretation.activeLearningContext.concept.source,
   };
 }
