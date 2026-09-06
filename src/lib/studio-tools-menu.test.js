@@ -41,8 +41,12 @@ test('Study plus exposes one truthful door per learner action without duplicatin
   for (const duplicate of ['study-icebreaker', 'study-apply', 'study-plan', 'study-notes', 'study-explain', 'study-quiz']) {
     assert.equal(studyIds.includes(duplicate), false);
   }
-  assert.equal(studyItems.find((item) => item.id === 'study-assessment')?.surface, 'assessment');
-  assert.equal(studyItems.find((item) => item.id === 'study-notebook')?.surface, 'notebook');
+  const assessment = studyItems.find((item) => item.id === 'study-assessment');
+  const notebook = studyItems.find((item) => item.id === 'study-notebook');
+  assert.equal(assessment?.surface, 'assessment');
+  assert.equal(assessment?.requiresTopic, true);
+  assert.equal(notebook?.surface, 'notebook');
+  assert.equal(notebook?.requiresTopic, true);
 });
 
 test('Study menu labels stay topic-neutral while conversational actions still receive context', () => {
