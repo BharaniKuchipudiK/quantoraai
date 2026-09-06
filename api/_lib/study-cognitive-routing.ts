@@ -1,9 +1,10 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
+import { buildStudyActiveLearningContext, type StudyActiveLearningContext } from './study-active-learning-context.js';
 import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-03.9';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-07.1';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -18,6 +19,7 @@ export type StudyCognitiveInterpretation = {
   responseMode: 'direct' | 'guided' | 'diagnostic' | 'evaluative' | 'sequenced';
   requiresVerification: boolean;
   temperatureCeiling: number;
+  activeLearningContext: StudyActiveLearningContext;
   representation: StudyTeachingRepresentationPlan;
   intervention: StudyLearningIntervention;
   lessonLoop: StudyAdaptiveLessonLoopPlan;
@@ -38,7 +40,7 @@ const CONTINUE_RE = /^(?:continue|go on|next|keep going|do it|try again|more)\W*
 const ADVANCED_RE = /\b(?:derive|proof|prove|theorem|rigorous|formalism|asymptotic|eigenvalue|tensor|quantum|lagrangian|hamiltonian|differential equation|organic mechanism|graduate|postgraduate|research level|olympiad)\b/i;
 const FOUNDATIONAL_RE = /\b(?:basics?|beginner|simple terms?|eli5|fundamentals?|introduction|what is|define|meaning of|from scratch)\b/i;
 const STUDY_FAST_WORKHORSE_ID = 'deepseek/deepseek-v4-flash-0731';
-const REPRESENTATION_CONTROL_ONLY_RE = /^\s*(?:(?:can|could|would|will|please)\s+)?(?:you\s+)?(?:show|draw|sketch|teach|tell|explain)\s+(?:me\s+)?(?:it\s+)?(?:(?:using|with|as|in)\s+)?(?:(?:a|an)\s+)?(?:images?|pictures?|diagrams?|visual(?:ly)?|graphs?|story|analogy|example|step[- ]by[- ]step)(?:\s+instead)?[?.!]*\s*$/i;
+const REPRESENTATION_CONTROL_ONLY_RE = /^\s*(?:(?:can|could|would|will|please)\s+)?(?:you\s+)?(?:show|draw|sketch|teach|tell|explain|animate)\s+(?:me\s+)?(?:it\s+)?(?:(?:using|with|as|in)\s+)?(?:(?:a|an)\s+)?(?:images?|pictures?|diagrams?|visual(?:ly)?|graphs?|animation|animated|simulation|story|analogy|example|step[- ]by[- ]step)(?:\s+instead)?[?.!]*\s*$/i;
 const STRUGGLE_CONTROL_ONLY_RE = /^\s*(?:i\s+(?:still\s+)?(?:don'?t|do not)\s+(?:understand|get(?:\s+it)?|know)|i\s+don'?t\s+know|(?:i\s+am\s+)?confused|(?:i\s+am\s+)?lost|not getting it|too hard|still difficult to understand|doesn['’]?t make sense|make it (?:easy|easier)(?: for me)?|simplify(?: it)?|explain again|another way)\W*$/i;
 
 function textOf(item: HistoryItem): string { return String(item?.text || item?.content || '').trim(); }
@@ -48,14 +50,6 @@ function isRepresentationControlOnly(text: string): boolean {
   return CONTINUE_RE.test(text) || REPRESENTATION_CONTROL_ONLY_RE.test(text) || STRUGGLE_CONTROL_ONLY_RE.test(text);
 }
 
-/**
- * Representation capability must be anchored to the current learner-owned
- * concept, never to an arbitrary mixed transcript window. Otherwise an older
- * mechanics turn can leak "force" into a later unsupported Electricity lesson
- * and make the server request the wrong visual. The nearest substantive learner
- * turn is the safe fallback when the current message is only a teaching-control
- * utterance such as "show me visually" or "make it easier".
- */
 function representationContextFor(message: string, history: HistoryItem[]): string {
   if (message && !isRepresentationControlOnly(message)) return message;
   for (let index = history.length - 1; index >= 0; index -= 1) {
@@ -101,7 +95,6 @@ function capabilitiesFor(intent: StudyIntent, hasImages: boolean): StudyCapabili
   return hasImages ? [...byIntent[intent], 'visual_interpretation'] : byIntent[intent];
 }
 
-/** Strict feature gate: null means exact pass-through outside Study Tutor. */
 export function interpretStudyTurn(input: {
   studioDomain?: string | null;
   message?: string;
@@ -123,6 +116,12 @@ export function interpretStudyTurn(input: {
       : intent === 'practice' || intent === 'continue' ? 'guided'
         : intent === 'plan' ? 'sequenced' : 'direct';
   const contextText = representationContextFor(message, history);
+  const activeLearningContext = buildStudyActiveLearningContext({
+    intent,
+    message,
+    contextText,
+    learnerModel: input.learnerModel,
+  });
   const intervention = evaluateStudyLearningIntervention({ message, history });
   const representation = planStudyTeachingRepresentation({
     message,
@@ -130,6 +129,7 @@ export function interpretStudyTurn(input: {
     history,
     intervention,
     learnerModel: input.learnerModel,
+    activeLearningContext,
   });
   const lessonLoop = planStudyAdaptiveLessonLoop({ intent, representation, intervention });
   return {
@@ -141,6 +141,7 @@ export function interpretStudyTurn(input: {
     responseMode,
     requiresVerification,
     temperatureCeiling: requiresVerification ? 0.2 : difficulty === 'advanced' ? 0.3 : 0.5,
+    activeLearningContext,
     representation,
     intervention,
     lessonLoop,
@@ -153,8 +154,10 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
     ? 'none'
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
   const rendererInstruction = interpretation.representation.rendererRequired
-    ? `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
-    : 'no';
+    ? interpretation.representation.rendererKind === 'newton-lab'
+      ? 'yes — render the native Newton third-law interaction by including exactly one <quantora-study-lab kind="newton-third-law" /> tag; do not replace it with prose frames or claim a video was streamed'
+      : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
+    : 'no — do NOT emit <quantora-study-picture> or <quantora-study-lab> tags for this turn; the presentation layer must not invent a subject visual';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
     ? `YES — ask at most ${interpretation.lessonLoop.maxLearnerQuestions} learner question, end on that question, and do not reveal the next beat or its answer in the same response`
     : 'no forced wait — answer the current request directly and do not invent a question merely to create interactivity';
@@ -164,6 +167,8 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
   return `\n\nSTUDY COGNITIVE ROUTE (${interpretation.version})
 This directive applies only because the active workspace is Study Tutor.
 - Learner intent: ${interpretation.intent}
+- Active-learning mode: ${interpretation.activeLearningContext.mode}
+- Canonical concept key: ${interpretation.activeLearningContext.concept.key || 'unresolved'}; source: ${interpretation.activeLearningContext.concept.source}; confidence: ${interpretation.activeLearningContext.concept.confidence}
 - Difficulty: ${interpretation.difficulty}
 - Continuity: ${interpretation.continuity}; preserve the current lesson context and resolve references from the supplied history. Do not restart discovery when the reference is clear.
 - Response mode: ${interpretation.responseMode}
@@ -177,7 +182,7 @@ This directive applies only because the active workspace is Study Tutor.
 - Teaching beats for THIS response only: ${teachingBeatsInstruction}
 - Wait boundary: ${waitInstruction}
 - Verification: ${interpretation.requiresVerification ? 'required — check the learner\'s reasoning before agreeing, distinguish verified facts from inference, and explain the first material error' : 'not mandatory — remain accurate and do not invent learner understanding'}
-Honor this route inside the existing Study teaching-turn policy. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, or beat labels to the learner. Do not claim mastery or persistent learner knowledge from these conversational signals.`;
+Honor this route inside the existing Study teaching-turn policy. The Active Learning Context is the semantic control plane for this turn: do not re-infer a different concept from generated prose downstream. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, or beat labels to the learner. Do not claim mastery or persistent learner knowledge from these conversational signals.`;
 }
 
 function isUnmeteredFreeEndpoint(model: ModelLike): boolean {
@@ -205,7 +210,6 @@ function reasoningScore(model: ModelLike, interpretation: StudyCognitiveInterpre
   return score;
 }
 
-/** Reorders only eligible rungs; never adds paid routes or overrides a pin. */
 export function applyStudyCapabilityRouting(input: { interpretation: StudyCognitiveInterpretation | null; baseDecision: RoutingDecision; models?: ModelLike[]; explicitModelSelected?: boolean; hasImages?: boolean }): RoutingDecision {
   const { interpretation, baseDecision } = input;
   if (!interpretation || input.explicitModelSelected || input.hasImages) return baseDecision;

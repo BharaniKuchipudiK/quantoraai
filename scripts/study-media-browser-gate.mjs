@@ -85,6 +85,8 @@ await page.route('**/api/**', async (route) => {
     ].join('\n') : [
       "**Why it's relevant:** You feel inertia when a car brakes and your body keeps moving forward until the seatbelt changes your motion.",
       '',
+      '<quantora-study-picture caption="Passenger motion when a car brakes and stops" />',
+      '',
       `- [Verified Study lesson](https://www.youtube.com/watch?v=${VALID_VIDEO_ID}) — watch this inside Quantora.`,
       `- [Dead Study lesson](https://www.youtube.com/watch?v=${DEAD_VIDEO_ID}) — this must never be offered.`,
       '',
