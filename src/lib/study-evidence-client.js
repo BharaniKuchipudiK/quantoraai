@@ -30,13 +30,18 @@ async function studyAssessmentRequest(body) {
   return data;
 }
 
-export async function requestStudyAssessment({ conceptId, conceptLabel, sessionId } = {}) {
-  const data = await studyAssessmentRequest({
+export async function requestStudyAssessment({ conceptId, conceptLabel, sessionId, excludeItemRefs } = {}) {
+  const exclusions = Array.isArray(excludeItemRefs)
+    ? [...new Set(excludeItemRefs.map((value) => clean(value, 220)).filter(Boolean))].slice(0, 20)
+    : [];
+  const body = {
     action: 'issue',
     conceptKey: clean(conceptId, 160),
     conceptLabel: clean(conceptLabel, 300),
     sessionId: clean(sessionId, 128),
-  });
+    ...(exclusions.length ? { excludeItemRefs: exclusions } : {}),
+  };
+  const data = await studyAssessmentRequest(body);
   if (!data?.attemptId || !data?.item?.prompt || !Array.isArray(data.item.options)) {
     throw new Error('The verified Study check returned an invalid item.');
   }
