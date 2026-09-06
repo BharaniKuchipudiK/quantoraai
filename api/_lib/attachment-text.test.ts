@@ -3,6 +3,14 @@ import test from 'node:test';
 import { PassThrough } from 'node:stream';
 import { ZipArchive } from 'archiver';
 import { readZipEntries } from './office-zip.js';
+import { buildMinimalPdf as buildMinimalPdfBuffer, bylawsFixtureText, wrapPdfLines, PDF_LINE_CHARS } from '../../scripts/lib/minimal-pdf.mjs';
+
+/*
+ * The one PDF builder the deployed golden and the attachments browser gate
+ * use, so this test reads the same bytes the real turn attaches. It returns a
+ * Node Buffer for Playwright's file input; pdf.js wants a plain Uint8Array.
+ */
+const buildMinimalPdf = (text: string): Uint8Array => new Uint8Array(buildMinimalPdfBuffer(text));
 import {
   attachmentKindFor,
   buildAttachedDocumentsBlock,
@@ -25,27 +33,6 @@ import {
  * ---------------------------------------------------------------------------
  */
 
-/** A minimal, valid one-page PDF carrying the given ASCII text (empty text = a "scanned" page). */
-function buildMinimalPdf(text: string): Uint8Array {
-  const escaped = text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-    '',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ];
-  const stream = `BT /F1 12 Tf 72 720 Td (${escaped}) Tj ET`;
-  objects[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
-  let body = '%PDF-1.4\n';
-  const offsets: number[] = [0];
-  objects.forEach((obj, index) => { offsets.push(body.length); body += `${index + 1} 0 obj\n${obj}\nendobj\n`; });
-  const xrefStart = body.length;
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let index = 1; index <= objects.length; index += 1) body += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
-  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
-  return new Uint8Array(Buffer.from(body, 'latin1'));
-}
 
 /** Office files are ZIP archives of XML; build one in memory with the platform's own ZIP writer. */
 async function zipOf(files: Record<string, string | Buffer>, level = 6): Promise<Uint8Array> {
@@ -177,4 +164,35 @@ test('kinds are decided by extension first, mime second', () => {
   assert.equal(attachmentKindFor('a.xlsm', 'application/octet-stream'), 'spreadsheet');
   assert.equal(attachmentKindFor('notes', 'text/plain'), 'text');
   assert.equal(attachmentKindFor('photo.png', 'image/png'), 'unsupported');
+});
+
+/*
+ * THE GOLDEN'S OWN DOCUMENT ROUND-TRIPS INTACT.
+ *
+ * 2026-09-06: the deployed golden's bylaws PDF came back from the server's
+ * reader as its first 95 characters, cut exactly where the registration
+ * number "RKV-445285-GLD" became "RKV-445". pdf.js returns nothing that lies
+ * past the page edge, and the fixture had written the whole sentence as one
+ * 12pt line off the right of a letter page. The model rendered what it was
+ * given and the verdict blamed it, on both engines, for a day. This test reads
+ * the exact fixture the golden attaches, through the exact reader the server
+ * runs: with the one-line builder restored it fails naming "RKV-445".
+ */
+test('the deployed golden\'s bylaws PDF round-trips through the reader with its registration number intact', async () => {
+  const registration = 'RKV-445285-GLD';
+  const text = bylawsFixtureText(registration);
+  const read = await extractAttachmentText({ name: 'rkv-bylaws.pdf', mimeType: 'application/pdf', bytes: buildMinimalPdf(text) });
+  assert.equal(read.ok, true);
+  assert.ok(read.text.includes(registration), `the reader returned "${read.text.slice(-40)}" — the registration number did not survive`);
+  assert.equal(read.text.replace(/\s+/g, ' '), text.replace(/\s+/g, ' '), 'every word of the document must come back, in order');
+});
+
+test('the fixture wraps its lines inside the page instead of running off it', () => {
+  const lines = wrapPdfLines(bylawsFixtureText('RKV-445285-GLD'));
+  assert.ok(lines.length >= 3, 'a 179-character sentence needs more than two lines');
+  for (const line of lines) assert.ok(line.length <= PDF_LINE_CHARS, `line too long: "${line}"`);
+  assert.equal(lines.join(' '), bylawsFixtureText('RKV-445285-GLD'), 'wrapping only moves whitespace');
+  // A word longer than a line is split rather than dropped or overflowed.
+  assert.deepEqual(wrapPdfLines('x'.repeat(150), 72), ['x'.repeat(72), 'x'.repeat(72), 'x'.repeat(6)]);
+  assert.deepEqual(wrapPdfLines(''), []);
 });
