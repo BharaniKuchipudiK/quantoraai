@@ -1,6 +1,7 @@
 import { applyCors, isRateLimited } from '../rate-limit.js';
 import { requireActiveSession } from '../authz.js';
 import { fetchApiGatewayKey } from '../../autocomplete.js';
+import { recordTurnPlanEvent } from '../store.js';
 import { routeJson } from '../semantic-router.js';
 import {
   TURN_PLAN_SCHEMA,
@@ -58,6 +59,7 @@ export default async function handler(req: any, res: any) {
 
   let model = null;
   let error: string | null = null;
+  const plannerStartedAt = Date.now();
   try {
     const geminiGatewayKey = process.env.GEMINI_API_KEY ? null : await fetchApiGatewayKey('GEMINI').catch(() => null);
     const keys = {
@@ -76,5 +78,19 @@ export default async function handler(req: any, res: any) {
   }
 
   const plan = reconcileTurnPlan({ model, deterministic, pinnedDesk: input.pinnedDesk, buildOwned });
+  // Measured, every time (Phase 7, second cut): lanes, source, agreement,
+  // latency and the error class — never the message. See turn-plan-ledger.ts.
+  recordTurnPlanEvent({
+    lane: plan.lane,
+    desk: plan.desk ?? null,
+    officeKind: plan.officeKind ?? null,
+    source: plan.source,
+    agreed: plan.agreed === true,
+    confidence: plan.confidence,
+    deterministicLane: deterministic.lane,
+    plannerMs: Date.now() - plannerStartedAt,
+    plannerError: error,
+    pinnedDesk: input.pinnedDesk ?? null,
+  });
   return res.status(200).json({ plan, deterministic, model, ...(error ? { error } : {}) });
 }

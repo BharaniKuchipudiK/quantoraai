@@ -344,11 +344,11 @@ export const JOURNEYS = Object.freeze([
     hooks: ['data-quantora-coding-desk-nav', 'data-quantora-workspace-new-chat'],
     modelTurn: true,
     gates: {
-      deterministic: ['api/_lib/turn-planner.test.ts', 'src/lib/turn-plan-client.test.js', 'src/lib/office-intent.test.js'],
+      deterministic: ['api/_lib/turn-planner.test.ts', 'src/lib/turn-plan-client.test.js', 'src/lib/office-intent.test.js', 'api/_lib/turn-plan-ledger.test.ts'],
       browser: ['scripts/turn-planner-browser-gate.mjs'],
       deployed: ['golden:brief-with-documents'],
     },
-    note: 'Phase 7, first cut (2026-09-06): one model-owned lane per turn — build, office, advisor or chat — reconciled with the keyword rules, which are now the fallback and the corpus. A pinned desk never moves; a build the desk owns is never vetoed; a dead planner changes nothing.',
+    note: 'Phase 7, first cut (2026-09-06): one model-owned lane per turn — build, office, advisor or chat — reconciled with the keyword rules, which are now the fallback and the corpus. A pinned desk never moves; a build the desk owns is never vetoed; a dead planner changes nothing. Second cut: every plan is recorded (turn_plan_events) and the admin dashboard reads the planner\'s share, its agreement with the rules, where it overruled them, and its latency.',
   }),
   journey({
     id: 'chat-sessions-manage',
