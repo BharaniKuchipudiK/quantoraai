@@ -969,6 +969,7 @@ export const JOURNEYS = Object.freeze([
       deterministic: [
         'src/lib/deployed-gate-contract.test.js',
         'scripts/golden-page-state.test.mjs',
+        'scripts/golden-engine-refusal.test.mjs',
         'scripts/business-tool-reconcile.test.mjs',
         'scripts/workflow-playwright-pin.test.mjs',
       ],
