@@ -36,7 +36,7 @@ import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.j
 import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallbacks, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
-import { resolveTurnStudioDomain } from '../../shared/studio/domain-inference.js';
+import { resolveTurnStudioDomain, turnDomainSessionPatch } from '../../shared/studio/domain-inference.js';
 import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../lib/studio-mode.js';
 import { TURN_BUILD, TURN_CHAT, endSessionWork, sendBlockedReason, startSessionWork } from '../lib/session-activity.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
@@ -266,6 +266,18 @@ function activeStudioDomain(chatSessions, activeSessionId) {
 function activeDeskPinned(chatSessions, activeSessionId) {
   const session = (chatSessions || []).find((candidate) => candidate?.id === activeSessionId);
   return session?.deskPinned === true;
+}
+
+/**
+ * The desk this thread has been answering as, which is NOT the workspace it
+ * belongs to. Kept so turn two of a trip conversation still routes to travel
+ * when the message itself says nothing about travel — the continuity the
+ * session's `studioDomain` used to provide before it stopped being written
+ * by inference. See `turnDomainSessionPatch`.
+ */
+function activeInferredDomain(chatSessions, activeSessionId) {
+  const session = (chatSessions || []).find((candidate) => candidate?.id === activeSessionId);
+  return session?.inferredDomain || null;
 }
 
 /*
@@ -1046,8 +1058,10 @@ export function useChatStream({
         targetModel = autoTarget(rerouteId, autoResolvedLabel);
       }
     }
+    // A pinned chat's workspace decided; it keeps no routing memory to consult.
+    const rememberedDomain = deskPinned ? null : activeInferredDomain(chatSessions, activeSessionId);
     const resolvedTurnDomain = resolveTurnStudioDomain({
-      explicit: studioDomain,
+      explicit: studioDomain || rememberedDomain,
       message: visibleUserText,
       history: messages,
       isCodingRequest,
@@ -1117,7 +1131,7 @@ export function useChatStream({
     if (typeof updateActiveSession === 'function') {
       updateActiveSession({
         conversationContext: turnContext,
-        ...(turnDomain && turnDomain !== studioDomain ? { studioDomain: turnDomain } : {}),
+        ...turnDomainSessionPatch({ turnDomain, sessionDomain: studioDomain, pinned: deskPinned }),
       });
     }
     const sessionContinuity = shouldOfferSessionHandover(messages, continuityPressure)

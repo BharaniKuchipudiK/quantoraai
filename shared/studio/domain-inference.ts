@@ -214,3 +214,42 @@ export function resolveTurnStudioDomain(input: {
     pinned: input.pinned === true,
   });
 }
+
+/**
+ * MEMBERSHIP IS NOT ROUTING (2026-09-06).
+ *
+ * A turn's inferred desk used to be written straight onto the session as
+ * `studioDomain`, which is the field the sidebar groups by. So the first
+ * message of a top-level New Chat moved the chat: "help me plan a trip to
+ * Kyoto" filed it under Travel, "I want to learn calculus" under Study Tutor.
+ * The person had opened a general chat and watched it leave — reported as
+ * "suddenly this chat jumps to a different Workspace".
+ *
+ * Inference was never wrong to run; it was wrong to be believed about
+ * OWNERSHIP. So the two are separated rather than one being muted:
+ *
+ *   - `studioDomain` is MEMBERSHIP. Only a person sets it — the "+" beside a
+ *     workspace, an advisor card, a move from the chat's own menu.
+ *   - `inferredDomain` is ROUTING MEMORY. The desk this thread has been
+ *     answering as, so turn two of a trip conversation still gets the travel
+ *     tools when the message itself says nothing about travel.
+ *
+ * Routing is unchanged by this split: the request still carries the inferred
+ * desk. Only the sidebar stops moving.
+ *
+ * This function is the single place that decision is made, so the class is
+ * closable by a test rather than by review: it may never return a
+ * `studioDomain` key, whatever it is asked.
+ */
+export function turnDomainSessionPatch(input: {
+  turnDomain?: unknown;
+  sessionDomain?: unknown;
+  pinned?: boolean;
+}): { inferredDomain?: StudioDomain } {
+  // A pinned chat's workspace already decided; it carries no routing memory.
+  if (input.pinned === true) return {};
+  const turnDomain = normalizeStudioDomain(input.turnDomain);
+  if (!turnDomain) return {};
+  if (turnDomain === normalizeStudioDomain(input.sessionDomain)) return {};
+  return { inferredDomain: turnDomain };
+}
