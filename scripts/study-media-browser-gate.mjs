@@ -22,6 +22,71 @@ function sseBody(text) {
   ].join('\n\n');
 }
 
+function syntheticAttemptId(index) {
+  return `11111111-1111-4111-8111-${String(index).padStart(12, '1')}`;
+}
+
+function syntheticAssessmentItem(index) {
+  if (index <= 3) {
+    return {
+      itemKey: 'motion-graphs-velocity-slope',
+      itemVersion: '1',
+      conceptKey: 'physics.kinematics.motion-graphs',
+      prompt: 'On a displacement-time graph, what does the slope at a point represent?',
+      options: [
+        { id: 'a', text: 'Acceleration' },
+        { id: 'b', text: 'Displacement' },
+        { id: 'c', text: 'Velocity' },
+        { id: 'd', text: 'Distance travelled' },
+      ],
+      responseFormat: 'single_correct',
+    };
+  }
+  if (index === 4) {
+    return {
+      itemKey: 'motion-graphs-session-velocity',
+      itemVersion: '1',
+      conceptKey: 'physics.kinematics.motion-graphs',
+      prompt: 'For a displacement-time graph, which quantity does its slope describe?',
+      options: [
+        { id: 'a', text: 'Acceleration' },
+        { id: 'b', text: 'Distance only' },
+        { id: 'c', text: 'Velocity' },
+        { id: 'd', text: 'Force' },
+      ],
+      responseFormat: 'single_correct',
+    };
+  }
+  if (index === 5) {
+    return {
+      itemKey: 'motion-graphs-session-acceleration',
+      itemVersion: '1',
+      conceptKey: 'physics.kinematics.motion-graphs',
+      prompt: 'For a velocity-time graph, which quantity does its slope describe?',
+      options: [
+        { id: 'a', text: 'Displacement' },
+        { id: 'b', text: 'Velocity' },
+        { id: 'c', text: 'Acceleration' },
+        { id: 'd', text: 'Distance' },
+      ],
+      responseFormat: 'single_correct',
+    };
+  }
+  return {
+    itemKey: `motion-graphs-session-zero-${index}`,
+    itemVersion: '1',
+    conceptKey: 'physics.kinematics.motion-graphs',
+    prompt: 'If a displacement-time graph is horizontal, what is the velocity?',
+    options: [
+      { id: 'a', text: 'Increasing' },
+      { id: 'b', text: 'Negative' },
+      { id: 'c', text: 'Zero' },
+      { id: 'd', text: 'Undefined' },
+    ],
+    responseFormat: 'single_correct',
+  };
+}
+
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_active_specialist_domain');
@@ -117,31 +182,29 @@ await page.route('**/api/**', async (route) => {
           }),
         });
       }
+      if (assessmentIssueCount === 5 && !body.excludeItemRefs?.includes('motion-graphs-session-velocity@1')) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'All-at-once session failed to reserve the prior reviewed item.' }),
+        });
+      }
+      const item = syntheticAssessmentItem(assessmentIssueCount);
       return route.fulfill({
         status: 201,
         contentType: 'application/json',
         body: JSON.stringify({
-          attemptId: '11111111-1111-4111-8111-111111111111',
+          attemptId: syntheticAttemptId(assessmentIssueCount),
           expiresAt: '2026-08-26T12:15:00.000Z',
           concept: { key: 'physics.kinematics.motion-graphs', label: 'Motion graphs' },
-          item: {
-            itemKey: 'motion-graphs-velocity-slope',
-            itemVersion: '1',
-            conceptKey: 'physics.kinematics.motion-graphs',
-            prompt: 'On a displacement-time graph, what does the slope at a point represent?',
-            options: [
-              { id: 'a', text: 'Acceleration' },
-              { id: 'b', text: 'Displacement' },
-              { id: 'c', text: 'Velocity' },
-              { id: 'd', text: 'Distance travelled' },
-            ],
-            responseFormat: 'single_correct',
-          },
+          evidenceKind: 'assessment_item',
+          item,
         }),
       });
     }
     if (body.action === 'grade') {
       const correct = body.optionId === 'c';
+      const quickCheckAttempt = String(body.attemptId || '').endsWith('2') || String(body.attemptId || '').endsWith('3');
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -151,7 +214,9 @@ await page.route('**/api/**', async (route) => {
           correct,
           score: correct ? 1 : 0,
           misconceptionSignal: !correct,
-          explanation: 'The slope is change in displacement divided by change in time, which is velocity.',
+          explanation: quickCheckAttempt
+            ? 'The slope is change in displacement divided by change in time, which is velocity.'
+            : 'The graph relationship was graded by the governed assessment path.',
           evidenceKind: 'assessment_item',
           masteryUpdated: true,
           mastery: { status: 'provisional', learningState: 'emerging_understanding', evidenceCount: 1 },
@@ -162,6 +227,14 @@ await page.route('**/api/**', async (route) => {
       status: 400,
       contentType: 'application/json',
       body: JSON.stringify({ error: 'Unexpected synthetic assessment request.' }),
+    });
+  }
+
+  if (path === '/api/study-assessment-history') {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ windowDays: 30, assessments: [] }),
     });
   }
 
@@ -298,12 +371,12 @@ try {
   await openStudyHub.click();
   const studyHubPanel = page.locator('#quantora-study-hub-panel').first();
   await visible(studyHubPanel, 'Study AI did not open.');
-  for (const actionName of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?', 'Assessment history']) {
+  for (const actionName of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?']) {
     await visible(studyHubPanel.getByRole('button', { name: actionName, exact: true }), `Study AI is missing ${actionName}.`);
   }
-  for (const duplicateName of ['Flashcards', 'Notebook', 'Make concise notes']) {
+  for (const duplicateName of ['Flashcards', 'Notebook', 'Make concise notes', 'Assessment history']) {
     if (await studyHubPanel.getByRole('button', { name: duplicateName, exact: true }).count()) {
-      throw new Error(`Study AI still duplicates the + menu action ${duplicateName}.`);
+      throw new Error(`Study AI still duplicates a durable Study action: ${duplicateName}.`);
     }
   }
   await page.keyboard.press('Escape');
@@ -362,12 +435,11 @@ try {
   await textarea.fill('Teach me motion graphs');
   await textarea.press('Enter');
   await visible(board.getByText('motion graphs', { exact: false }).first(), 'Tutor focus did not switch to the mapped motion-graphs concept.');
-  await page.locator('[data-quantora-plus-trigger="true"]').click();
-  const mappedStudyPlus = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
-  await visible(mappedStudyPlus, 'Study + menu did not reopen for Assessment.');
-  await mappedStudyPlus.getByRole('button', { name: 'Assessment', exact: true }).click();
+
+  // Quick Check remains the compact lesson-level governed verification move.
+  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
   const verifiedCheck = board.locator('[data-quantora-study-verified-check="true"]').first();
-  await visible(verifiedCheck, 'Study + Assessment did not open the existing server-graded check.');
+  await visible(verifiedCheck, 'Mapped Study concept did not receive a server-graded quick check.');
   await visible(verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }), 'Server-issued Study prompt was not rendered.');
   await verifiedCheck.getByRole('button', { name: 'Acceleration', exact: true }).click();
   await visible(board.locator('[data-quantora-study-verified-result="incorrect"]').first(), 'Incorrect answer did not resolve into remediation.');
@@ -384,7 +456,67 @@ try {
   await visible(board.locator('[data-quantora-study-verified-result="correct"]').first(), 'Correct server-graded Study result was not rendered.');
   await visible(board.getByText(/slope is change in displacement divided by change in time/i).first(), 'Verified Study explanation was not rendered.');
   await visible(board.locator('button', { hasText: 'Completed' }).first(), 'Completed check did not stay resolved.');
-  if (assessmentIssueCount !== 3) throw new Error(`Completed question repeated without an explicit retry (${assessmentIssueCount} issues).`);
+  if (assessmentIssueCount !== 3) throw new Error(`Completed quick check repeated without an explicit retry (${assessmentIssueCount} issues).`);
+
+  // Assessment opens a dedicated setup surface; selecting it must not silently
+  // reissue the completed quick-check attempt.
+  await page.locator('[data-quantora-plus-trigger="true"]').click();
+  const mappedStudyPlus = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
+  await visible(mappedStudyPlus, 'Study + menu did not reopen for Assessment.');
+  await mappedStudyPlus.getByRole('button', { name: 'Assessment', exact: true }).click();
+  const assessmentWorkspace = page.locator('[data-quantora-study-assessment-workspace="true"]').first();
+  await visible(assessmentWorkspace, 'Study + Assessment did not open the dedicated Assessment workspace.');
+  const setup = assessmentWorkspace.locator('[data-quantora-study-assessment-setup="true"]');
+  await visible(setup, 'Assessment setup cards are missing.');
+  if (assessmentIssueCount !== 3) throw new Error('Opening generic Assessment reissued a completed quick check before the learner started a session.');
+  for (const setupChoice of [/MCQ/i, /One at a time/i, /All at once/i, /After each question/i, /At the end/i]) {
+    await visible(setup.getByRole('button', { name: setupChoice }).first(), `Assessment setup is missing ${setupChoice}.`);
+  }
+
+  // Prove all-at-once: reserve two distinct reviewed attempts, answer together,
+  // then grade through the server path and show an aggregate summary.
+  await setup.getByRole('spinbutton', { name: 'Custom question count', exact: true }).fill('2');
+  await setup.getByRole('button', { name: /All at once/i }).click();
+  await setup.getByRole('button', { name: 'Start assessment', exact: true }).click();
+  const batch = assessmentWorkspace.locator('[data-quantora-study-assessment-running="all_at_once"]');
+  await visible(batch, 'All-at-once Assessment did not render the reserved reviewed questions.');
+  const batchQuestions = batch.locator('.study-assessment-question');
+  if (await batchQuestions.count() !== 2) throw new Error(`All-at-once Assessment reserved ${await batchQuestions.count()} questions instead of 2.`);
+  await batchQuestions.nth(0).getByRole('button', { name: /Velocity/i }).click();
+  await batchQuestions.nth(1).getByRole('button', { name: /Acceleration/i }).click();
+  await batch.getByRole('button', { name: 'Submit all answers', exact: true }).click();
+  let summary = assessmentWorkspace.locator('[data-quantora-study-assessment-summary="true"]');
+  await visible(summary, 'All-at-once Assessment did not resolve to a session summary.');
+  await visible(summary.getByText('2/2', { exact: true }), 'All-at-once Assessment aggregate score is wrong.');
+  if (assessmentIssueCount !== 5) throw new Error(`All-at-once Assessment issued an unexpected number of attempts (${assessmentIssueCount}).`);
+
+  // Prove one-at-a-time independently from the compact Quick Check.
+  await summary.getByRole('button', { name: 'New assessment', exact: true }).click();
+  const setupAgain = assessmentWorkspace.locator('[data-quantora-study-assessment-setup="true"]');
+  await visible(setupAgain, 'New Assessment did not return to setup.');
+  await setupAgain.getByRole('spinbutton', { name: 'Custom question count', exact: true }).fill('1');
+  await setupAgain.getByRole('button', { name: /One at a time/i }).click();
+  await setupAgain.getByRole('button', { name: /At the end/i }).click();
+  await setupAgain.getByRole('button', { name: 'Start assessment', exact: true }).click();
+  const single = assessmentWorkspace.locator('[data-quantora-study-assessment-running="one_at_a_time"]');
+  await visible(single, 'One-at-a-time Assessment did not render a governed question.');
+  await single.getByRole('button', { name: 'Zero', exact: true }).click();
+  await visible(single.getByText('Answer recorded', { exact: true }), 'End-of-session feedback mode leaked the verdict or failed to record the answer.');
+  await single.getByRole('button', { name: 'View results', exact: true }).click();
+  summary = assessmentWorkspace.locator('[data-quantora-study-assessment-summary="true"]');
+  await visible(summary, 'One-at-a-time Assessment did not resolve to summary.');
+  await visible(summary.getByText('1/1', { exact: true }), 'One-at-a-time Assessment score is wrong.');
+  if (assessmentIssueCount !== 6) throw new Error(`One-at-a-time Assessment issued an unexpected number of attempts (${assessmentIssueCount}).`);
+
+  // History now has one coherent home inside Assessment, not Study AI.
+  await summary.getByRole('button', { name: 'Assessment history', exact: true }).click();
+  const history = assessmentWorkspace.locator('[data-quantora-study-assessment-history="true"]');
+  await visible(history, 'Assessment History did not open inside Assessment.');
+  await visible(history.getByRole('button', { name: 'Back to Assessment', exact: true }), 'Assessment History has the wrong parent navigation.');
+  await history.getByRole('button', { name: 'Back to Assessment', exact: true }).click();
+  await visible(summary, 'Assessment History did not return to the Assessment summary.');
+  await assessmentWorkspace.getByRole('button', { name: 'Close Assessment', exact: true }).click();
+  await hidden(assessmentWorkspace, 'Assessment workspace did not close.');
 
   await board.getByRole('button', { name: 'Close Study focus', exact: true }).click();
   const reopen = board.getByRole('button', { name: /Reopen Study focus/i }).first();
