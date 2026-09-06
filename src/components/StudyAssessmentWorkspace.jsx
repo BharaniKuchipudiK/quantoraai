@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowLeft,
   CheckCircle2,
   ClipboardCheck,
   History,
@@ -40,8 +39,14 @@ function ChoiceCard({ active, disabled = false, icon: Icon, title, detail, onCli
 function Setup({ topic, onStart, onHistory }) {
   const [countChoice, setCountChoice] = useState(5);
   const [customCount, setCustomCount] = useState('');
+  const [presentation, setPresentation] = useState('one_at_a_time');
   const [feedback, setFeedback] = useState('after_each');
   const questionCount = customCount ? clampCount(customCount) : countChoice;
+
+  const choosePresentation = (next) => {
+    setPresentation(next);
+    if (next === 'all_at_once') setFeedback('at_end');
+  };
 
   return (
     <div data-quantora-study-assessment-setup="true">
@@ -89,6 +94,7 @@ function Setup({ topic, onStart, onHistory }) {
           <label className="study-assessment-custom-count">
             <span>Custom</span>
             <input
+              aria-label="Custom question count"
               type="number"
               min="1"
               max="20"
@@ -106,19 +112,18 @@ function Setup({ topic, onStart, onHistory }) {
         <h3 id="assessment-presentation-title">How should questions appear?</h3>
         <div className="study-assessment-grid study-assessment-grid--two">
           <ChoiceCard
-            active
+            active={presentation === 'one_at_a_time'}
             icon={ClipboardCheck}
             title="One at a time"
             detail="Answer, then move to the next question"
-            onClick={() => {}}
+            onClick={() => choosePresentation('one_at_a_time')}
           />
           <ChoiceCard
-            disabled
-            active={false}
+            active={presentation === 'all_at_once'}
             icon={Rows3}
             title="All at once"
-            detail="Batch issuance is being wired before release"
-            onClick={() => {}}
+            detail="See every available reviewed question, then submit together"
+            onClick={() => choosePresentation('all_at_once')}
           />
         </div>
       </section>
@@ -127,10 +132,11 @@ function Setup({ topic, onStart, onHistory }) {
         <h3 id="assessment-feedback-title">When should feedback appear?</h3>
         <div className="study-assessment-grid study-assessment-grid--two">
           <ChoiceCard
+            disabled={presentation === 'all_at_once'}
             active={feedback === 'after_each'}
             icon={CheckCircle2}
             title="After each question"
-            detail="See the verdict and explanation immediately"
+            detail={presentation === 'all_at_once' ? 'All-at-once sessions are assessed after submit' : 'See the verdict and explanation immediately'}
             onClick={() => setFeedback('after_each')}
           />
           <ChoiceCard
@@ -146,12 +152,12 @@ function Setup({ topic, onStart, onHistory }) {
       <div className="study-assessment-workspace__footer">
         <div>
           <strong>{questionCount} question{questionCount === 1 ? '' : 's'}</strong>
-          <span> · Verified MCQ · One at a time</span>
+          <span> · Verified MCQ · {presentation === 'all_at_once' ? 'All at once' : 'One at a time'}</span>
         </div>
         <button
           type="button"
           className="study-h1-action study-h1-action--primary"
-          onClick={() => onStart({ questionCount, presentation: 'one_at_a_time', feedback })}
+          onClick={() => onStart({ questionCount, presentation, feedback })}
         >
           Start assessment
         </button>
@@ -177,7 +183,7 @@ function Running({ assessment, session, onAnswer, onNext }) {
   }
 
   return (
-    <div data-quantora-study-assessment-running="true">
+    <div data-quantora-study-assessment-running="one_at_a_time">
       <div className="study-assessment-progress">
         <span>Question {currentNumber} of {session.targetCount}</span>
         <span>{session.completed} answered</span>
@@ -222,6 +228,55 @@ function Running({ assessment, session, onAnswer, onNext }) {
   );
 }
 
+function BatchRunning({ session, onSubmit }) {
+  const [answers, setAnswers] = useState({});
+  const items = session.batchItems || [];
+  const answered = Object.keys(answers).filter((attemptId) => answers[attemptId]).length;
+  const complete = items.length > 0 && answered === items.length;
+
+  return (
+    <div data-quantora-study-assessment-running="all_at_once">
+      <div className="study-assessment-progress">
+        <span>{items.length} reviewed question{items.length === 1 ? '' : 's'}</span>
+        <span>{answered} answered</span>
+      </div>
+      <div className="study-assessment-batch">
+        {items.map((entry, index) => (
+          <section className="study-assessment-question" key={entry.attemptId} aria-labelledby={`assessment-batch-q-${index}`}>
+            <span className="study-assessment-workspace__eyebrow">Question {index + 1}</span>
+            <h3 id={`assessment-batch-q-${index}`}>{entry.item.prompt}</h3>
+            <div className="study-assessment-options">
+              {(entry.item.options || []).map((option) => (
+                <button
+                  type="button"
+                  key={option.id}
+                  disabled={session.submitting}
+                  aria-pressed={answers[entry.attemptId] === option.id}
+                  onClick={() => setAnswers((current) => ({ ...current, [entry.attemptId]: option.id }))}
+                >
+                  <span>{option.id.toUpperCase()}</span>
+                  {option.text}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      <div className="study-assessment-workspace__footer">
+        <span>Feedback appears after all answers are submitted.</span>
+        <button
+          type="button"
+          className="study-h1-action study-h1-action--primary"
+          disabled={!complete || session.submitting}
+          onClick={() => onSubmit(answers)}
+        >
+          {session.submitting ? 'Assessing…' : 'Submit all answers'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Summary({ session, onRestart, onHistory }) {
   const percent = session.completed > 0 ? Math.round((session.correctCount / session.completed) * 100) : 0;
   return (
@@ -230,7 +285,8 @@ function Summary({ session, onRestart, onHistory }) {
         <span className="study-assessment-workspace__eyebrow">Assessment complete</span>
         <strong>{session.correctCount}/{session.completed}</strong>
         <span>{percent}% correct</span>
-        {session.completed < session.targetCount ? (
+        {session.error ? <p role="status">{session.error}</p> : null}
+        {!session.error && session.completed < session.targetCount ? (
           <p>The reviewed bank had {session.completed} fresh question{session.completed === 1 ? '' : 's'} available for this topic.</p>
         ) : null}
       </div>
@@ -268,6 +324,7 @@ export default function StudyAssessmentWorkspace({
   onStart,
   onAnswer,
   onNext,
+  onSubmitBatch,
   onReset,
 }) {
   const [view, setView] = useState('assessment');
@@ -290,6 +347,8 @@ export default function StudyAssessmentWorkspace({
           <StudyAssessmentHistory onClose={() => setView('assessment')} backLabel="Back to Assessment" />
         ) : session.phase === 'setup' ? (
           <Setup topic={label} onStart={onStart} onHistory={() => setView('history')} />
+        ) : session.phase === 'batch' ? (
+          <BatchRunning session={session} onSubmit={onSubmitBatch} />
         ) : session.phase === 'running' || session.phase === 'loading' ? (
           <Running assessment={assessment} session={session} onAnswer={onAnswer} onNext={onNext} />
         ) : (
