@@ -214,18 +214,6 @@ try {
       && play.disabled === false;
   });
   await visible(validLink, 'Study did not render the verified video after validation.');
-  /*
-   * One composer, and it names the answer.
-   *
-   * The lesson used to render its own input. It appeared on a phrase match —
-   * "write your attempt", which the prompt TELLS the tutor to end with — so it
-   * showed under lessons that had asked nothing, inviting an answer to a
-   * question that did not exist. It was also a second composer calling the same
-   * send path with none of the real one's capabilities.
-   *
-   * The contract now: exactly one text input in the studio, and when a question
-   * WAS asked, that input says so.
-   */
   if (await page.locator('[data-quantora-study-answer-affordance]').count()) {
     throw new Error('The lesson rendered a second composer; the studio must have exactly one input.');
   }
@@ -304,17 +292,22 @@ try {
   }
 
   const studyHub = page.locator('[data-quantora-study-hub-launcher="true"]').first();
-  await visible(studyHub, 'Study progressive-disclosure Hub launcher is missing.');
-  const openStudyHub = studyHub.getByRole('button', { name: 'Open Study tools', exact: true });
-  await visible(openStudyHub, 'Study Hub has no accessible open action.');
+  await visible(studyHub, 'Study progressive-disclosure AI launcher is missing.');
+  const openStudyHub = studyHub.getByRole('button', { name: 'Open Study AI', exact: true });
+  await visible(openStudyHub, 'Study AI has no accessible open action.');
   await openStudyHub.click();
   const studyHubPanel = page.locator('#quantora-study-hub-panel').first();
-  await visible(studyHubPanel, 'Study Hub did not open.');
-  for (const actionName of ['Explain differently', 'Show visually', 'Flashcards', 'Real-world example', 'Make concise notes', 'Where next?']) {
-    await visible(studyHubPanel.getByRole('button', { name: actionName, exact: true }), `Study Hub is missing ${actionName}.`);
+  await visible(studyHubPanel, 'Study AI did not open.');
+  for (const actionName of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?', 'Assessment history']) {
+    await visible(studyHubPanel.getByRole('button', { name: actionName, exact: true }), `Study AI is missing ${actionName}.`);
+  }
+  for (const duplicateName of ['Flashcards', 'Notebook', 'Make concise notes']) {
+    if (await studyHubPanel.getByRole('button', { name: duplicateName, exact: true }).count()) {
+      throw new Error(`Study AI still duplicates the + menu action ${duplicateName}.`);
+    }
   }
   await page.keyboard.press('Escape');
-  await hidden(studyHubPanel, 'Escape did not close the Study Hub.');
+  await hidden(studyHubPanel, 'Escape did not close the Study AI.');
 
   const explainRequestPromise = page.waitForRequest((candidate) => {
     if (new URL(candidate.url()).pathname !== '/api/chat') return false;
@@ -336,7 +329,12 @@ try {
   }
 
   await page.locator('[data-quantora-plus-trigger="true"]').click();
-  await page.getByRole('button', { name: /Flashcards/i }).click();
+  const studyPlus = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
+  await visible(studyPlus, 'Study + menu did not open.');
+  for (const actionName of ['New topic', 'Assessment', 'Flashcards', 'Notebook']) {
+    await visible(studyPlus.getByRole('button', { name: actionName, exact: true }), `Study + menu is missing ${actionName}.`);
+  }
+  await studyPlus.getByRole('button', { name: 'Flashcards', exact: true }).click();
   const deck = page.locator('[data-quantora-study-flashcards="true"]').last();
   await visible(deck, 'Study Flashcards rendered as prose or a table instead of an interactive deck.');
   await visible(deck.locator('[data-quantora-study-flashcard="front"]'), 'Flashcard front is not the initial recall state.');
@@ -364,9 +362,12 @@ try {
   await textarea.fill('Teach me motion graphs');
   await textarea.press('Enter');
   await visible(board.getByText('motion graphs', { exact: false }).first(), 'Tutor focus did not switch to the mapped motion-graphs concept.');
-  await board.getByRole('button', { name: 'Test me on this', exact: true }).click();
+  await page.locator('[data-quantora-plus-trigger="true"]').click();
+  const mappedStudyPlus = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
+  await visible(mappedStudyPlus, 'Study + menu did not reopen for Assessment.');
+  await mappedStudyPlus.getByRole('button', { name: 'Assessment', exact: true }).click();
   const verifiedCheck = board.locator('[data-quantora-study-verified-check="true"]').first();
-  await visible(verifiedCheck, 'Mapped Study concept did not receive a server-graded check.');
+  await visible(verifiedCheck, 'Study + Assessment did not open the existing server-graded check.');
   await visible(verifiedCheck.getByText('On a displacement-time graph, what does the slope at a point represent?', { exact: true }), 'Server-issued Study prompt was not rendered.');
   await verifiedCheck.getByRole('button', { name: 'Acceleration', exact: true }).click();
   await visible(board.locator('[data-quantora-study-verified-result="incorrect"]').first(), 'Incorrect answer did not resolve into remediation.');
