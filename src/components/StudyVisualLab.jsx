@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from 'react';
 
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReduced(media.matches);
+    sync();
+    media.addEventListener?.('change', sync);
+    return () => media.removeEventListener?.('change', sync);
+  }, []);
+  return reduced;
+}
+
 function Arrow({ x1, y1, x2, y2, color, label, isLight }) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const head = 9;
@@ -59,6 +72,8 @@ function NewtonLab({ isLight }) {
   const [x, setX] = useState(40);
   const [mass, setMass] = useState(5);
   const [force, setForce] = useState(20);
+  const [thirdPositions, setThirdPositions] = useState({ a: 146, b: 214 });
+  const reducedMotion = usePrefersReducedMotion();
   const a = (force / mass).toFixed(1);
   const ink = isLight ? '#9a3412' : '#fdba74';
 
@@ -78,6 +93,10 @@ function NewtonLab({ isLight }) {
     return () => cancelAnimationFrame(frame);
   }, [law, rough]);
 
+  useEffect(() => {
+    if (law === 3) setThirdPositions({ a: 146, b: 214 });
+  }, [law]);
+
   const push = () => {
     setX(40);
     let v = 4.2;
@@ -93,6 +112,28 @@ function NewtonLab({ isLight }) {
     requestAnimationFrame(step);
   };
 
+  const playThirdLaw = () => {
+    const start = { a: 146, b: 214 };
+    const end = { a: 78, b: 282 };
+    setThirdPositions(start);
+    if (reducedMotion) {
+      setThirdPositions(end);
+      return;
+    }
+    const startedAt = performance.now();
+    const duration = 900;
+    const step = (now) => {
+      const t = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setThirdPositions({
+        a: start.a + (end.a - start.a) * eased,
+        b: start.b + (end.b - start.b) * eased,
+      });
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
   return (
     <div data-quantora-study-lab="newton">
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -102,7 +143,7 @@ function NewtonLab({ isLight }) {
       </div>
       {law === 1 ? (
         <>
-          <svg viewBox="0 0 360 140" width="100%" height="140">
+          <svg viewBox="0 0 360 140" width="100%" height="140" aria-label="Newton first law motion lab">
             <rect width="360" height="140" rx="18" fill={isLight ? '#fff7ed' : '#1c1917'} />
             <rect x="20" y="100" width="320" height="12" rx="4" fill={isLight ? '#c2410c' : '#ea580c'} />
             <ellipse cx={x} cy="96" rx="22" ry="10" fill={ink} />
@@ -130,9 +171,24 @@ function NewtonLab({ isLight }) {
         </>
       ) : null}
       {law === 3 ? (
-        <p style={{ margin: 0, fontSize: '0.95rem' }}>
-          You push the wall. The wall pushes you back with the same size force. Same pair, opposite ways — that is why a rocket can leave the pad.
-        </p>
+        <div data-quantora-study-animation="newton-third-law">
+          <svg viewBox="0 0 360 180" width="100%" height="180" role="img" aria-label="Two skaters push apart with equal and opposite interaction forces">
+            <rect width="360" height="180" rx="18" fill={isLight ? '#fff7ed' : '#1c1917'} />
+            <line x1="20" y1="135" x2="340" y2="135" stroke={isLight ? '#c2410c' : '#ea580c'} strokeWidth="4" />
+            <circle cx={thirdPositions.a} cy="110" r="22" fill="#38bdf8" />
+            <circle cx={thirdPositions.b} cy="110" r="22" fill="#f97316" />
+            <text x={thirdPositions.a} y="116" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="700">A</text>
+            <text x={thirdPositions.b} y="116" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="700">B</text>
+            <Arrow x1="178" y1="68" x2="118" y2="68" color="#38bdf8" label="100 N on A" isLight={isLight} />
+            <Arrow x1="182" y1="42" x2="242" y2="42" color="#f97316" label="100 N on B" isLight={isLight} />
+          </svg>
+          <p style={{ margin: '8px 0', fontSize: '0.92rem' }}>
+            The forces are equal in size and opposite in direction, but they act on different skaters at the same instant. Their different masses can still give them different accelerations.
+          </p>
+          <button type="button" onClick={playThirdLaw} style={chip(isLight, true)}>
+            {reducedMotion ? 'Show final positions' : 'Play push-apart animation'}
+          </button>
+        </div>
       ) : null}
     </div>
   );
