@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { rememberOfficeToolSelection } from '../lib/office-intent.js';
+import { requestStudySurface } from '../lib/study-surface-navigation.js';
 import { studioToolsMenuGroups } from '../lib/studio-tools-menu.js';
 
 const ICONS = {
@@ -83,7 +84,13 @@ export default function StudioToolsMenu({
     ? '0 24px 56px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)'
     : '0 28px 64px rgba(0,0,0,0.72), 0 0 0 1px rgba(255,255,255,0.06)';
 
-  const selectTool = (toolId) => {
+  const selectTool = (selection) => {
+    const item = selection && typeof selection === 'object' ? selection : null;
+    const toolId = item?.id || String(selection || '');
+    if (compactStudy && item?.surface && requestStudySurface(item.surface)) {
+      onClose?.();
+      return;
+    }
     rememberOfficeToolSelection(toolId);
     onSelectTool(toolId);
     if (compactStudy) onClose?.();
@@ -94,7 +101,7 @@ export default function StudioToolsMenu({
     return (
       <div
         data-quantora-plus-item={item.id}
-        onClick={() => selectTool(item.id)}
+        onClick={() => selectTool(item)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -145,23 +152,24 @@ export default function StudioToolsMenu({
 
   const StudyAction = ({ item }) => {
     const Icon = ICONS[item.icon] || Sparkles;
-    const isNew = item.id === 'new-topic';
+    const isWide = item.id === 'new-topic' || item.id === 'study-notebook';
     return (
       <button
         type="button"
         data-quantora-plus-item={item.id}
+        data-quantora-study-surface={item.surface || undefined}
         title={item.subtitle}
-        onClick={() => selectTool(item.id)}
+        onClick={() => selectTool(item)}
         style={{
-          gridColumn: isNew ? '1 / -1' : 'auto',
+          gridColumn: isWide ? '1 / -1' : 'auto',
           display: 'flex',
           alignItems: 'center',
           gap: '9px',
-          minHeight: isNew ? '42px' : '54px',
+          minHeight: isWide ? '42px' : '54px',
           padding: '9px 10px',
           borderRadius: '12px',
           border: isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(148,163,184,0.18)',
-          background: isNew
+          background: isWide
             ? (isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)')
             : (isLight ? '#fff' : 'rgba(255,255,255,0.035)'),
           color: textColor,
