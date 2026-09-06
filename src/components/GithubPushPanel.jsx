@@ -143,7 +143,10 @@ export default function GithubPushPanel({
       }
 
       setStatus(`${pushOutcomeMessage(pushed.data)} As ${pushed.data.actedAs}.`);
-      setCreatedUrl(pushed.data.htmlUrl || createdUrl);
+      // The push reply's htmlUrl is the branch on GitHub; without one, keep the
+      // repository link the create step set. `createdUrl` from this closure is
+      // the value from before the click, so it must be read fresh.
+      setCreatedUrl((current) => pushed.data.htmlUrl || current);
     } catch (caught) {
       setError(caught?.message || 'The push did not complete.');
     } finally {

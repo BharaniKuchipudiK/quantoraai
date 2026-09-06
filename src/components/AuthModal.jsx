@@ -147,7 +147,7 @@ export default function AuthModal({
         </p>
 
         {externalError && !error && <div className="auth-modal__alert is-error">{externalError}</div>}
-        {error && <div className="auth-modal__alert is-error">{error}</div>}
+        {error && <div className="auth-modal__alert is-error" data-quantora-auth-error="true">{error}</div>}
         {notice && <div className="auth-modal__alert is-notice">{notice}</div>}
 
         {mode !== MODES.RESET_REQUEST && mode !== MODES.RESET_CONFIRM && !isolatedDesk && oauthReady && (googleEnabled || githubEnabled) && (
@@ -204,11 +204,11 @@ export default function AuthModal({
           <form className="auth-modal__form" onSubmit={handleEmailAuth}>
             <label>
               <span>Email</span>
-              <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input type="email" autoComplete="email" data-quantora-auth-email="true" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </label>
             <label>
               <span>Password</span>
-              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <input type="password" autoComplete="current-password" data-quantora-auth-password="true" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
             <button type="button" className="auth-modal__link" onClick={() => {
               clearMessages();
@@ -220,7 +220,7 @@ export default function AuthModal({
             }}>
               Forgot password?
             </button>
-            <button type="submit" className="auth-modal__submit" disabled={busy}>
+            <button type="submit" className="auth-modal__submit" data-quantora-auth-submit="login" disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
             <p className="auth-modal__switch">

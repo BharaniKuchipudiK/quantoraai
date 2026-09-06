@@ -320,6 +320,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
             <div ref={profileRef} style={{ position: 'relative' }}>
               <button
                 type="button"
+                data-quantora-profile-menu="true"
                 aria-haspopup="dialog"
                 aria-expanded={showProfileMenu}
                 aria-controls="quantora-profile-menu"
@@ -635,6 +636,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
                   {/* Sign Out */}
                   <div
+                    data-quantora-sign-out="true"
                     onClick={() => setConfirmModalType('logout')}
                     style={{
                       padding: '10px',
@@ -761,6 +763,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
 
             <input
               type="text"
+              data-quantora-confirm-input="true"
               value={confirmInputValue}
               onChange={(e) => setConfirmInputValue(e.target.value)}
               placeholder={`Type "${requiredConfirmationText}" to confirm`}
@@ -801,6 +804,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
               </button>
 
               <button
+                data-quantora-confirm-action="true"
                 onClick={handleConfirmAction}
                 disabled={confirmInputValue.trim().toUpperCase() !== requiredConfirmationText || dataActionBusy}
                 style={{
