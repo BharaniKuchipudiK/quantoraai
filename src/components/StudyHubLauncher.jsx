@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BookOpenText,
   BrainCircuit,
-  CreditCard,
   Eye,
   History,
   Map,
@@ -12,31 +10,16 @@ import {
 import {
   studyActionVisibleText,
   studyExplainDifferentlyAsk,
-  studyFlashcardAsk,
-  studyNotesAsk,
   studyRealWorldAsk,
   studyVisualExplainAsk,
   studyWhereNextAsk,
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
+import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
 import StudyNotebook from './StudyNotebook.jsx';
 
 const HUB_ACTIONS = Object.freeze([
-  {
-    id: 'notebook',
-    label: 'Notebook',
-    hint: 'Keep private notes organized by subject and topic.',
-    icon: BookOpenText,
-    surface: 'notebook',
-  },
-  {
-    id: 'history',
-    label: 'Assessment history',
-    hint: 'Review your verified checks from the last 30 days.',
-    icon: History,
-    surface: 'history',
-  },
   {
     id: 'different',
     label: 'Explain differently',
@@ -52,25 +35,11 @@ const HUB_ACTIONS = Object.freeze([
     ask: studyVisualExplainAsk,
   },
   {
-    id: 'flashcards',
-    label: 'Flashcards',
-    hint: 'Turn the current topic into focused recall cards.',
-    icon: CreditCard,
-    ask: studyFlashcardAsk,
-  },
-  {
     id: 'real-world',
     label: 'Real-world example',
     hint: 'Connect the idea to one concrete situation.',
     icon: BrainCircuit,
     ask: studyRealWorldAsk,
-  },
-  {
-    id: 'notes',
-    label: 'Make concise notes',
-    hint: 'Summarize only what this conversation has established.',
-    icon: BookOpenText,
-    ask: studyNotesAsk,
   },
   {
     id: 'where-next',
@@ -79,14 +48,22 @@ const HUB_ACTIONS = Object.freeze([
     icon: Map,
     ask: studyWhereNextAsk,
   },
+  {
+    id: 'history',
+    label: 'Assessment history',
+    hint: 'Review your verified checks from the last 30 days.',
+    icon: History,
+    surface: 'history',
+  },
 ]);
 
 /**
- * Progressive-disclosure launcher for secondary Study capabilities.
+ * Progressive-disclosure launcher for tutor interventions.
  *
- * Durable learner surfaces live beside conversational tools without becoming
- * learner truth themselves. Assessment History reads authoritative evidence;
- * Notebook stores learner-owned study material that never changes mastery.
+ * Assessment History remains here only until the Assessment Sessions surface
+ * owns it. Notebook is opened from the composer's + menu through the shared
+ * Study surface request contract, so the same durable Notebook is not listed
+ * twice. Neither surface becomes learner truth itself.
  */
 export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend }) {
   const [open, setOpen] = useState(false);
@@ -110,6 +87,16 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
     setOpen(false);
     setSurface('tools');
     return true;
+  }, []);
+
+  useEffect(() => {
+    const handleSurfaceRequest = (event) => {
+      if (event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
+      setSurface('notebook');
+      setOpen(true);
+    };
+    window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
+    return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
   }, []);
 
   useEffect(() => {
@@ -184,13 +171,13 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
             <>
               <div className="study-h1-hub__header">
                 <div style={{ minWidth: 0 }}>
-                  <div id="quantora-study-hub-title" className="study-h1-hub__title">Study tools</div>
+                  <div id="quantora-study-hub-title" className="study-h1-hub__title">Study AI</div>
                   <div className="study-h1-hub__topic">{label}</div>
                 </div>
                 <button
                   type="button"
                   className="study-h1-icon-button"
-                  aria-label="Close Study tools"
+                  aria-label="Close Study AI"
                   onClick={() => void closeHub()}
                 >
                   <X size={16} />
@@ -226,7 +213,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       <button
         type="button"
         className="study-h1-hub__launcher"
-        aria-label={open ? 'Close Study tools' : 'Open Study tools'}
+        aria-label={open ? 'Close Study AI' : 'Open Study AI'}
         aria-expanded={open}
         aria-controls="quantora-study-hub-panel"
         onClick={() => {
