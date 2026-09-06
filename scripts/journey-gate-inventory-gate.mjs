@@ -52,7 +52,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOC = 'docs/engineering/JOURNEY_GATE_INVENTORY.md';
-const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/deployed-golden-transactions.yml'];
+const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/deployed-golden-transactions.yml', '.github/workflows/provider-health.yml'];
 const GOLDEN = 'scripts/deployed-golden-transactions.mjs';
 const NODE_RUNNER = 'scripts/run-node-tests.mjs';
 const TS_RUNNER = 'scripts/run-ts-tests.mjs';
