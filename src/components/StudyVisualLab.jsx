@@ -66,8 +66,8 @@ function FbdLab({ isLight }) {
   );
 }
 
-function NewtonLab({ isLight }) {
-  const [law, setLaw] = useState(1);
+function NewtonLab({ isLight, initialLaw = 1 }) {
+  const [law, setLaw] = useState(initialLaw);
   const [rough, setRough] = useState(false);
   const [x, setX] = useState(40);
   const [mass, setMass] = useState(5);
@@ -208,6 +208,7 @@ function chip(isLight, on) {
 }
 
 export default function StudyVisualLab({ kind = 'newton', isLight = false }) {
+  const isThirdLaw = kind === 'newton-third-law';
   return (
     <section
       data-quantora-study-workspace="true"
@@ -222,9 +223,9 @@ export default function StudyVisualLab({ kind = 'newton', isLight = false }) {
       }}
     >
       <div style={{ fontFamily: "var(--font-story), serif", fontWeight: 600, marginBottom: '10px', fontSize: '1.05rem' }}>
-        {kind === 'fbd' ? 'Free-body diagram — on this page' : 'Newton lab — on this page'}
+        {kind === 'fbd' ? 'Free-body diagram — on this page' : isThirdLaw ? 'Newton third-law animation — on this page' : 'Newton lab — on this page'}
       </div>
-      {kind === 'fbd' ? <FbdLab isLight={isLight} /> : <NewtonLab isLight={isLight} />}
+      {kind === 'fbd' ? <FbdLab isLight={isLight} /> : <NewtonLab isLight={isLight} initialLaw={isThirdLaw ? 3 : 1} />}
     </section>
   );
 }
