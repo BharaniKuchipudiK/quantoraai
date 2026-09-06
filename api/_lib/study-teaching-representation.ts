@@ -54,7 +54,7 @@ export type StudyTeachingRepresentationPlan = {
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
 type StudyRepresentationCapability = NonNullable<ReturnType<typeof resolveStudyRepresentationCapability>>;
 
-const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive animation)\b/i;
+const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive(?:\s+(?:animation|demonstration|simulation|lab))?)\b/i;
 const VISUAL_REQUEST = /\b(?:image|images|picture|pictures|diagram|diagrams|visual|visually|show me|draw|sketch)\b/i;
 const GRAPH_REQUEST = /\b(?:graph|plot|chart)\b/i;
 const WORKED_EXAMPLE_REQUEST = /\b(?:worked example|example|show me how|step[- ]by[- ]step)\b/i;
