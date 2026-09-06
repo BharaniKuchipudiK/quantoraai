@@ -315,15 +315,19 @@ html[data-quantora-domain="education"][data-theme="dark"],
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  border: 1px solid var(--study-h1-border);
-  background: var(--study-h1-strong);
-  color: var(--study-h1-strong-text);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  background: linear-gradient(135deg, #ff7a45 0%, #d946ef 38%, #6366f1 68%, #22d3ee 100%);
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: var(--study-h1-shadow);
-  transition: transform 140ms ease;
+  box-shadow: 0 12px 30px rgba(79, 70, 229, 0.28), var(--study-h1-shadow);
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.study-h1-hub__launcher:hover {
+  filter: saturate(1.08) brightness(1.04);
 }
 
 @media (max-width: 640px) {
