@@ -58,12 +58,17 @@ export default function StudyTutorShell({
   useEffect(() => {
     const handleSurfaceRequest = (event) => {
       if (event?.detail?.surface !== STUDY_SURFACE.ASSESSMENT) return;
+      event.detail.handled = true;
       setDismissed(false);
-      void requestCheck({ explicitRetry: completedCheck });
+      if (completedCheck && assessment?.item && assessment?.result) {
+        setActivity('check');
+        return;
+      }
+      void requestCheck({ explicitRetry: false });
     };
     window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
     return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-  }, [completedCheck, requestCheck]);
+  }, [assessment?.item, assessment?.result, completedCheck, requestCheck]);
 
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult
