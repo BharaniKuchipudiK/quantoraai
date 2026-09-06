@@ -39,6 +39,17 @@ test('conversation gap review is not silently turned into a subject diagram', ()
   assert.equal(context.allowAutomaticSubjectVisual, false);
 });
 
+test('subject field strength remains concept teaching, not a learner progress review', () => {
+  const context = buildStudyActiveLearningContext({
+    intent: 'explain',
+    message: 'Explain electric field strength visually',
+    contextText: 'electric field strength',
+  });
+  assert.equal(context.mode, 'concept_teaching');
+  assert.equal(context.representationCapability?.rendererKind, 'field-lines');
+  assert.equal(context.allowAutomaticSubjectVisual, true);
+});
+
 test('verified learner concept is the canonical semantic source', () => {
   const context = buildStudyActiveLearningContext({
     intent: 'explain',
