@@ -25,6 +25,7 @@ const row = (id, gates = {}, extra = {}) => ({
   name: id,
   entry: 'src/x.js',
   note: '',
+  parked: false,
   ...extra,
   gates: { deterministic: [], browser: [], deployed: [], ...gates },
 });
@@ -49,6 +50,36 @@ test('the summary counts user journeys only and names the unproven ones', () => 
   );
   assert.deepEqual(summary.unguarded, ['nothing']);
   assert.deepEqual(summary.helpersOnly, ['helpers']);
+});
+
+test('a parked journey is counted apart: not in the total, not among the unproven, and it must say why', () => {
+  const summary = summarizeJourneys([
+    row('proven', { browser: ['scripts/x-gate.mjs'] }),
+    row('nothing'),
+    row('parked-one', {}, { parked: true, note: 'Parked: behind VITE_QUANTORA_EXPLORATORY_SURFACES=on.' }),
+    row('parked-two', { deterministic: ['src/lib/x.test.js'] }, { parked: true, note: 'Parked too.' }),
+  ]);
+  assert.deepEqual(
+    { total: summary.total, proven: summary.proven, nothing: summary.nothing, helpers: summary.helpers, parked: summary.parked, pct: summary.provenPercent },
+    { total: 2, proven: 1, nothing: 1, helpers: 0, parked: 2, pct: 50 },
+  );
+  assert.deepEqual(summary.parkedIds, ['parked-one', 'parked-two']);
+  assert.deepEqual(summary.unguarded, ['nothing']);
+  const problems = validateInventoryShape([
+    row('silent', {}, { parked: true }),
+    row('wrong', {}, { parked: 'yes' }),
+    row('platform', { deterministic: ['scripts/y-gate.mjs'] }, { kind: 'platform', parked: true, note: 'no' }),
+  ]);
+  assert.ok(problems.some((problem) => /"silent" is parked without a note/.test(problem)), problems.join('\n'));
+  assert.ok(problems.some((problem) => /"wrong" has parked "yes"/.test(problem)), problems.join('\n'));
+  assert.ok(problems.some((problem) => /"platform" is a platform invariant and cannot be parked/.test(problem)), problems.join('\n'));
+  const doc = renderInventoryMarkdown([
+    row('proven', { browser: ['scripts/x-gate.mjs'] }),
+    row('parked-one', {}, { parked: true, note: 'Parked: behind a flag.' }),
+  ], { proven: 1, deployed: 0 });
+  assert.match(doc, /### Parked \(1\)/);
+  assert.match(doc, /\| `parked-one` \| parked-one \| no \| — \| — \| — \| parked \|/);
+  assert.match(doc, /1 more are parked/);
 });
 
 test('a drop below the floor and a stale floor both fail, so the floor is the count', () => {

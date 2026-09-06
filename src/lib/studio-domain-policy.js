@@ -1,3 +1,5 @@
+import { exploratorySurfacesEnabled } from './platform-surfaces.js';
+
 export const STUDIO_DOMAIN = Object.freeze({
   TRAVEL: 'travel',
   FINANCE: 'finance',
@@ -13,7 +15,8 @@ const BASE = Object.freeze({
   placeholder: 'Ask Quantora anything, or describe what you want to build…',
   showModelControls: true,
   showArena: true,
-  showGenericCanvasNavigation: true,
+  // The Dream-to-Action canvas is a parked surface (src/lib/platform-surfaces.js).
+  showGenericCanvasNavigation: exploratorySurfacesEnabled(),
   autoOpenCodeWorkspace: true,
   explicitCodePreview: true,
   mediaCanvas: true,
