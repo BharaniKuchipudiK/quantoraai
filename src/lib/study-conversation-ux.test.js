@@ -136,21 +136,30 @@ test('Study keeps three permanent lesson moves while plus and AI have distinct j
   assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
 });
 
-test('Study plus surfaces open existing governed features and cannot become dead controls before context exists', () => {
+test('Study plus surfaces are acknowledged by mounted consumers and generic Assessment never implies retry', () => {
   const menu = read('src/components/StudioToolsMenu.jsx');
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const navigation = read('src/lib/study-surface-navigation.js');
 
-  assert.match(menu, /requestStudySurface\(item\.surface\)/);
   assert.match(menu, /item\?\.requiresTopic && !hasStudyTopic/);
   assert.match(menu, /disabled=\{disabled\}/);
   assert.match(menu, /Start a Study topic first\./);
+  assert.match(menu, /if \(compactStudy && item\?\.surface\) \{[\s\S]*if \(requestStudySurface\(item\.surface\)\) onClose\?\.\(\);[\s\S]*return;/);
+
   assert.match(navigation, /ASSESSMENT:\s*'assessment'/);
   assert.match(navigation, /NOTEBOOK:\s*'notebook'/);
+  assert.match(navigation, /handled:\s*false/);
+  assert.match(navigation, /return detail\.handled === true/);
+
   assert.match(shell, /STUDY_SURFACE\.ASSESSMENT/);
-  assert.match(shell, /requestCheck\(\{ explicitRetry: completedCheck \}\)/);
+  assert.match(shell, /event\.detail\.handled = true/);
+  assert.match(shell, /completedCheck && assessment\?\.item && assessment\?\.result[\s\S]*setActivity\('check'\)/);
+  assert.match(shell, /requestCheck\(\{ explicitRetry: false \}\)/);
+  assert.match(shell, /onClick=\{\(\) => requestCheck\(\{ explicitRetry: completedCheck \}\)\}/);
+
   assert.match(hub, /STUDY_SURFACE\.NOTEBOOK/);
+  assert.match(hub, /event\.detail\.handled = true/);
   assert.match(hub, /setSurface\('notebook'\)/);
 });
 
