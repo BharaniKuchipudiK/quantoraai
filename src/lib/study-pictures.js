@@ -244,57 +244,6 @@ export function decorateStudyMessage(text = '', topic = '') {
   return rewriteStudyPictureTags(String(text || ''), topic);
 }
 
-const TEACHING_CAPTIONS = Object.freeze({
-  'physics-motion': 'Free-body diagram of a moving block: normal force up, weight down, applied force forward, and friction backward',
-  'field-lines': 'Electric field lines point from positive to negative and their density shows field strength',
-  'electricity-circuit': 'Battery circuit: the cell drives conventional current through a resistor and back to the cell',
-  'algebra-balance': 'An equation balance showing the same operation applied to both sides',
-  'geometry-construction': 'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared',
-  'biology-cell': 'A labelled cell showing the membrane, cytoplasm, and nucleus',
-  'chemistry-bond': 'Two atoms sharing electrons in a covalent bond',
-  graph: 'A labelled graph showing axes, slope, and change between two points',
-});
-
-export function ensureStudyTeachingVisual(text = '', topic = '') {
-  const source = String(text || '');
-  TOKEN_RE.lastIndex = 0;
-  if (TOKEN_RE.test(source)) {
-    TOKEN_RE.lastIndex = 0;
-    return source;
-  }
-  TOKEN_RE.lastIndex = 0;
-  if (source.trim().length < 120) return source;
-  const hay = `${topic}\n${source}`;
-  const kind = studyVisualKind(hay);
-  let caption = TEACHING_CAPTIONS[kind];
-  if (kind === 'physics-motion' && /\b(?:inertia|brak(?:e|es|ing)|seatbelt)\b/i.test(hay)) {
-    caption = 'Passenger motion when a vehicle brakes: velocity continues forward while the braking force acts backward';
-  }
-  if (kind === 'electricity-circuit' && /\b(?:emf|electromotive force|terminal (?:potential difference|voltage)|internal resistance|lost volts?)\b/i.test(hay)) {
-    caption = 'EMF and terminal potential difference: energy per coulomb supplied by the battery splits into useful energy per coulomb in the external circuit and energy per coulomb lost in internal resistance';
-  }
-  if (kind === 'field-lines' && /\b(?:magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i.test(hay)) {
-    caption = 'Right-hand grip: thumb along current I, fingers curl in the magnetic field B around the wire';
-  }
-  if (kind === 'algebra-balance' && /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(hay)) {
-    caption = 'Equation transformation: subtract 8 from both sides of x + 8 = 15 to keep the balance and isolate x';
-  }
-  if (kind === 'geometry-construction') {
-    caption = 'Right triangle: legs a and b, hypotenuse c, so a squared plus b squared equals c squared';
-  }
-  if (kind === 'graph' && /\bquadrant\b|\bcoordinate plane\b/i.test(hay)) {
-    caption = 'Quadrant II on the coordinate plane: x is negative and y is positive, so cosine is negative and sine is positive';
-  } else if (kind === 'graph' && /\bunit circle\b|\btrigonometr|\b(?:sine|cosine|tangent)\b/i.test(hay)) {
-    caption = 'Unit circle: an angle measured from the positive x-axis has cosine as the x-coordinate and sine as the y-coordinate';
-  } else if (kind === 'graph' && /\b(?:displacement[- ]time|position[- ]time)\b/i.test(hay)) {
-    caption = 'Displacement-time graph: the slope at a point is velocity, change in displacement over change in time';
-  } else if (kind === 'graph' && /\bvelocity[- ]time\b/i.test(hay)) {
-    caption = 'Velocity-time graph: the slope at a point is acceleration, change in velocity over change in time';
-  }
-  if (!caption) return source;
-  return `<quantora-study-picture caption="${caption}" />\n\n${source}`;
-}
-
 export function studyPicturePromptHint(topic = '') {
   const label = String(topic || 'this idea').trim();
   return [
