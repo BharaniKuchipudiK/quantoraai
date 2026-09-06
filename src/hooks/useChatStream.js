@@ -701,7 +701,22 @@ export function useChatStream({
      */
     const deskPinned = activeDeskPinned(chatSessions, activeSessionId);
     const pinnedDeskName = deskPinned ? (studioDomain || 'coding') : null;
-    const deskHasFilesForPlan = Object.keys(vfs || {}).length > 0;
+    /*
+     * THE DESK HOLDS A BUILD when it holds files OR a single-file site.
+     *
+     * 2026-09-06, the deployed golden's second-turn transaction, second run:
+     * the site built from the documents was a single HTML artifact, so the
+     * desk had no VFS files, so "the desk owns a build" read false, so the
+     * planner's "chat" for "change the heading" stood, and the person got a
+     * paragraph saying the heading was changed while the site kept its old
+     * one. A follow-up on a desk that shows a site is that site's turn,
+     * whatever shape the site took and whatever a model says.
+     */
+    const deskHoldsBuild = Boolean(
+      (typeof canvasCode === 'string' && canvasCode.trim())
+      || (vfs && Object.keys(vfs).length > 0),
+    );
+    const deskHasFilesForPlan = deskHoldsBuild;
     const chosenOfficeKind = consumeOfficeToolSelection();
     const lanePlan = chosenOfficeKind ? null : await requestTurnPlan(turnPlanRequest({
       text,
@@ -722,7 +737,7 @@ export function useChatStream({
         m.id === userMsg.id ? { ...m, lanePlan: { lane: lanePlan.lane, officeKind: lanePlan.officeKind, source: lanePlan.source } } : m
       )));
     }
-    const lanePlanOverrides = turnPlanOverrides(lanePlan, { chosenOfficeKind, pinnedDesk: pinnedDeskName, currentDesk: studioDomain });
+    const lanePlanOverrides = turnPlanOverrides(lanePlan, { chosenOfficeKind, pinnedDesk: pinnedDeskName, currentDesk: studioDomain, buildOwned: deskHoldsBuild });
     const explicitOfficeKind = chosenOfficeKind
       || (lanePlan ? lanePlanOverrides.officeKind : detectOfficeIntent({ messages: [{ sender: 'user', text }] }));
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);
@@ -941,13 +956,14 @@ export function useChatStream({
     const buildSessionActive = isBuildSessionActive({
       priorUserMessages: messages.filter((m) => m.sender === 'user').map((m) => m.text),
       codingDeskOpen: Boolean(codingDeskOpen),
-      hasDeskFiles: Object.keys(vfs || {}).length > 0,
+      hasDeskFiles: deskHoldsBuild,
       isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
     });
+    // A plan may add the build lane; on a desk that holds a build it may not remove it (lanePlanOverrides).
     const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk,
-    }) || lanePlan?.lane === 'build';
+    }) || lanePlan?.lane === 'build' || lanePlanOverrides.isCodingRequest === true;
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
