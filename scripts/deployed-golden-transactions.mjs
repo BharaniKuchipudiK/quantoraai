@@ -7,7 +7,7 @@ import { reconcilePipeline } from './lib/business-tool-reconcile.mjs';
 import { engineRefusalStopsRun } from './lib/golden-engine-refusal.mjs';
 import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
-import { buildMinimalPdf } from './lib/minimal-pdf.mjs';
+import { buildMinimalPdf, bylawsFixtureText } from './lib/minimal-pdf.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -735,10 +735,7 @@ try {
   markActiveTransaction('document-grounded');
   await setGoldenTransaction('document-grounded');
   const REGISTRATION_NUMBER = `RKV-${String(Date.now()).slice(-6)}-GLD`;
-  const bylawsPdf = buildMinimalPdf(
-    `Ramakrishna Venuzia Owners Welfare Association. Registered society. Registration number ${REGISTRATION_NUMBER}. `
-    + 'Annual general meeting every March. Maintenance dues are payable quarterly.',
-  );
+  const bylawsPdf = buildMinimalPdf(bylawsFixtureText(REGISTRATION_NUMBER));
   const fileInput = page.locator('.app-shell--studio input[type="file"]').first();
   await fileInput.setInputFiles({ name: 'rkv-bylaws.pdf', mimeType: 'application/pdf', buffer: bylawsPdf });
   const chip = page.locator('[data-quantora-attachment-chip="rkv-bylaws.pdf"]').first();
@@ -805,7 +802,10 @@ try {
   if (!shown.includes(REGISTRATION_NUMBER)) {
     throw new Error(
       `The page rendered but its registration number is "${shown}", not the ${REGISTRATION_NUMBER} that exists only in the attached PDF — `
-      + `the model built without reading the document. Page state: ${await recordPageState()}`,
+      + (REGISTRATION_NUMBER.startsWith(shown) && shown.length >= 4
+        ? 'a prefix of it: the document reached the model cut short (2026-09-06: pdf.js returns nothing past the page edge, and the fixture wrote one line off it). '
+        : 'the model built without reading the document. ')
+      + `Page state: ${await recordPageState()}`,
     );
   }
   await recordInteraction(documentCorrelationId, 'document-grounded');
