@@ -12,6 +12,16 @@ const HISTORY_LIMIT = 8;
 const CURRENT_TURN_WEIGHT = 2;
 const HISTORY_WEIGHT = 2;
 const MINIMUM_CONFIDENCE_SCORE = 2;
+/**
+ * A reply to the desk's own question carries no signal of its own —
+ * "September 12 to 15", "two adults", "yes, go ahead" — and history must be
+ * allowed to keep it on the desk that asked. A new request long enough to
+ * carry its own signals and carrying none for this desk is a new topic, and
+ * history must not claim it (2026-09-06: interview preparation for an
+ * aviation data job, sixty words, answered on Travel). Eight words is the
+ * line: every recorded follow-up fits under it, and the hijack was far over.
+ */
+const FOLLOW_UP_MAX_WORDS = 8;
 
 /** Shop / preview follow-ups mention money without being Finance Advisor work. */
 const CODING_DESK_CONTEXT = /\b(boutique|storefront|e-?commerce|saree|kanjeevaram|online shop|add[\s-]?to[\s-]?(?:bag|cart)|shopping cart|currency converter)\b/i;
@@ -79,6 +89,11 @@ function currentTurnScore(profile: DomainSignalProfile, current: string): number
     if (pattern.test(current)) score += CURRENT_TURN_WEIGHT;
   }
   return score;
+}
+
+function isShortFollowUp(current: string): boolean {
+  const words = current.trim().split(/\s+/).filter(Boolean);
+  return words.length <= FOLLOW_UP_MAX_WORDS;
 }
 
 /** Strong coding nouns — excludes advisor-ambiguous words like portfolio. */
@@ -151,16 +166,18 @@ export function inferStudioDomain(input: {
    * must not become Travel because the word trip appeared", was true only for
    * an explicit desk. Now a desk is a candidate only when the current message
    * carries at least one of its signals; history still reinforces a candidate
-   * and still breaks ties between candidates, and it still cannot promote one.
+   * and still breaks ties between candidates. The one place history may still
+   * choose on its own is a short follow-up (FOLLOW_UP_MAX_WORDS) — the answer
+   * to a question the desk asked, which has no words of its own to score.
    */
-  const ranked = DOMAIN_SIGNAL_REGISTRY
-    .map((profile) => ({
-      domain: profile.domain,
-      current: currentTurnScore(profile, current),
-      score: signalScore(profile, current, prior),
-    }))
-    .filter((entry) => entry.current >= CURRENT_TURN_WEIGHT)
-    .sort((a, b) => b.score - a.score);
+  const scored = DOMAIN_SIGNAL_REGISTRY.map((profile) => ({
+    domain: profile.domain,
+    current: currentTurnScore(profile, current),
+    score: signalScore(profile, current, prior),
+  }));
+  const spoken = scored.filter((entry) => entry.current >= CURRENT_TURN_WEIGHT);
+  const candidates = spoken.length ? spoken : (isShortFollowUp(current) ? scored : []);
+  const ranked = candidates.sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
   const runnerUp = ranked[1];

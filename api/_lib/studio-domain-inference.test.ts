@@ -190,7 +190,12 @@ test('history alone never moves a chat onto a desk: the current message must car
     + 'Key Responsibilities Support data extraction, cleansing, transformation, and reporting activities. '
     + 'Maintain and improve Aviation datasets, dashboards, and analytics. Support system implementations, User Acceptance Testing (UAT), and change rollouts.';
   assert.equal(inferStudioDomain({ explicit: null, message: interviewPrep, history: travelHistory }), null, 'an earlier trip must not turn interview preparation into Travel');
-  assert.equal(inferStudioDomain({ explicit: null, message: 'what is the capital of France', history: travelHistory }), null, 'nor a plain question');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'can you help me write a cover letter for a job application at a bank', history: travelHistory }), null, 'nor an unrelated request long enough to carry its own signals');
+  // A reply to the desk's own question has no words of its own to score; history keeps it.
+  assert.equal(inferStudioDomain({ explicit: null, message: 'September 12 to 15', history: travelHistory }), 'travel', 'a short follow-up stays with the trip');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'yes, two adults and a child', history: travelHistory }), 'travel');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'one two three four five six seven eight nine', history: travelHistory }), null, 'nine words with no signal is a new topic, not a follow-up');
+  assert.equal(inferStudioDomain({ explicit: null, message: 'one two three four five six seven eight', history: travelHistory }), 'travel', 'eight is the line');
   assert.equal(resolveTurnStudioDomain({ explicit: null, message: interviewPrep, history: travelHistory, isCodingRequest: false, hasCodingWorkspace: false }), null, 'the client turn resolver agrees');
 });
 
