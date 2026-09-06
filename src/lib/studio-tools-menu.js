@@ -72,11 +72,9 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
         heading: 'THIS TOPIC',
         items: [
           { id: 'new-topic', title: 'New topic', subtitle: 'Start a fresh Study thread.', icon: 'plus' },
-          { id: 'study-icebreaker', title: 'Icebreaker', subtitle: 'Open the idea with one context-aware hook.', icon: 'spark' },
+          { id: 'study-assessment', title: 'Assessment', subtitle: 'Open a governed check for this topic.', icon: 'quiz', surface: 'assessment' },
           { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Recall from what this conversation established.', icon: 'cards' },
-          { id: 'study-apply', title: 'Apply', subtitle: 'Use the idea in a relevant real situation.', icon: 'spark' },
-          { id: 'study-plan', title: 'Plan', subtitle: 'Choose the next useful learning steps.', icon: 'route' },
-          { id: 'study-notes', title: 'Notes', subtitle: 'Summarize established ideas and open gaps.', icon: 'word' },
+          { id: 'study-notebook', title: 'Notebook', subtitle: 'Open your private Study notes.', icon: 'book', surface: 'notebook' },
         ],
       },
     ];
