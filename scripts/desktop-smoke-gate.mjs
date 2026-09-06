@@ -234,6 +234,21 @@ try {
     }
   };
   /*
+   * A control that disables itself while its work runs is idle when it is
+   * enabled again. The git panel does this for every action, and a fixed
+   * pause after Init raced a slow runner's `git init` on 2026-09-06: "click
+   * [data-qd-git-status]: the element is disabled". A bounded wait on the
+   * state itself, named after the work it waits for, cannot be early.
+   */
+  const idle = async (selector, what, timeout = 20_000) => {
+    const ok = await window.waitForFunction(
+      (sel) => { const el = document.querySelector(sel); return Boolean(el) && !el.disabled; },
+      selector,
+      { timeout, polling: 100 },
+    ).then(() => true).catch(() => false);
+    if (!ok) throw new Error(`${what} did not finish within ${Math.round(timeout / 1000)}s: ${selector} is still disabled`);
+  };
+  /*
    * A real click at the element's centre, after the page itself confirms the
    * element is there, has a box, and is what sits at that point. A covered or
    * missing target is a named failure, never a silent no-op.
@@ -451,12 +466,13 @@ try {
   const refused = await window.evaluate(() => window.quantoraDesktop.files.sync([{ path: '../escape.txt', content: 'x' }]));
   check(refused.ok === false && !existsSync(join(workspace, '..', 'escape.txt')), 'a path outside the folder is refused and nothing lands outside');
 
-  // 8. git panel: init, then status shows the file
+  // 8. git panel: init, then status shows the file. The panel's buttons are
+  // disabled while git runs, so each step waits for the panel to be idle.
   await click('[data-qd-bottom-git]');
   await click('[data-qd-git-init]');
-  await settle(800);
+  await idle('[data-qd-git-status]', 'git init');
   await click('[data-qd-git-status]');
-  await settle(800);
+  await idle('[data-qd-git-status]', 'git status');
   const gitOut = await window.evaluate(() => document.querySelector('[data-qd-git-output]')?.textContent || '');
   check(/\?\? index\.html/.test(gitOut), 'git status in the panel lists the untracked file');
   check(existsSync(join(workspace, '.git', 'HEAD')), 'the repository really exists on disk');
