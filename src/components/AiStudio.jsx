@@ -3718,7 +3718,7 @@ Paused — ${autoPauseRef.current}.`
   const renderWorkspaceControls = (workspace, label) => {
     const folded = collapsedWorkspaces[workspace] === true;
     return (
-      <span style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto', flexShrink: 0 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, paddingRight: '4px' }}>
         <button
           type="button"
           data-quantora-workspace-new-chat={workspace}
@@ -4092,19 +4092,32 @@ Paused — ${autoPauseRef.current}.`
           </button>
           {sidebarSections.agents ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
-          <div
-            data-quantora-coding-desk-nav="true"
-            onClick={openCodingDesk}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              fontSize: '0.82rem',
-              ...navRowStyle(isCodingDesk),
-            }}
-          >
-            <div style={{ flexShrink: 0, color: isCodingDesk ? '#f97316' : subtextColor }}><Code2 size={15} /></div>
-            <span>Coding desk</span>
+          {/*
+            The "+" and the fold sit BESIDE the row, never inside it. As
+            siblings, a click aimed at the row cannot land on them: the
+            sidebar narrows from 260px to 220px when the desk opens, and a
+            click point computed a frame earlier at the row's centre came to
+            rest on the "+" once the row had moved — a new pinned chat opened
+            and the build's Preview was left in the chat behind it (two CI
+            runs and one in three local runs, 2026-09-06).
+          */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <div
+              data-quantora-coding-desk-nav="true"
+              onClick={openCodingDesk}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                fontSize: '0.82rem',
+                flex: '1 1 auto',
+                minWidth: 0,
+                ...navRowStyle(isCodingDesk),
+              }}
+            >
+              <div style={{ flexShrink: 0, color: isCodingDesk ? '#f97316' : subtextColor }}><Code2 size={15} /></div>
+              <span>Coding desk</span>
+            </div>
             {renderWorkspaceControls('coding', 'Coding desk')}
           </div>
           {renderWorkspaceChats('coding')}
@@ -4117,6 +4130,7 @@ Paused — ${autoPauseRef.current}.`
             const selected = studioDomain === card.domain;
             return (
             <div key={card.domain}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             <div
               data-quantora-advisor={card.domain}
               data-quantora-active-specialist={selected ? card.domain : undefined}
@@ -4129,6 +4143,8 @@ Paused — ${autoPauseRef.current}.`
                 alignItems: 'center',
                 gap: '10px',
                 fontSize: '0.82rem',
+                flex: '1 1 auto',
+                minWidth: 0,
                 ...navRowStyle(selected),
               }}
               onMouseEnter={(e) => {
@@ -4142,7 +4158,8 @@ Paused — ${autoPauseRef.current}.`
             >
               <div style={{ flexShrink: 0, color: selected ? '#f97316' : subtextColor }}>{card.icon}</div>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.title}</span>
-              {renderWorkspaceControls(card.domain, card.title)}
+            </div>
+            {renderWorkspaceControls(card.domain, card.title)}
             </div>
             {renderWorkspaceChats(card.domain)}
             </div>
