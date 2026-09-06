@@ -40,7 +40,7 @@ export type StudyActiveLearningContext = {
   allowAutomaticSubjectVisual: boolean;
 };
 
-const PROGRESS_RE = /\b(?:gaps? in my study|study gaps?|learning gaps?|weak(?:ness|nesses)?|strengths?|where am i weak|what am i missing|based on (?:our|this) conversation|how am i doing|progress review|assess my progress)\b/i;
+const PROGRESS_RE = /\b(?:gaps? in my study|study gaps?|learning gaps?|weak(?:ness|nesses)?|my strengths?|strengths? in my study|where am i (?:weak|strong)|what are my strengths?|what am i missing|based on (?:our|this) conversation|how am i doing|progress review|assess my progress)\b/i;
 const REPRESENTATION_RE = /\b(?:image|images|picture|pictures|diagram|diagrams|visual|visually|graph|plot|chart|animation|animate|simulation|interactive|worked example|step[- ]by[- ]step|story|analogy|compare|comparison)\b/i;
 
 function modeFor(intent: string, message: string): StudyActiveLearningMode {
