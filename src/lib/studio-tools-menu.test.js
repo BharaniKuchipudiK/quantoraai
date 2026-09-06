@@ -86,11 +86,11 @@ test('Study menu work leaves Travel, Finance, Research, and general catalogs unc
   ]);
   assert.deepEqual(ids('finance'), ['new-advisor-chat']);
   assert.deepEqual(ids('research'), ['new-advisor-chat']);
+  // Deep Research and Travel are intentionally absent: Travel owns a sidebar
+  // desk, and a second door to the same place is not a second capability.
   assert.deepEqual(ids(null), [
     'Search',
-    'Deep Research',
     'Podcast',
-    'open-travel',
     'PowerPoint',
     'Excel',
     'Word',

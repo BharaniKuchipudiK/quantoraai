@@ -21,11 +21,21 @@ export const STUDIO_PLUS_ACTION = Object.freeze({
   PROMPT: 'prompt',
 });
 
+/*
+ * Deep Research and Travel are deliberately NOT listed here.
+ *
+ * Travel has its own desk in the left navigation, so a second door into it
+ * from the composer's plus menu offered the same destination twice and made
+ * the general menu read as a feature list rather than a set of things to do
+ * with this chat. Deep Research came out alongside it while it is still Beta.
+ *
+ * Neither capability is deleted: `resolveStudioPlusAction` still answers for
+ * both ids, so re-listing either is a one-line change here and nothing
+ * downstream has to be rebuilt. Travel remains reachable from the sidebar.
+ */
 const STUDIO_GENERAL = [
   { id: 'Search', title: 'Search', subtitle: 'Auto-browse the web, YouTube & X', icon: 'globe' },
-  { id: 'Deep Research', title: 'Deep Research', subtitle: 'In-depth, multi-source research', icon: 'search', badge: 'Beta' },
   { id: 'Podcast', title: 'Podcast', subtitle: 'Turn content into a podcast', icon: 'mic' },
-  { id: 'open-travel', title: 'Travel', subtitle: 'Plan trips, find flights & hotels', icon: 'plane', badge: 'Beta' },
 ];
 
 const STUDIO_OFFICE = [

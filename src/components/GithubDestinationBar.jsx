@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, GitBranch, Github } from 'lucide-react';
 import {
   GITHUB_CONNECT_URL,
+  githubReconnectPrompt,
+  isGithubTokenRejected,
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
   githubDestinationBlocker,
@@ -219,6 +221,32 @@ export default function GithubDestinationBar({
     cursor: 'pointer',
   };
 
+  /*
+    Shown in place of the inert red line when GitHub has refused the stored
+    token. The remedy the server names has to be reachable from where the
+    refusal is read — see isGithubTokenRejected.
+  */
+  const renderError = () => {
+    if (!error) return null;
+    if (!isGithubTokenRejected(error)) {
+      return <div style={{ ...itemStyle, color: '#fca5a5' }}>{error}</div>;
+    }
+    const prompt = githubReconnectPrompt();
+    return (
+      <a
+        href={prompt.href}
+        data-quantora-github-reconnect="true"
+        style={{ ...itemStyle, color: '#fca5a5', textDecoration: 'none', display: 'block' }}
+      >
+        <span style={{ fontWeight: 600, display: 'block' }}>{prompt.title}</span>
+        <span style={{ fontSize: '0.7rem', display: 'block', marginTop: '2px' }}>{prompt.detail}</span>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#f97316', display: 'block', marginTop: '6px' }}>
+          {prompt.action} →
+        </span>
+      </a>
+    );
+  };
+
   if (connection && connection.connected !== true) {
     return (
       <a
@@ -264,7 +292,7 @@ export default function GithubDestinationBar({
                 <span style={{ fontSize: '0.7rem' }}>Build here only. You can choose a repository later.</span>
               </button>
               {busy ? <div style={{ ...itemStyle, color: muted }}>Loading your repositories…</div> : null}
-              {error ? <div style={{ ...itemStyle, color: '#fca5a5' }}>{error}</div> : null}
+              {renderError()}
               {!busy && !error && repositories.length === 0 ? (
                 <div style={{ ...itemStyle, color: muted }}>No repositories found on your account.</div>
               ) : null}
@@ -290,7 +318,7 @@ export default function GithubDestinationBar({
           {open === 'branch' && chip.id === 'branch' ? (
             <div style={menuStyle} data-quantora-github-destination-menu="branch">
               {busy ? <div style={{ ...itemStyle, color: muted }}>Loading branches…</div> : null}
-              {error ? <div style={{ ...itemStyle, color: '#fca5a5' }}>{error}</div> : null}
+              {renderError()}
               {branches.map((row) => (
                 <button key={row.name} type="button" onClick={() => chooseBranch(row.name)} style={itemStyle}>
                   <span style={{ fontWeight: 600 }}>{row.name}</span>

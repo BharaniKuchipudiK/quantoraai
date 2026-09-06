@@ -163,7 +163,53 @@ function ConversationInsightCard({ row, isLight }) {
  * Infrastructure KPIs — cost, latency, model health, build completion.
  * Replaces legacy telemetry table + misleading "network ingress" labels.
  */
-export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, isLight }) {
+/**
+ * The turn planner's numbers (Phase 7), one line and its lanes. The line is
+ * composed on the server (turn-plan-ledger.ts) so the dashboard and any log
+ * say the same words; here it is only shown, with the lanes beside it.
+ */
+function TurnPlannerSection({ turnPlans, isLight }) {
+  if (!turnPlans) return null;
+  const measured = turnPlans.source === 'measured';
+  return (
+    <section
+      data-quantora-turn-planner-ledger={turnPlans.source || 'unknown'}
+      style={{
+        marginTop: '20px',
+        padding: '16px',
+        background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+        border: isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '12px',
+      }}
+    >
+      <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '8px' }}>
+        Turn planner · last {turnPlans.windowHours || 24}h
+      </div>
+      <div style={{ fontSize: '0.86rem', color: isLight ? '#0f172a' : '#f1f5f9', lineHeight: 1.5 }}>{turnPlans.line}</div>
+      {measured && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+          {['build', 'office', 'advisor', 'chat'].map((lane) => (
+            <span
+              key={lane}
+              style={{
+                fontSize: '0.68rem',
+                padding: '4px 8px',
+                borderRadius: '999px',
+                background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)',
+                color: isLight ? '#334155' : '#cbd5e1',
+                fontFamily: 'monospace',
+              }}
+            >
+              {lane} {turnPlans.lanes?.[lane] ?? 0}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, turnPlans = null, isLight }) {
   const tracking = technical?.tracking;
   const keyMix = technical?.keyMix;
   const latency = technical?.latencySummary;
@@ -325,6 +371,7 @@ export default function TechnicalAnalyticsPanel({ technical, studyRepresentation
           emptyLabel="No request history yet."
         />
         <LatencyTrendChart usageDays={usageDays} />
+        <TurnPlannerSection turnPlans={turnPlans} isLight={isLight} />
         <BarChart
           title="Model latency — avg ms (7d, min 3 reqs)"
           rows={modelRows}
