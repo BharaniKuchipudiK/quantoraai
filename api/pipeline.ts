@@ -16,7 +16,7 @@ import { buildRepositoryPreview } from "./_lib/repository-preview.js";
 import { githubStageForRouteAlias, handleGithubStage, isGithubStage } from "./_lib/github-workspace.js";
 import { emptyOutcomeState, normalizeOutcomeSessionId, normalizeOutcomeState } from "./_lib/outcome-state.js";
 import { appendExplicitHumanLedgerEvent, reconcileOutcomeCognitiveLedger } from "./_lib/cognitive-ledger-transitions.js";
-import { deleteOutcomeState, isStoreConfigured, readOutcomeState, saveOutcomeState } from "./_lib/store.js";
+import { deleteOutcomeState, isStoreConfigured, readBoundaryEvents, readOutcomeState, readStoredUser, saveOutcomeState } from "./_lib/store.js";
 import { DEFAULT_PROJECT_ID, normalizeProjectId, normalizeProjectInput, normalizeProjectResources, normalizeProjectSessionIds } from "./_lib/project-state.js";
 import { deleteProject, isProjectStoreConfigured, listProjects, readProjectContext, saveProject, syncProjectSessions, upsertProjectResources } from "./_lib/project-store.js";
 import { saveUserFeedback } from "./_lib/feedback-store.js";
@@ -35,11 +35,15 @@ import { readByokCredentials } from "./_lib/byok-credentials.js";
 import { parsePipelineActionSpec, parsePipelineIdeaSpec } from "./_lib/ai-contracts.js";
 import {
   attachCorrelationId,
+  authorizeTraceLookup,
   correlationIdForRequest,
   isGoldenCanaryRequest,
   normalizeBoundaryEvent,
+  normalizeCorrelationId,
+  publicTraceEvents,
   traceBoundary,
 } from './_lib/transaction-trace.js';
+import { describeTrace } from '../shared/trace-story.js';
 
 const RATE_LIMIT_PER_MINUTE = 15;
 const FEEDBACK_RATE_LIMIT_PER_MINUTE = 5;
@@ -145,19 +149,51 @@ export default async function handler(req: any, res: any) {
   if (routed === "model-route-canary") return modelRouteCanary(req, res);
 
   if (routed === 'trace') {
-    applyCors(req, res, 'POST,OPTIONS');
+    applyCors(req, res, 'GET,POST,OPTIONS');
     if (req.method === 'OPTIONS') return res.status(200).end();
+    const traceUser = getSessionUser(req);
+    /*
+     * GET /api/trace?correlationId=… — the reference id the desk shows on a
+     * failed turn resolves to what actually happened (shared/trace-story.js).
+     * Owner or admin only; an id someone else owns answers exactly like an
+     * id nothing was recorded under, so references cannot be probed.
+     */
+    if (req.method === 'GET') {
+      if (!traceUser) return res.status(401).json({ error: 'Active session required.' });
+      if (isRateLimited(`trace-lookup:${traceUser.sub}`, 60, 60_000)) {
+        return res.status(429).json({ error: 'Too many lookups. Wait a minute.' });
+      }
+      const lookupId = normalizeCorrelationId(req.query?.correlationId);
+      if (!lookupId) return res.status(400).json({ error: 'A reference id is required.' });
+      res.setHeader('Cache-Control', 'no-store');
+      if (!isStoreConfigured()) {
+        return res.status(503).json({
+          error: 'This deployment keeps no trace store, so the reference cannot be resolved here.',
+          correlationId: lookupId,
+        });
+      }
+      const rows = await readBoundaryEvents(lookupId);
+      if (rows === null) {
+        return res.status(503).json({ error: 'The trace store did not answer. Try again in a moment.', correlationId: lookupId });
+      }
+      const stored = await readStoredUser(traceUser.sub);
+      const allowed = authorizeTraceLookup(rows, { sub: traceUser.sub, isAdmin: stored?.is_admin === true });
+      if (allowed === null) return res.status(404).json({ error: 'No record for that reference.', correlationId: lookupId });
+      const events = publicTraceEvents(allowed);
+      return res.status(200).json({ correlationId: lookupId, events, story: describeTrace(events) });
+    }
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const correlationId = correlationIdForRequest(req);
     attachCorrelationId(res, correlationId);
-    const traceUser = getSessionUser(req);
     if (!traceUser && !isGoldenCanaryRequest(req)) {
       return res.status(401).json({ error: 'Active session required.' });
     }
     if (isRateLimited(`trace:${traceUser?.sub || clientIp(req)}`, 180, 60_000)) {
       return res.status(429).json({ error: 'Too many trace events.' });
     }
-    const event = normalizeBoundaryEvent({ ...(req.body || {}), correlationId });
+    // The browser's events belong to the session that sent them; the client
+    // cannot claim another owner.
+    const event = normalizeBoundaryEvent({ ...(req.body || {}), correlationId, userSub: traceUser?.sub || null });
     if (!event) return res.status(400).json({ error: 'Invalid boundary event.' });
     traceBoundary(event);
     return res.status(202).json({ recorded: true, correlationId });
