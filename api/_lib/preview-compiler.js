@@ -57,6 +57,89 @@ export function ensureReactNamespaceBinding(source = '', filePath = '') {
   return hasBinding ? content : `import React from 'react';\n${content}`;
 }
 
+/*
+ * The React 17 mount on the React 19 runtime.
+ *
+ * Production, 2026-09-05 (run 33998084340): with Gemini refusing, a fallback
+ * engine built the website transaction with `import ReactDOM from 'react-dom';
+ * ReactDOM.render(<App />, root)`. build-artifact-contract.ts counts that as a
+ * mount; project-runtime-preview.js sees "its own mount" and injects none; so
+ * the project reached the iframe as written — where react-dom 19 has no
+ * `render`, and the preview died before its h1 with
+ * "Uncaught TypeError: re.default.render is not a function". Two surfaces
+ * accepted the artifact and the runtime refused it.
+ *
+ * Like ensureReactNamespaceBinding, this is a preview-only compatibility shim:
+ * a bare `react-dom` import resolves to a module that carries the legacy API
+ * (render, hydrate, unmountComponentAtNode) on top of react-dom/client, and
+ * re-exports everything react-dom still has. `react-dom/client` is untouched,
+ * so a createRoot project never pays for it. The authored files are not
+ * rewritten.
+ *
+ * createLegacyReactDomApi is serialized into the preview bundle with
+ * Function.prototype.toString, so the exact code that runs in the iframe is the
+ * code the unit test exercises in Node.
+ */
+const LEGACY_REACT_DOM_NAMESPACE = 'quantora-preview-react-dom';
+
+export function createLegacyReactDomApi(client, dom) {
+  var ROOT_KEY = '__quantoraLegacyRoot';
+  function settle(callback) {
+    if (typeof callback === 'function') setTimeout(callback, 0);
+  }
+  function render(element, container, callback) {
+    if (!container) throw new Error('ReactDOM.render needs a container element.');
+    var root = container[ROOT_KEY];
+    if (!root) {
+      root = client.createRoot(container);
+      container[ROOT_KEY] = root;
+    }
+    root.render(element);
+    settle(callback);
+    return null;
+  }
+  function hydrate(element, container, callback) {
+    if (!container) throw new Error('ReactDOM.hydrate needs a container element.');
+    var root = container[ROOT_KEY];
+    if (!root) {
+      root = client.hydrateRoot(container, element);
+      container[ROOT_KEY] = root;
+    }
+    root.render(element);
+    settle(callback);
+    return null;
+  }
+  function unmountComponentAtNode(container) {
+    var root = container && container[ROOT_KEY];
+    if (!root) return false;
+    root.unmount();
+    delete container[ROOT_KEY];
+    return true;
+  }
+  var namespace = Object.assign({}, dom && dom.default, dom, {
+    render: render,
+    hydrate: hydrate,
+    unmountComponentAtNode: unmountComponentAtNode,
+    createRoot: client.createRoot,
+    hydrateRoot: client.hydrateRoot,
+  });
+  return { render: render, hydrate: hydrate, unmountComponentAtNode: unmountComponentAtNode, namespace: namespace };
+}
+
+const LEGACY_REACT_DOM_SHIM = `
+import * as __quantoraReactDom from 'react-dom';
+import * as __quantoraReactDomClient from 'react-dom/client';
+${createLegacyReactDomApi.toString()}
+const __quantoraLegacy = createLegacyReactDomApi(__quantoraReactDomClient, __quantoraReactDom);
+export const render = __quantoraLegacy.render;
+export const hydrate = __quantoraLegacy.hydrate;
+export const unmountComponentAtNode = __quantoraLegacy.unmountComponentAtNode;
+export const createRoot = __quantoraReactDomClient.createRoot;
+export const hydrateRoot = __quantoraReactDomClient.hydrateRoot;
+export * from 'react-dom';
+export default __quantoraLegacy.namespace;
+`;
+
 function packageRoot(specifier = '') {
   const source = String(specifier || '').trim();
   if (!source || source.startsWith('.') || source.startsWith('/')) return null;
@@ -171,11 +254,29 @@ export async function compilePreviewVfs(vfs = {}, options = {}) {
             return { errors: [{ text: `Unsupported preview dependency: ${args.path}` }] };
           }
 
+          // Bare `react-dom` carries the React 17 API on the React 19 runtime;
+          // `react-dom/client` and everything else resolve to the real package.
+          if (args.path === 'react-dom') {
+            return { path: 'react-dom', namespace: LEGACY_REACT_DOM_NAMESPACE };
+          }
+
           return builder.resolve(args.path, {
             resolveDir: process.cwd(),
             kind: args.kind,
           });
         });
+
+        // The shim's own imports must reach the real react-dom, never itself.
+        builder.onResolve({ filter: /.*/, namespace: LEGACY_REACT_DOM_NAMESPACE }, (args) => builder.resolve(args.path, {
+          resolveDir: process.cwd(),
+          kind: args.kind,
+        }));
+
+        builder.onLoad({ filter: /.*/, namespace: LEGACY_REACT_DOM_NAMESPACE }, () => ({
+          contents: LEGACY_REACT_DOM_SHIM,
+          loader: 'js',
+          resolveDir: process.cwd(),
+        }));
 
         builder.onLoad({ filter: /.*/, namespace: VFS_NAMESPACE }, (args) => ({
           contents: ensureReactNamespaceBinding(files.get(args.path) || '', args.path),
