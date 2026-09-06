@@ -60,8 +60,19 @@ export default async function handler(req: any, res: any) {
    * itself reads it.
    */
   if (String(req.query?.probe || '') === 'gemini') {
-    const failure = await authenticateAdminRequest(req);
-    if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+    /*
+     * The deployed golden may run this probe too (2026-09-05). Two previews
+     * failed their first model turn four hours apart — once as "no healthy AI
+     * route", once as a silent turn — and nothing in the verdict could say
+     * whether the deployment's only engine had answered at all. The canary
+     * already authenticates the golden's model turns on this deployment; the
+     * probe report carries no secret (a key's length and last four characters
+     * at most), so it may read it.
+     */
+    if (!isGoldenCanaryRequest(req)) {
+      const failure = await authenticateAdminRequest(req);
+      if (failure) return res.status(failure.status).json({ ok: false, error: failure.error });
+    }
 
     const report = await probeGemini({
       key: gemini.key,

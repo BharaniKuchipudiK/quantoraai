@@ -189,6 +189,7 @@ becomes safely more autonomous.
 | `npm run test:github-writes` | a GitHub mutation that runs on a session alone, without asking GitHub whether this user may make it |
 | `node --test shared/trace-story.test.js` | a reference id whose account invents a cause the record does not prove — or blames the server for a request it never saw |
 | `node scripts/trace-lookup-browser-gate.mjs` | a failed turn whose reference is not the id the request carried, so no lookup could ever find it — or a "What happened?" that renders nothing |
+| `node --test api/_lib/preview-compiler.test.js` | a project the artifact contract accepts and the preview runtime refuses — a React 17 mount (`ReactDOM.render`) that dies on the React 19 runtime as "render is not a function", which a fallback engine shipped to production on 2026-09-05 |
 | `npm run test:journeys` | a user journey no gate exercises, printed as a number that may only rise — and a ledger that lies: a gate it names that does not exist or does not run, a muted CI step whose outcome nobody reads, a gate on disk that no journey claims |
 
 ### A tool description is a promise, and the model passes it on
