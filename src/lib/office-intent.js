@@ -63,6 +63,37 @@ export function looksLikeWebBuildRequest(text = '') {
   return WEB_BUILD_RE.test(String(text || ''));
 }
 
+/*
+ * THE OBJECT OF THE VERB DECIDES, NOT A WORD (2026-09-06).
+ *
+ * "I want to build a website for the association … the webpage must imitate
+ * the same excel format" was routed to the Excel generator, which ran to the
+ * platform's time limit and told the user to shorten the brief. The office
+ * noun matched first ("Office wins inside a single message"), and that rule
+ * was written for "a presentation about our website", where the presentation
+ * IS the ask. Here the website is the ask and "excel" describes the look of a
+ * form. No retry, circuit or run journal could repair it: a confident wrong
+ * decision raises no error.
+ *
+ * So inside one message the web build outranks the Office noun only when both
+ * halves are unambiguous: a build verb with a web object ("build a website",
+ * "create a … page"), and the Office noun used as a descriptor ("excel
+ * format", "like a spreadsheet", "imitate the excel sheet"). "Build a website
+ * and also create an excel sheet of members" still reads as an Office ask.
+ */
+const WEB_BUILD_ASK_RE = /\b(build|create|make|develop|design|code|generate|launch|set ?up|spin up|ship|need|want)\b[^.!?]{0,40}\b(website|web ?site|web ?app|web ?page|landing page|storefront|site|page|portal)\b/i;
+const OFFICE_NOUN = '(?:excel|xlsx?|spreadsheet|worksheet|powerpoint|pptx?|presentation|slides?|slide deck|word|docx?|pdf)';
+const OFFICE_DESCRIPTOR_RES = [
+  new RegExp(`\\b${OFFICE_NOUN}(?:-like|\\s+(?:format|style|layout|look|template|grid|structure|sheet format|table format))\\b`, 'i'),
+  new RegExp(`\\b(?:like|similar to|same as|imitat\\w*|mimic\\w*|resembl\\w*|modell?ed on|based on)\\s+(?:the\\s+|an?\\s+|our\\s+|my\\s+|this\\s+|that\\s+|same\\s+|attached\\s+)*${OFFICE_NOUN}\\b`, 'i'),
+];
+
+/** True when one message asks to build a web page and uses the Office noun only as a descriptor. */
+export function webBuildOutranksOfficeNoun(text = '') {
+  const value = String(text || '');
+  return WEB_BUILD_ASK_RE.test(value) && OFFICE_DESCRIPTOR_RES.some((re) => re.test(value));
+}
+
 /** Map a Tools-menu selection (e.g. "PowerPoint", "Excel") to an office kind. */
 export function officeKindFromTool(tool) {
   switch (String(tool || '').toLowerCase()) {
@@ -123,9 +154,10 @@ export function detectOfficeIntent({ selectedTool = null, messages = [] } = {}) 
   const window = userTexts.slice(-OFFICE_INTENT_LOOKBACK).reverse();
   for (const text of window) {
     // Office wins inside a single message ("a presentation about our website"):
-    // the artifact noun is the explicit ask.
+    // the artifact noun is the explicit ask — unless the message builds a web
+    // page and only borrows the Office noun as a look ("the same excel format").
     const kind = matchOfficeKind(text);
-    if (kind) return kind;
+    if (kind) return webBuildOutranksOfficeNoun(text) ? null : kind;
     // A newer web-build request cancels any older Office intent behind it.
     if (looksLikeWebBuildRequest(text)) return null;
   }
