@@ -7,6 +7,11 @@
  * 2) a compiled iframe that misses the ready deadline fails terminally and a
  *    late ready message cannot resurrect that generation.
  * 3) a later valid generation can still recover and reach Preview running.
+ * 4) a generation written for React 17 — `ReactDOM.render(<App />, root)` — still
+ *    reaches Preview running on the React 19 runtime. Production, 2026-09-05:
+ *    a fallback engine wrote exactly that, the artifact contract and the desk
+ *    both accepted it as a mount, and the iframe died with
+ *    "re.default.render is not a function" before its h1 rendered.
  */
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
@@ -50,10 +55,36 @@ function projectReply(marker, title) {
   ].join('\n');
 }
 
+function legacyMountReply(marker, title) {
+  return [
+    `Updated ${title}.`,
+    '',
+    '```json filepath="package.json"',
+    JSON.stringify({
+      name: 'hira-silks-legacy-mount', private: true, version: '1.0.0', type: 'module',
+      dependencies: { react: '^17.0.2', 'react-dom': '^17.0.2' },
+    }),
+    '```',
+    '',
+    '```html filepath="index.html"',
+    '<!doctype html><html><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>',
+    '```',
+    '',
+    '```jsx filepath="src/main.jsx"',
+    "import React from 'react';\nimport ReactDOM from 'react-dom';\nimport App from './App.jsx';\nReactDOM.render(<App />, document.getElementById('root'));",
+    '```',
+    '',
+    '```jsx filepath="src/App.jsx"',
+    `export default function App(){return <main><h1>${title}</h1><p>${marker}</p></main>}`,
+    '```',
+  ].join('\n');
+}
+
 const replies = [
   projectReply('SCENARIO_422', 'Hira Silks'),
   projectReply('SCENARIO_LATE_READY', 'Hira Silks Late Ready'),
   projectReply('SCENARIO_RECOVERED', 'Hira Silks Recovered'),
+  legacyMountReply('SCENARIO_LEGACY_MOUNT', 'Hira Silks Legacy Mount'),
 ];
 let chatTurn = 0;
 
@@ -186,9 +217,19 @@ try {
     throw new Error('Stale terminal error leaked into the recovered generation.');
   }
 
+  await sendPrompt('Replace the project with the React 17 mount generation');
+  if (!(await frameShowing('Hira Silks Legacy Mount', 20_000))) {
+    const alert = await page.locator('[data-quantora-preview-error="true"][role="alert"]').first().innerText().catch(() => '');
+    throw new Error(`A generation mounted with ReactDOM.render never rendered on the React 19 runtime.${alert ? ` Preview said: ${alert}` : ''}`);
+  }
+  await visible(page.getByText('Preview is running', { exact: true }).first(), 'The React 17 mount generation never reached Preview running.');
+  if (await page.locator('[data-quantora-preview-error="true"][role="alert"]').first().isVisible().catch(() => false)) {
+    throw new Error('The React 17 mount generation rendered but a Preview error is still showing.');
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/project-runtime-failure.png', fullPage: true });
-  console.log('Project runtime failure browser gate passed: 422 terminal, late ready ignored, next generation recovered.');
+  console.log('Project runtime failure browser gate passed: 422 terminal, late ready ignored, next generation recovered, React 17 mount runs.');
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/project-runtime-failure-failure.png', fullPage: true }).catch(() => {});
