@@ -8,10 +8,9 @@ import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
-import { decorateStudyMessage, ensureStudyTeachingVisual, splitStudySegments } from '../lib/study-pictures.js';
+import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.js';
 import {
   studyActiveConcept,
-  studyAllowsAutomaticTeachingVisual,
   studyOpticsVisualSpec,
   studyPictureFitsTopic,
 } from '../lib/study-concept-visual.js';
@@ -58,16 +57,14 @@ function StudyReadingBlock({ text, textColor, components, blockKey }) {
 
 export default function StudyMarkdown({ text = '', topic = '', isLight = false, textColor, components }) {
   const polished = polishStudyTutorText(text);
-  // Teaching chrome is intentionally message-local. It must not depend on the
-  // mutable conversation haystack or historical messages change labels later.
   const nudge = studyTutorNudge(polished);
-  // Visual truth still needs the message-local concept resolver so diagrams are
-  // tied to the correct subject and fail closed when the concept is ambiguous.
   const activeTopic = studyActiveConcept(topic, polished);
-  const illustrated = studyAllowsAutomaticTeachingVisual(activeTopic)
-    ? ensureStudyTeachingVisual(polished, activeTopic)
-    : polished;
-  const segments = splitStudySegments(decorateStudyMessage(illustrated, activeTopic), activeTopic);
+
+  // Representation authority is server-owned. StudyMarkdown may validate and
+  // render a model/server-authored Study tag, but it must never manufacture a
+  // new subject picture by scanning generated prose. That old fallback caused
+  // stale mechanics diagrams to appear on study-plan and progress-review turns.
+  const segments = splitStudySegments(decorateStudyMessage(polished, activeTopic), activeTopic);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
   const firstFlashcardIndex = segments.findIndex((segment) => segment.type === 'flashcard');
   const firstMarkdownIndex = segments.findIndex((segment) => segment.type === 'md');

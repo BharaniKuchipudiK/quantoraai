@@ -6,7 +6,7 @@
 
 const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab|quantora-study-flashcard)\b([^>]*)\/?>/gi;
 
-export const STUDY_LAB_KINDS = Object.freeze(['newton', 'fbd']);
+export const STUDY_LAB_KINDS = Object.freeze(['newton', 'newton-third-law', 'fbd']);
 
 /*
  * A caption ABOUT THE INSTRUCTION rather than about an idea. The tutor prompt
@@ -105,11 +105,6 @@ export function studyVisualKind(caption = '') {
   if (/equation|algebra|unknown|solve|both sides|variable|\bx\b/.test(text)) return 'algebra-balance';
   if (/cell|nucleus|membrane|mitosis|biology|organelle/.test(text)) return 'biology-cell';
   if (/atom|molecule|bond|electron|chemistry|reaction/.test(text)) return 'chemistry-bond';
-  /*
-   * The relationship diagram is real, but only for a caption that actually
-   * describes a relationship. Requiring the words keeps it from becoming the
-   * catch-all it used to be.
-   */
   if (/cause|effect|leads? to|depends? on|relationship|compare|versus|\bvs\b|between/.test(text)) return 'concept-relationship';
   return null;
 }
@@ -128,15 +123,6 @@ export function studyElectricityVisualVariant(caption = '') {
     : 'simple-circuit';
 }
 
-/**
- * Graph is one renderer family with mutually exclusive teaching variants.
- * A quadrant-sign or unit-circle lesson must not inherit the generic slope
- * picture — that is a mismatched diagram, not a fallback.
- */
-/**
- * Field lines are one renderer family. A magnetic-direction lesson must not
- * inherit the electric +/− picture — that is a mismatched diagram.
- */
 export function studyFieldVisualVariant(caption = '') {
   return /\b(?:magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i.test(String(caption || ''))
     ? 'magnetic'
@@ -152,27 +138,16 @@ export function studyGraphVisualVariant(caption = '') {
   return 'slope';
 }
 
-/**
- * Algebra is one renderer family. A both-sides transformation lesson must not
- * inherit the static scale picture — that restates equality instead of showing
- * the operation that keeps it.
- */
 export function studyAlgebraVisualVariant(caption = '') {
   return /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform)\b/i.test(String(caption || ''))
     ? 'transformation'
     : 'scale';
 }
 
-/**
- * Geometry is classified before algebra `\bx\b`. A Pythagoras lesson that
- * names side x must not inherit the equation scale — that is a mismatched
- * diagram, not a fallback.
- */
 export function studyGeometryVisualVariant(caption = '') {
   return GEOMETRY_VISUAL.test(String(caption || '')) ? 'right-triangle' : null;
 }
 
-/** Legacy kind names the model may still emit. They are not a menu and never fill a caption. */
 const STOCK_SCENE_CAPTION = /newton under the tree|apple fall the same way|book at rest on a table|two forces, no motion|truck vs car|step out of a canoe|rocket pushes gas|net force and mass together|on ice, a shove keeps going/i;
 
 function attr(raw, name) {
@@ -196,10 +171,6 @@ function lessonAsksForElectricity(hay = '') {
   return ELECTRICITY_VISUAL.test(String(hay || ''));
 }
 
-/**
- * A picture stays only when its caption is about this conversation.
- * Empty captions and leftover stock Newton lines are dropped.
- */
 export function pictureCaptionFitsLesson(caption = '', topic = '', body = '') {
   const cap = String(caption || '').trim();
   if (!cap) return false;
@@ -245,9 +216,7 @@ export function splitStudySegments(text = '', topic = '') {
   TOKEN_RE.lastIndex = 0;
   let match = TOKEN_RE.exec(source);
   while (match) {
-    if (match.index > last) {
-      segments.push({ type: 'md', text: source.slice(last, match.index) });
-    }
+    if (match.index > last) segments.push({ type: 'md', text: source.slice(last, match.index) });
     const tag = String(match[1] || '').toLowerCase();
     if (tag === 'quantora-study-flashcard') {
       const front = attr(match[2], 'front');
@@ -255,18 +224,10 @@ export function splitStudySegments(text = '', topic = '') {
       if (front && back) segments.push({ type: 'flashcard', front, back });
     } else if (tag === 'quantora-study-lab') {
       const kindRaw = attr(match[2], 'kind').toLowerCase();
-      segments.push({
-        type: 'lab',
-        kind: STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton',
-      });
+      segments.push({ type: 'lab', kind: STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton' });
     } else {
       const caption = attr(match[2], 'caption');
-      if (caption) {
-        segments.push({
-          type: 'picture',
-          caption,
-        });
-      }
+      if (caption) segments.push({ type: 'picture', caption });
     }
     last = match.index + match[0].length;
     match = TOKEN_RE.exec(source);
@@ -279,7 +240,6 @@ export function wantsStudyLab(text = '') {
   return /free-?body|\bfbd\b|inertia tab|newton lab|quantora-study-lab/i.test(String(text || ''));
 }
 
-/** Keep model-authored tags only when they still match this conversation. */
 export function decorateStudyMessage(text = '', topic = '') {
   return rewriteStudyPictureTags(String(text || ''), topic);
 }
@@ -295,11 +255,6 @@ const TEACHING_CAPTIONS = Object.freeze({
   graph: 'A labelled graph showing axes, slope, and change between two points',
 });
 
-/**
- * A long explanation about a diagrammable subject should not become a wall of
- * text merely because a model forgot the picture tag. This fallback is limited
- * to known teaching diagrams; unknown topics still draw nothing.
- */
 export function ensureStudyTeachingVisual(text = '', topic = '') {
   const source = String(text || '');
   TOKEN_RE.lastIndex = 0;
