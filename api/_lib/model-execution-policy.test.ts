@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { describeCredentialFailure, isOutOfCredit, isProviderCredentialRejection, isSpendCapBreach, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
+import { describeCredentialFailure, isBillingRefusal, isOutOfCredit, isProviderCredentialRejection, isSpendCapBreach, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 
 test('retryable provider failures include endpoint loss and quota exhaustion before streaming', () => {
   assert.equal(shouldFallbackBeforeStreaming(Object.assign(new Error('quota exceeded'), { status: 429 })), true);
@@ -182,4 +182,28 @@ test('the chat handler leaves the Gemini tools branch for the OpenRouter path wh
   assert.match(block, /attempts = openRouterOnly;\n\s*break geminiTurn;/, 'the OpenRouter path below runs the re-plan');
   assert.match(handler, /const openRouterAttempts = attempts\.filter\(\(attempt\) => attempt\.provider === 'openrouter'\);/, 'which derives its attempts from `attempts`');
   assert.match(handler, /\.\.\.\(travelDegraded \? \{ travelDegraded: true \} : \{\}\),\n\s*\}\);\n\s*return;\n\s*\}[\s\S]*$/, 'the OpenRouter completion still reports travelDegraded to the desk');
+});
+
+/*
+ * A BILLING REFUSAL IS THE ONE WORTH HOLDING FOR (2026-09-06). Gemini's
+ * "Your prepayment credits are depleted" (a 429, on 2026-09-05) and "Spend cap
+ * breached" (a 403, the day after) change only when a person pays. A bare 403
+ * does not count: OpenRouter answers 403 to a moderation-flagged prompt.
+ */
+test('a billing refusal is money, in every spelling the providers used, and never a bare status', () => {
+  assert.equal(isBillingRefusal({ status: 429, message: 'Your prepayment credits are depleted' }), true, "2026-09-05's 429");
+  assert.equal(isBillingRefusal({ status: 403, message: 'Spend cap breached for project: projects/1' }), true, "2026-09-06's 403");
+  assert.equal(isBillingRefusal({ status: 402 }), true, 'a 402 is a wallet');
+  assert.equal(isBillingRefusal({ status: 402, message: 'Insufficient credits' }), true);
+  assert.equal(isBillingRefusal({ status: 403, message: 'Your input was flagged' }), false, 'a flagged prompt is not billing');
+  assert.equal(isBillingRefusal({ status: 401, message: 'User not found' }), false, 'a rejected key is not billing');
+  assert.equal(isBillingRefusal({ status: 429, message: 'Rate limit exceeded' }), false, 'a rate limit is not now, not never');
+  assert.equal(isBillingRefusal({ status: 503 }), false);
+  const depleted = describeCredentialFailure({ status: 429, message: 'Your prepayment credits are depleted' }, 'gemini-flash-latest');
+  assert.match(depleted, /billing, not for a bad key/, 'and the sentence for it is the billing one');
+});
+
+test('the chat handler tells the circuit when a refusal was billing', () => {
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(handler, /recordInferenceRouteFailure\(providerCircuitStore, route, status, Date\.now\(\), \{ billing: isBillingRefusal\(error\) \}\)/);
 });
