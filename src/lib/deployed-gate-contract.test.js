@@ -364,7 +364,7 @@ test('the golden verdict names the engine\'s live state, and the canary may ask 
    * offers no route on.
    */
   assert.match(gate, /import \{ engineRefusalStopsRun \} from '\.\/lib\/golden-engine-refusal\.mjs'/, 'the gate delegates the stop decision to the pure helper');
-  assert.match(gate, /const refusal = engineRefusalStopsRun\(engineProbe, health\);\n\s*evidence\.engineRefusal = refusal;\n\s*if \(refusal\.stop\) \{\n\s*throw new Error/, 'a fatal refusal stops the run before the first turn, and the decision rides in the evidence');
+  assert.match(gate, /const refusal = engineRefusalStopsRun\(engineProbe, health\);\n\s*evidence\.engineRefusal = refusal;\n\s*if \(refusal\.stop\) \{\n(?:\s*\/\/[^\n]*\n)*\s*throw new Error\(`\$\{refusal\.reason\} /, 'a fatal refusal stops the run before the first turn with its reason first in the message, and the decision rides in the evidence');
   assert.match(gate, /engineDigest = `\$\{engineDigest\} fallback=\$\{refusal\.fallback\}`/, 'a run that continues on the fallback says so in the verdict\'s state digest');
   const refusalRule = read('scripts/lib/golden-engine-refusal.mjs');
   assert.match(refusalRule, /REFUSAL_STATUSES = Object\.freeze\(\[401, 403, 429\]\)/, 'a refusal is a credential-level status; anything less ambiguous does not stop the run');

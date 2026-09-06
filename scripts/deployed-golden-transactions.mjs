@@ -319,7 +319,10 @@ try {
   const refusal = engineRefusalStopsRun(engineProbe, health);
   evidence.engineRefusal = refusal;
   if (refusal.stop) {
-    throw new Error(`The deployment's engine refused before the first turn: ${engineDigest}. ${refusal.reason} ${engineProbe.verdict || ''}`.trim());
+    // The reason FIRST: the verdict's "why" keeps 160 characters, the state
+    // digest already carries engine=FAILED(...), and a stop whose verdict
+    // line cannot say why it was fatal is a diagnosis nobody can find (§8).
+    throw new Error(`${refusal.reason} ${engineDigest}. ${engineProbe.verdict || ''}`.trim());
   }
   if (refusal.refused) {
     // The verdict's state digest must say the transactions ran on the

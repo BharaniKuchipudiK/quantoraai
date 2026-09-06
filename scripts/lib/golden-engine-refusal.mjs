@@ -57,6 +57,6 @@ export function engineRefusalStopsRun(engineProbe, health) {
     refused: true,
     stop: true,
     fallback: null,
-    reason: `Gemini refused (${engineProbe.status}) and ${why} — no route can answer, so the transactions would only restate the refusal.`,
+    reason: `Gemini refused (${engineProbe.status}) and ${why}: no route can answer the first turn, so the transactions would only restate the refusal.`,
   };
 }
