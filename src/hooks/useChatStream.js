@@ -1,7 +1,8 @@
 import { useModelExperienceMemory } from './useModelExperienceMemory.js';
 import { useRef } from 'react';
 import { OFFICE_CLIENT_GENERATE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
-import { detectOfficeIntent } from '../lib/office-intent.js';
+import { consumeOfficeToolSelection, detectOfficeIntent } from '../lib/office-intent.js';
+import { requestTurnPlan, turnPlanOverrides, turnPlanRequest } from '../lib/turn-plan-client.js';
 import { carryDocuments, describeExcludedAttachments, explainNothingToSend, partitionAttachments } from '../lib/chat-attachments.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
@@ -688,7 +689,41 @@ export function useChatStream({
       historyResult: historyBudget,
     });
     const currentOfficeArtifact = activeOfficeArtifact(messages);
-    const explicitOfficeKind = detectOfficeIntent({ messages: [{ sender: 'user', text }] });
+    /*
+     * PHASE 7, FIRST CUT — one model-owned decision before any lane is entered.
+     *
+     * Until now the lane was decided here by regexes: a word ("excel") sent a
+     * website brief to the Excel generator. The planner reads the whole brief,
+     * what is attached and the pinned desk, and names the lane; the regexes
+     * are its fallback when it does not answer in time. A kind the person
+     * picked by hand from the Tools menu is taken first and never second-guessed.
+     */
+    const deskPinned = activeDeskPinned(chatSessions, activeSessionId);
+    const pinnedDeskName = deskPinned ? (studioDomain || 'coding') : null;
+    const deskHasFilesForPlan = Object.keys(vfs || {}).length > 0;
+    const chosenOfficeKind = consumeOfficeToolSelection();
+    const lanePlan = chosenOfficeKind ? null : await requestTurnPlan(turnPlanRequest({
+      text,
+      attachments,
+      messages,
+      pinnedDesk: pinnedDeskName,
+      codingDeskOpen: Boolean(codingDeskOpen),
+      hasDeskFiles: deskHasFilesForPlan,
+      buildOwned: deskHasFilesForPlan,
+      activeOfficeKind: currentOfficeArtifact?.kind || currentOfficeArtifact?.format || null,
+    }), { headers: byokRequestHeaders({}) });
+    if (!stillCurrent()) return;
+    // The desk decides its Office preview from the conversation; the plan is
+    // recorded on the message it planned, so the desk follows the same decision
+    // instead of re-reading the words (see detectOfficeIntent).
+    if (lanePlan) {
+      updateActiveMessages((prev) => prev.map((m) => (
+        m.id === userMsg.id ? { ...m, lanePlan: { lane: lanePlan.lane, officeKind: lanePlan.officeKind, source: lanePlan.source } } : m
+      )));
+    }
+    const lanePlanOverrides = turnPlanOverrides(lanePlan, { chosenOfficeKind, pinnedDesk: pinnedDeskName, currentDesk: studioDomain });
+    const explicitOfficeKind = chosenOfficeKind
+      || (lanePlan ? lanePlanOverrides.officeKind : detectOfficeIntent({ messages: [{ sender: 'user', text }] }));
     const inheritedOfficeKind = activeOfficeBriefingKind(messages) || activeOfficeArtifactKind(messages);
     const briefingKind = explicitOfficeKind || inheritedOfficeKind;
     const briefingPrompt = briefingKind
@@ -911,7 +946,7 @@ export function useChatStream({
     const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
       codingDeskOpen: Boolean(codingDeskOpen),
       refineDesk,
-    });
+    }) || lanePlan?.lane === 'build';
     const turnDeadlineMs = isCodingRequest ? BUILD_TURN_DEADLINE_MS : CHAT_TURN_DEADLINE_MS;
     // Auto resolves once at request start (client hint for UI). Server re-resolves authoritatively.
     let autoResolvedLabel = null;
@@ -993,8 +1028,7 @@ export function useChatStream({
         targetModel = autoTarget(rerouteId, autoResolvedLabel);
       }
     }
-    const deskPinned = activeDeskPinned(chatSessions, activeSessionId);
-    const turnDomain = resolveTurnStudioDomain({
+    const resolvedTurnDomain = resolveTurnStudioDomain({
       explicit: studioDomain,
       message: visibleUserText,
       history: messages,
@@ -1002,6 +1036,8 @@ export function useChatStream({
       hasCodingWorkspace,
       pinned: deskPinned,
     }) || studioDomain;
+    // The plan may name the desk of an unpinned chat; a pin is never moved.
+    const turnDomain = lanePlanOverrides.desk === undefined ? resolvedTurnDomain : lanePlanOverrides.desk;
     const qirTurn = createQirTurnJournal({ isCodingRequest, studioDomain: turnDomain, qirCoding });
     const codingSpineOwns = qirTurn.owns;
     /*
@@ -1178,6 +1214,7 @@ export function useChatStream({
       projectId: sessionContext?.projectId || turnContext?.projectId || null,
       studioDomain: turnDomain,
       studioDomainPinned: deskPinned,
+      lanePlan: lanePlan ? { lane: lanePlan.lane, source: lanePlan.source, confidence: lanePlan.confidence, agreed: lanePlan.agreed } : null,
       ...buildStudyAdaptiveRequestContext({ studioDomain: turnDomain, brief: studyBriefForRequest }),
       buildMode: isCodingRequest,
       /*

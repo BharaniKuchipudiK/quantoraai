@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 30, deployed: 11 });
+export const FLOORS = Object.freeze({ proven: 31, deployed: 11 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -330,6 +330,19 @@ export const JOURNEYS = Object.freeze([
     hooks: ['data-quantora-studio-mode', 'data-quantora-studio-mode-active'],
     gates: { deterministic: ['src/lib/studio-mode.test.js', 'src/lib/build-intent.test.js'] },
     note: 'The mode logic is tested; the toggle has never been clicked by a gate.',
+  }),
+  journey({
+    id: 'turn-lane-planned',
+    area: 'chat',
+    name: 'Send a brief and have the platform decide what to make from its meaning, not from a word',
+    entry: 'src/hooks/useChatStream.js',
+    hooks: ['data-quantora-coding-desk-nav', 'data-quantora-workspace-new-chat'],
+    modelTurn: true,
+    gates: {
+      deterministic: ['api/_lib/turn-planner.test.ts', 'src/lib/turn-plan-client.test.js', 'src/lib/office-intent.test.js'],
+      browser: ['scripts/turn-planner-browser-gate.mjs'],
+    },
+    note: 'Phase 7, first cut (2026-09-06): one model-owned lane per turn — build, office, advisor or chat — reconciled with the keyword rules, which are now the fallback and the corpus. A pinned desk never moves; a build the desk owns is never vetoed; a dead planner changes nothing.',
   }),
   journey({
     id: 'chat-sessions-manage',

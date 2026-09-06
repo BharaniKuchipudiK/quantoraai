@@ -9,7 +9,6 @@
   "api/_lib/pcl-advisor-intelligence.ts::AdvisorDomainRegistry",
   "api/_lib/provider-resilience.ts::resetProviderResilienceState",
   "src/lib/office-artifact-cache.js::clearOfficeArtifactCache",
-  "src/lib/office-intent.js::clearOfficeToolSelection",
   "src/lib/studio-git.js::resetDeskGitRepos",
   "src/lib/vercel-headers.js::checkFramedDocumentContract"
 ]
