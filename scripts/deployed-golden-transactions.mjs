@@ -984,7 +984,8 @@ try {
     return seen.map((text) => text.trim());
   };
   const iterateFailed = page.locator('[data-quantora-last-turn-failed="true"]').first();
-  const iterateDeadline = Date.now() + TURN_TIMEOUT_MS;
+  // Two attempts' worth of clock: a fileless edit reply is retried once (2026-09-06).
+  const iterateDeadline = Date.now() + TURN_TIMEOUT_MS * 2;
   let headingFound = false;
   while (Date.now() < iterateDeadline) {
     if (await iterateFailed.isVisible().catch(() => false)) {
@@ -994,9 +995,23 @@ try {
     await page.waitForTimeout(500);
   }
   if (!headingFound) {
+    /*
+     * WHICH half: the first run of this transaction (2026-09-06) found the
+     * model DESCRIBING the edit — "I've updated the main heading…" — and
+     * returning no files, and the desk closing the turn as done on the files
+     * from the turn before. A claim without a changed site is that class by
+     * name; a site that changed to the wrong heading is the model's.
+     */
+    const state = await recordPageState();
+    const snapshot = evidence.pageState || {};
+    const claimed = /\b(?:updated|changed|replaced|renamed|set)\b/i.test(String(snapshot.lastAssistantText || ''));
     throw new Error(
-      `The follow-up edit did not land: no heading reads "${NEW_HEADING}" after ${Math.round(TURN_TIMEOUT_MS / 1000)}s; `
-      + `headings seen: ${JSON.stringify((await headingsShown()).slice(0, 6))}. Page state: ${await recordPageState()}`,
+      `The follow-up edit did not land: no heading reads "${NEW_HEADING}" after ${Math.round((TURN_TIMEOUT_MS * 2) / 1000)}s; `
+      + `headings seen: ${JSON.stringify((await headingsShown()).slice(0, 6))}. `
+      + (claimed
+        ? 'The reply CLAIMS the change was made while the site shows the old heading — a fileless edit reply accepted as done (src/lib/desk-edit-proof.js closes this class). '
+        : '')
+      + `Page state: ${state}`,
     );
   }
   const iterateCorrelationId = await page.locator('[data-quantora-real-project-preview="true"]').first()

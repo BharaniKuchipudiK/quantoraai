@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { OFFICE_CLIENT_GENERATE_ABORT_MS } from '../../api/_lib/office-generation-budget.js';
 import { consumeOfficeToolSelection, detectOfficeIntent } from '../lib/office-intent.js';
 import { requestTurnPlan, turnPlanOverrides, turnPlanRequest } from '../lib/turn-plan-client.js';
+import { UNCHANGED_DESK_FAILURE_DETAIL, deskChangedThisTurn } from '../lib/desk-edit-proof.js';
 import { carryDocuments, describeExcludedAttachments, explainNothingToSend, partitionAttachments } from '../lib/chat-attachments.js';
 import { activeOfficeArtifact, activeOfficeArtifactKind, activeOfficeBriefingKind, officeBriefingContext, shouldGenerateOfficeNow, shouldRevealOfficeNow } from '../lib/office-briefing.js';
 import { cacheOfficeArtifact } from '../lib/office-artifact-cache.js';
@@ -1982,6 +1983,20 @@ export function useChatStream({
             );
             // Skills-first may already have proved a shop on the desk while the model
             // returned prose — prove that VFS before declaring no-preview.
+            /*
+             * BUT ONLY A DESK THIS TURN CHANGED CAN VOUCH FOR IT (2026-09-06).
+             *
+             * `vfs` here is the desk as the turn found it. On a follow-up ("change
+             * the heading") the model can answer in prose, return no files, and
+             * the proof below passes on the files from the turn BEFORE — the
+             * deployed golden's first second-turn transaction watched the desk
+             * close such a turn as done while the site stayed as it was. So the
+             * shortcut needs the desk to differ from how the turn found it, or
+             * skills to have repaired it; otherwise the turn is an unfulfilled
+             * edit and takes the same retry a fileless first build takes, with a
+             * brief that says what went wrong (src/lib/desk-edit-proof.js).
+             */
+            let unchangedDeskProse = false;
             if (turnPlan?.isCodingTurn) {
               const seededProof = proveCodingTurn({
                 plan: turnPlan,
@@ -1991,7 +2006,13 @@ export function useChatStream({
                 allowRepair: true,
                 sessionId: activeSessionId,
               });
-              if (codingTurnMayClaimSuccess(seededProof)) {
+              const deskVouches = deskChangedThisTurn({
+                before: vfs || {},
+                after: seededProof?.vfs || {},
+                repaired: seededProof?.repaired === true,
+              });
+              if (codingTurnMayClaimSuccess(seededProof) && !deskVouches.changed) unchangedDeskProse = true;
+              if (codingTurnMayClaimSuccess(seededProof) && deskVouches.changed) {
                 if (typeof onCodingTurnProved === 'function') {
                   try { onCodingTurnProved(seededProof, turnPlan, owningSessionId); } catch { /* ignore */ }
                 }
@@ -2028,7 +2049,7 @@ export function useChatStream({
               maxAttempts: escalation.maxAttempts,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
-              failureDetail: 'the reply was a chat plan with no runnable files',
+              failureDetail: unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files',
             });
             if (recovery.retry) {
               applyRecoveryRepairs(recovery);
@@ -2037,7 +2058,7 @@ export function useChatStream({
             }
             // No authored scaffold here either: a build that produced no files is
             // reported as the failure it is, via resolveCodingTurnOutcome below.
-            qirFail('contract', 'the reply was a chat plan with no runnable files', missionSpent());
+            qirFail('contract', unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files', missionSpent());
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
