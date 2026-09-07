@@ -44,13 +44,39 @@ test('Travel missing ratings and links asks for live Places stays, not invented 
   assert.equal(labels.includes('Add direct links'), false);
 });
 
-test('Study does not get boutique website continue chips', () => {
+test('Study gets guided learning chips but never boutique website continue chips', () => {
   const gaps = detectOutcomeGaps(
     'help me learn the Newton laws',
-    'Here is a mini-quiz on force.',
+    'Newton’s laws connect force and motion. The first law describes what happens when net force is zero, while the second law relates net force to acceleration and mass. The third law describes force pairs between interacting objects.',
     { studioDomain: 'education' },
   );
-  assert.equal(gaps.some((gap) => /payment|publish/i.test(gap.label)), false);
+  const labels = gaps.map((gap) => gap.label);
+  assert.ok(labels.includes('Let’s work through it together'));
+  assert.ok(labels.includes('Let me try'));
+  assert.equal(labels.some((label) => /payment|publish|shipping|itinerary/i.test(label)), false);
+});
+
+test('Study deterministic chips supersede duplicate or stale model continues', () => {
+  const gaps = detectOutcomeGaps(
+    'Continue',
+    'A 3 kg object experiences a net force of 12 N. What acceleration does it have?',
+    { studioDomain: 'education' },
+  );
+  const existing = {
+    prompt: 'Old prompt',
+    items: [
+      { id: 'old-hint', label: 'Give me a hint', value: 'Old stale hint value.' },
+      { id: 'old-shop', label: 'Publish this site', value: 'Publish the website.' },
+    ],
+  };
+  const chips = injectGapContinues(existing, gaps);
+  assert.equal(chips.prompt, 'How do you want to tackle it?');
+  assert.deepEqual(chips.items.map((item) => item.label), [
+    'Give me a hint',
+    'Let’s work through it together',
+    'Let me try',
+  ]);
+  assert.notEqual(chips.items[0].value, 'Old stale hint value.');
 });
 
 test('Preview facts suppress a photo chip even when chat HTML omitted images', () => {
@@ -139,10 +165,10 @@ test('a real shop still gets its commerce chips', () => {
   assert.ok(labels.includes('Add a payment gateway'), 'a real shop still needs payments');
 });
 
-test('the advice desks (finance/study/research) get no travel/property gap chips', () => {
+test('finance/research advice desks get no travel/property gap chips', () => {
   // "when will the conversion become 80 INR" would trip the dates/itinerary chip
-  // on the bare word "when" — advice desks must not surface these travel chips.
-  for (const studioDomain of ['finance', 'education', 'research']) {
+  // on the bare word "when" — these advice desks must not surface travel chips.
+  for (const studioDomain of ['finance', 'research']) {
     const gaps = detectOutcomeGaps(
       'when will the conversion become 80 INR and what are the prices',
       'It depends on the market.',
