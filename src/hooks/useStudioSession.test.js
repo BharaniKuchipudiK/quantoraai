@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMoveChatToProject, chatsForWorkspace, DEFAULT_PROJECT_ID, handoverNoteMessage, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
+import { applyMoveChatToProject, chatsForWorkspace, chromeDomainForSession, DEFAULT_PROJECT_ID, handoverNoteMessage, makeHandoverSession, makeSession, workspaceOfSession } from './useStudioSession.js';
 
 const greeting = { id: 1, sender: 'ai', text: 'Hello', type: 'greeting' };
 
@@ -259,4 +259,29 @@ test('a top-level New Chat belongs to no workspace; only the workspace "+" files
   }
   assert.deepEqual(chatsForWorkspace(all, 'coding', DEFAULT_PROJECT_ID).map((s) => s.id), [codingDesk.id]);
   assert.deepEqual(chatsForWorkspace(all, 'travel', DEFAULT_PROJECT_ID).map((s) => s.id), [travel.id]);
+});
+
+/*
+ * THE CHROME FOLLOWS MEMBERSHIP, NOT INFERENCE (2026-09-07).
+ *
+ * Reported as "a New chat with no workspace suddenly moves to Finance
+ * Advisor". 2026-09-06 already stopped the sidebar FILING from following
+ * inference; the chrome still re-skinned itself, which from the outside is
+ * the same thing. Routing is untouched — the turn still carries the inferred
+ * desk, so the tools that answer are unchanged.
+ */
+test('INVARIANT: an inferred desk never re-skins the studio', () => {
+  for (const inferredDomain of ['finance', 'travel', 'education', 'research']) {
+    assert.equal(
+      chromeDomainForSession({ studioDomain: null, inferredDomain }),
+      null,
+      `a general chat routed to ${inferredDomain} must still look like a general chat`,
+    );
+  }
+  // A workspace the person actually chose still dresses the studio, and an
+  // inference underneath it changes nothing.
+  assert.equal(chromeDomainForSession({ studioDomain: 'travel', inferredDomain: 'finance' }), 'travel');
+  assert.equal(chromeDomainForSession({ studioDomain: 'travel', inferredDomain: null }), 'travel');
+  assert.equal(chromeDomainForSession({}), null);
+  assert.equal(chromeDomainForSession(null), null);
 });

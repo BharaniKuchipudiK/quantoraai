@@ -387,6 +387,17 @@ export function chatsForWorkspace(sessions, workspace, projectId) {
  * started in. Unpinned now means "no workspace has claimed this chat yet",
  * which is the state a general chat is supposed to be in.
  */
+/**
+ * The desk the studio CHROME shows for a session: membership only.
+ *
+ * Extracted so the rule is something a test can adjudicate rather than
+ * something review has to notice. A source grep would only prove how the line
+ * is written; this proves what it returns.
+ */
+export function chromeDomainForSession(session) {
+  return normalizeStudioDomain(session?.studioDomain);
+}
+
 export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, { pinned = false } = {}) {
   const domain = normalizeStudioDomain(studioDomain);
   return {
@@ -535,12 +546,28 @@ export function useStudioSession({ user, selectedModel }) {
   const studioMode = activeSession.studioMode || 'ask';
   const studioDomain = normalizeStudioDomain(activeSession.studioDomain);
   /*
-   * The desk the CHROME shows, which is not the workspace that OWNS the chat.
-   * A general chat asking about taxes still opens the Finance Advisor for the
-   * turn; it just no longer moves out of the list the person started it in.
-   * The sidebar groups by `studioDomain` alone — see turnDomainSessionPatch.
+   * THE CHROME FOLLOWS MEMBERSHIP, NOT INFERENCE (2026-09-07).
+   *
+   * This read `studioDomain || inferredDomain`, and its previous comment said
+   * so deliberately: "a general chat asking about taxes still opens the
+   * Finance Advisor for the turn". In use that is what people report as the
+   * platform moving under them — "a New chat with no workspace suddenly moves
+   * to Finance Advisor". The chat had not moved; only its chrome had, and from
+   * the outside those are the same thing.
+   *
+   * 2026-09-06 split MEMBERSHIP (`studioDomain`, only a person sets it) from
+   * ROUTING MEMORY (`inferredDomain`, what answers the turn) and stopped the
+   * sidebar moving. This is the step it stopped short of: the chrome is part
+   * of where a person thinks they are, so it belongs to membership too.
+   *
+   * ROUTING IS UNTOUCHED, and that separation is the whole point.
+   * `resolveTurnStudioDomain` still returns the inferred desk and the request
+   * still carries it, so a tax question in a general chat is still answered by
+   * the finance desk with its tools. What stops is the studio re-skinning
+   * itself around an inference nobody asked for. The sticky browser gate holds
+   * both halves together so they cannot drift apart in silence.
    */
-  const effectiveStudioDomain = studioDomain || normalizeStudioDomain(activeSession.inferredDomain);
+  const effectiveStudioDomain = chromeDomainForSession(activeSession);
   const boundRepo = activeSession.boundRepo || null;
   const conversationContext = activeSession.conversationContext || EMPTY_CONVERSATION_CONTEXT;
   const listeningSignals = activeSession.listeningSignals || EMPTY_LISTENING_SIGNALS;
