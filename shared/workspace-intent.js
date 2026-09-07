@@ -1,4 +1,5 @@
 import { advisorBlocksPreviewBuild } from './build-intent.js';
+import { asksForRepositoryWork } from './repo-work-intent.js';
 
 const WORKSPACE_NOUN = /\b(app|application|website|site|home ?page|homepage|landing page|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
 const BUILD_INTENT = /\b(build|create|develop|design|implement|code|prototype)\b/i;
@@ -21,9 +22,32 @@ export function shouldKeepWorkspaceForPrompt({ prompt = '', hasWorkspace = false
   return false;
 }
 
-/** A 4.5 desk: a change request on a running site must update Preview, not only chat. */
+/**
+ * A 4.5 desk: a change request on a running site must update Preview, not only
+ * chat.
+ *
+ * Two doors, because there are two people here. The nouns above are a product
+ * being iterated on -- the header, the layout, the cart. The second door is
+ * somebody working on a repository they already have, whose nouns are tests,
+ * endpoints and migrations and whose files are named outright. Before it
+ * existed this returned false for 26 of 28 ordinary developer requests, and the
+ * two it did return were accidents: `table` from the UI-parts list meaning an
+ * HTML table, and `them` from the rule for iterating on a preview.
+ *
+ * What that cost is narrower than it first looks, and repo-work-intent.js
+ * records the corrected measurement: those turns were still coding turns, since
+ * turnBelongsToBuild covers any message once the desk holds files. What they
+ * were not is REFINEMENTS -- so "add a test for the retry path" went out as
+ * studioMode `ask` with no refineMode, while "make the header blue" on the same
+ * files went out as `build`.
+ *
+ * Order matters. The advisor guard runs first and still wins, so a finance desk
+ * asked to fix its model is not editing a file, and neither door is consulted
+ * until there is actually code open.
+ */
 export function shouldRefineRunningDesk({ prompt = '', hasDeskFiles = false, studioDomain = null } = {}) {
   if (!hasDeskFiles) return false;
   if (advisorBlocksPreviewBuild(studioDomain)) return false;
-  return shouldKeepWorkspaceForPrompt({ prompt, hasWorkspace: true });
+  if (shouldKeepWorkspaceForPrompt({ prompt, hasWorkspace: true })) return true;
+  return asksForRepositoryWork(prompt);
 }

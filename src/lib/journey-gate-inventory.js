@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 37, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 38, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -653,7 +653,14 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Import an existing repository into the desk',
     entry: 'src/components/AiStudio.jsx',
-    hooks: ['data-quantora-github-checkout-status'],
+    hooks: [
+      'data-quantora-github-checkout-status',
+      'data-quantora-attachment-menu',
+      'data-quantora-github-import-open',
+      'data-quantora-github-import-url',
+      'data-quantora-github-import-run',
+      'data-quantora-github-import-error',
+    ],
     serves: ['api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -661,8 +668,11 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-checkout.test.ts',
         'api/_lib/repository-preview.test.ts',
         'api/_lib/github-intelligence.test.ts',
+        'src/lib/repo-work-comprehension.test.js',
       ],
+      browser: ['scripts/repo-work-browser-gate.mjs'],
     },
+    note: 'The import works; being understood as a CHANGE afterwards did not. Measured 2026-09-07 with a real repository open on the desk, shouldRefineRunningDesk returned false for 26 of 28 ordinary developer requests -- \'fix the null check in auth.ts\', \'add a test for the retry path\', \'bump the eslint version\' -- and the two that passed were accidents: \'migrate the users TABLE\' matched the UI-parts list on an HTML table, and \'can you fix THEM\' matched the rule for iterating on a preview. The first reading of that number was wrong and the correction is the useful part: those turns were still coding turns, because turnBelongsToBuild covers any message once the desk holds files, so buildMode was never wrong. What they were not is REFINEMENTS. On the same desk with the same files, \'make the header blue\' went out as studioMode build with refineMode true, and \'add a test for the retry path\' went out as studioMode ask with refineMode absent -- a change to existing code described to the server as a fresh request. Every intent signal here had been written for somebody who wants software MADE, so a person who already has a repository was speaking a vocabulary the desk did not contain. repo-work-comprehension.test.js is the comprehension gate for that: precision may never leave 100%, because an invention here is not a wrong answer but a WRITE -- a question about the code read as an instruction to change it moves files while somebody was only asking -- and the recall floor, 100% of the corpus and 8 of 8 holdout phrasings against 7% before, may only ever rise, which at 100% means the gate is strengthened by adding cases rather than by moving a number. It also proves the floor is carried by the new vocabulary rather than reachable without it, so the gate cannot pass with the fix deleted. This journey had never been driven and could not have been: until 2026-09-07 the import path carried no durable hook at all, reachable only by its words -- \'Connect to Github\', then \'Import to Context\' -- and this repository has already paid once for a gate anchored on prose. repo-work-browser-gate.mjs drives it by hook: the repository imports and lands as context, a build turn puts files on the desk, a developer-phrased change goes out carrying refineMode, and a QUESTION about the same code does not. That last step is not decoration: with the question guards removed and the app rebuilt, the question went out as an edit, the prose answer failed the desk\'s own \'did this return files?\' verification, and the loop burned SEVEN retries before giving up -- a person asking a question, billed for eight model calls and told their answer failed.',
   }),
   journey({
     id: 'github-push',
