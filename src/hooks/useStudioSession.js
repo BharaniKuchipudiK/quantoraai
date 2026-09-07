@@ -332,8 +332,32 @@ export function applyMoveChatToProject({
  * A chat's workspace: the Coding desk is the null domain, so it needs a name
  * of its own for grouping and for the "+" beside it in the sidebar.
  */
+/**
+ * THE CODING DESK IS NOT A DEFAULT (2026-09-07).
+ *
+ * Reported: "When you click on a New chat, it goes straight to Coding Desk...
+ * When I click on New Chat it should not associate with a workspace. It is
+ * just talking to some AI Model. Nothing else."
+ *
+ * The Coding desk is represented as the null domain, and this function read
+ * `|| 'coding'`, so EVERY chat that belonged to no workspace was filed under
+ * the Coding desk. A plain chat is not coding work; it has no workspace at
+ * all, and the sidebar must be able to say so.
+ *
+ * The distinction already existed and was being thrown away here: a chat
+ * opened from the Coding desk's "+" is `deskPinned` (see makeSession), a
+ * top-level New Chat is not. Returning null for the unpinned case is what
+ * makes "no workspace" a state the nav can render, rather than a synonym for
+ * coding.
+ *
+ * Unfiled stays unfiled. A general chat that later builds something is NOT
+ * moved here — membership changes only by an explicit action, which is the
+ * rule `turnDomainSessionPatch` already holds for the advisor desks.
+ */
 export function workspaceOfSession(session) {
-  return normalizeStudioDomain(session?.studioDomain) || 'coding';
+  const domain = normalizeStudioDomain(session?.studioDomain);
+  if (domain) return domain;
+  return session?.deskPinned === true ? 'coding' : null;
 }
 
 /** The chats of one workspace in one project, newest first. */

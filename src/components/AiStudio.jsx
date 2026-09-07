@@ -3660,6 +3660,18 @@ Paused — ${autoPauseRef.current}.`
     if (workspace === 'coding') setCodingDeskOpen(true);
     if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false);
   }, [handleCreateWorkspaceChat]);
+  const studioFooterIconStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '8px',
+    borderRadius: '8px',
+    background: 'transparent',
+    border: '1px solid transparent',
+    color: textColor,
+    cursor: 'pointer',
+    flexShrink: 0,
+  };
   const workspaceIconButtonStyle = {
     flexShrink: 0,
     display: 'flex',
@@ -3717,7 +3729,16 @@ Paused — ${autoPauseRef.current}.`
     const chats = chatsForWorkspace(allChatSessions, workspace, activeProject?.id).slice(0, 20);
     if (!chats.length) return null;
     return (
-      <div data-quantora-workspace-chats={workspace} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', marginBottom: '2px' }}>
+      /*
+       * FOUR ROWS, THEN SCROLL (2026-09-07).
+       *
+       * A desk with a dozen chats pushed every workspace below it off the
+       * screen, so finding Research Analyst meant scrolling past someone
+       * else's chat history. The list keeps its own scrollbar instead: the
+       * desks stay a fixed, scannable column whatever is inside them.
+       * ~34px a row, so this is four rows and a hint of the fifth.
+       */
+      <div data-quantora-workspace-chats={workspace} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', marginBottom: '2px', maxHeight: '150px', overflowY: 'auto', overscrollBehavior: 'contain' }}>
         {chats.map((session) => renderChatRow(session))}
       </div>
     );
@@ -4336,37 +4357,22 @@ Paused — ${autoPauseRef.current}.`
           </div>
         </div>
 
-        {/* Product feedback — explicit signed-in Studio entry point. */}
-        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0 }}>
+        {/*
+          Product feedback: always available, never the point. An icon with a
+          name, not a sentence — "Feedback & Suggestions" spelled out was the
+          widest text in the nav and the least often read.
+        */}
+        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
           <button
             type="button"
+            title="Feedback & suggestions"
+            aria-label="Feedback & suggestions"
             onClick={() => window.dispatchEvent(new CustomEvent('quantora:open-feedback'))}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '8px 10px',
-              borderRadius: '8px',
-              background: 'transparent',
-              border: '1px solid transparent',
-              color: textColor,
-              fontSize: '0.82rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
-              e.currentTarget.style.borderColor = isLight ? '#e5e5e5' : 'rgba(255, 255, 255, 0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.borderColor = 'transparent';
-            }}
+            style={studioFooterIconStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
           >
             <MessageSquare size={15} />
-            <span>Feedback & Suggestions</span>
           </button>
         </div>
       </div>

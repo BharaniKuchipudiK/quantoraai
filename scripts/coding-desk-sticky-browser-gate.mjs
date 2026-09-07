@@ -285,14 +285,24 @@ try {
    * asserts the lists, and deliberately does not assert `data-quantora-domain`
    * — the cold-advisor step above owns that, and the two must not contradict.
    */
-  for (const domain of advisorDomains) {
+  /*
+   * THE CODING DESK IS NOT A DEFAULT (2026-09-07). This step first asserted
+   * the chat was filed under "coding", which encoded the bug it was meant to
+   * catch: the Coding desk is the null domain, so "no workspace" and "coding"
+   * were the same value and every plain chat landed on the desk. Reported as
+   * "when you click on a New chat, it goes straight to Coding Desk ... it
+   * should not associate with a workspace". A top-level New Chat now belongs
+   * to NO workspace, the desks included.
+   */
+  for (const domain of [...advisorDomains, 'coding']) {
     if (await page.locator(`[data-quantora-workspace-chats="${domain}"] [data-quantora-sidebar-chat]`, { hasText: /plan a trip to Kyoto/i }).count()) {
-      throw new Error(`A chat started from the top-level New Chat was filed under ${domain}; the person started it in the general list and it left.`);
+      throw new Error(`A chat started from the top-level New Chat was filed under ${domain}. New Chat belongs to no workspace — only the "+" beside one puts a chat inside it.`);
     }
   }
-  const generalRow = page.locator('[data-quantora-workspace-chats="coding"] [data-quantora-sidebar-chat]', { hasText: /plan a trip to Kyoto/i });
+  // It must still exist somewhere the person can reach it, or this is a delete.
+  const generalRow = page.locator('[data-quantora-sidebar-chat]', { hasText: /plan a trip to Kyoto/i });
   if (!(await generalRow.count())) {
-    throw new Error('A chat started from the top-level New Chat is no longer in the general list either — it was filed somewhere the person did not put it.');
+    throw new Error('A chat started from the top-level New Chat is not listed anywhere in the sidebar — unfiled must mean "no workspace", never "gone".');
   }
 
   mkdirSync('artifacts/e2e', { recursive: true });
