@@ -129,9 +129,32 @@ export function isBuildSessionActive({
     if (typeof message !== 'string') return false;
     const t = message.trim();
     if (!t || QUESTION_ONLY.test(t)) return false;
-    // Two signals, deliberately: the strict classifier, and a plain imperative
-    // build ask it is known to miss.
-    return isCodingRequest(t) || IMPERATIVE_BUILD.test(t);
+    /*
+     * Two signals, and they are NOT interchangeable. Which one may activate a
+     * session that has no desk is the whole of this function's safety.
+     *
+     * The strict classifier wants a build verb AND a software noun, so it can
+     * be trusted with no corroboration: "Build me a boutique website for Hira
+     * Silks" — the #445 ask itself — is one it recognises deskless. That is
+     * measured, not assumed, and it is why the guided intake is fixed without
+     * needing the loose signal at all.
+     *
+     * IMPERATIVE_BUILD takes a build verb and ANY object, which is what lets
+     * it recover "build me a currency converter". Deskless, that breadth is a
+     * defect rather than a recovery: "Create a poem about the sea", "Make me a
+     * grocery list", "Design a workout plan" all match it, and then the next
+     * declarative turn — "vegetarian options only" — planned as mode=execute
+     * and spent a whole build on somebody's shopping. Reproduced end to end
+     * on 2026-09-07, on main, after #609 removed the desk check from BOTH
+     * signals at once. That was the mirror image of the bug #609 fixed.
+     *
+     * So the loose signal keeps the corroboration it always had — an open desk
+     * is evidence a build really exists — and the precise one no longer needs
+     * it. Nothing about the intake journey regresses: the classifier already
+     * carries it.
+     */
+    if (isCodingRequest(t)) return true;
+    return codingDeskOpen && IMPERATIVE_BUILD.test(t);
   });
 }
 
