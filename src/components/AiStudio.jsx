@@ -1,4 +1,5 @@
 import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, applyDeskReviewPatch, canOpenStudioPreviewPane, messageHasExtractableWorkspaceCode, runningPreviewCode, writeHealedPreviewToVfs, ensureShopDeskInVfs, userAskedForPreviewPhotos, userAskedForSemanticPhotoEdit, userAskedForShopDeskFix, userAskedForDeskReview, vfsLooksLikeShop, previewAssemblyFingerprint } from '../lib/studio-preview-helpers.js';
+import { shareNoticeText } from '../lib/share-notice.js';
 import { attachmentKindForFile, MAX_DOCUMENT_FILE_BYTES, MAX_IMAGE_FILE_BYTES } from '../lib/chat-attachments.js';
 import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
 import { pickPreviewEntry } from '../lib/preview-utils.js';
@@ -814,6 +815,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [canvasCode, setCanvasCode] = useState('');
   const [canvasVfs, setCanvasVfs] = useState({});
   const [deskPublishMenuOpen, setDeskPublishMenuOpen] = useState(false);
+  // "Share link" from the Publish menu copies the URL with no control left on
+  // screen to say so: the canvas's own share button reads "Link copied", but
+  // this chrome never renders it. The first gate to click the menu item found
+  // the copy happening in silence (2026-09-06). The notice is the feedback.
+  const [deskShareNotice, setDeskShareNotice] = useState(null);
+  useEffect(() => {
+    if (!deskShareNotice) return undefined;
+    const timer = setTimeout(() => setDeskShareNotice(null), 8000);
+    return () => clearTimeout(timer);
+  }, [deskShareNotice]);
   const [chatWidthPct, setChatWidthPct] = useState(() => loadChatWidthPct());
   const [filesWidthPx, setFilesWidthPx] = useState(() => loadFilesWidthPx());
   const [splitMobile, setSplitMobile] = useState(() => (
@@ -5771,6 +5782,16 @@ Paused — ${autoPauseRef.current}.`
                   >
                     <Link2 size={12} /> Publish <ChevronDown size={12} />
                   </button>
+                  {deskShareNotice ? (
+                    <div
+                      data-quantora-share-notice="true"
+                      data-quantora-share-copied={deskShareNotice.copied ? 'true' : 'false'}
+                      title={deskShareNotice.url}
+                      style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 39, whiteSpace: 'nowrap', userSelect: 'text', background: isLight ? '#ffffff' : '#0f172a', border: '1px solid rgba(2, 132, 199, 0.45)', color: '#0284c7', padding: '6px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: 700, boxShadow: '0 12px 32px rgba(0,0,0,0.28)' }}
+                    >
+                      {shareNoticeText(deskShareNotice)}
+                    </div>
+                  ) : null}
                   {deskPublishMenuOpen ? (
                     <div data-quantora-desk-publish-menu="true" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 40, minWidth: '180px', background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', boxShadow: '0 12px 32px rgba(0,0,0,0.28)', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       <button type="button" onClick={() => { setDeskPublishMenuOpen(false); setWorkspaceActiveTab('preview'); previewCanvasRef.current?.openShare?.(); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', cursor: 'pointer', color: textColor, padding: '8px 10px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, textAlign: 'left' }}>
@@ -5947,6 +5968,7 @@ Paused — ${autoPauseRef.current}.`
                       hideHeader
                       user={user}
                       onRequireAuth={onOpenAuth}
+                      onShareComplete={(result) => setDeskShareNotice(result)}
                       vfs={vfs}
                       turnBusy={isGenerating}
                       onVerificationStatusChange={(status) => {
