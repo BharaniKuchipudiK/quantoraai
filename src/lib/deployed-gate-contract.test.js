@@ -387,8 +387,49 @@ test('a pull request golden plans two transactions, a production golden five, an
   const workflow = read('.github/workflows/deployed-golden-transactions.yml');
   assert.match(
     workflow,
-    /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ github\.event_name == 'pull_request' && \(contains\(github\.event\.pull_request\.title, '\[golden:all\]'\) && '99' \|\| '2'\) \|\| '99' \}\}/,
-    'the workflow sets the limit per event: two on a pull request, everything on production, and everything once on a pull request titled [golden:all]',
+    /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ contains\(github\.event\.pull_request\.title, '\[golden:all\]'\) && '99' \|\| '2' \}\}/,
+    'two transactions everywhere, and the whole roster only on a pull request titled [golden:all]',
+  );
+  /*
+   * PRODUCTION PLANS TWO AS WELL (2026-09-07). It planned all eight, which at
+   * the measured cost of a build is SGD 0.60 a deployment — and fifteen
+   * deployments in one day spent SGD 9 against a prepaid Gemini balance of SGD
+   * 29 that has to last a fortnight AND carry real users. A gate the platform
+   * cannot afford to run is one somebody switches off entirely.
+   *
+   * Nothing about LIVENESS is sampled: deployed-readiness-gate.mjs still runs
+   * on every deployment, blocking, and costs nothing — a plain fetch. It is the
+   * gate that catches a function dying before its handler runs, the class that
+   * took three API endpoints down on 2026-08-31. What is sampled is BEHAVIOUR.
+   */
+  assert.doesNotMatch(
+    workflow,
+    /QUANTORA_GOLDEN_TRANSACTION_LIMIT:[^\n]*\|\| '99' \}\}/,
+    "a production deployment must not fall back to the whole roster: that is SGD 0.60 a deployment, "
+      + 'and the platform is on a prepaid balance measured in weeks',
+  );
+  assert.match(
+    workflow,
+    /node scripts\/deployed-readiness-gate\.mjs/,
+    'the free, blocking liveness gate still runs on every deployment — sampling behaviour must never sample liveness',
+  );
+  /*
+   * AND SUPERSEDED PRODUCTION GOLDENS ARE CANCELLED. `deployment.id` is unique
+   * per deployment, so keying the group on it opened a fresh group every time
+   * and cancel-in-progress had nothing to cancel — the same defect this file
+   * already records for pull requests, left in place on the deployment half.
+   * A golden still running against a deployment that is no longer live is
+   * answering a question nobody has, on the platform's own model credit.
+   */
+  assert.doesNotMatch(
+    workflow,
+    /group: deployed-golden-[^\n]*deployment\.id/,
+    'the concurrency group must not be keyed on the deployment id, or nothing is ever superseded',
+  );
+  assert.match(
+    workflow,
+    /group: deployed-golden-\$\{\{ github\.event\.pull_request\.number \|\| github\.event\.deployment\.environment \}\}/,
+    'production goldens share a group per environment, so a newer deployment supersedes an older run',
   );
   /*
    * AND NOT ONCE PER PUSH (2026-09-07). The limit above was the INSTANCE fix
