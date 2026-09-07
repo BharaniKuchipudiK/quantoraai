@@ -3,6 +3,16 @@ import test from 'node:test';
 
 import { deriveTravelBrief } from './travel-board-brief.js';
 
+/*
+ * Fixture dates move with the clock. A literal future date is valid the day it
+ * is written and INVALID_ARGUMENT the morning after it passes — a red suite no
+ * diff caused. That happened on 2026-09-03 and again, still armed, on 09-07.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysFromNow = (days) =>
+  new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+const DEPARTURE_DATE = isoDaysFromNow(30);
+
 const from = (...texts) => ({ messages: texts.map((text) => ({ sender: 'user', text })) });
 
 test('inactive until the traveller has spoken', () => {
@@ -59,10 +69,10 @@ test('the newest destination wins over an earlier one', () => {
 });
 
 test('a full route with a date enables live flights', () => {
-  const brief = deriveTravelBrief(from('SIN to DPS on 2026-09-12'));
+  const brief = deriveTravelBrief(from(`SIN to DPS on ${DEPARTURE_DATE}`));
   assert.deepEqual(
     { origin: brief.origin, destination: brief.destination, departureDate: brief.departureDate },
-    { origin: 'SIN', destination: 'DPS', departureDate: '2026-09-12' },
+    { origin: 'SIN', destination: 'DPS', departureDate: DEPARTURE_DATE },
   );
   assert.equal(brief.canSearchFlights, true);
 });

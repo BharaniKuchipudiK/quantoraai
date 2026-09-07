@@ -315,8 +315,8 @@ test('Google provider errors fail closed and terminate the interactive agent ste
 
   const hotel = await executeToolCall('search_hotels', {
     location: 'Tokyo',
-    checkInDate: '2026-10-01',
-    checkOutDate: '2026-10-03',
+    checkInDate: DEPARTURE_DATE,
+    checkOutDate: RETURN_DATE,
   }, {
     googleMapsApiKey: 'bad-key',
     fetchFn,
@@ -445,7 +445,7 @@ test('flight provider failure retries on an alternate Duffel client when configu
   const result = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: primary as any,
     duffelFallbackClient: fallback as any,
@@ -470,7 +470,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const first = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
@@ -485,7 +485,7 @@ test('complete flight query provider errors stay retryable for turn self-heal', 
   const second = await executeToolCall('search_flights', {
     origin: 'SIN',
     destination: 'DPS',
-    departureDate: '2026-09-12',
+    departureDate: DEPARTURE_DATE,
   }, {
     duffelClient: failing as any,
     providerPolicy: { maxAttempts: 1, timeoutMs: 1_000, baseDelayMs: 0 },
