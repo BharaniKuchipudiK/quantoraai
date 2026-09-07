@@ -1066,7 +1066,12 @@ export function useChatStream({
     // A pinned chat's workspace decided; it keeps no routing memory to consult.
     const rememberedDomain = deskPinned ? null : activeInferredDomain(chatSessions, activeSessionId);
     const resolvedTurnDomain = resolveTurnStudioDomain({
-      explicit: studioDomain || rememberedDomain,
+      // Membership and routing memory travel SEPARATELY. Folding them into one
+      // `explicit` made a remembered desk outrank a live coding workspace, so a
+      // thread that once mentioned a trip showed the Travel desk while the
+      // person was building. See the `remembered` note in domain-inference.ts.
+      explicit: studioDomain,
+      remembered: rememberedDomain,
       message: visibleUserText,
       history: messages,
       isCodingRequest,
