@@ -1229,7 +1229,15 @@ export default async function handler(req: any, res: any) {
      * call when the float was gone. It fails closed: a meter that cannot be
      * read is a refusal, never an assumption of zero.
      */
-    const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
+    /*
+     * WHOSE KEY, stated rather than assumed. effectiveOpenRouterKey prefers the
+     * user's own BYOK credential (line ~700), so the platform's ceiling must not
+     * be charged against it: a key with $49 of its owner's own lifetime usage is
+     * not the platform approaching a $50 limit.
+     */
+    const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey, {
+      credentialScope: openRouterKey ? 'user' : 'server',
+    });
     /*
      * Phase 6, the second brake: this person's share of the paid rung.
      *
