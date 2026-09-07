@@ -410,8 +410,19 @@ export default function StudyTutorWorkspace({
     });
   }, [brief?.label, contextualSend, handleRequestAssessment]);
 
-  if (onboarding.status === 'loading') return null;
-  if (!brief?.active) return null;
+  if (!activeSessionId) return null;
+  if (onboarding.status === 'loading' || !brief?.active) {
+    return (
+      <StudyHubLauncher
+        key={`${activeSessionId}:hub`}
+        topic=""
+        ready={false}
+        learnerModel={null}
+        onAsk={onAsk}
+        onSend={contextualSend}
+      />
+    );
+  }
   return (
     <>
       <StudyTutorShell
@@ -429,6 +440,7 @@ export default function StudyTutorWorkspace({
       <StudyHubLauncher
         key={`${activeSessionId}:${brief.conceptId}:hub`}
         topic={brief.label}
+        ready
         learnerModel={assessment?.result?.learnerModel || null}
         onAsk={onAsk}
         onSend={contextualSend}

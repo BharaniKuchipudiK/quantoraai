@@ -51,17 +51,20 @@ const HUB_ACTIONS = Object.freeze([
 /**
  * Progressive-disclosure launcher for tutor interventions only.
  *
- * Durable learner workspaces have separate homes: Assessment (including
- * History) is owned by the Assessment workspace, while Notebook is opened from
- * the composer's + menu through the shared Study surface request contract.
+ * The launcher itself belongs to an active Study session, so it remains
+ * discoverable before a topic has been established. Tutor interventions stay
+ * disabled until there is a real topic; durable learner workspaces keep their
+ * own ownership boundaries.
  */
-export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend }) {
+export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, ready = true }) {
   const [open, setOpen] = useState(false);
   const [surface, setSurface] = useState('tools');
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
   const surfaceCloseGuardRef = useRef(null);
-  const label = String(topic || 'this topic').trim();
+  const label = ready
+    ? String(topic || 'this topic').trim()
+    : 'Start a Study topic to unlock tutor tools.';
 
   const registerSurfaceCloseGuard = useCallback((guard) => {
     surfaceCloseGuardRef.current = typeof guard === 'function' ? guard : null;
@@ -81,14 +84,14 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
 
   useEffect(() => {
     const handleSurfaceRequest = (event) => {
-      if (event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
+      if (!ready || event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
       event.detail.handled = true;
       setSurface('notebook');
       setOpen(true);
     };
     window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
     return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-  }, []);
+  }, [ready]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -110,6 +113,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
   }, [closeHub, open, surface]);
 
   const runAction = (action) => {
+    if (!ready) return;
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
     if (onSend) {
       onSend(text, { visibleUserText: studyActionVisibleText(action.id, label) });
@@ -133,6 +137,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
       ref={rootRef}
       className="study-h1-hub"
       data-quantora-study-hub-launcher="true"
+      data-quantora-study-hub-ready={ready ? 'true' : 'false'}
       data-quantora-workspace-capabilities="education"
     >
       {open ? (
@@ -176,6 +181,12 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
                       type="button"
                       className="study-h1-hub__action"
                       aria-label={action.label}
+                      disabled={!ready}
+                      title={ready ? action.hint : 'Start a Study topic first.'}
+                      style={{
+                        opacity: ready ? 1 : 0.48,
+                        cursor: ready ? 'pointer' : 'not-allowed',
+                      }}
                       onClick={() => runAction(action)}
                     >
                       <span className="study-h1-hub__action-icon" aria-hidden="true"><Icon size={16} /></span>

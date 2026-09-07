@@ -155,7 +155,6 @@ export default function StudioToolsMenu({
 
   const StudyAction = ({ item }) => {
     const Icon = ICONS[item.icon] || Sparkles;
-    const isWide = item.id === 'new-topic' || item.id === 'study-notebook';
     const disabled = Boolean(item.requiresTopic && !hasStudyTopic);
     const title = disabled ? 'Start a Study topic first.' : item.subtitle;
     return (
@@ -169,17 +168,15 @@ export default function StudioToolsMenu({
         disabled={disabled}
         onClick={() => selectTool(item)}
         style={{
-          gridColumn: isWide ? '1 / -1' : 'auto',
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
-          gap: '9px',
-          minHeight: isWide ? '42px' : '54px',
-          padding: '9px 10px',
+          gap: '10px',
+          minHeight: '48px',
+          padding: '10px 12px',
           borderRadius: '12px',
           border: isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(148,163,184,0.18)',
-          background: isWide
-            ? (isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)')
-            : (isLight ? '#fff' : 'rgba(255,255,255,0.035)'),
+          background: isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)',
           color: textColor,
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.48 : 1,
@@ -245,7 +242,7 @@ export default function StudioToolsMenu({
                 <X size={16} />
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
               {(groups[0]?.items || []).map((item) => <StudyAction key={item.id} item={item} />)}
             </div>
           </>
