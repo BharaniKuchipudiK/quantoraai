@@ -52,10 +52,24 @@ test('an ordinary chat session is not a build session', () => {
     isBuildSessionActive({ priorUserMessages: ['what do you think of this?'], codingDeskOpen: true, isCodingRequest }),
     false,
   );
+  /*
+   * THIS ASSERTION WAS REVERSED ON 2026-09-07, deliberately.
+   *
+   * It read `false` with the reason "the desk has to be open", which was the
+   * rule until it was found to break the guided intake (#445): a person asks
+   * for a site, the desk answers with an intake question rather than guessing,
+   * and their typed answer arrives with no desk and no VFS — so the answer to
+   * the desk's own question was reclassified as ordinary conversation, spent
+   * the whole turn budget on one route, and showed "Temporarily unavailable".
+   *
+   * Note also that 'build me an app' was never an ordinary chat session, which
+   * is this test's name. It is a build ask, filed under the wrong heading. The
+   * ordinary-chat case is the assertion above, and it still holds.
+   */
   assert.equal(
     isBuildSessionActive({ priorUserMessages: ['build me an app'], codingDeskOpen: false, isCodingRequest }),
-    false,
-    'the desk has to be open',
+    true,
+    'prior build intent is enough before the first file exists; the open desk was only ever a proxy for it',
   );
 });
 
@@ -218,5 +232,88 @@ test('a build session is not activated by a question about building', () => {
   assert.equal(
     isBuildSessionActive({ priorUserMessages: ['what should I build next?'], codingDeskOpen: true, isCodingRequest }),
     false,
+  );
+});
+
+/*
+ * THE GUIDED INTAKE ANSWER (#445, reproduced still-live on 2026-09-07).
+ *
+ * The flow is the ordinary one, and it is the FIRST thing a new user does.
+ * They ask for a boutique website; the desk correctly answers with an intake
+ * question rather than guessing; they type their answer. At that moment there
+ * is no desk and no VFS — the first turn produced a question, not files.
+ *
+ * isBuildSessionActive required codingDeskOpen, so the answer was reclassified
+ * as ordinary conversation: one free route spent essentially the whole
+ * 165-second budget, fallbacks got ~0ms, and the screen said "Temporarily
+ * unavailable". Every single time.
+ */
+test('an intake answer before any desk or file is still build work', () => {
+  const active = isBuildSessionActive({
+    priorUserMessages: ['Build me a boutique website for Hira Silks'],
+    codingDeskOpen: false, // the first turn only asked a question
+    hasDeskFiles: false,   // so there is nothing in the VFS yet
+    isCodingRequest: () => false, // the strict classifier misses this ask, as it did in production
+  });
+  assert.equal(active, true, 'prior build intent, not an open desk, decides');
+  assert.equal(
+    turnBelongsToBuild({ text: 'Boutique showcase + service booking', buildSessionActive: active }),
+    true,
+    'the typed answer belongs to the build it is answering',
+  );
+});
+
+test('a session that never asked for a build does not become one', () => {
+  // The guard that was removed must not be replaced by nothing: prior build
+  // intent is what activates, and idle conversation has none.
+  for (const prior of [[], ['hello'], ['what is the weather like?'], ['thanks, that helped']]) {
+    assert.equal(
+      isBuildSessionActive({ priorUserMessages: prior, codingDeskOpen: false, hasDeskFiles: false }),
+      false,
+      `"${prior.join(' | ')}" is not a build ask`,
+    );
+  }
+});
+
+test('a question-only opening turn is not build intent', () => {
+  // Asking ABOUT building is not asking someone to build.
+  assert.equal(
+    isBuildSessionActive({
+      priorUserMessages: ['could you build a website in principle?'],
+      codingDeskOpen: false,
+      hasDeskFiles: false,
+      isCodingRequest: () => true, // even if the strict classifier says yes
+    }),
+    false,
+    'the question-only filter runs before either signal',
+  );
+});
+
+test('an unrelated question mid-intake still goes to chat', () => {
+  /*
+   * This is the cost of the trade, and it is bounded here rather than left to
+   * be discovered. An active build session does NOT swallow everything: a
+   * question that is not about the work is still a question.
+   */
+  const active = isBuildSessionActive({
+    priorUserMessages: ['Build me a boutique website for Hira Silks'],
+    codingDeskOpen: false,
+    hasDeskFiles: false,
+  });
+  assert.equal(active, true);
+  for (const aside of ['what is the capital of France?', 'can you show me today\'s weather?']) {
+    assert.equal(
+      turnBelongsToBuild({ text: aside, buildSessionActive: active }),
+      false,
+      `"${aside}" is not about the build`,
+    );
+  }
+});
+
+test('files present still short-circuit, whatever the history says', () => {
+  // The cheapest and most certain signal stays first.
+  assert.equal(
+    isBuildSessionActive({ priorUserMessages: [], codingDeskOpen: false, hasDeskFiles: true }),
+    true,
   );
 });

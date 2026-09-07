@@ -96,7 +96,35 @@ export function isBuildSessionActive({
   isCodingRequest = () => false,
 } = {}) {
   if (hasDeskFiles) return true;
-  if (!codingDeskOpen) return false;
+  /*
+   * `codingDeskOpen` USED TO BE REQUIRED HERE, and that is what broke the
+   * guided intake (#445, reproduced again on 2026-09-07 and still live).
+   *
+   * The flow it breaks is the ordinary one. A person asks for a boutique
+   * website; the desk correctly answers with an intake question instead of
+   * guessing; they type "Boutique showcase + service booking". At that moment
+   * there is no desk and no VFS — the first turn produced a question, not
+   * files — so this returned false, their answer was reclassified as ordinary
+   * conversation, and one free route spent essentially the whole 165-second
+   * budget before fallbacks got ~0ms and the screen said "Temporarily
+   * unavailable".
+   *
+   * That is the FIRST thing a new user does, and it failed every time.
+   *
+   * The desk being open was only ever a proxy for "this is a build session".
+   * Prior build intent is the better proxy, and it is the careful part: the
+   * scan below skips question-only turns and demands either the strict
+   * classifier or a plain imperative build ask, so an idle chat never
+   * activates.
+   *
+   * THE TRADE, stated rather than hidden: between the intake question and the
+   * first file, a non-question turn now counts as build work. "Never mind,
+   * tell me a joke" mid-intake would be routed as a build. That costs one
+   * turn, and it is rare. The behaviour it replaces cost EVERY intake answer,
+   * on the primary journey. turnBelongsToBuild is consulted only after the
+   * original classifier has said no, so this can add turns to a build and
+   * never take one away.
+   */
   return (priorUserMessages || []).some((message) => {
     if (typeof message !== 'string') return false;
     const t = message.trim();
