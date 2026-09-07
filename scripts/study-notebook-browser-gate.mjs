@@ -9,6 +9,9 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1000
 const page = await context.newPage();
 let notes = [];
 let writeCount = 0;
+let scheduleBlocks = [];
+let scheduleWriteCount = 0;
+let masteryOrAssessmentWrites = 0;
 
 function sseBody(text) {
   return [
@@ -28,6 +31,10 @@ await page.route('**/api/**', async (route) => {
   const request = route.request();
   const url = new URL(request.url());
   const path = url.pathname;
+
+  if (path.includes('study-assessment') || path.includes('study-mastery') || path.includes('study-evidence')) {
+    if (request.method() !== 'GET') masteryOrAssessmentWrites += 1;
+  }
 
   if (path === '/api/auth/session') {
     return route.fulfill({
@@ -107,6 +114,57 @@ await page.route('**/api/**', async (route) => {
     }
   }
 
+  if (path === '/api/study-schedule') {
+    const method = request.method();
+    if (method === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ blocks: scheduleBlocks }) });
+    }
+    const body = request.postDataJSON();
+    if (method === 'POST') {
+      scheduleWriteCount += 1;
+      const now = new Date().toISOString();
+      const block = {
+        id: '22222222-2222-4222-8222-222222222222',
+        subject: body.subject,
+        topic: body.topic || null,
+        title: body.title,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
+        kind: body.kind || 'study',
+        status: body.status || 'planned',
+        notes: body.notes || '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      scheduleBlocks = [block];
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ block }) });
+    }
+    if (method === 'PATCH') {
+      scheduleWriteCount += 1;
+      const current = scheduleBlocks.find((block) => block.id === body.id);
+      if (!current) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Study block not found.' }) });
+      const block = {
+        ...current,
+        subject: body.subject,
+        topic: body.topic || null,
+        title: body.title,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
+        kind: body.kind || 'study',
+        status: body.status || 'planned',
+        notes: body.notes || '',
+        updatedAt: new Date().toISOString(),
+      };
+      scheduleBlocks = [block];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ block }) });
+    }
+    if (method === 'DELETE') {
+      scheduleWriteCount += 1;
+      scheduleBlocks = scheduleBlocks.filter((block) => block.id !== body.id);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ deleted: true }) });
+    }
+  }
+
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [], sessions: [], ok: true }) });
 });
 
@@ -124,8 +182,7 @@ try {
   await study.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');
 
-  // Study surfaces are deliberately contextual: establish a real learner topic
-  // before asserting the + menu / Notebook handoff.
+  // Establish a real learner topic before asserting the contextual Notebook path.
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Study prompt input is missing.');
   await textarea.fill('Teach me motion graphs');
@@ -137,7 +194,7 @@ try {
   const plusTrigger = page.locator('[data-quantora-plus-trigger="true"]').first();
   await visible(plusTrigger, 'Study composer has no + action menu.');
 
-  const openNotebook = async () => {
+  const openPlusMenu = async () => {
     if (await panel.isVisible().catch(() => false)) {
       await page.keyboard.press('Escape');
       await panel.waitFor({ state: 'hidden', timeout: 5000 });
@@ -145,6 +202,11 @@ try {
     await plusTrigger.click();
     const plusMenu = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
     await visible(plusMenu, 'Study + menu did not open.');
+    return plusMenu;
+  };
+
+  const openNotebook = async () => {
+    const plusMenu = await openPlusMenu();
     const notebookAction = plusMenu.getByRole('button', { name: 'Notebook', exact: true });
     await visible(notebookAction, 'Study + menu has no Notebook destination.');
     await notebookAction.click();
@@ -165,8 +227,6 @@ try {
   await visible(notebook.getByText('Saved', { exact: true }), 'Creating a Notebook note did not resolve to Saved.');
   if (writeCount !== 1) throw new Error(`Notebook create produced ${writeCount} writes instead of exactly one.`);
 
-  // P1 regression: leaving the Notebook before the 700 ms debounce expires must
-  // flush the edit rather than silently cancelling the only PATCH.
   const body = notebook.getByRole('textbox', { name: 'Note body' });
   await body.fill('Velocity is the slope of a displacement-time graph. Positive slope means positive velocity.');
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
@@ -179,7 +239,6 @@ try {
   await notebook.getByRole('textbox', { name: 'Search notes' }).fill('positive velocity');
   await visible(notebook.getByRole('button', { name: /Velocity reminders/ }).first(), 'Notebook search did not find the flushed note body text.');
 
-  // The Hub-level Escape path must honor the same close guard.
   await notebook.getByRole('textbox', { name: 'Search notes' }).fill('');
   await notebook.getByRole('textbox', { name: 'Note body' }).fill('Velocity is slope. Negative slope means negative velocity.');
   await page.keyboard.press('Escape');
@@ -200,9 +259,53 @@ try {
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
   await visible(panel.getByRole('button', { name: 'Explain differently', exact: true }), 'Notebook did not return to Study AI.');
 
-  console.log('Study Notebook browser gate passed.');
+  // Schedule is a learner workspace, not an AI intervention. It opens only
+  // from + and persists planning state without touching verified learning truth.
+  const scheduleMenu = await openPlusMenu();
+  const scheduleAction = scheduleMenu.getByRole('button', { name: 'Study Schedule', exact: true });
+  await visible(scheduleAction, 'Study + menu has no Study Schedule destination.');
+  await scheduleAction.click();
+  const schedule = page.locator('[data-quantora-study-schedule="true"]').first();
+  await visible(schedule, 'Study Schedule did not open from the + menu.');
+  await visible(schedule.getByText('Plan the work. Completing a schedule block does not change mastery.', { exact: true }), 'Schedule lost its mastery truth boundary.');
+
+  await schedule.getByRole('button', { name: 'Add study block', exact: true }).click();
+  const newEditor = schedule.getByRole('complementary', { name: 'New study block' });
+  await visible(newEditor, 'Schedule editor did not open.');
+  await newEditor.getByLabel('Title').fill('Motion graphs review');
+  await newEditor.getByLabel('Subject').fill('Physics');
+  await newEditor.getByLabel('Topic').fill('Motion graphs');
+  await newEditor.getByLabel('Notes').fill('Review slope and velocity before practice.');
+  await newEditor.getByRole('button', { name: 'Add to schedule', exact: true }).click();
+  await visible(schedule.getByText('Motion graphs review', { exact: true }), 'New Schedule block did not render after save.');
+  if (scheduleWriteCount !== 1 || scheduleBlocks.length !== 1) throw new Error('Schedule create did not persist exactly once.');
+
+  await schedule.getByRole('button', { name: 'Mark complete', exact: true }).click();
+  await page.waitForTimeout(100);
+  if (scheduleWriteCount !== 2 || scheduleBlocks[0]?.status !== 'completed') throw new Error('Schedule completion did not persist planning status.');
+  if (masteryOrAssessmentWrites !== 0) throw new Error('Completing a Schedule block wrote to mastery or assessment state.');
+
+  await schedule.getByRole('button', { name: 'Edit Motion graphs review', exact: true }).click();
+  const editEditor = schedule.getByRole('complementary', { name: 'Edit study block' });
+  await visible(editEditor, 'Schedule edit surface did not open.');
+  await editEditor.getByLabel('Title').fill('Motion graphs + velocity review');
+  await editEditor.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await visible(schedule.getByText('Motion graphs + velocity review', { exact: true }), 'Schedule edit did not render after save.');
+  if (scheduleWriteCount !== 3 || scheduleBlocks[0]?.title !== 'Motion graphs + velocity review') throw new Error('Schedule edit did not persist exactly once.');
+
+  await schedule.getByRole('button', { name: 'Edit Motion graphs + velocity review', exact: true }).click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await schedule.getByRole('complementary', { name: 'Edit study block' }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.waitForTimeout(100);
+  if (scheduleWriteCount !== 4 || scheduleBlocks.length !== 0) throw new Error('Schedule delete did not remove the block exactly once.');
+  if (masteryOrAssessmentWrites !== 0) throw new Error('Schedule lifecycle leaked into verified learning truth.');
+
+  await schedule.getByRole('button', { name: 'Close Study Schedule', exact: true }).click();
+  await schedule.waitFor({ state: 'hidden', timeout: 5000 });
+
+  console.log('Study Notebook and Schedule browser gate passed.');
 } catch (error) {
-  console.error('Study Notebook browser gate FAILED:', error?.stack || error);
+  console.error('Study Notebook/Schedule browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;
 } finally {
   await browser.close();

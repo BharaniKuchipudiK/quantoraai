@@ -74,6 +74,7 @@ export function studioToolsMenuGroups(studioDomain, topic = '') {
           { id: 'new-topic', title: 'New topic', subtitle: 'Start a fresh Study thread.', icon: 'plus' },
           { id: 'study-assessment', title: 'Assessment', subtitle: 'Open a governed check for this topic.', icon: 'quiz', surface: 'assessment', requiresTopic: true },
           { id: 'study-flashcards', title: 'Flashcards', subtitle: 'Recall from what this conversation established.', icon: 'cards' },
+          { id: 'study-schedule', title: 'Study Schedule', subtitle: 'Plan your week without changing mastery.', icon: 'calendar', surface: 'schedule' },
           { id: 'study-notebook', title: 'Notebook', subtitle: 'Open your private Study notes.', icon: 'book', surface: 'notebook', requiresTopic: true },
         ],
       },

@@ -16,6 +16,7 @@ import {
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
+import StudyScheduleWorkspace from './StudyScheduleWorkspace.jsx';
 
 const HUB_ACTIONS = Object.freeze([
   {
@@ -60,6 +61,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
   const [open, setOpen] = useState(false);
   const [surface, setSurface] = useState('tools');
   const [notebookExpanded, setNotebookExpanded] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
   const surfaceCloseGuardRef = useRef(null);
@@ -84,8 +86,30 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     return true;
   }, []);
 
+  const openSchedule = useCallback(async () => {
+    const guard = surfaceCloseGuardRef.current;
+    try {
+      if (guard && (await guard()) === false) return false;
+    } catch {
+      return false;
+    }
+    surfaceCloseGuardRef.current = null;
+    setScheduleOpen(true);
+    setOpen(false);
+    setSurface('tools');
+    setNotebookExpanded(false);
+    return true;
+  }, []);
+
   useEffect(() => {
     const handleSurfaceRequest = (event) => {
+      if (event?.detail?.surface === STUDY_SURFACE.SCHEDULE) {
+        // Acknowledge the synchronous surface request so the + menu can close,
+        // but never tear down Notebook until its pending-save guard approves.
+        event.detail.handled = true;
+        void openSchedule();
+        return;
+      }
       if (!ready || event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
       event.detail.handled = true;
       setSurface('notebook');
@@ -94,7 +118,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     };
     window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
     return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-  }, [ready]);
+  }, [openSchedule, ready]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -140,10 +164,18 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     <div
       ref={rootRef}
       className="study-h1-hub"
+      style={scheduleOpen ? { zIndex: 60, pointerEvents: 'auto' } : undefined}
       data-quantora-study-hub-launcher="true"
       data-quantora-study-hub-ready={ready ? 'true' : 'false'}
       data-quantora-workspace-capabilities="education"
     >
+      {scheduleOpen ? (
+        <StudyScheduleWorkspace
+          defaultTopic={ready ? label : ''}
+          onClose={() => setScheduleOpen(false)}
+        />
+      ) : null}
+
       {open ? (
         <section
           id="quantora-study-hub-panel"
