@@ -269,6 +269,23 @@ try {
   await profile.click({ timeout: 15_000, force: true });
   const accountMenu = page.locator('#quantora-profile-menu').first();
   await visible(accountMenu, 'The sidebar account entry did not open the real account menu — a trigger that opens nothing is worse than no trigger.');
+  /*
+   * OPENING IS NOT ENOUGH — IT MUST OPEN *HERE* (2026-09-07).
+   *
+   * The first cut of this step asserted only that the menu appeared, and
+   * that passed while the anchor was being dropped: the trigger sent
+   * `detail.rect` where Header reads `detail.anchorRect`, so positioning
+   * fell back to the header's now-empty profile container and the menu
+   * opened by the top bar, far from the button clicked. A check that
+   * cannot see that is a check that would let it ship.
+   */
+  const triggerBox = await profile.boundingBox();
+  const menuBox = await accountMenu.boundingBox();
+  if (!triggerBox || !menuBox) throw new Error('Could not measure the account trigger or its menu.');
+  const drift = Math.abs(menuBox.x - triggerBox.x);
+  if (drift > 320) {
+    throw new Error(`The account menu opened ${Math.round(drift)}px from the sidebar control that opened it (trigger x=${Math.round(triggerBox.x)}, menu x=${Math.round(menuBox.x)}). It is anchored to the wrong element — check that the trigger sends detail.anchorRect, the key Header reads.`);
+  }
   const changePicture = accountMenu.locator('[data-quantora-profile-picture-entry]').first();
   await visible(changePicture, 'Account menu does not contain Change profile picture.');
   await changePicture.click();

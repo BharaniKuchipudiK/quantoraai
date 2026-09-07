@@ -4381,8 +4381,12 @@ Paused — ${autoPauseRef.current}.`
                * own entry (profileInShell), so there is one control, one menu.
                */
               const r = event.currentTarget.getBoundingClientRect();
+              // The key is `anchorRect` — Header reads exactly that. Sent as
+              // `rect` the anchor is silently discarded and the menu falls
+              // back to the header's (now empty) profile container, opening
+              // by the top bar instead of beside the button just clicked.
               window.dispatchEvent(new CustomEvent('quantora:open-profile-menu', {
-                detail: { rect: { left: r.left, top: r.top, bottom: r.bottom, right: r.right, width: r.width, height: r.height } },
+                detail: { anchorRect: { left: r.left, top: r.top, bottom: r.bottom, right: r.right, width: r.width, height: r.height } },
               }));
             }}
             style={studioFooterIconStyle}
