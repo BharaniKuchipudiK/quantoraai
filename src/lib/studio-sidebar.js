@@ -97,11 +97,26 @@ export function studioSidebarHistoryTitle(projectName) {
   return `Chats in ${studioProjectLabel(projectName)}`;
 }
 
-export function studioSidebarHistoryHint(count, projectName) {
+/**
+ * TWO LINES THAT DISAGREED (2026-09-06).
+ *
+ * The nav showed "New chat opens in Sartho" at the top and, at the bottom,
+ * "No chats in Personal Workspace yet. New Chat starts one here." Both claim
+ * to answer the same question and only one can be right: New Chat lands in
+ * the ACTIVE project, so the second sentence is false whenever the active
+ * project is not the one this section lists. Copy that instructs on a surface
+ * that cannot obey is the class this repo already has an incident for, so the
+ * promise is made only when it is true.
+ */
+export function studioSidebarHistoryHint(count, projectName, { isNewChatDestination = true } = {}) {
   const name = studioProjectLabel(projectName);
   const parsed = Number(count);
   const n = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
-  if (n <= 0) return `No chats in ${name} yet. New Chat starts one here.`;
+  if (n <= 0) {
+    return isNewChatDestination
+      ? `No chats in ${name} yet. New Chat starts one here.`
+      : `No chats in ${name} yet.`;
+  }
   if (n === 1) return '1 chat in this project';
   return `${n} chats in this project`;
 }

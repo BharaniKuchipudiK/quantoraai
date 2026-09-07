@@ -211,3 +211,27 @@ test('the New Chat line warns when it will leave the advisor you are in', () => 
 test('an unnamed project still reads as a sentence', () => {
   assert.match(newChatDestinationCopy({}), /^New chat opens in .+/);
 });
+
+/*
+ * TWO LINES THAT DISAGREED (2026-09-06). The nav showed "New chat opens in
+ * Sartho" above and "New Chat starts one here" (about Personal Workspace)
+ * below, in the same screenshot. New Chat lands in the ACTIVE project, so
+ * only one of those could be true.
+ */
+test('the empty Chats hint promises New Chat only where New Chat actually lands', () => {
+  assert.equal(
+    studioSidebarHistoryHint(0, 'Personal Workspace', { isNewChatDestination: true }),
+    'No chats in Personal Workspace yet. New Chat starts one here.',
+  );
+  const away = studioSidebarHistoryHint(0, 'Personal Workspace', { isNewChatDestination: false });
+  assert.equal(away, 'No chats in Personal Workspace yet.');
+  assert.ok(
+    !/New Chat/i.test(away),
+    'While another project is active the nav says "New chat opens in <that project>". '
+    + 'This section must not also claim New Chat starts here — two lines on one screen '
+    + 'answering the same question differently is how a person stops trusting either.',
+  );
+  // The counted forms are unchanged, and never make the promise at all.
+  assert.equal(studioSidebarHistoryHint(1, 'Boutique', { isNewChatDestination: false }), '1 chat in this project');
+  assert.equal(studioSidebarHistoryHint(4, 'Boutique'), '4 chats in this project');
+});

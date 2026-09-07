@@ -3602,6 +3602,7 @@ Paused — ${autoPauseRef.current}.`
    * project. A chat opened here never moves to another desk, whatever it says.
    */
   const WORKSPACE_FOLD_KEY = 'quantora_workspace_collapsed_v1';
+  const PROJECT_FOLD_KEY = 'quantora.sidebar.projectFold';
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(WORKSPACE_FOLD_KEY) || '{}');
@@ -3614,6 +3615,27 @@ Paused — ${autoPauseRef.current}.`
     setCollapsedWorkspaces((prev) => {
       const next = { ...prev, [workspace]: !prev[workspace] };
       try { localStorage.setItem(WORKSPACE_FOLD_KEY, JSON.stringify(next)); } catch { /* storage is a convenience */ }
+      return next;
+    });
+  }, []);
+  /*
+   * A project's chats fold independently of which project is ACTIVE. Clicking
+   * the name switches project (where New Chat lands); the chevron only hides
+   * the list. Before this the open project's chats could not be collapsed at
+   * all, so a project with twenty chats pushed Chats off a laptop screen.
+   */
+  const [collapsedProjects, setCollapsedProjects] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(PROJECT_FOLD_KEY) || '{}');
+      return stored && typeof stored === 'object' ? stored : {};
+    } catch {
+      return {};
+    }
+  });
+  const toggleProjectFold = useCallback((projectId) => {
+    setCollapsedProjects((prev) => {
+      const next = { ...prev, [projectId]: !prev[projectId] };
+      try { localStorage.setItem(PROJECT_FOLD_KEY, JSON.stringify(next)); } catch { /* storage is a convenience */ }
       return next;
     });
   }, []);
@@ -3641,6 +3663,16 @@ Paused — ${autoPauseRef.current}.`
   };
   const renderWorkspaceControls = (workspace, label) => {
     const folded = collapsedWorkspaces[workspace] === true;
+    /*
+     * A FOLD WITH NOTHING BEHIND IT (2026-09-06).
+     *
+     * Every agent row carried a fold whether or not it had chats, so three of
+     * five desks showed an "expanded" chevron over an empty list: ten controls
+     * on five rows, and three of them could not do anything when pressed. A
+     * control that cannot act is worse than no control — it costs the same
+     * glance and teaches the person that the chevrons mean nothing.
+     */
+    const hasChats = chatsForWorkspace(allChatSessions, workspace, activeProject?.id).length > 0;
     return (
       <span style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0, paddingRight: '4px' }}>
         <button
@@ -3653,6 +3685,7 @@ Paused — ${autoPauseRef.current}.`
         >
           <Plus size={13} />
         </button>
+        {hasChats ? (
         <button
           type="button"
           data-quantora-workspace-collapse={workspace}
@@ -3664,6 +3697,7 @@ Paused — ${autoPauseRef.current}.`
         >
           {folded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
         </button>
+        ) : null}
       </span>
     );
   };
@@ -4148,12 +4182,29 @@ Paused — ${autoPauseRef.current}.`
                   ) : namedProjects.map((project) => {
                     const isOpenProject = project.id === activeProjectId;
                     const projectChats = chatsForProject(project.id);
+                    const projectFolded = collapsedProjects[project.id] === true;
                     return (
                       <div key={project.id} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', minWidth: 0 }}>
                         <button
                           type="button"
                           data-quantora-sidebar-project={project.id}
-                          aria-expanded={isOpenProject}
+                          /*
+                           * SELECTING IS NOT DISCLOSING (2026-09-06).
+                           *
+                           * This button used to carry aria-expanded because the
+                           * chat list appeared whenever the project was active.
+                           * Now that the list has its own fold, that made two
+                           * controls report contradictory states for the SAME
+                           * list — the name saying expanded while the chevron
+                           * beside it said collapsed — and a screen-reader user
+                           * activating the name could not reveal anything,
+                           * because this handler is a no-op for the active
+                           * project. Disclosure belongs to the chevron alone.
+                           * What this button conveys is which project is
+                           * current, which is what aria-current says.
+                           */
+                          aria-current={isOpenProject ? 'true' : undefined}
                           onClick={() => { if (!isOpenProject) setActiveProjectId(project.id); }}
                           title={project.goal || project.description || project.name}
                           style={{
@@ -4186,8 +4237,22 @@ Paused — ${autoPauseRef.current}.`
                             {project.name}
                           </span>
                         </button>
-                        {isOpenProject && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', flexShrink: 0 }}>
+                        {isOpenProject && projectChats.length > 0 ? (
+                          <button
+                            type="button"
+                            data-quantora-project-collapse={project.id}
+                            aria-expanded={!projectFolded}
+                            title={projectFolded ? `Show ${project.name} chats` : `Hide ${project.name} chats`}
+                            aria-label={projectFolded ? `Show ${project.name} chats` : `Hide ${project.name} chats`}
+                            onClick={(event) => { event.stopPropagation(); toggleProjectFold(project.id); }}
+                            style={workspaceIconButtonStyle}
+                          >
+                            {projectFolded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                          </button>
+                        ) : null}
+                        </div>
+                        {isOpenProject && !projectFolded && (
+                          <div data-quantora-project-chats={project.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', flexShrink: 0 }}>
                             {projectChats.length === 0 ? (
                               <div style={{ color: subtextColor, fontSize: '0.74rem', lineHeight: 1.4, padding: '2px 10px 6px' }}>
                                 No chats in this project yet.
@@ -4210,7 +4275,7 @@ Paused — ${autoPauseRef.current}.`
                 </div>
                 {personalChatSessions.length === 0 ? (
                   <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '2px 4px' }}>
-                    {studioSidebarHistoryHint(0, 'Personal Workspace')}
+                    {studioSidebarHistoryHint(0, 'Personal Workspace', { isNewChatDestination: activeProjectId === DEFAULT_PROJECT_ID })}
                   </div>
                 ) : personalChatSessions.map((session) => renderChatRow(session))}
 
