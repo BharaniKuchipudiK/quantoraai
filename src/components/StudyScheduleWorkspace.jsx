@@ -147,6 +147,10 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
+  const newBlockDay = useMemo(() => {
+    const now = new Date();
+    return now >= weekStart && now < weekEnd ? now : weekStart;
+  }, [weekEnd, weekStart]);
 
   const blocksByDay = useMemo(() => {
     const grouped = new Map(days.map((day) => [dateKey(day), []]));
@@ -257,7 +261,18 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
 
   return (
     <div className="study-schedule-backdrop" data-quantora-study-schedule="true">
-      <section className="study-schedule-workspace" role="dialog" aria-modal="true" aria-labelledby="study-schedule-title">
+      <section
+        className="study-schedule-workspace"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="study-schedule-title"
+        style={{
+          height: 'min(850px, calc(100vh - 44px))',
+          minHeight: 'min(560px, calc(100vh - 44px))',
+          maxHeight: 'calc(100vh - 44px)',
+          overflowY: 'auto',
+        }}
+      >
         <header className="study-schedule-header">
           <div>
             <span className="study-schedule-eyebrow">Planning workspace</span>
@@ -276,7 +291,7 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
             <button type="button" className="study-h1-icon-button" aria-label="Next week" onClick={() => moveWeek(7)}><ChevronRight size={16} /></button>
             <strong>{weekLabel(weekStart)}</strong>
           </div>
-          <button type="button" className="study-h1-action study-h1-action--primary" onClick={() => startNew(new Date())}>
+          <button type="button" className="study-h1-action study-h1-action--primary" onClick={() => startNew(newBlockDay)}>
             <Plus size={14} aria-hidden="true" /> Add study block
           </button>
         </div>
