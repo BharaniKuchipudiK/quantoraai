@@ -15,6 +15,17 @@
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
 
+/**
+ * Reset between tests.
+ *
+ * The Map is module scope, and a limiter with a 24-hour window outlives the
+ * suite that trips it: without this, one test proving a ceiling holds leaves
+ * every later test in the same process on the wrong side of it.
+ */
+export function resetRateLimitBuckets(): void {
+  buckets.clear();
+}
+
 export function isRateLimited(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
   const bucket = buckets.get(key);
