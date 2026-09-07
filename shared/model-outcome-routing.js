@@ -148,6 +148,86 @@ export function outcomeRoutingAdjust(signal) {
 }
 
 /**
+ * Largest score a latency tie-break may move a route.
+ *
+ * STRICTLY BELOW 0.5, AND THAT IS THE WHOLE DESIGN.
+ *
+ * Every other term in both routing scores is an integer: name priors, the
+ * paid-flagship edge, the finish-reliability prior, and outcomeRoutingAdjust,
+ * which rounds. So two routes that differ on merit differ by at least 1, and a
+ * term bounded under a half can never close that gap from either side. Latency
+ * therefore decides EXACTLY the cases where merit is tied and nothing else
+ * does — which is what a tie-breaker means, proved by arithmetic rather than
+ * by choosing a small-looking weight and hoping.
+ *
+ * This bound is load-bearing. Raising it to 0.5 or beyond turns a tie-breaker
+ * into a ranker, and a fast wrong answer starts beating a slow right one.
+ */
+export const MAX_LATENCY_TIE_BREAK = 0.49;
+
+/**
+ * Break ties between routes by how fast they have actually answered.
+ *
+ * WHAT THIS REPLACES
+ *
+ * Both rankers already tie-break, on `a.index - b.index`: the earlier entry in
+ * the catalogue wins. That is an accident of list order standing in for a
+ * decision, and the platform has measured the answer all along --
+ * `model_quality_events` records latency per turn and `avgLatencyMs` has been
+ * carried on every signal, read by nobody. Phase 6 routes on "capability +
+ * measured outcome + health + latency + cost + budget"; latency was the input
+ * that was collected and then dropped.
+ *
+ * RELATIVE, NEVER A THRESHOLD
+ *
+ * There is no constant here saying what "slow" is, because any such number
+ * would be a guess that ages badly as models and providers change. The
+ * question a tie-break actually asks is comparative -- faster than the OTHER
+ * candidates on this turn -- so the fastest route in the pool takes the full
+ * positive nudge, the slowest the full negative one, and the rest sit where
+ * their measured latency puts them between the two.
+ *
+ * FAIL-SAFE, LIKE EVERYTHING ELSE IN THIS FILE
+ *
+ * A model with no trustworthy sample does not participate and scores 0. Fewer
+ * than two participants, or every participant equally fast, returns an empty
+ * map: there is nothing to break, and catalogue order remains the final
+ * tie-break exactly as before. A cold catalogue routes identically to the day
+ * before this function existed.
+ *
+ * @param {Array<object>} models  Routing models carrying `.quality`.
+ * @returns {Map<string, number>} id to a value in [-MAX_LATENCY_TIE_BREAK, MAX_LATENCY_TIE_BREAK].
+ */
+export function latencyTieBreaks(models) {
+  const measured = [];
+  for (const model of Array.isArray(models) ? models : []) {
+    if (!model || typeof model.id !== 'string' || !model.id) continue;
+    const samples = Number(model.quality?.sampleSize);
+    const latency = Number(model.quality?.avgLatencyMs);
+    if (!Number.isFinite(samples) || samples < MIN_OUTCOME_SAMPLES) continue;
+    if (!Number.isFinite(latency) || latency <= 0) continue;
+    measured.push({ id: model.id, latency });
+  }
+  const breaks = new Map();
+  if (measured.length < 2) return breaks;
+  let fastest = Infinity;
+  let slowest = -Infinity;
+  for (const entry of measured) {
+    if (entry.latency < fastest) fastest = entry.latency;
+    if (entry.latency > slowest) slowest = entry.latency;
+  }
+  // Every candidate equally fast: a tie on latency too, so leave it unbroken
+  // rather than inventing an order.
+  if (!(slowest > fastest)) return breaks;
+  const span = slowest - fastest;
+  for (const entry of measured) {
+    const speed = (slowest - entry.latency) / span; // 1 fastest, 0 slowest
+    breaks.set(entry.id, Number(((speed * 2 - 1) * MAX_LATENCY_TIE_BREAK).toFixed(6)));
+  }
+  return breaks;
+}
+
+/**
  * Attach measured signals onto a list of routing models as `.quality`, in the
  * shape the router's scorer already understands ({ sampleSize, score, ... }).
  * Models with no evidence keep whatever `.quality` they already carried (or
