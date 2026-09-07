@@ -70,13 +70,23 @@ test("exportUserData gathers every per-user table, scoped to the owner", withFet
     const data = await exportUserData("user-7");
     assert.ok(data, "export returned");
     // Shape includes each personal-data surface.
-    for (const key of ["account", "usage", "product_events", "published_sites", "outcome_states"]) {
+    for (const key of ["account", "usage", "product_events", "published_sites", "outcome_states", "desk_checkpoints"]) {
       assert.ok(key in (data as any), `export includes ${key}`);
     }
     assert.equal((data as any).account.google_sub, "user-7");
+    /*
+     * desk_checkpoints holds the person's actual source, which makes it the one
+     * surface here whose omission a person would most obviously notice. Raised
+     * in review of #591, where the export still queried the five tables that
+     * existed before it.
+     */
+    assert.ok(
+      calls.some((c) => c.method === "GET" && c.url.includes("desk_checkpoints")),
+      "the account download must include the desk's stored source, not just its metadata",
+    );
     // Every read is a GET scoped by the owner id — no cross-account leakage.
     const reads = calls.filter((c) => c.method === "GET");
-    assert.equal(reads.length, 5);
+    assert.equal(reads.length, 6, "a new per-user table means a new read here, or the export quietly omits it");
     for (const c of reads) assert.match(c.url, /eq\.user-7/);
   },
 ));

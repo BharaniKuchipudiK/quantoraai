@@ -13,13 +13,14 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hashVfsContent, recordDeskCheckpoint } from './desk-checkpoints.js';
+import { hashVfsContent, planDeskRestore, recordDeskCheckpoint } from './desk-checkpoints.js';
 import {
   DELTA_MAX_BYTES,
   applyDeskVfsDelta,
   deskDeltaStorable,
   deskVfsDelta,
   deskCheckpointStepsFromRows,
+  hydrateDeskCheckpointHistory,
   planDeskCheckpointChain,
   replayDeskCheckpointChain,
 } from './desk-checkpoint-delta.js';
@@ -237,4 +238,87 @@ test('a session rebuilt from stored rows alone is the session that was lost', ()
   assert.equal(replay.ok, true, replay.reason);
   assert.deepEqual(replay.vfs, live, 'the restored tree is the tree the desk had when it died');
   assert.equal(replay.verifiedSteps, 3);
+});
+
+/*
+ * FROM REVIEW OF #591, the highest-severity finding.
+ *
+ * The desk trims its own history at twenty entries and renumbers what remains,
+ * so checkpoint 21 arrives claiming position 0 -- the position the dropped one
+ * still held. Merging rows by id alone leaves two at the same position, and the
+ * chain is then refused on every read from that moment on, permanently. The
+ * store replaces a session's chain per generation rather than adding to it;
+ * this holds the shape that makes the replacement necessary.
+ */
+test('a trimmed history is a complete chain in its own right, not a continuation', () => {
+  let history = [];
+  for (const body of ['v1', 'v2', 'v3']) {
+    history = recordDeskCheckpoint(history, { 'a.js': body }, { label: body });
+  }
+  // What the desk keeps after dropping its oldest entry.
+  const trimmed = history.slice(1);
+  const plan = planDeskCheckpointChain(trimmed);
+
+  assert.equal(plan.steps[0].delta.removed.length, 0);
+  assert.deepEqual(
+    plan.steps[0].delta.changed,
+    { 'a.js': 'v2' },
+    'the first surviving checkpoint must carry a whole tree, since nothing precedes it any more',
+  );
+  const replay = replayDeskCheckpointChain({ steps: plan.steps });
+  assert.equal(replay.ok, true, replay.reason);
+  assert.deepEqual(replay.vfs, { 'a.js': 'v3' }, 'a trimmed chain still replays to the live tree');
+});
+
+test('two chains written for one session would collide at position zero', () => {
+  let history = [];
+  for (const body of ['v1', 'v2']) history = recordDeskCheckpoint(history, { 'a.js': body }, { label: body });
+  const first = planDeskCheckpointChain(history).steps.map((s, seq) => ({ checkpoint_id: s.id, seq, hash: s.hash, delta: s.delta }));
+  const second = planDeskCheckpointChain(history.slice(1)).steps.map((s, seq) => ({ checkpoint_id: s.id, seq, hash: s.hash, delta: s.delta }));
+
+  // Exactly what merging by id into one set of rows would produce.
+  const merged = deskCheckpointStepsFromRows([...first, ...second]);
+  assert.equal(merged.ok, false, 'two generations in one set must be refused, not silently replayed');
+
+  // And each generation on its own is fine, which is why the store keeps them apart.
+  assert.equal(deskCheckpointStepsFromRows(first).ok, true);
+  assert.equal(deskCheckpointStepsFromRows(second).ok, true);
+});
+
+/*
+ * ALSO FROM REVIEW OF #591: the durable history has to reach the rewind menu,
+ * in the shape the menu and planDeskRestore already work on.
+ */
+test('a stored chain hydrates into the history the desk would have built itself', () => {
+  let history = [];
+  history = recordDeskCheckpoint(history, { 'index.html': 'one' }, { label: 'first' });
+  history = recordDeskCheckpoint(history, { 'index.html': 'two', 'app.css': 'x' }, { label: 'second' });
+  const steps = planDeskCheckpointChain(history).steps;
+
+  const hydrated = hydrateDeskCheckpointHistory(steps);
+  assert.equal(hydrated.ok, true, hydrated.reason);
+  assert.equal(hydrated.entries.length, 2);
+  assert.deepEqual(hydrated.entries[0].vfs, { 'index.html': 'one' }, 'every entry carries its whole tree, as the menu needs');
+  assert.deepEqual(hydrated.entries[1].vfs, { 'index.html': 'two', 'app.css': 'x' });
+  assert.equal(hydrated.entries[1].label, 'second', 'the labels a person chose survive the round trip');
+  assert.equal(hydrated.entries[1].fileCount, 2);
+
+  // The restore machinery must accept it without knowing it came from a server.
+  const plan = planDeskRestore(hydrated.entries, hydrated.entries[0].id, hydrated.entries[1].vfs);
+  assert.equal(plan.ok, true, `a hydrated history must be restorable: ${plan.reason || ''}`);
+  assert.deepEqual(plan.vfs, { 'index.html': 'one' });
+});
+
+test('hydration refuses a tampered chain rather than offering a restore point that lies', () => {
+  let history = [];
+  history = recordDeskCheckpoint(history, { 'a.js': 'good' }, { label: 'good' });
+  history = recordDeskCheckpoint(history, { 'a.js': 'also good' }, { label: 'also good' });
+  const steps = planDeskCheckpointChain(history).steps;
+  const tampered = steps.map((s, i) => (i === 1 ? { ...s, delta: { changed: { 'a.js': 'TAMPERED' }, removed: [] } } : s));
+
+  const hydrated = hydrateDeskCheckpointHistory(tampered);
+  assert.equal(hydrated.ok, false, 'a chain that does not rebuild must not become a rewind menu');
+  assert.equal(hydrated.entries.length, 1, 'what verified is kept, what did not is dropped');
+  assert.deepEqual(hydrated.entries[0].vfs, { 'a.js': 'good' });
+  assert.match(hydrated.reason, /does not rebuild to the tree it recorded/);
 });

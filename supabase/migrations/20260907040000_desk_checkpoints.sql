@@ -32,9 +32,21 @@
 
 create table if not exists public.desk_checkpoints (
   id            bigserial primary key,
-  user_sub      text not null,
+  -- Owned content, so it dies with the account. deleteUserData removes only the
+  -- users row and relies on this cascade, exactly as published_sites and
+  -- outcome_states do; without it a deleted account's source files would sit
+  -- here indefinitely and be readable again if the same subject signed back up.
+  user_sub      text not null references public.users(google_sub) on delete cascade,
   session_id    text not null,
   checkpoint_id text not null,
+  -- Which write produced this row. A save REPLACES the session's chain rather
+  -- than adding to it, because the desk trims its history and renumbers what
+  -- remains: with a single set of rows, checkpoint 21 would be written at seq 0
+  -- while the dropped checkpoint still held seq 0, and every later read would
+  -- see two rows claiming the same position and refuse the chain forever.
+  -- Each save writes a fresh generation and readers take the newest complete
+  -- one, so a chain is never observed half-replaced.
+  generation    bigint not null,
   -- Position in the chain, from 0. A gap here is a break, never a shorter
   -- history: replaying past one would apply a delta to the wrong tree.
   seq           integer not null check (seq >= 0),
@@ -47,14 +59,14 @@ create table if not exists public.desk_checkpoints (
   created_at    timestamptz not null default now()
 );
 
--- One row per checkpoint per session, so a retried write cannot fork the chain.
+-- One row per checkpoint per generation, so a retried write cannot fork a chain.
 create unique index if not exists desk_checkpoints_unique_idx
-  on public.desk_checkpoints (user_sub, session_id, checkpoint_id);
+  on public.desk_checkpoints (user_sub, session_id, generation, checkpoint_id);
 
--- The chain, in order, for one person's session. user_sub leads so the cheap
--- query is the one that cannot cross accounts.
+-- The newest chain, in order, for one person's session. user_sub leads so the
+-- cheap query is the one that cannot cross accounts.
 create index if not exists desk_checkpoints_chain_idx
-  on public.desk_checkpoints (user_sub, session_id, seq);
+  on public.desk_checkpoints (user_sub, session_id, generation desc, seq);
 
 alter table public.desk_checkpoints enable row level security;
 revoke all on public.desk_checkpoints from anon, authenticated;

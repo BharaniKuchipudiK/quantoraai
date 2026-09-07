@@ -133,5 +133,18 @@ export default async function handler(req: any, res: any) {
     vfs: replay.vfs,
     verifiedSteps: replay.verifiedSteps,
     checkpoints,
+    /*
+     * The chain itself, so the desk can rebuild its history and verify it
+     * independently rather than trusting this answer. Deltas, not trees, so the
+     * payload stays the size of what changed.
+     */
+    steps: wanted.map((step) => ({
+      id: step.id,
+      at: step.at,
+      label: step.label,
+      origin: step.origin,
+      hash: step.hash,
+      delta: step.delta,
+    })),
   });
 }

@@ -261,3 +261,50 @@ export function deskCheckpointStepsFromRows(rows) {
   }
   return { ok: true, steps: list, reason: '' };
 }
+
+/**
+ * Rebuild the in-memory history from a stored chain.
+ *
+ * The desk's rewind menu and `planDeskRestore` both work on entries that carry
+ * a whole `vfs`, so a hydrated history has to be the same shape the session
+ * would have built for itself. Replaying the chain client-side gives exactly
+ * that, and it means the same verification runs on both sides of the wire: a
+ * chain that does not rebuild to its recorded hashes is refused here too,
+ * rather than trusted because a server said it was fine.
+ *
+ * Stops at the first step that fails to verify and returns what was proved,
+ * for the same reason the replay does: a shorter honest history beats a longer
+ * one containing a tree nobody can vouch for.
+ *
+ * @param {Array<{id:string, at:number|null, label:string, origin:string, hash:string, delta:object}>} steps
+ * @returns {{entries: Array<object>, ok: boolean, reason: string}}
+ */
+export function hydrateDeskCheckpointHistory(steps) {
+  const list = Array.isArray(steps) ? steps : [];
+  const entries = [];
+  let vfs = {};
+  for (const step of list) {
+    const next = applyDeskVfsDelta(vfs, step?.delta);
+    const expected = typeof step?.hash === 'string' ? step.hash : '';
+    if (!expected || hashVfsContent(next) !== expected) {
+      return {
+        entries,
+        ok: false,
+        reason: `stored checkpoint ${step?.id || '(unnamed)'} does not rebuild to the tree it recorded; `
+          + `${entries.length} restore point(s) before it are trustworthy`,
+      };
+    }
+    vfs = next;
+    entries.push({
+      id: String(step.id),
+      at: Number.isFinite(Number(step.at)) ? Number(step.at) : Date.now(),
+      label: typeof step.label === 'string' && step.label ? step.label : 'Saved checkpoint',
+      origin: step.origin === 'restore' || step.origin === 'baseline' ? step.origin : 'commit',
+      hash: expected,
+      fileCount: Object.keys(vfs).length,
+      bytes: Object.keys(vfs).reduce((sum, path) => sum + path.length + vfs[path].length, 0),
+      vfs: { ...vfs },
+    });
+  }
+  return { entries, ok: true, reason: '' };
+}

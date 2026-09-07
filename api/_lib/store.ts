@@ -994,17 +994,21 @@ export async function exportUserData(googleSub: string): Promise<Record<string, 
     try { return (await res.json()) as any[]; } catch { return null; }
   };
 
-  const [profile, usage, events, sites, states] = await Promise.all([
+  const [profile, usage, events, sites, states, checkpoints] = await Promise.all([
     get(`users?select=google_sub,email,name,picture,created_at,last_seen_at,sign_in_count&google_sub=eq.${sub}`),
     get(`usage?select=provider,model_id,latency_ms,tokens_est,used_server_key,created_at&user_sub=eq.${sub}&order=created_at.desc`),
     get(`product_events?select=event_type,metadata,created_at&user_sub=eq.${sub}&order=created_at.desc`),
     get(`published_sites?select=project_name,deployment_url,created_at,updated_at&user_sub=eq.${sub}&order=created_at.desc`),
     get(`outcome_states?select=session_id,version,state,created_at,updated_at&user_sub=eq.${sub}&order=updated_at.desc`),
+    // The desk's stored rewind history. These rows hold the person's actual
+    // source, so an export that omitted them would claim to be everything while
+    // leaving out the only content here they wrote themselves.
+    get(`desk_checkpoints?select=session_id,checkpoint_id,seq,label,origin,hash,delta,created_at&user_sub=eq.${sub}&order=created_at.desc`),
   ]);
 
   // If any table read failed outright, refuse to hand back a partial export
   // that the user might mistake for complete.
-  if ([profile, usage, events, sites, states].some((v) => v === null)) return null;
+  if ([profile, usage, events, sites, states, checkpoints].some((v) => v === null)) return null;
 
   return {
     exported_at: new Date().toISOString(),
@@ -1013,6 +1017,7 @@ export async function exportUserData(googleSub: string): Promise<Record<string, 
     product_events: events!,
     published_sites: sites!,
     outcome_states: states!,
+    desk_checkpoints: checkpoints!,
   };
 }
 
@@ -1108,6 +1113,7 @@ export async function countPaidCallsSince(userSub: string, sinceIso: string): Pr
  */
 export type DeskCheckpointRow = {
   checkpoint_id: string;
+  generation?: number;
   seq: number;
   label: string | null;
   origin: string | null;
@@ -1133,12 +1139,28 @@ export async function saveDeskCheckpoints(
   const sub = String(userSub || "").trim();
   const session = String(sessionId || "").trim();
   if (!sub || !session || !Array.isArray(rows) || !rows.length) return false;
-  const response = await request("desk_checkpoints?on_conflict=user_sub,session_id,checkpoint_id", {
+
+  /*
+   * A SAVE REPLACES THE CHAIN, IT DOES NOT ADD TO IT.
+   *
+   * The desk trims its own history and renumbers what remains, so the
+   * twenty-first checkpoint arrives claiming seq 0 -- the position the dropped
+   * one still held. Merging by checkpoint_id alone would leave two rows at the
+   * same position and `deskCheckpointStepsFromRows` would refuse the chain from
+   * then on, permanently. Raised in review of #591.
+   *
+   * Each save therefore writes a whole new generation and readers take the
+   * newest one, so a chain is never observed half-replaced: the previous
+   * generation stays intact and readable until this one is completely written.
+   */
+  const generation = Date.now();
+  const response = await request("desk_checkpoints", {
     method: "POST",
-    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+    headers: { Prefer: "return=minimal" },
     body: JSON.stringify(rows.map((row) => ({
       user_sub: sub.slice(0, 200),
       session_id: session.slice(0, 200),
+      generation,
       checkpoint_id: String(row.checkpoint_id || "").slice(0, 120),
       seq: Math.max(0, Math.round(Number(row.seq) || 0)),
       label: row.label ? String(row.label).slice(0, 120) : null,
@@ -1147,7 +1169,20 @@ export async function saveDeskCheckpoints(
       delta: row.delta && typeof row.delta === "object" ? row.delta : { changed: {}, removed: [] },
     }))),
   });
-  return response !== null;
+  if (!response) return false;
+
+  /*
+   * Retire what this generation replaced. Deliberately after the write and
+   * deliberately not fatal: a failure here leaves rows that no reader will look
+   * at, which costs storage. Doing it first, or treating it as required, would
+   * risk deleting the only copy of a history whose replacement never landed.
+   */
+  void requestRaw(
+    `desk_checkpoints?user_sub=eq.${encodeURIComponent(sub)}`
+    + `&session_id=eq.${encodeURIComponent(session)}&generation=lt.${generation}`,
+    { method: "DELETE", headers: { Prefer: "return=minimal" } },
+  );
+  return true;
 }
 
 /**
@@ -1167,12 +1202,20 @@ export async function readDeskCheckpoints(
   const session = String(sessionId || "").trim();
   if (!sub || !session) return null;
   const response = await request(
-    `desk_checkpoints?select=checkpoint_id,seq,label,origin,hash,delta`
+    `desk_checkpoints?select=checkpoint_id,seq,label,origin,hash,delta,generation`
     + `&user_sub=eq.${encodeURIComponent(sub)}&session_id=eq.${encodeURIComponent(session)}`
-    + `&order=seq.asc&limit=200`,
+    + `&order=generation.desc,seq.asc&limit=400`,
     { method: "GET" },
   );
   if (!response) return null;
   const rows = await response.json().catch(() => null);
-  return Array.isArray(rows) ? rows as DeskCheckpointRow[] : null;
+  if (!Array.isArray(rows)) return null;
+  if (!rows.length) return [];
+  /*
+   * Newest generation only. A retired generation whose delete has not landed
+   * yet is still present, and mixing two of them would produce duplicate
+   * positions -- the exact break this design exists to prevent.
+   */
+  const newest = rows[0]?.generation;
+  return rows.filter((row: any) => row?.generation === newest) as DeskCheckpointRow[];
 }
