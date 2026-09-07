@@ -4393,9 +4393,18 @@ Paused — ${autoPauseRef.current}.`
             onMouseEnter={(e) => { e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
           >
-            {profileAvatarSrc
-              ? <img src={profileAvatarSrc} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-              : <UserRound size={16} />}
+            {/*
+              AN ICON, NOT A NETWORK REQUEST (2026-09-07).
+              `useProfileAvatar` can return a ui-avatars.com URL, so drawing
+              the photo here would make the nav depend on a third-party host
+              being reachable. It caught that itself: workspace-contract
+              failed with "Travel Advisor contains broken visible images"
+              naming that URL. An onError fallback would still fire the
+              request and still log the failure, so the photo is simply not
+              fetched for this control — the face belongs in the menu it
+              opens, and the sidebar keeps a glyph that cannot break.
+            */}
+            <UserRound size={16} />
           </button>
           <button
             type="button"
