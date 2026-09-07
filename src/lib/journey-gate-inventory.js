@@ -661,8 +661,10 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-checkout.test.ts',
         'api/_lib/repository-preview.test.ts',
         'api/_lib/github-intelligence.test.ts',
+        'src/lib/repo-work-comprehension.test.js',
       ],
     },
+    note: 'The import works; being understood as a CHANGE afterwards did not. Measured 2026-09-07 with a real repository open on the desk, shouldRefineRunningDesk returned false for 26 of 28 ordinary developer requests -- \'fix the null check in auth.ts\', \'add a test for the retry path\', \'bump the eslint version\' -- and the two that passed were accidents: \'migrate the users TABLE\' matched the UI-parts list on an HTML table, and \'can you fix THEM\' matched the rule for iterating on a preview. The first reading of that number was wrong and the correction is the useful part: those turns were still coding turns, because turnBelongsToBuild covers any message once the desk holds files, so buildMode was never wrong. What they were not is REFINEMENTS. On the same desk with the same files, \'make the header blue\' went out as studioMode build with refineMode true, and \'add a test for the retry path\' went out as studioMode ask with refineMode absent -- a change to existing code described to the server as a fresh request. Every intent signal here had been written for somebody who wants software MADE, so a person who already has a repository was speaking a vocabulary the desk did not contain. repo-work-comprehension.test.js is the comprehension gate for that: precision may never leave 100%, because an invention here is not a wrong answer but a WRITE -- a question about the code read as an instruction to change it moves files while somebody was only asking -- and the recall floor, 100% of the corpus and 8 of 8 holdout phrasings against 7% before, may only ever rise, which at 100% means the gate is strengthened by adding cases rather than by moving a number. It also proves the floor is carried by the new vocabulary rather than reachable without it, so the gate cannot pass with the fix deleted.',
   }),
   journey({
     id: 'github-push',
