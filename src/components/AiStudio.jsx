@@ -5303,6 +5303,7 @@ Paused — ${autoPauseRef.current}.`
               {/* Attachment Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
+                  data-quantora-attachment-menu="true"
                   onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
                   title="Attach file, image, or GitHub"
                   style={{
@@ -5392,6 +5393,7 @@ Paused — ${autoPauseRef.current}.`
                       <div style={{ height: '1px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
                       <button 
+                        data-quantora-github-import-open="true"
                         onClick={() => { setIsGithubModalOpen(true); setIsAttachmentMenuOpen(false); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
                         onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)'}
@@ -6241,6 +6243,7 @@ Paused — ${autoPauseRef.current}.`
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>GitHub Repository URL</label>
               <input
                 type="text"
+                data-quantora-github-import-url="true"
                 value={githubRepoUrl}
                 onChange={(e) => setGithubRepoUrl(e.target.value)}
                 placeholder="https://github.com/owner/repo"
@@ -6260,10 +6263,12 @@ Paused — ${autoPauseRef.current}.`
                 onFocus={(e) => e.target.style.borderColor = '#f97316'}
                 onBlur={(e) => e.target.style.borderColor = isLight ? '#d4d4d4' : 'rgba(255, 255, 255, 0.2)'}
               />
-              {githubError && <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
+              {githubError && <div data-quantora-github-import-error="true" style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
             </div>
 
             <button
+              data-quantora-github-import-run="true"
+              data-quantora-github-import-busy={isFetchingGithub ? 'true' : 'false'}
               onClick={handleImportGithub}
               disabled={isFetchingGithub || !githubRepoUrl}
               style={{
