@@ -125,8 +125,16 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       draft: true,
     });
     if (!parsed.ok) throw new Error(parsed.error);
-    setStatus(`Draft pull request #${parsed.data.number} opened as ${parsed.data.actedAs}.`);
+    /*
+     * The refresh comes FIRST, because loadPullRequests opens with setStatus('')
+     * and would erase this sentence the moment it ran. Written the other way
+     * round, the panel reported that it had opened a pull request and then
+     * silently blanked -- a click that visibly did nothing, on a write that had
+     * actually happened. Same shape as the push link that vanished after a
+     * successful push on 2026-09-06.
+     */
     await loadPullRequests();
+    setStatus(`Draft pull request #${parsed.data.number} opened as ${parsed.data.actedAs}.`);
   });
 
   const mergeCurrent = () => run(async () => {
@@ -139,8 +147,9 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       mergeMethod: 'squash',
     });
     if (!parsed.ok) throw new Error(parsed.error);
-    setStatus(`Merged as ${parsed.data.sha?.slice(0, 12) || 'a new commit'}.`);
+    // Refresh first, then report: see openDraftPullRequest.
     await loadPullRequests();
+    setStatus(`Merged as ${parsed.data.sha?.slice(0, 12) || 'a new commit'}.`);
   });
 
   const notice = githubConnectionNotice(connection);
