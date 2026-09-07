@@ -3,6 +3,15 @@ import test from 'node:test';
 import { parseTravelSearchRequest } from './travel-search-request.js';
 import { deriveTravelBrief } from '../../src/lib/travel-board-brief.js';
 
+/*
+ * Fixture dates move with the clock. A literal future date is valid the day it
+ * is written and INVALID_ARGUMENT the morning after it passes — a red suite no
+ * diff caused. That happened on 2026-09-03 and again, still armed, on 09-07.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysFromNow = (days: number): string =>
+  new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+
 test('the trip board cannot ask the booking tools', () => {
   assert.equal(parseTravelSearchRequest({ kind: 'book' }).ok, false);
 });
@@ -12,7 +21,7 @@ test('flight search needs airport codes and a date', () => {
     kind: 'flights',
     origin: 'sin',
     destination: 'dps',
-    departureDate: '2026-09-12',
+    departureDate: isoDaysFromNow(30),
   });
   assert.equal(parsed.ok, true);
   if (parsed.ok) {

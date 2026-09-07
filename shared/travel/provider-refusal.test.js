@@ -35,7 +35,17 @@ import * as flightResilience from './flight-resilience.js';
 
 const { flightProviderFailureAsk } = flightResilience;
 
-const ARGS = { origin: 'SIN', destination: 'DPS', departureDate: '2026-10-01' };
+/*
+ * Fixture dates move with the clock. A literal future date is valid the day it
+ * is written and INVALID_ARGUMENT the morning after it passes — a red suite no
+ * diff caused. That happened on 2026-09-03 and again, still armed, on 09-07.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysFromNow = (days) =>
+  new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+const FUTURE_DEPARTURE = isoDaysFromNow(30);
+
+const ARGS = { origin: 'SIN', destination: 'DPS', departureDate: FUTURE_DEPARTURE };
 
 /** The fields a traveller would act on, all provider-backed. */
 const PROVIDER_FIELDS = ['fares', 'carriers', 'schedules', 'durations'];
@@ -93,7 +103,7 @@ test('an unconfigured provider makes the same whole-answer promise', () => {
 const REFUSAL_ARGS = [
   {},                                                                   // nothing known yet
   { origin: 'SIN' },                                                    // partly known
-  { origin: 'SIN', destination: 'DPS', departureDate: '2026-10-01' },   // complete, future
+  { origin: 'SIN', destination: 'DPS', departureDate: FUTURE_DEPARTURE },  // complete, future
   { origin: 'SIN', destination: 'DPS', departureDate: '2020-01-01' },   // complete, past
 ];
 
