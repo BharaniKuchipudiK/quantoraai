@@ -7,6 +7,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  studyCompassMissionAsk,
   studyActionVisibleText,
   studyExplainDifferentlyAsk,
   studyRealWorldAsk,
@@ -16,6 +17,7 @@ import {
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
+import StudyLearningCompass from './StudyLearningCompass.jsx';
 import StudyScheduleWorkspace from './StudyScheduleWorkspace.jsx';
 
 const HUB_ACTIONS = Object.freeze([
@@ -57,7 +59,7 @@ const HUB_ACTIONS = Object.freeze([
  * disabled until there is a real topic; durable learner workspaces keep their
  * own ownership boundaries.
  */
-export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, ready = true }) {
+export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null, learnerModel, onAsk, onSend, ready = true }) {
   const [open, setOpen] = useState(false);
   const [surface, setSurface] = useState('tools');
   const [notebookExpanded, setNotebookExpanded] = useState(false);
@@ -141,12 +143,24 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
 
   const runAction = (action) => {
     if (!ready) return;
+    if (action.id === 'where-next') {
+      setSurface('compass');
+      return;
+    }
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
     if (onSend) {
       onSend(text, { visibleUserText: studyActionVisibleText(action.id, label) });
     } else {
       onAsk?.(text);
     }
+    void closeHub();
+  };
+
+  const startCompassRecommendation = (recommendation) => {
+    const text = studyCompassMissionAsk(recommendation);
+    const visibleUserText = `Start my recommended next step: ${recommendation.label}.`;
+    if (onSend) onSend(text, { visibleUserText });
+    else onAsk?.(text);
     void closeHub();
   };
 
@@ -158,7 +172,9 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
 
   const labelledBy = surface === 'notebook'
     ? 'quantora-study-notebook-title'
-    : 'quantora-study-hub-title';
+    : surface === 'compass'
+      ? 'quantora-study-learning-compass-title'
+      : 'quantora-study-hub-title';
 
   return (
     <div
@@ -194,6 +210,14 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
                 setSurface('tools');
               }}
               registerCloseGuard={registerSurfaceCloseGuard}
+            />
+          ) : surface === 'compass' ? (
+            <StudyLearningCompass
+              topicKey={topicKey}
+              topic={label}
+              curriculumKey={curriculumKey}
+              onClose={() => setSurface('tools')}
+              onStart={startCompassRecommendation}
             />
           ) : (
             <>
