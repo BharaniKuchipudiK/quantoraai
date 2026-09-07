@@ -2,6 +2,7 @@ export const STUDY_SURFACE_REQUEST_EVENT = 'quantora:study-surface-request';
 
 export const STUDY_SURFACE = Object.freeze({
   ASSESSMENT: 'assessment',
+  SCHEDULE: 'schedule',
   NOTEBOOK: 'notebook',
 });
 
@@ -13,7 +14,7 @@ const STUDY_SURFACES = new Set(Object.values(STUDY_SURFACE));
  * The boolean return means a mounted consumer actually accepted the request,
  * not merely that the browser could dispatch an event. This matters while an
  * existing Study session is restoring onboarding/context: the + menu must not
- * close and silently lose Assessment/Notebook before their consumers mount.
+ * close and silently lose Assessment/Schedule/Notebook before their consumers mount.
  */
 export function requestStudySurface(surface) {
   const target = String(surface || '').trim();

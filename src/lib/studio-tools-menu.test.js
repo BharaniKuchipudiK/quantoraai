@@ -36,15 +36,19 @@ test('Study plus exposes one truthful door per learner action without duplicatin
     'new-topic',
     'study-assessment',
     'study-flashcards',
+    'study-schedule',
     'study-notebook',
   ]);
   for (const duplicate of ['study-icebreaker', 'study-apply', 'study-plan', 'study-notes', 'study-explain', 'study-quiz']) {
     assert.equal(studyIds.includes(duplicate), false);
   }
   const assessment = studyItems.find((item) => item.id === 'study-assessment');
+  const schedule = studyItems.find((item) => item.id === 'study-schedule');
   const notebook = studyItems.find((item) => item.id === 'study-notebook');
   assert.equal(assessment?.surface, 'assessment');
   assert.equal(assessment?.requiresTopic, true);
+  assert.equal(schedule?.surface, 'schedule');
+  assert.equal(schedule?.requiresTopic, undefined);
   assert.equal(notebook?.surface, 'notebook');
   assert.equal(notebook?.requiresTopic, true);
 });
