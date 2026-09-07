@@ -556,8 +556,15 @@ export const JOURNEYS = Object.freeze([
     name: 'Rewind the desk to an earlier checkpoint',
     entry: 'src/components/DeskRewindMenu.jsx',
     hooks: ['data-quantora-desk-rewind'],
-    gates: { deterministic: ['src/lib/desk-checkpoints.test.js'] },
-    note: 'Checkpoints are tested; the menu has never been opened by a gate.',
+    gates: {
+      deterministic: [
+        'src/lib/desk-checkpoints.test.js',
+        'src/lib/desk-checkpoint-delta.test.js',
+        'src/lib/desk-checkpoint-client.test.js',
+      ],
+    },
+    serves: ['api/desk-checkpoints.ts'],
+    note: 'Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO. Review of #591 found three more: a save REPLACES a session\'s chain rather than adding to it, because the desk trims its own history and renumbers what remains, so checkpoint 21 would arrive claiming the position the dropped one still held and every later read would refuse the chain forever -- each save writes a fresh generation and readers take the newest, so a chain is never seen half-replaced; the rows carry the person\'s source so they cascade on account deletion and appear in the account export, which had still queried only the five tables that predated them; and the desk now reads the stored chain back on session open, rebuilding and re-verifying it locally rather than trusting the answer, and adopting it only when the session has not already moved on.',
   }),
   journey({
     id: 'qir-durable-run',
@@ -1027,11 +1034,12 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/user-paid-quota.test.ts',
         'api/_lib/user-paid-quota-wiring.test.ts',
         'src/lib/model-outcome-routing.test.js',
+        'src/lib/latency-tie-breaker.test.js',
         'scripts/provider-health.test.mjs',
       ],
       deployed: ['scripts/provider-health-probe.mjs'],
     },
-    note: 'Two brakes, opposite by design (2026-09-07): the platform spend gate reads OpenRouter\'s own meter and fails CLOSED, because unknown spend is never zero spend and a guess spends real money. The per-user quota counts one account\'s paid calls in a rolling window and fails OPEN, because that meter is per key and shared, so a quota outage would deny every user the paid rung to bound an overrun the dollar ceiling already bounds. Its unset limit is a real number, not infinity, so the protection cannot exist in the repository and not on the deployment the way OPENROUTER_SPEND_CEILING_USD did. The wiring gate reads chat-handler because this repo has already shipped a whole cost-control subsystem that nothing called. The provider watch (2026-09-06): every half hour the production deployment\'s readiness, live Gemini probe and free OpenRouter credential probe are read and judged; a missing, refused, capped, exhausted or unreachable provider fails the scheduled run, which is what GitHub emails the owner about. server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
+    note: 'Two brakes, opposite by design (2026-09-07): the platform spend gate reads OpenRouter\'s own meter and fails CLOSED, because unknown spend is never zero spend and a guess spends real money. The per-user quota counts one account\'s paid calls in a rolling window and fails OPEN, because that meter is per key and shared, so a quota outage would deny every user the paid rung to bound an overrun the dollar ceiling already bounds. Its unset limit is a real number, not infinity, so the protection cannot exist in the repository and not on the deployment the way OPENROUTER_SPEND_CEILING_USD did. The wiring gate reads chat-handler because this repo has already shipped a whole cost-control subsystem that nothing called. Latency became a routing input (2026-09-07): the platform recorded it per turn and carried avgLatencyMs on every signal while nothing read it, and both rankers settled an exact tie on catalogue position instead. It now settles on measured speed, positionally: within a run of equal merit the positions held by measured routes are collected, those routes are ordered among themselves by latency, and they are written back into exactly those positions, so merit cannot be crossed and a route nobody has timed never moves. The first cut scored each route instead and gave an unmeasured one a zero, which sits mid-range and silently ranked it ahead of every slow route and behind every fast one on no evidence; review of #590 caught it. The obvious repair -- compare latency only when both sides are measured -- is unsound, because slow/unknown/fast in catalogue order demands a cycle and Array.prototype.sort has no defined result for an intransitive comparator. The same review found the number itself wrong: the view averages latency over successful rows only, so combining a model\'s categories unweighted let one sample outvote a hundred, harmless while nothing read it and load-bearing the moment routing did. The provider watch (2026-09-06): every half hour the production deployment\'s readiness, live Gemini probe and free OpenRouter credential probe are read and judged; a missing, refused, capped, exhausted or unreachable provider fails the scheduled run, which is what GitHub emails the owner about. server-key-resolution.test.ts reads every api/ file: one that takes GEMINI_API_KEY from the environment without consulting the gateway resolves keys differently from chat and dies on a gateway-only deployment, as the Office generator did on 2026-09-06.',
   }),
   journey({
     id: 'gates-anchored',
@@ -1048,8 +1056,10 @@ export const JOURNEYS = Object.freeze([
         'scripts/zip-entry.test.mjs',
         'scripts/business-tool-reconcile.test.mjs',
         'scripts/workflow-playwright-pin.test.mjs',
+        'scripts/test-failure-summary.test.mjs',
       ],
     },
+    note: 'A red check whose evidence cannot be read (2026-09-07): one test of 1630 failed in CI and could not be identified through any route. The TAP reporter prints a failure inline and ends with counters only, so the name was nine thousand lines above the end; GitHub\'s job-log API serves roughly the last five thousand lines at any requested size, and the raw download is on a host this tooling cannot reach. That is rule 1 defeated -- the log is the evidence, and here there was none -- and it is precisely the pressure that gets a real defect labelled flaky. Both suite runners now stream their output unchanged and append a block naming every failure, its assertion and the frame in the project, so a failure anywhere in a 13,000-line run is readable from the last dozen lines.',
   }),
   journey({
     id: 'inventory-true',

@@ -49,6 +49,7 @@ import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/sess
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
+import { loadDeskCheckpoints, persistDeskCheckpoints } from '../lib/desk-checkpoint-client.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -1005,6 +1006,52 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const code = pickPreviewEntry(plan.vfs);
     if (code) setWorkspaceCode(code);
     setPreviewRunStatus('');
+  }, [deskCheckpoints]);
+  /*
+   * Phase 7: the rewind history is copied to the server as it grows.
+   *
+   * The desk stays the live holder -- this is a second copy, not a handover,
+   * so nothing here trims the in-memory history or trusts it less because a
+   * save succeeded. It runs on change rather than on a timer because a
+   * checkpoint IS the unit of change: one accepted commit, one save. A failure
+   * is left for the next commit to retry, and is never rendered as success,
+   * because no surface claims a durable history yet.
+   */
+  /*
+   * Phase 7: a reopened session gets its saved restore points back.
+   *
+   * Opening a desk installs a single "Session opened" baseline, which is the
+   * whole in-memory history the rewind menu had until now -- so the durable
+   * copy existed and nothing could reach it. This reads the stored chain,
+   * rebuilds it locally (verifying every step again rather than trusting the
+   * answer) and adopts it only when it verifies AND the desk has not already
+   * moved on. A session that has been edited since opening keeps what it has:
+   * replacing live work with a saved history is the one mistake a rewind
+   * feature must never make.
+   */
+  useEffect(() => {
+    const sessionId = deskSessionIdRef.current;
+    if (!sessionId) return undefined;
+    let cancelled = false;
+    loadDeskCheckpoints(sessionId).then((result) => {
+      if (cancelled || !result.ok || !result.entries?.length) return;
+      setDeskCheckpoints((current) => {
+        const untouched = current.length <= 1 && (current[0]?.origin === 'baseline' || !current.length);
+        return untouched ? result.entries : current;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    const sessionId = deskSessionIdRef.current;
+    if (!sessionId || !deskCheckpoints.length) return undefined;
+    let cancelled = false;
+    persistDeskCheckpoints(sessionId, deskCheckpoints).then((result) => {
+      if (cancelled || result.ok) return;
+      console.warn('Desk checkpoints were not saved:', result.reason);
+    });
+    return () => { cancelled = true; };
   }, [deskCheckpoints]);
   const deskCheckpointRows = useMemo(
     () => describeDeskCheckpoints(deskCheckpoints, vfs),

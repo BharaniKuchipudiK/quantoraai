@@ -4,7 +4,7 @@
  * Never invent models; only choose from the Active / available list.
  */
 
-import { MIN_OUTCOME_SAMPLES, outcomeRoutingAdjust } from './model-outcome-routing.js';
+import { MIN_OUTCOME_SAMPLES, outcomeRoutingAdjust, settleLatencyTies } from './model-outcome-routing.js';
 
 export const CODING_DESK_AUTO_MODEL_ID = 'auto';
 
@@ -164,9 +164,20 @@ function pickStrongCoding(models, { allowPaid = false } = {}) {
     CODING_SPECIALIST.test(`${model.id} ${model.name} ${model.specialty || ''}`)
     || hasTrustedOutcome(model),
   );
-  const ranked = (contenders.length ? contenders : pool)
-    .map((model, index) => ({ model, index, score: codingStrength(model, { allowPaid }) }))
-    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const field = contenders.length ? contenders : pool;
+  /*
+   * Phase 6: when merit ties, the faster proven route wins.
+   *
+   * Only routes with measured evidence move, and only within a run of equal
+   * merit, so a route nobody has timed keeps its position and is never compared
+   * to one that has been. See settleLatencyTies for why a pairwise comparator
+   * would be unsound here.
+   */
+  const ranked = settleLatencyTies(
+    field
+      .map((model, index) => ({ model, index, score: codingStrength(model, { allowPaid }) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index),
+  );
   return ranked[0]?.model || null;
 }
 
@@ -215,10 +226,13 @@ export function rankCodingDeskFallbacks(availableModels = [], { primaryId = '', 
     if (model.id === primaryId) return false;
     return allowPaid ? true : isFreeReady(model);
   });
-  const ranked = pool
-    .map((model, index) => ({ id: model.id, index, score: fallbackFinishReliability(model, { allowPaid }) }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map((entry) => entry.id);
+  // Same tie-break as the primary pick: equal finish-reliability is settled by
+  // measured speed, never by where the model sits in the catalogue.
+  const ranked = settleLatencyTies(
+    pool
+      .map((model, index) => ({ model, index, score: fallbackFinishReliability(model, { allowPaid }) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index),
+  ).map((entry) => entry.model.id);
   if (primaryId !== 'gemini-flash-latest' && !ranked.includes('gemini-flash-latest')) {
     ranked.push('gemini-flash-latest');
   }
