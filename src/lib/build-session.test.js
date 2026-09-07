@@ -359,6 +359,22 @@ test('INVARIANT: a generic imperative in a deskless chat is not a build session'
     'build me an argument for the essay',
     'generate some ideas for my birthday',
     'design a tattoo for my arm',
+    /*
+     * Found by review AFTER the first version of this fix (2026-09-07), and it
+     * is the sharper case: this one is not caught by IMPERATIVE_BUILD at all.
+     * resolveIsCodingRequest widens itself when a desk is open — BUILD_VERB
+     * plus DESK_OPEN_BUILD_HINT — and all three production callers passed
+     * `codingDeskOpen: true` unconditionally. So "Design" plus "native" was a
+     * build ask in an ordinary chat with no desk, and it entered through the
+     * STRICT half of activation, which the first fix left alone.
+     *
+     * The first version of this test could not see it, because it injected a
+     * deskless classifier that production never used. That is the same defect
+     * this file was written to close, one level up: a fixture asserting
+     * something production does not do.
+     */
+    'Design a native plant garden for my backyard',
+    'make me a native english practice routine',
   ];
   for (const ask of notSoftware) {
     // Fixture check: these are exactly the asks IMPERATIVE_BUILD matches and
@@ -386,6 +402,10 @@ test('INVARIANT: the follow-up to a deskless content ask is not planned as a bui
     ['Make me a grocery list', 'vegetarian options only'],
     ['Create a poem about the sea', 'make the second verse shorter'],
     ['Design a workout plan', 'three days a week instead'],
+    // Enters through the STRICT half, via the desk-open widening that the
+    // production callers applied with no desk open. planCodingTurn builds that
+    // callback itself, so this asserts the real path rather than a fixture.
+    ['Design a native plant garden for my backyard', 'more shade tolerant ones please'],
   ]) {
     const plan = planCodingTurn({
       message: followUp,
