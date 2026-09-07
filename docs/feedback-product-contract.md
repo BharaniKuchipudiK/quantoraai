@@ -4,7 +4,13 @@ Feedback is a first-class product workflow, not a floating utility.
 
 ## User experience
 
-1. Entry point: **Feedback & Suggestions** in the signed-in Studio sidebar.
+1. Entry point: a **Feedback & Suggestions** control in the signed-in Studio
+   sidebar footer, rendered as a message icon carrying that name as its
+   accessible name and tooltip (2026-09-07). It was a full-width labelled row
+   until the sidebar's own text became the thing crowding it out — the widest
+   string in the nav, on the least-used control. The requirement is that the
+   entry point is always present and always reachable, never that it is the
+   loudest thing in the panel.
 2. Interaction: open a centered modal over a dimmed, blurred product surface.
 3. Choice: select **Feedback** or **Suggestion** with a clear segmented control.
 4. Message: one focused text area, maximum 500 characters.
