@@ -116,46 +116,66 @@ function dependencies(options: { unavailableConceptId?: string } = {}) {
 
 test('Learning Compass request normalization requires canonical Study context and bounds time', () => {
   assert.deepEqual(normalizeStudyLearningCompassRequest({
-    conceptKey: ' physics.motion ',
+    conceptKey: ' Physics.Motion ',
     conceptLabel: ' Motion ',
+    curriculumKey: ' Pilot.Physics ',
     availableMinutes: 45.4,
   }), {
     conceptKey: 'physics.motion',
     conceptLabel: 'Motion',
+    curriculumKey: 'pilot.physics',
     availableMinutes: 45,
   });
   assert.equal(normalizeStudyLearningCompassRequest({ conceptKey: '', conceptLabel: 'Motion' }), null);
   assert.equal(normalizeStudyLearningCompassRequest({ conceptKey: 'physics.motion', conceptLabel: 'Motion', availableMinutes: 'nope' }), null);
   assert.equal(normalizeStudyLearningCompassRequest({ conceptKey: 'physics.motion', conceptLabel: 'Motion', availableMinutes: 2 })?.availableMinutes, 5);
   assert.equal(normalizeStudyLearningCompassRequest({ conceptKey: 'physics.motion', conceptLabel: 'Motion', availableMinutes: 900 })?.availableMinutes, 240);
+  assert.equal(normalizeStudyLearningCompassRequest({ conceptKey: 'physics.motion', conceptLabel: 'Motion' })?.curriculumKey, null);
 });
 
 test('Learning Compass ranks a bounded canonical neighborhood using verified projection + mastery state', async () => {
   const { deps, calls } = dependencies();
   const result = await buildStudyLearningCompass({
     userSub: 'learner-test',
-    request: { conceptKey: 'physics.motion', conceptLabel: 'Motion', availableMinutes: 30 },
+    request: { conceptKey: 'physics.motion', conceptLabel: 'Motion', curriculumKey: 'pilot.physics', availableMinutes: 30 },
     asOf: AS_OF,
   }, deps);
 
   assert.equal(result.status, 'ok');
   if (result.status !== 'ok') return;
   assert.equal(result.activeConcept.id, ACTIVE);
+  assert.equal(result.curriculumKey, 'pilot.physics');
   assert.equal(result.frontierSize, 3);
   assert.equal(result.loadedCandidateCount, 3);
   assert.ok(result.frontierSize <= STUDY_LEARNING_COMPASS_MAX_FRONTIER);
   assert.equal(result.availableMinutes, 30);
   assert.deepEqual(new Set(result.recommendations.map((entry) => entry.label)), new Set(['Motion', 'Vectors', 'Forces']));
   assert.ok(result.recommendations.every((entry) => entry.score >= 0 && entry.score <= 1));
+  assert.ok(calls.some((path) => path.includes('curriculum_key=eq.pilot.physics')));
   assert.ok(calls.some((path) => path.startsWith('study_curriculum_mappings?')));
   assert.ok(calls.some((path) => path.includes('relation=eq.prerequisite_of')));
+});
+
+test('Learning Compass never mixes curriculum weights when no curriculum is explicitly scoped', async () => {
+  const { deps, calls } = dependencies();
+  const result = await buildStudyLearningCompass({
+    userSub: 'learner-test',
+    request: { conceptKey: 'physics.motion', conceptLabel: 'Motion', curriculumKey: null, availableMinutes: 30 },
+    asOf: AS_OF,
+  }, deps);
+
+  assert.equal(result.status, 'ok');
+  assert.ok(!calls.some((path) => path.startsWith('study_curricula?')));
+  assert.ok(!calls.some((path) => path.startsWith('study_curriculum_mappings?')));
+  if (result.status !== 'ok') return;
+  assert.ok(result.recommendations.every((entry) => entry.missingInputs.includes('curriculum_exam_weight')));
 });
 
 test('Learning Compass skips an unavailable candidate projection instead of inventing learner state', async () => {
   const { deps } = dependencies({ unavailableConceptId: DOWNSTREAM });
   const result = await buildStudyLearningCompass({
     userSub: 'learner-test',
-    request: { conceptKey: 'physics.motion', conceptLabel: 'Motion', availableMinutes: null },
+    request: { conceptKey: 'physics.motion', conceptLabel: 'Motion', curriculumKey: null, availableMinutes: null },
     asOf: AS_OF,
   }, deps);
 
