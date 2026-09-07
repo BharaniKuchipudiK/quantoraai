@@ -50,6 +50,7 @@ import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
 import { loadDeskCheckpoints, persistDeskCheckpoints } from '../lib/desk-checkpoint-client.js';
+import { applyPatch, patchApplies, proposePatch } from '../lib/candidate-patch.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -636,7 +637,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * rejection that silently drops real work, or an accepted write that
    * overwrites the wrong project. Neither raises an error.
    */
-  const commitDeskVfs = useCallback((nextVfs, owningSessionId = null) => {
+  const commitDeskVfs = useCallback((nextVfs, owningSessionId = null, { baseVfs = null } = {}) => {
     if (!nextVfs || typeof nextVfs !== 'object') return false;
     const owner = owningSessionId || activeSessionIdRef.current;
     const target = resolveWriteTarget({
@@ -655,6 +656,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // edit must leave the last working page intact, not destroy it. Returns
     // whether the commit was accepted so callers can gate their follow-up state.
     if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
+
+    /*
+     * Phase 7: a write is refused when the tree it was computed against is gone.
+     *
+     * The session guard above is one half of this. deferredWriteStillValid
+     * already refuses a write whose CHAT changed underneath it; within one chat
+     * the working TREE can move too -- a repair lands, a person types -- and the
+     * write still carries a whole tree computed from the older one. Landing it
+     * discards whatever happened in between, silently, and the result is valid
+     * enough that the preview guard above has no objection to it.
+     *
+     * Only callers that know which tree they built from opt in, by naming it. A
+     * caller that cannot say is left exactly as it was rather than guessed at.
+     */
+    if (baseVfs) {
+      const proposed = proposePatch(baseVfs, nextVfs, { label: 'Build update' });
+      if (!patchApplies(proposed, before).ok) return false;
+      // Refused again if applying would land something other than what was built.
+      if (!applyPatch(proposed, before).ok) return false;
+    }
 
     desksRef.current = updateDesk(desksRef.current, target.sessionId, { vfs: nextVfs });
     if (!target.isVisible) return true;

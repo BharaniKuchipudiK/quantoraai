@@ -435,6 +435,7 @@ export const JOURNEYS = Object.freeze([
         'shared/build-intent-scope.test.js',
         'src/lib/build-session.test.js',
         'src/lib/coding-turn-planner.test.js',
+        'src/lib/candidate-patch.test.js',
         'src/lib/outcome-state.test.js',
       ],
       browser: [
