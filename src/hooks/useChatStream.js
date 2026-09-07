@@ -970,7 +970,12 @@ export function useChatStream({
       priorUserMessages: messages.filter((m) => m.sender === 'user').map((m) => m.text),
       codingDeskOpen: Boolean(codingDeskOpen),
       hasDeskFiles: deskHoldsBuild,
-      isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+      // The REAL desk state, not a hard-coded true. resolveIsCodingRequest
+      // widens itself when a desk is open (BUILD_VERB + DESK_OPEN_BUILD_HINT),
+      // which is right on a desk and wrong without one: "Design a native plant
+      // garden" matched `native` and opened a build session in an ordinary
+      // chat. Found by review on #610, reproduced through this path.
+      isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: Boolean(codingDeskOpen) }),
     });
     // A plan may add the build lane; on a desk that holds a build it may not remove it (lanePlanOverrides).
     const isCodingRequest = turnBelongsToBuild({ text, buildSessionActive }) || resolveIsCodingRequest(text, {
