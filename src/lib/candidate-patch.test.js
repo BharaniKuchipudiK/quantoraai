@@ -131,3 +131,106 @@ test('the desk commit path consults the guard before accepting a write', () => {
     'a guard that runs after the write has already happened refuses nothing',
   );
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * THE SHAPE THE DESK ACTUALLY USES, AND WHY EVERY TEST ABOVE MISSED IT.
+ *
+ * Every case above passes a bare-string VFS. The desk stores
+ * `{ content, language }`, and `cleanVfs` used to keep only strings -- so on a
+ * real desk it produced `{}`, every hash here ran over that empty object, and
+ * `patchApplies` compared hash({}) with hash({}). It matched every time.
+ *
+ * The guard shipped, was two-way checked, was wired at the choke point, and
+ * refused nothing in production. A check that cannot fail is worse than no
+ * check, and string fixtures are how this one got past its own gate.
+ * ---------------------------------------------------------------------------
+ */
+const DESK_BASE = {
+  'index.html': { content: '<h1>one</h1>', language: 'html' },
+  'app.css': { content: 'body{}', language: 'css' },
+};
+const DESK_NEXT = {
+  'index.html': { content: '<h1>two</h1>', language: 'html' },
+  'app.css': { content: 'body{}', language: 'css' },
+};
+
+test('a desk-shaped tree is seen, not read as empty', () => {
+  const patch = proposePatch(DESK_BASE, DESK_NEXT, { label: 'Rename the heading' });
+  assert.equal(patch.empty, false, 'a real desk edit was described as changing nothing');
+  assert.deepEqual(patch.summary.changed, ['index.html']);
+  assert.notEqual(patch.baseHash, patch.resultHash, 'two different desk trees hashed the same');
+  assert.notEqual(patch.baseHash, hashVfsContent({}), 'a desk tree hashed as if it were empty');
+});
+
+/*
+ * THE DEFECT, IN THE SHAPE THAT SHIPS. Same case as the string test above; it
+ * is repeated rather than parameterised because this is the one that was
+ * failing silently in production.
+ */
+test('a desk-shaped patch is refused once the files have moved on beneath it', () => {
+  const patch = proposePatch(DESK_BASE, DESK_NEXT, { label: 'computed against the old tree' });
+  const movedOn = { ...DESK_BASE, 'index.html': { content: '<h1>edited by hand</h1>', language: 'html' } };
+
+  const verdict = patchApplies(patch, movedOn);
+  assert.equal(verdict.ok, false, 'a stale patch against the desk\'s real shape was accepted');
+  assert.match(verdict.reason, /no longer exists/);
+  assert.equal(applyPatch(patch, movedOn).ok, false);
+});
+
+test('a desk-shaped patch still applies to the tree it was built against', () => {
+  const patch = proposePatch(DESK_BASE, DESK_NEXT, { label: 'Rename the heading' });
+  const result = applyPatch(patch, DESK_BASE);
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(hashVfsContent(result.vfs), patch.resultHash);
+});
+
+test('the same content in either shape is the same tree', () => {
+  assert.equal(hashVfsContent(DESK_BASE), hashVfsContent(BASE), 'the same files read as two trees depending on how they are held');
+  assert.equal(patchApplies(proposePatch(BASE, NEXT, {}), DESK_BASE).ok, true, 'a patch built from text does not fit the identical desk tree');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * NOTHING WRITES DESK FILES BY RE-IMPLEMENTING PART OF THE GUARD.
+ *
+ * The test above reads the choke point and proves the staleness check is in it.
+ * This is the other half, and the one a real defect taught: the streaming build
+ * path -- the one an ordinary build actually takes -- carried a comment saying
+ * "route through the guard" and then INLINED a partial copy of it. It kept the
+ * preview-regression check and the review, and dropped what comes after them:
+ * recording a checkpoint, the write target, and this module's stale-tree
+ * refusal.
+ *
+ * A copy of two thirds of a guard is the shape of the next silent failure, so
+ * the choke point is asserted as the only way in rather than merely as
+ * present.
+ * ---------------------------------------------------------------------------
+ */
+test('the streaming build path commits through the shared guard, not a copy of it', () => {
+  const source = readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.ok(source.length > 5000, `AiStudio.jsx read as ${source.length} bytes; this gate cannot check what it cannot find`);
+
+  // Anchored on the one line unique to this path. `canAutoOpenCodeWorkspace`
+  // appears in an unrelated effect first, and anchoring there checked the
+  // wrong branch entirely -- caught by this gate failing on correct code.
+  const streaming = source.indexOf('setCanvasVfs(finalVfs)');
+  assert.ok(streaming > 0, 'the streaming build path is no longer recognisable, so this gate is checking nothing');
+  assert.equal(
+    source.indexOf('setCanvasVfs(finalVfs)', streaming + 1),
+    -1,
+    'the anchor is no longer unique, so this gate may be reading a different branch than it thinks',
+  );
+  // The window is the branch body: enough to contain the commit, not the file.
+  const body = source.slice(streaming, streaming + 2000);
+
+  assert.match(
+    body,
+    /commitDeskVfs\(finalVfs/,
+    'the streaming build path no longer commits through commitDeskVfs; a build that bypasses it records no checkpoint, so Rewind disappears and the stale-tree refusal never runs',
+  );
+  assert.ok(
+    !/setVfs\(finalVfs\)/.test(body),
+    'the streaming build path installs the tree itself again, which is how it came to skip the checkpoint the first time',
+  );
+});
