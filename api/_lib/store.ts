@@ -1050,3 +1050,50 @@ export async function purgeOldTelemetry(days: number): Promise<{ ok: boolean }> 
   ]);
   return { ok: Boolean(u && u.ok && e && e.ok && s && s.ok) };
 }
+
+/*
+ * One row per paid model call, attributed to the person who caused it (Phase 6).
+ *
+ * Fire-and-forget like the quality ledger: a slow store never slows a turn.
+ * The value written is the opaque session subject and nothing else — see the
+ * migration for why a user id lives here when the turn-plan ledger has none.
+ */
+export function recordPaidCallEvent(userSub: string): void {
+  const sub = String(userSub || "").trim();
+  if (!sub) return;
+  void request("paid_call_events", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{ user_sub: sub.slice(0, 200) }]),
+  });
+}
+
+/**
+ * How many paid calls this person has made since a moment.
+ *
+ * RETURNS null WHEN IT COULD NOT ASK, AND THAT IS NOT THE SAME AS ZERO.
+ *
+ * Every other reader in this file collapses a fault to an empty array, which
+ * is right for a ledger the router merely consults. It is wrong for a quota:
+ * "no rows" and "no store" would both read as an unused allowance, so a
+ * Supabase outage would silently become an unlimited allowance and nobody
+ * could tell from the number. The caller is handed the difference and states
+ * what it does with it.
+ *
+ * Counted by PostgREST rather than by fetching rows, so a heavy user costs the
+ * same as a light one.
+ */
+export async function countPaidCallsSince(userSub: string, sinceIso: string): Promise<number | null> {
+  const sub = String(userSub || "").trim();
+  if (!sub) return null;
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const response = await requestRaw(
+    `paid_call_events?select=id&user_sub=eq.${encodeURIComponent(sub)}&created_at=gte.${since}`,
+    { method: "HEAD", headers: { Prefer: "count=exact", Range: "0-0" } },
+  );
+  if (!response || (!response.ok && response.status !== 206)) return null;
+  // Content-Range is "<first>-<last>/<total>", or "* /<total>" when the range is empty.
+  const total = String(response.headers.get("content-range") || "").split("/")[1];
+  const count = Number(total);
+  return Number.isFinite(count) && count >= 0 ? count : null;
+}
