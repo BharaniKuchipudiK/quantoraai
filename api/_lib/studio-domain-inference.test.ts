@@ -295,3 +295,71 @@ test('a pinned chat records no routing memory, and an unchanged desk writes noth
   assert.deepEqual(turnDomainSessionPatch({ turnDomain: null, sessionDomain: null, pinned: false }), {});
   assert.deepEqual(turnDomainSessionPatch({ turnDomain: 'nonsense', sessionDomain: null, pinned: false }), {});
 });
+
+/*
+ * A BUILD TAKES THE THREAD BACK (2026-09-07).
+ *
+ * Reported as "in the Coding desk, after a prompt it jumps to Travel Desk".
+ *
+ * The caller folded routing memory into `explicit` — `studioDomain ||
+ * rememberedDomain` — and `explicit` short-circuits above the coding check.
+ * So a thread that mentioned a trip ONCE was Travel for life: with a live
+ * coding workspace AND an explicit build ask it still returned `travel`, and
+ * the studio chrome showed the Travel desk while the person built a site.
+ *
+ * Membership and routing memory are not the same strength, and that is the
+ * whole fix. A person choosing a workspace outranks an open coding desk. A
+ * desk the words drifted into does not.
+ */
+test('INVARIANT: a live coding workspace takes a thread back from a remembered desk', () => {
+  const building = 'make the header blue and fix the checkout button';
+  const history = [
+    { sender: 'user', text: 'we might go to Bali in December' },
+    { sender: 'user', text: 'Build me a boutique website for Hira Silks' },
+  ];
+  for (const opts of [
+    { isCodingRequest: true, hasCodingWorkspace: true },
+    { isCodingRequest: false, hasCodingWorkspace: true },
+    { isCodingRequest: true, hasCodingWorkspace: false },
+  ]) {
+    assert.equal(
+      resolveTurnStudioDomain({
+        explicit: null, remembered: 'travel', message: building, history, pinned: false, ...opts,
+      }),
+      null,
+      `coding must win over routing memory: ${JSON.stringify(opts)}`,
+    );
+  }
+});
+
+test('INVARIANT: routing memory still carries a thread that is not coding', () => {
+  /*
+   * The other direction, so the fix cannot become "stop remembering". Turn two
+   * of a trip still gets the travel tools when the message alone says nothing,
+   * which is the continuity `inferredDomain` exists for.
+   */
+  assert.equal(
+    resolveTurnStudioDomain({ explicit: null, remembered: 'travel', message: 'and what about the evenings', history: [] }),
+    'travel',
+  );
+  assert.equal(
+    resolveTurnStudioDomain({ explicit: null, remembered: 'finance', message: 'ok go on', history: [] }),
+    'finance',
+  );
+  // And with nothing remembered, an unremarkable follow-up still decides nothing.
+  assert.equal(
+    resolveTurnStudioDomain({ explicit: null, message: 'and what about the evenings', history: [] }),
+    null,
+  );
+});
+
+test('a person choosing a workspace still outranks an open coding desk', () => {
+  // Membership is a decision, not a drift, so it keeps beating the coding lock.
+  assert.equal(
+    resolveTurnStudioDomain({
+      explicit: 'travel', message: 'build me a page for this', history: [],
+      isCodingRequest: true, hasCodingWorkspace: true,
+    }),
+    'travel',
+  );
+});
