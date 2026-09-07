@@ -6,6 +6,7 @@ import {
   normalizeStudyLearningCompassRequest,
   STUDY_LEARNING_COMPASS_MAX_FRONTIER,
 } from './study-learning-compass.js';
+import { rankStudyLearningPriorities } from './study-learning-priority.js';
 
 const ACTIVE = '11111111-1111-4111-8111-111111111111';
 const PREREQUISITE = '22222222-2222-4222-8222-222222222222';
@@ -108,9 +109,8 @@ function dependencies(options: { unavailableConceptId?: string } = {}) {
         source: 'checkpoint_delta',
       };
     },
-    rank: undefined,
+    rank: rankStudyLearningPriorities,
   } as any;
-  delete deps.rank;
   return { deps, calls };
 }
 
