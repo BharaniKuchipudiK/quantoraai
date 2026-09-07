@@ -390,6 +390,26 @@ test('a pull request golden plans two transactions, a production golden five, an
     /QUANTORA_GOLDEN_TRANSACTION_LIMIT: \$\{\{ github\.event_name == 'pull_request' && \(contains\(github\.event\.pull_request\.title, '\[golden:all\]'\) && '99' \|\| '2'\) \|\| '99' \}\}/,
     'the workflow sets the limit per event: two on a pull request, everything on production, and everything once on a pull request titled [golden:all]',
   );
+  /*
+   * AND NOT ONCE PER PUSH (2026-09-07). The limit above was the INSTANCE fix
+   * for the bill described in this block's header. The CLASS stayed open,
+   * because capping what a run costs says nothing about how many runs there
+   * are — and the next day the same shape returned at the same size: 66
+   * successful pull_request runs across six PRs in one day, about eleven per
+   * PR, because `synchronize` fires on every push and a working session pushes
+   * constantly. That is 132 build-size turns on the platform's own credit,
+   * against 120 from the fifteen production deployments this gate is for.
+   *
+   * Nothing is muted: the full roster still runs on every Production
+   * deployment_status. What is gone is the re-run on each intermediate commit
+   * of a branch nobody has finished.
+   */
+  assert.doesNotMatch(
+    workflow,
+    /types: \[[^\]]*synchronize/,
+    'the golden must not re-run on every push to a pull request: every trigger spends real model credit, '
+      + 'and the Production deployment_status trigger already covers the finished change',
+  );
   assert.match(gate, /planGoldenTransactions\(\n\s*EXPECTED_TRANSACTIONS,\n\s*process\.env\.QUANTORA_GOLDEN_TRANSACTION_LIMIT,\n\s*\)/, 'the gate plans from the roster and the variable');
   for (const position of [2, 3, 4, 5]) {
     assert.match(gate, new RegExp(`if \\(runs\\(${position}\\)\\) \\{`), `transaction ${position} runs only when planned`);
