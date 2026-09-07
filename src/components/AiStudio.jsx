@@ -9,7 +9,7 @@ import { resolveMessageActions } from '../lib/message-actions.js';
 import { getChatDisplayText, stripArtifactFromChatDisplay } from '../lib/build-communication.js';
 import { deskChatClaimWasFiltered, filterDeskChatClaims } from '../lib/desk-chat-claim-filter.js';
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Folder, FolderOpen, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2, Pin } from 'lucide-react';
+import { Sparkles, Send, Play, Code2, Minimize2, ArrowUpRight, Search, Copy, Workflow, RefreshCw, Cpu, Layers, MessageSquare, Terminal, Calculator, Music, Smartphone, Plus, Globe, ChevronDown, ChevronUp, Paperclip, X, Lightbulb, FileText, Image as ImageIcon, Activity, FolderPlus, Smile, Utensils, PieChart, Atom, Sun, Wand2, Trash2, PanelLeft, PanelLeftClose, Folder, FolderOpen, Info, Settings, Mic, MicOff, Github, Layout, Check, Square , ThumbsUp, ThumbsDown, List, MoreHorizontal, Volume2, Flag, GitBranch, Clock, Rocket, Link2, Pin, UserRound } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
@@ -4362,7 +4362,37 @@ Paused — ${autoPauseRef.current}.`
           name, not a sentence — "Feedback & Suggestions" spelled out was the
           widest text in the nav and the least often read.
         */}
-        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+        <div style={{ paddingTop: '10px', marginTop: '8px', borderTop: isLight ? '1px solid #e5e5e5' : '1px solid rgba(255, 255, 255, 0.08)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            type="button"
+            data-quantora-sidebar-profile="true"
+            title="Account"
+            aria-label="Account"
+            aria-haspopup="dialog"
+            onClick={(event) => {
+              /*
+               * A TRIGGER, NOT A SECOND MENU (2026-09-07).
+               *
+               * The profile menu stays owned by Header and is reached through
+               * the external-anchor event it already listens for. Nothing of
+               * the menu is reimplemented here — that duplication is exactly
+               * the incident (installProfileMenuBridge) the shell-ownership
+               * boundary exists for. In the Studio shell the header hides its
+               * own entry (profileInShell), so there is one control, one menu.
+               */
+              const r = event.currentTarget.getBoundingClientRect();
+              window.dispatchEvent(new CustomEvent('quantora:open-profile-menu', {
+                detail: { rect: { left: r.left, top: r.top, bottom: r.bottom, right: r.right, width: r.width, height: r.height } },
+              }));
+            }}
+            style={studioFooterIconStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            {profileAvatarSrc
+              ? <img src={profileAvatarSrc} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+              : <UserRound size={16} />}
+          </button>
           <button
             type="button"
             title="Feedback & suggestions"

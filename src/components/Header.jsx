@@ -9,7 +9,25 @@ import { Atom, Cpu, Sparkles, Workflow, ShieldCheck, UserCheck, LogIn, ChevronDo
 const PROFILE_MENU_WIDTH = 320;
 const PROFILE_MENU_GUTTER = 12;
 
-export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false }) {
+/*
+ * ONE PROFILE ENTRY, WHEREVER IT LIVES (2026-09-07).
+ *
+ * `profileInShell` says another surface is already showing the account
+ * control, so this bar must not show a second one. The Studio's sidebar
+ * carries it now (Bharani asked for it in the left nav); every other tab
+ * still shows it here, because they have no sidebar to put it in.
+ *
+ * The MENU is not moved and never should be: it stays owned by this
+ * component, reached from anywhere through `quantora:open-profile-menu`.
+ * The 2026 incident this boundary exists for was a SECOND profile menu
+ * injected into the studio at runtime (installProfileMenuBridge), and one
+ * menu with one trigger is the property that actually mattered.
+ *
+ * The bar itself is never hidden: it also carries the logo (the route back
+ * to the hub) and the Studio / Canvas / Journey tabs, so hiding it would
+ * strand a person in the Studio with no way out.
+ */
+export default function Header({ activeTab, setActiveTab, user, setUser, selectedModel, setSelectedModel, availableModels, onOpenAuth, themeMode = 'light', setThemeMode, isLight, compact = false, profileInShell = false }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [confirmModalType, setConfirmModalType] = useState(null);
@@ -318,6 +336,8 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
           {/* Integrated Profile & Privacy Control Dropdown */}
           {user ? (
             <div ref={profileRef} style={{ position: 'relative' }}>
+              {/* Hidden where a shell already shows the account entry; the MENU below still renders, or nothing could open it. */}
+              {!profileInShell && (
               <button
                 type="button"
                 data-quantora-profile-menu="true"
@@ -371,6 +391,7 @@ export default function Header({ activeTab, setActiveTab, user, setUser, selecte
                 </div>
                 {!compact && <ChevronDown size={14} color={subtextColor} />}
               </button>
+              )}
 
               {/* Profile & Privacy Master Menu Dropdown */}
               {showProfileMenu && profileMenuPosition && createPortal((

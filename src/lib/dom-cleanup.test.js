@@ -27,7 +27,29 @@ test('shared shell owns Profile and Canvas/Journey while Studio owns workspace c
   const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
   const header = fs.readFileSync(new URL('../components/Header.jsx', import.meta.url), 'utf8');
 
-  assert.doesNotMatch(studio, /data-quantora-sidebar-profile/);
+  /*
+   * ONE PROFILE MENU, AND IT LIVES IN THE SHELL (restated 2026-09-07).
+   *
+   * This used to ban the string `data-quantora-sidebar-profile` outright,
+   * which read as "the Studio may not show an account control at all". The
+   * rule is older and narrower than that: `installProfileMenuBridge` used to
+   * inject a SECOND profile menu into the studio at runtime, and the boundary
+   * exists so exactly one implementation of that menu survives.
+   *
+   * The Studio now carries a TRIGGER — the sidebar account button, which
+   * dispatches `quantora:open-profile-menu` and renders none of the menu —
+   * and the header hides its own entry in that shell (profileInShell), so
+   * there is one control and one menu. What the Studio may still never carry
+   * is the menu itself, and these assertions say so by naming its parts.
+   */
+  assert.doesNotMatch(studio, /aria-controls="quantora-profile-menu"/, 'the menu is Header\'s, not the Studio\'s');
+  assert.doesNotMatch(studio, /id="quantora-profile-menu"/);
+  assert.doesNotMatch(studio, /ProfilePictureEditor/);
+  assert.doesNotMatch(studio, /Sign Out/);
+  assert.match(studio, /data-quantora-sidebar-profile/, 'the sidebar owns the account TRIGGER');
+  assert.match(studio, /quantora:open-profile-menu/, 'and reaches the shell menu through the event, never its own copy');
+  assert.match(header, /quantora:open-profile-menu/, 'which the shell must still be listening for');
+  assert.match(header, /profileInShell/, 'and the header must be able to stand down so there is only one entry');
   assert.doesNotMatch(studio, /data-quantora-sidebar-canvas/);
   assert.match(header, /aria-controls="quantora-profile-menu"/);
   assert.match(header, /setActiveTab\('canvas'\)/);
