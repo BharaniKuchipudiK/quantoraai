@@ -70,6 +70,7 @@ export default function DeskRewindMenu({
       {open ? (
         <div
           role="menu"
+          data-quantora-desk-rewind-menu="true"
           style={{
             position: 'absolute',
             top: '30px',
@@ -90,6 +91,8 @@ export default function DeskRewindMenu({
               key={entry.id}
               type="button"
               role="menuitem"
+              data-quantora-desk-rewind-item={entry.id}
+              data-quantora-desk-rewind-current={entry.isCurrent ? 'true' : 'false'}
               disabled={entry.isCurrent}
               onClick={() => {
                 setOpen(false);

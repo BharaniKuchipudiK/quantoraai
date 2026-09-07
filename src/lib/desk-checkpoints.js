@@ -1,3 +1,4 @@
+import { languageForPath } from './github-workspace.js';
 /*
  * Desk checkpoints — rewind for the Coding Desk workspace.
  *
@@ -34,8 +35,11 @@ export function hashVfsContent(vfs) {
     }
   };
   for (const path of Object.keys(source).sort()) {
-    const body = source[path];
-    if (typeof body !== 'string') continue;
+    // Whichever shape the caller holds. This read strings only, so a real desk
+    // hashed as if it were empty and every comparison built on it was a
+    // comparison of two empty trees -- see vfsFileText.
+    const body = vfsFileText(source[path]);
+    if (body === null) continue;
     mix(path);
     mix('\u0000');
     mix(body);
@@ -54,10 +58,55 @@ function vfsBytes(vfs) {
   return total;
 }
 
+/**
+ * The text of a desk file, whichever shape it is held in.
+ *
+ * THE DEFECT THIS EXISTS FOR.
+ *
+ * The desk stores `{ content, language }` -- studio-file-tree.js will not even
+ * list a path whose entry lacks `.content`, and seven modules read it that way.
+ * This family read only the bare-string form, so `snapshotVfs` of a real desk
+ * returned `{}`, `recordDeskCheckpoint` saw an empty tree and returned the
+ * history unchanged, and NO CHECKPOINT WAS EVER RECORDED. The Rewind control
+ * renders only when there are checkpoints, so it never appeared.
+ *
+ * Everything built on that stream inherited it: the delta chain, the durable
+ * desk_checkpoints table, and candidate-patch.js -- whose staleness guard
+ * hashed `{}` against `{}`, matched every time, and refused nothing. A guard
+ * that cannot fail is the thing this repository names as worse than no guard,
+ * and it shipped because every test in the family used string fixtures.
+ *
+ * Measured on a two-build session before the fix: 1 file on the desk,
+ * 0 checkpoints, no Rewind control in the DOM.
+ */
+export function vfsFileText(entry) {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry.content === 'string') return entry.content;
+  return null;
+}
+
+/**
+ * Text back into the shape the desk renders.
+ *
+ * A checkpoint stores text, because that is what a delta and a database column
+ * can hold. Installing that text raw would leave every restored file without
+ * `.content`, which is the one field the file tree requires -- a rewind that
+ * empties the tree it was meant to restore. The language is re-derived from
+ * the path, exactly as checkoutFilesToVfs does for an imported repository.
+ */
+export function deskVfsFromText(files) {
+  const vfs = {};
+  for (const [path, text] of Object.entries(files && typeof files === 'object' ? files : {})) {
+    if (typeof text === 'string') vfs[path] = { content: text, language: languageForPath(path) };
+  }
+  return vfs;
+}
+
 function snapshotVfs(vfs) {
   const copy = {};
   for (const [path, body] of Object.entries(vfs && typeof vfs === 'object' ? vfs : {})) {
-    if (typeof body === 'string') copy[path] = body;
+    const text = vfsFileText(body);
+    if (text !== null) copy[path] = text;
   }
   return Object.freeze(copy);
 }
@@ -141,5 +190,6 @@ export function planDeskRestore(history, checkpointId, currentVfs) {
     label: 'Before rewind',
     origin: 'restore',
   });
-  return { ok: true, vfs: { ...target.vfs }, history: preserved, restoredLabel: target.label };
+  // In the desk's own shape, or the file tree shows nothing after a rewind.
+  return { ok: true, vfs: deskVfsFromText(target.vfs), history: preserved, restoredLabel: target.label };
 }

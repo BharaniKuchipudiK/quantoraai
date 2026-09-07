@@ -1483,14 +1483,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        // Route through the guard: a truncated/broken turn must not overwrite a
-        // working desk, and downstream state must not adopt a rejected VFS.
-        const accepted = Object.keys(finalVfs).length > 0
-          && !deskCommitRegressesPreview(vfsRef.current || {}, finalVfs).reject;
-        if (accepted) {
-          setDeskReview(diffVfsReview(vfs, finalVfs));
-          vfsRef.current = finalVfs;
-          setVfs(finalVfs);
+        /*
+         * Through the SHARED guard, not a copy of two thirds of it.
+         *
+         * This said "route through the guard" and then inlined the regression
+         * check and the review while dropping what commitDeskVfs does after
+         * them: RECORD A CHECKPOINT. This is the path an ordinary build takes,
+         * so ordinary builds left no checkpoints -- and the Rewind control
+         * renders only when there are any. Measured on a two-build session
+         * before this change: 1 file on the desk, 0 checkpoints, no Rewind
+         * control in the DOM at all.
+         *
+         * Rollback was therefore tested (desk-checkpoints, the delta chain),
+         * made durable (Phase 7's desk_checkpoints table), argued to be
+         * sufficient in candidate-patch.js -- and unreachable from the button.
+         * That claim was wrong when it was written; this is what makes it true.
+         *
+         * Calling the shared function also brings the guards this copy never
+         * had: the write target, the stale-tree refusal, and the desk store
+         * update that keeps a background build's files where the store expects
+         * them.
+         */
+        if (commitDeskVfs(finalVfs, activeSessionId)) {
           if (assembled.job) setDeskJob(assembled.job);
           setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         }

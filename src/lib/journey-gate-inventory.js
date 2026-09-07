@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 39, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 40, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -556,16 +556,22 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Rewind the desk to an earlier checkpoint',
     entry: 'src/components/DeskRewindMenu.jsx',
-    hooks: ['data-quantora-desk-rewind'],
+    hooks: [
+      'data-quantora-desk-rewind',
+      'data-quantora-desk-rewind-menu',
+      'data-quantora-desk-rewind-item',
+      'data-quantora-desk-rewind-current',
+    ],
     gates: {
       deterministic: [
         'src/lib/desk-checkpoints.test.js',
         'src/lib/desk-checkpoint-delta.test.js',
         'src/lib/desk-checkpoint-client.test.js',
       ],
+      browser: ['scripts/desk-rewind-browser-gate.mjs'],
     },
     serves: ['api/desk-checkpoints.ts'],
-    note: 'Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO. Review of #591 found three more: a save REPLACES a session\'s chain rather than adding to it, because the desk trims its own history and renumbers what remains, so checkpoint 21 would arrive claiming the position the dropped one still held and every later read would refuse the chain forever -- each save writes a fresh generation and readers take the newest, so a chain is never seen half-replaced; the rows carry the person\'s source so they cascade on account deletion and appear in the account export, which had still queried only the five tables that predated them; and the desk now reads the stored chain back on session open, rebuilding and re-verifying it locally rather than trusting the answer, and adopting it only when the session has not already moved on.',
+    note: 'THE MENU WAS NEVER OPENED BY A GATE, AND WHEN ONE FINALLY OPENED IT THE CONTROL WAS NOT THERE (2026-09-07). snapshotVfs, hashVfsContent and cleanVfs -- in desk-checkpoints.js, desk-checkpoint-delta.js and candidate-patch.js alike -- kept only entries whose value was a bare STRING. The desk stores { content, language }; studio-file-tree.js will not even list a path without .content, and seven modules read it that way. So a real desk snapshotted to {}, recordDeskCheckpoint saw an empty tree and returned the history unchanged, and NO CHECKPOINT WAS EVER RECORDED. The Rewind control renders only when there are checkpoints, so it never appeared. Measured on a two-build session: 1 file on the desk, 0 checkpoints, no control in the DOM. Everything built on that stream inherited it -- the delta chain, the durable desk_checkpoints table, and the #594 staleness guard, which hashed {} against {} , matched every time and refused nothing: a check that cannot fail, shipped past its own two-way gate because every fixture in the family was a string. vfsFileText reads either shape and deskVfsFromText hands a restore back in the one the desk renders, since installing raw text would leave every restored file without .content -- a rewind that empties the tree it was meant to restore. The streaming build path also carried a comment saying "route through the guard" over an INLINED copy of two thirds of it, keeping the regression check and the review and dropping the checkpoint; it now calls commitDeskVfs, and candidate-patch.test.js asserts that path cannot install a tree itself again. Honest limit: the browser gate passes with or without that routing change -- the shape fix alone revives rewind -- so the routing is held by the source-level assertion, not by the gate. Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO. Review of #591 found three more: a save REPLACES a session\'s chain rather than adding to it, because the desk trims its own history and renumbers what remains, so checkpoint 21 would arrive claiming the position the dropped one still held and every later read would refuse the chain forever -- each save writes a fresh generation and readers take the newest, so a chain is never seen half-replaced; the rows carry the person\'s source so they cascade on account deletion and appear in the account export, which had still queried only the five tables that predated them; and the desk now reads the stored chain back on session open, rebuilding and re-verifying it locally rather than trusting the answer, and adopting it only when the session has not already moved on.',
   }),
   journey({
     id: 'qir-durable-run',

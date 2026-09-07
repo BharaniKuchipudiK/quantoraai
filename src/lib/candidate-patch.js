@@ -44,17 +44,30 @@
  * Atomicity comes free from being pure: a refusal returns the caller's own tree
  * untouched, so there is no half-applied state to clean up.
  */
-import { hashVfsContent } from './desk-checkpoints.js';
+import { hashVfsContent, vfsFileText } from './desk-checkpoints.js';
 import { applyDeskVfsDelta, deskVfsDelta } from './desk-checkpoint-delta.js';
 
 const LABEL_MAX = 120;
 
+/*
+ * WHY THIS READS BOTH SHAPES, AND WHAT IT COST WHEN IT DID NOT.
+ *
+ * This kept only bare-string entries. The desk stores `{ content, language }`,
+ * so on a real desk it returned `{}` -- and every hash this module computes ran
+ * over that empty object. `patchApplies` then compared hash({}) with hash({}),
+ * matched every single time, and refused nothing. The staleness guard shipped,
+ * was gated in both directions, and was inert in production.
+ *
+ * The gate could not see it because the fixtures were strings. That is the
+ * check-that-cannot-fail this repository names as worse than no check, written
+ * by the same hand that wrote the rule down.
+ */
 function cleanVfs(vfs) {
   const out = {};
   const source = vfs && typeof vfs === 'object' ? vfs : {};
   for (const path of Object.keys(source)) {
-    const body = source[path];
-    if (typeof body === 'string') out[path] = body;
+    const text = vfsFileText(source[path]);
+    if (text !== null) out[path] = text;
   }
   return out;
 }
