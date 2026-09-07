@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 38, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 39, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -696,7 +696,18 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Open, review, comment on and merge pull requests from the desk',
     entry: 'src/components/GithubPullRequests.jsx',
-    hooks: ['data-quantora-github-prs', 'data-quantora-github-merge', 'data-quantora-github-open-pr'],
+    hooks: [
+      'data-quantora-github-prs',
+      'data-quantora-github-pr',
+      'data-quantora-github-brief',
+      'data-quantora-github-checks',
+      'data-quantora-github-comment',
+      'data-quantora-github-post-comment',
+      'data-quantora-github-merge',
+      'data-quantora-github-open-pr',
+      'data-quantora-github-refresh',
+      'data-quantora-github-status',
+    ],
     serves: ['api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -704,7 +715,9 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-tool-promise.test.ts',
         'scripts/github-write-seam-gate.mjs',
       ],
+      browser: ['scripts/desk-pull-requests-browser-gate.mjs'],
     },
+    note: 'The last GitHub journey nothing had ever driven: the server side was tested, the panel was hooked, and no gate had clicked any of it -- which is where github-push sat on the day its link vanished after a successful push. desk-pull-requests-browser-gate.mjs lists, reads, comments, opens and merges through the real panel, asserting what the desk SENT rather than what it rendered. Two of its steps are refusals, and a refusal is what stops being tested, because the happy path still looks right when a guard quietly stops guarding. First: a commit with NO checks must not be shown as green -- GitHub answers the same way for "CI has not started" and "this repository runs none", and the difference on screen is between "safe to merge" and "nobody has looked"; only a unit test held that before. Second: a merge must carry the sha of the commit that was READ, which is the pull-request form of what candidate-patch.js does for a desk write -- an action is bound to the state it was computed against, or it does not happen. Losing that one merges code nobody in the session ever saw, so the gate\'s stub answers 409 to any other sha rather than accepting whatever arrives. Writing it found a live defect in the panel: openDraftPullRequest and mergeCurrent each set their outcome message and then called loadPullRequests, which opens with setStatus(\'\'), so both wrote a sentence and erased it -- a click that visibly did nothing on a write that had actually happened, the same shape as the push link that vanished on 2026-09-06. Both now refresh first and report second.',
   }),
   journey({
     id: 'office-artifacts',
