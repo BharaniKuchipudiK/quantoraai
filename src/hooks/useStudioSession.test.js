@@ -190,21 +190,73 @@ test('a workspace chat is pinned to its desk and a top-level chat is not', () =>
   assert.equal(workspaceOfSession(trip), 'travel');
   const general = makeSession(DEFAULT_PROJECT_ID, greeting, null);
   assert.equal(general.deskPinned, false, 'the top-level New Chat may still find its desk from the message');
-  assert.equal(workspaceOfSession({ studioDomain: 'nonsense' }), 'coding', 'an unknown domain reads as the coding desk');
+  // An unknown domain is not a desk. Before 2026-09-07 it read as "coding",
+  // because coding WAS the null case; now an unpinned chat has no workspace.
+  assert.equal(workspaceOfSession({ studioDomain: 'nonsense' }), null, 'an unknown domain on an unpinned chat is no workspace');
+  assert.equal(workspaceOfSession({ studioDomain: 'nonsense', deskPinned: true }), 'coding', 'pinned with an unreadable domain is still the coding desk');
 });
 
 test('chats are grouped per workspace within the active project, newest first, archived ones left out', () => {
+  /*
+   * These are CODING DESK chats, so they carry deskPinned (2026-09-07). They
+   * used to be bare `studioDomain: null`, which landed under coding only
+   * because coding was the null default — the very thing that filed every
+   * plain chat on the desk. What this test is about is unchanged: ordering,
+   * archived exclusion and project scoping, all asserted identically below.
+   */
   const sessions = [
-    { id: 'c1', projectId: 'p1', studioDomain: null, updatedAt: 10 },
-    { id: 'c2', projectId: 'p1', studioDomain: null, updatedAt: 30 },
+    { id: 'c1', projectId: 'p1', studioDomain: null, deskPinned: true, updatedAt: 10 },
+    { id: 'c2', projectId: 'p1', studioDomain: null, deskPinned: true, updatedAt: 30 },
     { id: 't1', projectId: 'p1', studioDomain: 'travel', updatedAt: 20 },
-    { id: 'other', projectId: 'p2', studioDomain: null, updatedAt: 40 },
-    { id: 'gone', projectId: 'p1', studioDomain: null, updatedAt: 50, archived: true },
-    { id: 'old', projectId: 'p1', studioDomain: null, createdAt: 5 },
+    { id: 'other', projectId: 'p2', studioDomain: null, deskPinned: true, updatedAt: 40 },
+    { id: 'gone', projectId: 'p1', studioDomain: null, deskPinned: true, updatedAt: 50, archived: true },
+    { id: 'old', projectId: 'p1', studioDomain: null, deskPinned: true, createdAt: 5 },
+    { id: 'unfiled', projectId: 'p1', studioDomain: null, updatedAt: 60 },
   ];
   assert.deepEqual(chatsForWorkspace(sessions, 'coding', 'p1').map((s) => s.id), ['c2', 'c1', 'old']);
   assert.deepEqual(chatsForWorkspace(sessions, 'travel', 'p1').map((s) => s.id), ['t1']);
   assert.deepEqual(chatsForWorkspace(sessions, 'finance', 'p1'), []);
   assert.deepEqual(chatsForWorkspace(sessions, 'nonsense', 'p1'), [], 'an unknown workspace has no chats');
   assert.deepEqual(chatsForWorkspace(undefined, 'coding', 'p1'), []);
+  // The newest chat of all belongs to no desk, so no desk lists it.
+  for (const desk of ['coding', 'travel', 'education', 'finance', 'research']) {
+    assert.ok(
+      !chatsForWorkspace(sessions, desk, 'p1').some((entry) => entry.id === 'unfiled'),
+      `an unfiled chat must not appear under ${desk}`,
+    );
+  }
+});
+
+/*
+ * THE CODING DESK IS NOT A DEFAULT (2026-09-07).
+ *
+ * Reported: "When you click on a New chat, it goes straight to Coding Desk...
+ * When I click on New Chat it should not associate with a workspace."
+ *
+ * The Coding desk is the null domain and workspaceOfSession read
+ * `|| 'coding'`, so every chat belonging to no workspace was filed on the
+ * desk. "No workspace" has to be a state the nav can render.
+ */
+test('a top-level New Chat belongs to no workspace; only the workspace "+" files one', () => {
+  const general = makeSession(DEFAULT_PROJECT_ID, greeting, null);
+  assert.equal(
+    workspaceOfSession(general),
+    null,
+    'New Chat is just a chat. Returning "coding" here is what put it on the Coding desk.',
+  );
+
+  const codingDesk = makeSession(DEFAULT_PROJECT_ID, greeting, null, { pinned: true });
+  assert.equal(workspaceOfSession(codingDesk), 'coding', 'the "+" beside the Coding desk still files a chat there');
+
+  const travel = makeSession(DEFAULT_PROJECT_ID, greeting, 'travel', { pinned: true });
+  assert.equal(workspaceOfSession(travel), 'travel');
+
+  // And the lists agree: the general chat appears under no desk at all.
+  const all = [general, codingDesk, travel];
+  for (const desk of ['coding', 'travel', 'education', 'finance', 'research']) {
+    const listed = chatsForWorkspace(all, desk, DEFAULT_PROJECT_ID).map((s) => s.id);
+    assert.ok(!listed.includes(general.id), `the general chat must not be listed under ${desk}`);
+  }
+  assert.deepEqual(chatsForWorkspace(all, 'coding', DEFAULT_PROJECT_ID).map((s) => s.id), [codingDesk.id]);
+  assert.deepEqual(chatsForWorkspace(all, 'travel', DEFAULT_PROJECT_ID).map((s) => s.id), [travel.id]);
 });
