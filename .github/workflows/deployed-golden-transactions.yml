@@ -51,8 +51,20 @@ env:
 #
 # deployment_status keeps its own key. Deployment ids are already unique, and
 # each deployment is a distinct thing worth testing.
+# Keyed on the PR, or on the ENVIRONMENT — never on the deployment id.
+#
+# `github.event.deployment.id` is unique per deployment, so every production
+# deployment opened a concurrency group of its own and cancel-in-progress had
+# nothing to cancel. That is the same defect the comment above records for
+# pull requests, left in place on the deployment half: on 2026-09-07 fifteen
+# production goldens ran in a day, several against deployments that were no
+# longer live by the time they finished.
+#
+# Only the CURRENTLY LIVE deployment is worth checking. A golden still running
+# against a superseded one is answering a question nobody has any more, on the
+# platform's own model credit.
 concurrency:
-  group: deployed-golden-${{ github.event.pull_request.number || github.event.deployment.id }}-${{ github.event_name }}
+  group: deployed-golden-${{ github.event.pull_request.number || github.event.deployment.environment }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -188,7 +200,28 @@ jobs:
           # pull request whose title carries [golden:all] runs everything
           # once — that is how a change to the golden itself is proven on a
           # preview before it reaches production.
-          QUANTORA_GOLDEN_TRANSACTION_LIMIT: ${{ github.event_name == 'pull_request' && (contains(github.event.pull_request.title, '[golden:all]') && '99' || '2') || '99' }}
+          # TWO EVERYWHERE, and the whole roster only when asked for by name.
+          #
+          # A production deployment planned all eight. At the measured cost of a
+          # build that is SGD 0.60 per deployment, and on 2026-09-07 fifteen
+          # deployments spent SGD 9 in a day — against a prepaid Gemini balance
+          # of SGD 29 that has to last a fortnight and also carry real users.
+          #
+          # WHAT IS NOT GIVEN UP. deployed-readiness-gate.mjs still runs on every
+          # deployment, blocking, and it is a plain fetch that costs nothing: it
+          # is the gate that catches a function dying before its handler runs,
+          # which is the class that took three API endpoints down on 2026-08-31.
+          # Liveness is still checked on every deployment. What is now sampled
+          # rather than exhaustive is BEHAVIOUR — and the first two transactions
+          # are the core build journeys, not an arbitrary pair.
+          #
+          # `[golden:all]` in a pull request title still runs the whole roster,
+          # which is the way to exercise all eight before a risky change.
+          #
+          # This is a pre-revenue trade and it should be revisited the day real
+          # users are on the platform: a behavioural regression now costs a
+          # rebuild, and then it will cost somebody's afternoon.
+          QUANTORA_GOLDEN_TRANSACTION_LIMIT: ${{ contains(github.event.pull_request.title, '[golden:all]') && '99' || '2' }}
         run: node scripts/deployed-golden-transactions.mjs
 
       # if: always() so a failing golden above does not TAKE THIS SIGNAL WITH
