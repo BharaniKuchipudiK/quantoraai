@@ -1023,6 +1023,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setDeskCheckpoints(plan.history);
     setDeskReview(diffVfsReview(current, plan.vfs));
     vfsRef.current = plan.vfs;
+    /*
+     * The session's cached desk moves with it. Without this the rewind updated
+     * only React state, desksRef kept the post-build tree commitDeskVfs wrote,
+     * and switching chats and coming back took that cached tree through the
+     * "a live desk beats a saved snapshot" branch -- silently undoing the
+     * rewind, with the restored files still sitting in the snapshot.
+     *
+     * Written here rather than through commitDeskVfs on purpose: the comment
+     * above says why rewind bypasses that guard, and this is the one piece of
+     * its work a rewind still needs.
+     */
+    desksRef.current = updateDesk(desksRef.current, activeSessionIdRef.current, { vfs: plan.vfs });
     setVfs(plan.vfs);
     const code = pickPreviewEntry(plan.vfs);
     if (code) setWorkspaceCode(code);
@@ -1050,12 +1062,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * replacing live work with a saved history is the one mistake a rewind
    * feature must never make.
    */
+  /*
+   * BOUND TO THE SESSION IT IS FOR, NOT TO A REF THAT LAGS BY ONE EFFECT.
+   *
+   * This read `deskSessionIdRef.current`, which is updated by an effect
+   * DECLARED LATER in this component. React runs effects in declaration order,
+   * so on every switch from chat A to chat B this ran first and still saw A:
+   * it fetched A's chain, and by the time the promise resolved B had installed
+   * its single `baseline` entry -- which is exactly what the "untouched" test
+   * accepts. B's Rewind menu then offered A's files, and the next checkpoint
+   * persisted the mixed chain under B.
+   *
+   * Not a race: it is the declaration order, so it happened every time. It was
+   * unreachable only because no checkpoint was ever recorded before the shape
+   * fix, which is what made reviving rewind the thing that made it live.
+   */
   useEffect(() => {
-    const sessionId = deskSessionIdRef.current;
+    const sessionId = activeSessionId;
     if (!sessionId) return undefined;
     let cancelled = false;
     loadDeskCheckpoints(sessionId).then((result) => {
-      if (cancelled || !result.ok || !result.entries?.length) return;
+      // The session can change while this is in flight. Adopting a chain the
+      // user has navigated away from is the same defect arriving late.
+      if (cancelled || sessionId !== activeSessionId) return;
+      if (!result.ok || !result.entries?.length) return;
       setDeskCheckpoints((current) => {
         const untouched = current.length <= 1 && (current[0]?.origin === 'baseline' || !current.length);
         return untouched ? result.entries : current;
@@ -1064,8 +1094,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
+  /*
+   * The same binding, and the same reason. Saving under the lagging ref would
+   * write the chain the NEW chat just started under the OLD chat's id -- one
+   * baseline entry replacing a real history, which is worse than reading the
+   * wrong one because it destroys it.
+   */
   useEffect(() => {
-    const sessionId = deskSessionIdRef.current;
+    const sessionId = activeSessionId;
     if (!sessionId || !deskCheckpoints.length) return undefined;
     let cancelled = false;
     persistDeskCheckpoints(sessionId, deskCheckpoints).then((result) => {
@@ -1073,7 +1109,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       console.warn('Desk checkpoints were not saved:', result.reason);
     });
     return () => { cancelled = true; };
-  }, [deskCheckpoints]);
+  }, [deskCheckpoints, activeSessionId]);
   const deskCheckpointRows = useMemo(
     () => describeDeskCheckpoints(deskCheckpoints, vfs),
     [deskCheckpoints, vfs],
