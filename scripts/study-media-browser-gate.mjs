@@ -500,7 +500,7 @@ try {
   await setupAgain.getByRole('button', { name: 'Start assessment', exact: true }).click();
   const single = assessmentWorkspace.locator('[data-quantora-study-assessment-running="one_at_a_time"]');
   await visible(single, 'One-at-a-time Assessment did not render a governed question.');
-  await single.getByRole('button', { name: 'Zero', exact: true }).click();
+  await single.getByRole('button', { name: /Zero/i }).click();
   await visible(single.getByText('Answer recorded', { exact: true }), 'End-of-session feedback mode leaked the verdict or failed to record the answer.');
   await single.getByRole('button', { name: 'View results', exact: true }).click();
   summary = assessmentWorkspace.locator('[data-quantora-study-assessment-summary="true"]');
