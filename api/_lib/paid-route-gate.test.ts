@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RESERVE_USD, decidePaidRoute, platformSpendCeilingUsd, describePaidHold, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
+import { DEFAULT_PLATFORM_SPEND_CEILING_USD, RESERVE_USD, decidePaidRoute, platformSpendCeilingUsd, describePaidHold, paidRouteAllowed, resetPaidRouteCache } from './paid-route-gate.js';
 
 /*
  * The cost-control subsystem was written, tested and called by nothing:
@@ -60,7 +60,12 @@ test('a live read is used, and cached so a turn adds no round trip', async () =>
   }) as any;
   const first = await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 1_000 });
   assert.equal(first.allowed, true);
-  assert.equal(first.remainingUsd, 80);
+  /*
+   * $30, not $80: the key's own limit is $100 but the platform's default
+   * ceiling is $50, and the lower of the two governs. This is the default
+   * doing its job through the LIVE path, which is the only place it matters.
+   */
+  assert.equal(first.remainingUsd, 50 - 20);
   await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 30_000 });
   assert.equal(calls, 1, 'a chat turn must not add a round trip to OpenRouter');
   await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 200_000 });
@@ -309,14 +314,37 @@ test('a platform ceiling stands in for a key without one, and caps a key with a 
   assert.match(ceilingLower.reason, /platform's own ceiling/);
 });
 
-test('the ceiling is read from OPENROUTER_SPEND_CEILING_USD and ignores anything that is not a positive number', () => {
-  assert.equal(platformSpendCeilingUsd({}), null);
-  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '' }), null);
+/*
+ * UNSET IS A REAL DEFAULT, NOT INFINITY.
+ *
+ * This test used to assert `null` for every one of these, which is the shape
+ * of the defect: the ceiling existed in the repository and on no deployment,
+ * so a key with no provider-side limit was uncapped in both directions. The
+ * same doctrine already governs user-paid-quota.ts. An operator may raise or
+ * lower this; they cannot forget it.
+ */
+test('an unset, blank or nonsense ceiling falls back to a real default rather than to no limit', () => {
+  assert.equal(platformSpendCeilingUsd({}), DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '' }), DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  // "0" is somebody failing to say something, not asking for no limit.
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '0' }), DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '-3' }), DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: 'forty' }), DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  assert.ok(DEFAULT_PLATFORM_SPEND_CEILING_USD > 0, 'a default of zero or less would be no protection at all');
+});
+
+test('an operator who sets a ceiling gets exactly that ceiling', () => {
   assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '40' }), 40);
   assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: ' 12.5 ' }), 12.5);
-  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '0' }), null);
-  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '-3' }), null);
-  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: 'forty' }), null);
+  assert.equal(platformSpendCeilingUsd({ OPENROUTER_SPEND_CEILING_USD: '500' }), 500);
+});
+
+/*
+ * The uncapped path still exists and is still reachable -- decidePaidRoute is
+ * pure and takes the ceiling as an argument. What changed is that production
+ * can no longer arrive there by omission.
+ */
+test('with no ceiling passed at all, an uncapped key is still reported as uncapped', () => {
   assert.equal(decidePaidRoute({ ok: true, usage: 1, limit: null }, { ceilingUsd: null }).limitUsd, null);
 });
 

@@ -173,11 +173,42 @@ let cache: { at: number; key: string; verdict: PaidRouteVerdict } | null = null;
  * below then applies to whichever is lower. Unset, blank or not a positive
  * number means no ceiling, exactly as before.
  */
+/**
+ * The ceiling that applies when nobody has set one.
+ *
+ * WHY THIS IS A NUMBER AND NOT `null`.
+ *
+ * It was null, and the comment above explains what that cost: the key carried
+ * no limit on the provider's side either, so the meter read "$29.19 spent, no
+ * ceiling set on this key" and every paid route was allowed. The protection
+ * existed in this file and on no deployment -- exactly the failure
+ * user-paid-quota.ts already refused to repeat: "an unset limit is a real
+ * default, not infinity, and a test holds that."
+ *
+ * The shape of the harm is not hypothetical and not ours alone. A runaway loop
+ * or a bad retry does not spend gently: it spends at machine speed, and the
+ * first anyone hears of it is the invoice. A ceiling that must be remembered
+ * is not a ceiling.
+ *
+ * $50 is chosen to be boring: comfortably above this key's lifetime spend, so
+ * arming it changes nothing about a normal day, and low enough that a runaway
+ * stops at a number a pre-revenue platform can absorb. It is a LIFETIME figure,
+ * because OpenRouter's meter reports lifetime usage on the key -- not a monthly
+ * allowance. Operators should set OPENROUTER_SPEND_CEILING_USD deliberately;
+ * this is the floor under forgetting to.
+ */
+export const DEFAULT_PLATFORM_SPEND_CEILING_USD = 50;
+
 export function platformSpendCeilingUsd(env: Record<string, string | undefined> = process.env): number | null {
   const raw = String(env.OPENROUTER_SPEND_CEILING_USD || "").trim();
-  if (!raw) return null;
+  if (!raw) return DEFAULT_PLATFORM_SPEND_CEILING_USD;
   const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  /*
+   * A blank, zero, negative or unparseable value is somebody trying to say
+   * something and failing, not somebody asking for no limit. Falling back to
+   * the default is the safe reading; "0" meaning "unlimited" would be a trap.
+   */
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PLATFORM_SPEND_CEILING_USD;
 }
 
 export function decidePaidRoute(auth: {
