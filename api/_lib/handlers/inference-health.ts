@@ -186,7 +186,8 @@ export default async function handler(req: any, res: any) {
   // The gateway key when the env has none, so the figure reflects the key that
   // would actually be charged.
   const spendKey = openRouterEnv || (openRouterViaGateway ? await fetchApiGatewayKey('OPENROUTER') : null);
-  const paid = await paidRouteAllowed(spendKey);
+  // spendKey is the env var or the gateway row: always the platform's own credential.
+  const paid = await paidRouteAllowed(spendKey, { credentialScope: 'server' });
   /*
    * WHICH KEY, FROM WHICH STORE. Reported because presence was never the
    * question an operator actually has.

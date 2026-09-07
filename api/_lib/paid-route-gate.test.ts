@@ -46,7 +46,7 @@ test('an uncapped key is not an empty one', () => {
 
 test('no credential is no paid route', async () => {
   resetPaidRouteCache();
-  const v = await paidRouteAllowed('');
+  const v = await paidRouteAllowed('', { credentialScope: 'server' });
   assert.equal(v.allowed, false);
   assert.match(v.reason, /no OpenRouter credential/);
 });
@@ -58,7 +58,7 @@ test('a live read is used, and cached so a turn adds no round trip', async () =>
     calls += 1;
     return { ok: true, status: 200, json: async () => ({ data: { usage: 20, limit: 100, label: 'k' } }) };
   }) as any;
-  const first = await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 1_000 });
+  const first = await paidRouteAllowed('sk-or-v1-test', { credentialScope: 'server', fetchFn, now: 1_000 });
   assert.equal(first.allowed, true);
   /*
    * $30, not $80: the key's own limit is $100 but the platform's default
@@ -66,9 +66,9 @@ test('a live read is used, and cached so a turn adds no round trip', async () =>
    * doing its job through the LIVE path, which is the only place it matters.
    */
   assert.equal(first.remainingUsd, 50 - 20);
-  await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 30_000 });
+  await paidRouteAllowed('sk-or-v1-test', { credentialScope: 'server', fetchFn, now: 30_000 });
   assert.equal(calls, 1, 'a chat turn must not add a round trip to OpenRouter');
-  await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 200_000 });
+  await paidRouteAllowed('sk-or-v1-test', { credentialScope: 'server', fetchFn, now: 200_000 });
   assert.equal(calls, 2, 'the cache expires');
 });
 
@@ -76,9 +76,9 @@ test('a transient failure refuses without being cached', async () => {
   resetPaidRouteCache();
   let calls = 0;
   const fetchFn = (async () => { calls += 1; throw new Error('network down'); }) as any;
-  const first = await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 1_000 });
+  const first = await paidRouteAllowed('sk-or-v1-test', { credentialScope: 'server', fetchFn, now: 1_000 });
   assert.equal(first.allowed, false);
-  await paidRouteAllowed('sk-or-v1-test', { fetchFn, now: 2_000 });
+  await paidRouteAllowed('sk-or-v1-test', { credentialScope: 'server', fetchFn, now: 2_000 });
   assert.equal(calls, 2, 'one blip must not lock paid routing off for a minute');
 });
 
@@ -200,7 +200,7 @@ test('an allowed verdict carries no fault', () => {
 
 test('no credential names the environment, not the provider', async () => {
   resetPaidRouteCache();
-  const v = await paidRouteAllowed('');
+  const v = await paidRouteAllowed('', { credentialScope: 'server' });
   assert.equal(v.meterFault?.cause, 'METER_UNREACHABLE');
   assert.equal(v.meterFault?.gatewayDead, true, 'without a key nothing on that gateway runs');
   assert.match(v.meterFault?.remedy || '', /OPENROUTER_API_KEY/);
@@ -220,18 +220,18 @@ test('a refusal the provider ANSWERED is cached; one we could not verify is not'
     answered += 1;
     return { ok: false, status: 401, text: async () => JSON.stringify({ error: { message: 'Missing Authentication header' } }) };
   }) as any;
-  const first = await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 1_000 });
+  const first = await paidRouteAllowed('sk-or-v1-rejected', { credentialScope: 'server', fetchFn: rejects, now: 1_000 });
   assert.equal(first.meterFault?.cause, 'CREDENTIAL_REJECTED');
-  await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 30_000 });
+  await paidRouteAllowed('sk-or-v1-rejected', { credentialScope: 'server', fetchFn: rejects, now: 30_000 });
   assert.equal(answered, 1, 'a settled refusal must not be re-asked every turn');
-  await paidRouteAllowed('sk-or-v1-rejected', { fetchFn: rejects, now: 200_000 });
+  await paidRouteAllowed('sk-or-v1-rejected', { credentialScope: 'server', fetchFn: rejects, now: 200_000 });
   assert.equal(answered, 2, 'and it must still expire, so a repaired key is picked up');
 
   resetPaidRouteCache();
   let blips = 0;
   const blip = (async () => { blips += 1; throw new Error('network down'); }) as any;
-  await paidRouteAllowed('sk-or-v1-blip', { fetchFn: blip, now: 1_000 });
-  await paidRouteAllowed('sk-or-v1-blip', { fetchFn: blip, now: 2_000 });
+  await paidRouteAllowed('sk-or-v1-blip', { credentialScope: 'server', fetchFn: blip, now: 1_000 });
+  await paidRouteAllowed('sk-or-v1-blip', { credentialScope: 'server', fetchFn: blip, now: 2_000 });
   assert.equal(blips, 2, 'an unverified refusal is still re-checked next turn');
 });
 
@@ -349,8 +349,119 @@ test('with no ceiling passed at all, an uncapped key is still reported as uncapp
 });
 
 test('the live verdict applies the platform ceiling', async () => {
-  const { readFileSync } = await import('node:fs');
-  const path = await import('node:path');
-  const gate = readFileSync(path.join(import.meta.dirname, 'paid-route-gate.ts'), 'utf8');
-  assert.match(gate, /decidePaidRoute\(auth, \{ ceilingUsd: platformSpendCeilingUsd\(\) \}\)/);
+  /*
+   * This used to assert the SOURCE TEXT contained the exact expression
+   * `decidePaidRoute(auth, { ceilingUsd: platformSpendCeilingUsd() })`, which
+   * measures the formatting and not the wiring. It broke on a line wrap while
+   * the behaviour was untouched, and — worse in the other direction — it would
+   * have passed on a call that computed the ceiling and then dropped it.
+   *
+   * Drive the live path and read the number that comes out. The case chosen is
+   * production's own: the key carries NO limit of its own, which is what made
+   * the meter say "no ceiling set on this key" and let every paid route
+   * through. Setting the variable after this module was imported also pins
+   * that the env is read at CALL time, not once at load.
+   */
+  const previous = process.env.OPENROUTER_SPEND_CEILING_USD;
+  process.env.OPENROUTER_SPEND_CEILING_USD = '25';
+  try {
+    const meter = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { usage: 5, limit: null, label: 'k' } }),
+    })) as any;
+    resetPaidRouteCache();
+    const v = await paidRouteAllowed('sk-or-v1-live', { credentialScope: 'server', fetchFn: meter, now: 1_000 });
+    assert.equal(v.limitUsd, 25, 'the platform ceiling stands in when the key itself carries none');
+    assert.equal(v.remainingUsd, 20);
+    assert.match(v.reason, /the platform's own ceiling/);
+  } finally {
+    if (previous === undefined) delete process.env.OPENROUTER_SPEND_CEILING_USD;
+    else process.env.OPENROUTER_SPEND_CEILING_USD = previous;
+  }
+});
+
+test("the platform's ceiling is not charged against a key the user brought", async () => {
+  /*
+   * REGRESSION, and the shape of it is the point.
+   *
+   * chat-handler's effectiveOpenRouterKey PREFERS the user's own BYOK
+   * credential, and this gate is handed whatever that resolves to. So the
+   * moment the platform's default ceiling became a number rather than null, it
+   * started measuring somebody else's account against it: a key carrying $49 of
+   * its owner's own lifetime usage lost every paid route to a $50 limit that is
+   * not theirs, that they are not being billed against, and that they cannot
+   * see to raise.
+   *
+   * $49 against a $500 key is the exact boundary — under the platform ceiling
+   * the effective limit is $50, leaving $1, which is the reserve.
+   */
+  const meter = (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { usage: 49, limit: 500, label: 'k' } }),
+  })) as any;
+
+  resetPaidRouteCache();
+  const theirs = await paidRouteAllowed('sk-or-v1-byok', { credentialScope: 'user', fetchFn: meter, now: 1_000 });
+  assert.equal(theirs.allowed, true, "a user's own key is governed by its own limit, not ours");
+  assert.equal(theirs.limitUsd, 500);
+  assert.equal(theirs.remainingUsd, 451);
+
+  resetPaidRouteCache();
+  const ours = await paidRouteAllowed('sk-or-v1-platform', { credentialScope: 'server', fetchFn: meter, now: 1_000 });
+  assert.equal(ours.allowed, false, 'the same figures on the platform key stop at the default ceiling');
+  assert.equal(ours.limitUsd, DEFAULT_PLATFORM_SPEND_CEILING_USD);
+  assert.match(ours.reason, /the platform's own ceiling/);
+});
+
+test('an explicit ceiling is the platform’s too, not a limit on other people’s keys', async () => {
+  /*
+   * The default is not a special case. OPENROUTER_SPEND_CEILING_USD is a limit
+   * on what THIS platform spends, so an operator setting it deliberately must
+   * not thereby cap every BYOK user at the same figure. Left unscoped, this
+   * half would have armed itself the day the variable was finally set — which
+   * is the same day this gate stops being theoretical.
+   */
+  const previous = process.env.OPENROUTER_SPEND_CEILING_USD;
+  process.env.OPENROUTER_SPEND_CEILING_USD = '10';
+  try {
+    const meter = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { usage: 30, limit: 500, label: 'k' } }),
+    })) as any;
+    resetPaidRouteCache();
+    const theirs = await paidRouteAllowed('sk-or-v1-byok', { credentialScope: 'user', fetchFn: meter, now: 1_000 });
+    assert.equal(theirs.allowed, true, 'their $500 key is nowhere near spent');
+    assert.equal(theirs.limitUsd, 500);
+    resetPaidRouteCache();
+    const ours = await paidRouteAllowed('sk-or-v1-platform', { credentialScope: 'server', fetchFn: meter, now: 1_000 });
+    assert.equal(ours.allowed, false, '$30 spent against a $10 ceiling is over');
+    assert.equal(ours.limitUsd, 10);
+  } finally {
+    if (previous === undefined) delete process.env.OPENROUTER_SPEND_CEILING_USD;
+    else process.env.OPENROUTER_SPEND_CEILING_USD = previous;
+  }
+});
+
+test('the cache does not answer for the other wallet', async () => {
+  /*
+   * The same token can genuinely be presented both ways — a user pasting the
+   * platform's own key in as their BYOK credential — and the two verdicts on it
+   * differ, because only one is measured against the platform's ceiling. Keyed
+   * on the token alone, whichever call arrived first would have answered for
+   * the other for a full minute.
+   */
+  resetPaidRouteCache();
+  let calls = 0;
+  const meter = (async () => {
+    calls += 1;
+    return { ok: true, status: 200, json: async () => ({ data: { usage: 49, limit: 500, label: 'k' } }) };
+  }) as any;
+  const asPlatform = await paidRouteAllowed('sk-or-v1-same', { credentialScope: 'server', fetchFn: meter, now: 1_000 });
+  const asUser = await paidRouteAllowed('sk-or-v1-same', { credentialScope: 'user', fetchFn: meter, now: 1_100 });
+  assert.equal(asPlatform.allowed, false);
+  assert.equal(asUser.allowed, true, 'the same token under the other scope gets its own verdict');
+  assert.equal(calls, 2, 'two wallets, two reads — the scope is part of the cache identity');
 });
