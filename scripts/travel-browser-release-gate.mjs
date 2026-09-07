@@ -178,9 +178,20 @@ try {
   await enterSignedInStudio(page);
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into neutral Studio.');
-  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into neutral Studio.');
+  /*
+  * THE ACCOUNT ENTRY FOLLOWS THE SHELL (2026-09-07).
+  *
+  * These assertions were written when the Studio had no account control of
+  * its own and a sidebar one could only be a DUPLICATE. It now owns the
+  * entry and the header stands down there (profileInShell), so "hidden in
+  * the sidebar, visible in the header" is the old layout, not the rule.
+  * The rule — one entry, opening the one real menu — is asserted below.
+  */
   await assertJourneyEntry(page, visible, 'neutral Studio');
-  await visible(page.locator('button[aria-controls="quantora-profile-menu"]').first(), 'Global Profile control is missing from neutral Studio.');
+  await visible(
+    page.locator('[data-quantora-sidebar-profile], button[aria-controls="quantora-profile-menu"]').first(),
+    'Neutral Studio shows no account control at all: neither the sidebar entry nor the header one.',
+  );
 
   const travelAdvisor = page.locator('[data-quantora-advisor="travel"]').first();
   await visible(travelAdvisor, 'Travel specialist entry is missing.');
@@ -194,9 +205,12 @@ try {
     page.locator('[data-quantora-sidebar-canvas]').first(),
     'Duplicate Canvas navigation is visible inside Travel.',
   );
-  await hidden(
-    page.locator('[data-quantora-sidebar-profile]').first(),
-    'Duplicate Profile navigation is visible inside Travel.',
+  // Travel is a Studio shell too: the sidebar entry is the one control here,
+  // not a duplicate. What must never appear twice is asserted in
+  // studio-regression, which counts both surfaces.
+  await visible(
+    page.locator('[data-quantora-sidebar-profile], button[aria-controls="quantora-profile-menu"]').first(),
+    'Travel shows no account control at all.',
   );
   await hidden(
     page.locator('[data-quantora-fork-chat]').first(),
