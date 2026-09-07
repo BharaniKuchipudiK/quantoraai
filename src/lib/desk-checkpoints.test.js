@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   DESK_CHECKPOINT_BYTE_BUDGET,
@@ -147,4 +148,67 @@ test('a file is read whichever way it is held, and nothing else is', () => {
   for (const notAFile of [null, undefined, 42, {}, { content: 7 }, []]) {
     assert.equal(vfsFileText(notAFile), null, `${JSON.stringify(notAFile)} is not a file`);
   }
+});
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * THE CLASS, CLOSED. THIS IS THE SECOND TIME.
+ *
+ * github-workspace.js already carries the warning, written for the checkout
+ * path: "The desk stores each file as { content, language }, NOT as a bare
+ * string. A first version of this wrote strings, which every part of the desk
+ * then read as an entry with no content -- so a checkout loaded and the pane
+ * reported 'the shell is empty while Preview has files', with no error
+ * anywhere."
+ *
+ * The checkpoint family then shipped the same mismatch in the opposite
+ * direction -- reading only strings from a tree of objects -- and it cost
+ * every checkpoint, the Rewind control, and the #594 staleness guard. Two
+ * incidents, one class, and the comment lived in a file none of these modules
+ * import.
+ *
+ * So it is a check rather than a comment. It fires on the exact idiom that
+ * caused it: keeping a VFS entry only when it is already a bare string.
+ * ---------------------------------------------------------------------------
+ */
+test('no module in the checkpoint family filters VFS entries down to bare strings', () => {
+  const family = ['desk-checkpoints.js', 'desk-checkpoint-delta.js', 'candidate-patch.js'];
+  /*
+   * Precise on purpose (CLAUDE.md 5): it matches only "assign the very thing
+   * you just checked is a string", which is the defect --
+   *
+   *   if (typeof body === 'string') out[path] = body;
+   *
+   * A first draft dropped the backreference and fired on deskVfsFromText,
+   * which checks a string and assigns an OBJECT built from it -- correct code,
+   * and exactly the ambiguous evidence that gets a gate muted by the next
+   * person under pressure.
+   */
+  const keepsOnlyStrings = /typeof\s+(\w+)\s*===\s*'string'\s*\)\s*\{?\s*\w+\[[^\]]+\]\s*=\s*\1\s*[;\n}]/;
+  const offenders = [];
+  for (const file of family) {
+    const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
+    assert.ok(source.length > 1000, `${file} read as ${source.length} bytes; this gate cannot check what it cannot find`);
+    if (keepsOnlyStrings.test(source)) offenders.push(file);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'a VFS is being filtered to bare strings again. The desk stores { content, language }, so this silently yields an empty tree: '
+    + `no checkpoints, no Rewind, and a staleness guard comparing two empty objects. Read entries with vfsFileText. Offenders: ${JSON.stringify(offenders)}`,
+  );
+});
+
+/*
+ * The behavioural half. The rule above is a shape check on source; this is the
+ * outcome it exists to protect, run through every entry point in the family.
+ */
+test('every entry point in the family sees a desk-shaped tree, not an empty one', () => {
+  const desk = deskSite('v1');
+  const empty = hashVfsContent({});
+
+  assert.notEqual(hashVfsContent(desk), empty, 'hashVfsContent read a desk tree as empty');
+  assert.equal(recordDeskCheckpoint([], desk, { label: 'x' }).length, 1, 'recordDeskCheckpoint read a desk tree as empty');
+  assert.equal(describeDeskCheckpoints(recordDeskCheckpoint([], desk, {}), desk)[0].isCurrent, true, 'describeDeskCheckpoints could not match a desk tree against its own checkpoint');
 });
