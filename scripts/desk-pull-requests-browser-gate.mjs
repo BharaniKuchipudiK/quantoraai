@@ -18,7 +18,9 @@
  *      says who it was posted as.
  *   4. "Open a draft PR" sends draft:true with the desk's head and base.
  *   5. Merge carries the sha of the commit that was READ, not whatever the
- *      branch has moved to since.
+ *      branch has moved to since -- AND the panel then says it merged. Review
+ *      of #596 caught the second half missing: asserting the request and
+ *      stopping there passes even if nothing handles the response.
  *
  * Steps 2 and 5 are the ones worth the file. Both are refusals, and a refusal
  * is exactly what stops being tested: nobody notices a guard that quietly stops
@@ -369,6 +371,25 @@ try {
     }
     const failed = await errorText();
     if (failed) throw new Error(`The merge was refused: ${failed}. Sent: ${JSON.stringify(merged)}.`);
+
+    /*
+     * THE REQUEST LANDING IS NOT THE MERGE COMPLETING.
+     *
+     * Review of #596 caught this: everything above asserts what the desk SENT,
+     * and then the step ended. Response handling, the refresh, and the status
+     * rendering could all be removed and the request would still carry the
+     * right fields -- including the status-ordering fix THIS PR makes, whose
+     * merge half would have had no browser coverage at all.
+     */
+    await page.waitForFunction(
+      () => /^Merged as /.test(document.querySelector('[data-quantora-github-status="true"]')?.textContent || ''),
+      null,
+      { timeout: 15_000 },
+    ).catch(() => {});
+    const outcome = await statusText();
+    if (!/^Merged as /.test(outcome)) {
+      throw new Error(`The merge request was sent correctly and the panel never reported the outcome (status: ${JSON.stringify(outcome)}; error: ${(await errorText()) || 'none'}). A merge nobody is told about is a click that appears to have done nothing.`);
+    }
   });
 
   await page.screenshot({ path: `${ARTIFACT_DIR}/desk-pull-requests.png`, fullPage: true });
