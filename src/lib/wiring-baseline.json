@@ -8,6 +8,7 @@
   "api/_lib/paid-route-gate.ts::resetPaidRouteCache",
   "api/_lib/pcl-advisor-intelligence.ts::AdvisorDomainRegistry",
   "api/_lib/provider-resilience.ts::resetProviderResilienceState",
+  "api/_lib/study-learning-priority.ts::rankStudyLearningPriorities",
   "src/lib/office-artifact-cache.js::clearOfficeArtifactCache",
   "src/lib/studio-git.js::resetDeskGitRepos",
   "src/lib/vercel-headers.js::checkFramedDocumentContract"
