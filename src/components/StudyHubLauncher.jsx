@@ -149,7 +149,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
           id="quantora-study-hub-panel"
           className={panelClass}
           role="dialog"
-          aria-modal={surface === 'notebook' && notebookExpanded ? 'true' : 'false'}
+          aria-modal="false"
           aria-labelledby={labelledBy}
         >
           {surface === 'notebook' ? (
