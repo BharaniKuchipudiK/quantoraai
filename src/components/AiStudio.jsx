@@ -49,6 +49,7 @@ import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/sess
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
+import { persistDeskCheckpoints } from '../lib/desk-checkpoint-client.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -1005,6 +1006,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const code = pickPreviewEntry(plan.vfs);
     if (code) setWorkspaceCode(code);
     setPreviewRunStatus('');
+  }, [deskCheckpoints]);
+  /*
+   * Phase 7: the rewind history is copied to the server as it grows.
+   *
+   * The desk stays the live holder -- this is a second copy, not a handover,
+   * so nothing here trims the in-memory history or trusts it less because a
+   * save succeeded. It runs on change rather than on a timer because a
+   * checkpoint IS the unit of change: one accepted commit, one save. A failure
+   * is left for the next commit to retry, and is never rendered as success,
+   * because no surface claims a durable history yet.
+   */
+  useEffect(() => {
+    const sessionId = deskSessionIdRef.current;
+    if (!sessionId || !deskCheckpoints.length) return undefined;
+    let cancelled = false;
+    persistDeskCheckpoints(sessionId, deskCheckpoints).then((result) => {
+      if (cancelled || result.ok) return;
+      console.warn('Desk checkpoints were not saved:', result.reason);
+    });
+    return () => { cancelled = true; };
   }, [deskCheckpoints]);
   const deskCheckpointRows = useMemo(
     () => describeDeskCheckpoints(deskCheckpoints, vfs),

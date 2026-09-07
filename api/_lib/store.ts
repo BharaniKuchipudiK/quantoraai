@@ -1097,3 +1097,82 @@ export async function countPaidCallsSince(userSub: string, sinceIso: string): Pr
   const count = Number(total);
   return Number.isFinite(count) && count >= 0 ? count : null;
 }
+
+/*
+ * Durable rewind for the Coding Desk (Phase 7).
+ *
+ * Unlike every ledger above, these rows hold the person's actual file content,
+ * so BOTH reads and writes filter on user_sub as well as session_id. A session
+ * id is a handle, not an authorisation; a query that trusts it alone would
+ * hand one person's working tree to another.
+ */
+export type DeskCheckpointRow = {
+  checkpoint_id: string;
+  seq: number;
+  label: string | null;
+  origin: string | null;
+  hash: string;
+  delta: { changed?: Record<string, string>; removed?: string[] };
+};
+
+/**
+ * Persist checkpoints for one session.
+ *
+ * Awaited, not fire-and-forget: the ledgers above may lose a row and cost only
+ * a statistic, while a lost row here is a hole in someone's history that the
+ * replay will refuse to cross. The caller is told whether the work is safe.
+ *
+ * Upserted on (user_sub, session_id, checkpoint_id) so a retry after a timeout
+ * cannot fork the chain into two rows claiming the same position.
+ */
+export async function saveDeskCheckpoints(
+  userSub: string,
+  sessionId: string,
+  rows: DeskCheckpointRow[],
+): Promise<boolean> {
+  const sub = String(userSub || "").trim();
+  const session = String(sessionId || "").trim();
+  if (!sub || !session || !Array.isArray(rows) || !rows.length) return false;
+  const response = await request("desk_checkpoints?on_conflict=user_sub,session_id,checkpoint_id", {
+    method: "POST",
+    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+    body: JSON.stringify(rows.map((row) => ({
+      user_sub: sub.slice(0, 200),
+      session_id: session.slice(0, 200),
+      checkpoint_id: String(row.checkpoint_id || "").slice(0, 120),
+      seq: Math.max(0, Math.round(Number(row.seq) || 0)),
+      label: row.label ? String(row.label).slice(0, 120) : null,
+      origin: row.origin ? String(row.origin).slice(0, 40) : "commit",
+      hash: String(row.hash || ""),
+      delta: row.delta && typeof row.delta === "object" ? row.delta : { changed: {}, removed: [] },
+    }))),
+  });
+  return response !== null;
+}
+
+/**
+ * The stored chain for one person's session, in order.
+ *
+ * Returns null when the store could not be asked, and [] when it was asked and
+ * holds nothing — the same distinction countPaidCallsSince draws, for the same
+ * reason. "No history" and "we could not look" must not both render as an
+ * empty rewind menu, or an outage looks exactly like a fresh session and the
+ * person is told their work never existed.
+ */
+export async function readDeskCheckpoints(
+  userSub: string,
+  sessionId: string,
+): Promise<DeskCheckpointRow[] | null> {
+  const sub = String(userSub || "").trim();
+  const session = String(sessionId || "").trim();
+  if (!sub || !session) return null;
+  const response = await request(
+    `desk_checkpoints?select=checkpoint_id,seq,label,origin,hash,delta`
+    + `&user_sub=eq.${encodeURIComponent(sub)}&session_id=eq.${encodeURIComponent(session)}`
+    + `&order=seq.asc&limit=200`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  const rows = await response.json().catch(() => null);
+  return Array.isArray(rows) ? rows as DeskCheckpointRow[] : null;
+}

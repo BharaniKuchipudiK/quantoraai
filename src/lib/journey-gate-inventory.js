@@ -556,8 +556,15 @@ export const JOURNEYS = Object.freeze([
     name: 'Rewind the desk to an earlier checkpoint',
     entry: 'src/components/DeskRewindMenu.jsx',
     hooks: ['data-quantora-desk-rewind'],
-    gates: { deterministic: ['src/lib/desk-checkpoints.test.js'] },
-    note: 'Checkpoints are tested; the menu has never been opened by a gate.',
+    gates: {
+      deterministic: [
+        'src/lib/desk-checkpoints.test.js',
+        'src/lib/desk-checkpoint-delta.test.js',
+        'src/lib/desk-checkpoint-client.test.js',
+      ],
+    },
+    serves: ['api/desk-checkpoints.ts'],
+    note: 'Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO.',
   }),
   journey({
     id: 'qir-durable-run',
