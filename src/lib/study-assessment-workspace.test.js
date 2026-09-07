@@ -30,12 +30,12 @@ test('Assessment owns setup, running, summary, and History while Study AI stays 
   assert.match(tutor, /setAssessmentWorkspaceOpen\(true\)/);
 });
 
-test('Assessment surface listener is mounted above the onboarding render guard', () => {
+test('Assessment surface listener is mounted above the pre-topic launcher branch', () => {
   const tutor = read('src/components/StudyTutorWorkspace.jsx');
   const listener = tutor.indexOf("event?.detail?.surface !== STUDY_SURFACE.ASSESSMENT");
-  const loadingGuard = tutor.indexOf("if (onboarding.status === 'loading') return null;");
+  const preTopicBranch = tutor.indexOf("if (onboarding.status === 'loading' || !brief?.active)");
   assert.ok(listener >= 0, 'Assessment listener is missing');
-  assert.ok(loadingGuard > listener, 'Assessment listener must mount before onboarding can suppress rendering');
+  assert.ok(preTopicBranch > listener, 'Assessment listener must mount before the pre-topic launcher branch can suppress the Assessment surface');
 });
 
 test('Assessment sessions reuse the governed issue and grade paths for both presentation modes', () => {
