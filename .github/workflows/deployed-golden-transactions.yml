@@ -1,8 +1,28 @@
 name: Deployed Golden Transactions
 
 on:
+  # NO `synchronize`. This gate drives REAL model turns against a deployment,
+  # so every trigger spends the platform's own Gemini credit — and on
+  # 2026-09-07 that bill arrived. In one day: 66 successful pull_request runs
+  # across six PRs, about eleven per PR, because `synchronize` fires on every
+  # push and a working session pushes constantly. At the PR limit of two
+  # transactions that is 132 production builds, next to 120 from the fifteen
+  # production deployments that are what this gate is actually for.
+  #
+  # SEPARATION, NOT SUPPRESSION (doctrine §5). Nothing here is muted and the
+  # suite still checks exactly what it checked: the full eight transactions run
+  # on every Production deployment_status, which is the signal that caught three
+  # dead API functions on 2026-08-31. What is dropped is the re-run on each
+  # intermediate commit of a branch nobody has finished yet. `opened` and
+  # `ready_for_review` still cover the PR itself, and `[golden:all]` in a PR
+  # title still forces the whole roster when a change warrants it.
+  #
+  # The cost of the trade, stated plainly: a commit pushed AFTER a PR is marked
+  # ready is not golden-checked until it reaches Production. That is later than
+  # ideal and it is still caught, by the deployment gate, before any user has
+  # been on the deployment long.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review]
   deployment_status:
   # NO workflow_dispatch here, deliberately. It was added alongside ci.yml's and
   # taken straight back out: this job's own `if:` requires a pull_request or a
