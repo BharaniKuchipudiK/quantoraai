@@ -16,6 +16,7 @@ import {
   type ProviderResiliencePolicy,
 } from './provider-resilience.js';
 import * as core from './agent-tools-core.js';
+import { describePlacesDailyCap, isPlacesBackedTool, placesDailyCapVerdict } from './places-daily-cap.js';
 import {
   formatTravelPlaceShortlist,
   resolveTravelToolInvocation,
@@ -318,6 +319,24 @@ export async function executeToolCall(
   // if a stale client sends malformed arguments for a transactional tool.
   if (isTransactionalTravelTool(toolName)) {
     return core.executeToolCall(toolName, toolArgs, dependencies as any);
+  }
+
+  /*
+   * THE PLATFORM'S DAILY CEILING ON PLACES, checked before the provider call.
+   *
+   * Asked here rather than inside agent-tools-core because core takes an
+   * injected fetchFn and is deliberately free of platform state; this seam is
+   * already where tool-specific policy lives. Checked before argument shaping
+   * so a refusal costs nothing but the counter read.
+   *
+   * Only the Places-backed tools. Flights go to Duffel and are not on this
+   * bill, so holding them back here would refuse a lookup that costs Google
+   * nothing — precise, per the rule that a gate firing on the wrong evidence
+   * is the one that gets muted next.
+   */
+  if (isPlacesBackedTool(toolName)) {
+    const cap = await placesDailyCapVerdict();
+    if (cap.reached) return unavailable(describePlacesDailyCap(cap), 'PLATFORM_DAILY_CAP');
   }
 
   if ((toolName === 'search_hotels' || toolName === 'search_attractions') && toolArgs && typeof toolArgs === 'object') {
