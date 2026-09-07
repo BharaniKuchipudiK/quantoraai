@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { createHash, randomUUID } from "node:crypto";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./rate-limit.js";
 import { getSessionUser } from "./session.js";
-import { isStoreConfigured, readModelQualityEvents, readOutcomeState, recordModelQualityEvent, recordUsage } from "./store.js";
+import { isStoreConfigured, readModelQualityEvents, readOutcomeState, recordModelQualityEvent, recordPaidCallEvent, recordUsage } from "./store.js";
 import { readMeasuredOutcomes } from "./measured-outcome.js";
 import { isProjectStoreConfigured, readProjectContext } from "./project-store.js";
 import { requireActiveSession } from "./authz.js";
@@ -96,6 +96,7 @@ import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreview
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { briefNeedsJob } from "../../src/lib/build-job.js";
 import { describePaidHold, paidRouteAllowed } from "./paid-route-gate.js";
+import { describeUserQuotaHold, userPaidQuotaAllowed } from "./user-paid-quota.js";
 import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
@@ -1230,6 +1231,20 @@ export default async function handler(req: any, res: any) {
      */
     const paidVerdict = await paidRouteAllowed(effectiveOpenRouterKey);
     /*
+     * Phase 6, the second brake: this person's share of the paid rung.
+     *
+     * The meter above is per KEY and every account shares one key, so on its
+     * own it is first-come-first-served — one expensive loop consumes the
+     * allowance and everyone else gets a downgrade they did not cause. Asked
+     * only when the money gate already said yes, because a platform with no
+     * float left has nothing to share out and the round trip would be spent
+     * on a question that cannot change the answer.
+     */
+    const quotaVerdict = paidVerdict.allowed
+      ? await userPaidQuotaAllowed(sessionUser?.sub || null)
+      : null;
+    const paidAllowedForUser = paidVerdict.allowed && (quotaVerdict?.allowed !== false);
+    /*
      * PRESENCE IS NOT VALIDITY, and the meter above already knows the difference.
      *
      * openRouterAvailable was Boolean(effectiveOpenRouterKey) — a key exists, so
@@ -1260,7 +1275,7 @@ export default async function handler(req: any, res: any) {
       primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
       fallbackModelIds: modelRouting?.fallbackModelIds || [],
       models: routePlanningModels,
-      paidLastResortAllowed: paidVerdict.allowed,
+      paidLastResortAllowed: paidAllowedForUser,
       measuredOutcomes,
       autoRouting: autoModelRequest,
       requiredCapabilities: travelToolsEnabled
@@ -1357,6 +1372,9 @@ export default async function handler(req: any, res: any) {
       // When the float is what held premium back, say so with the number rather
       // than letting the turn read as a mysterious downgrade.
       ...(describePaidHold(paidVerdict) ? { spendHold: describePaidHold(paidVerdict) } : {}),
+      // A spent personal share is a different fact with a different remedy, so
+      // it never borrows the platform sentence about the OpenRouter ceiling.
+      ...(describeUserQuotaHold(quotaVerdict) ? { quotaHold: describeUserQuotaHold(quotaVerdict) } : {}),
         ...(wantTravelTools ? { travelDegraded: true, reason: 'no-travel-or-text-route' } : {}),
       });
     }
@@ -1425,6 +1443,20 @@ export default async function handler(req: any, res: any) {
           continue;
         }
         const attemptStartedAt = Date.now();
+        /*
+         * The paid rung is being taken, so the person's share is spent NOW.
+         *
+         * Counted where the call is made, never where it was permitted: a turn
+         * may be allowed the paid rescue and never reach it, because a free
+         * rung above answered first. Charging the share at the permission
+         * would bill people for calls that never happened, and the number
+         * would drift away from reality in the direction that hurts them.
+         *
+         * Fire-and-forget, like every other ledger here: a slow store must not
+         * slow the turn, and a failed write costs at most one uncounted call
+         * against an allowance the dollar ceiling still bounds.
+         */
+        if (route.paid === true && sessionUser?.sub) recordPaidCallEvent(sessionUser.sub);
         const attemptBudgetMs = effectiveBuildMode
           ? inferenceAttemptBudgetMs(
               remainingBudgetMs(startTime, turnBudgetMs),
@@ -1922,7 +1954,7 @@ export default async function handler(req: any, res: any) {
               primaryModelId: canonicalizeModelId(modelRouting?.primaryModelId || modelId),
               fallbackModelIds: modelRouting?.fallbackModelIds || [],
               models: routePlanningModels,
-              paidLastResortAllowed: paidVerdict.allowed,
+              paidLastResortAllowed: paidAllowedForUser,
               measuredOutcomes,
               autoRouting: autoModelRequest,
               requiredCapabilities: [...textCapabilities],
