@@ -170,7 +170,7 @@ try {
   const body = notebook.getByRole('textbox', { name: 'Note body' });
   await body.fill('Velocity is the slope of a displacement-time graph. Positive slope means positive velocity.');
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
-  await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study AI after flushing the edit.');
+  await visible(panel.getByRole('button', { name: 'Explain differently', exact: true }), 'Notebook did not return to Study AI after flushing the edit.');
   if (writeCount !== 2 || !notes[0]?.body.includes('positive velocity')) {
     throw new Error('Notebook navigation discarded an edit inside the autosave debounce window.');
   }
@@ -198,7 +198,7 @@ try {
   if (writeCount !== 4 || notes.length !== 0) throw new Error('Notebook delete did not remove the learner note exactly once.');
 
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
-  await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study AI.');
+  await visible(panel.getByRole('button', { name: 'Explain differently', exact: true }), 'Notebook did not return to Study AI.');
 
   console.log('Study Notebook browser gate passed.');
 } catch (error) {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import {
   studyActionVisibleText,
@@ -7,7 +7,6 @@ import {
   studyQuizAsk,
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveStateLabel, studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
-import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 
 /**
  * Conversation-first Study shell.
@@ -54,21 +53,6 @@ export default function StudyTutorShell({
     askOrSend(studyQuizAsk(topic), 'quiz');
     setActivity(null);
   }, [askOrSend, onRequestAssessment, topic]);
-
-  useEffect(() => {
-    const handleSurfaceRequest = (event) => {
-      if (event?.detail?.surface !== STUDY_SURFACE.ASSESSMENT) return;
-      event.detail.handled = true;
-      setDismissed(false);
-      if (completedCheck && assessment?.item && assessment?.result) {
-        setActivity('check');
-        return;
-      }
-      void requestCheck({ explicitRetry: false });
-    };
-    window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-    return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-  }, [assessment?.item, assessment?.result, completedCheck, requestCheck]);
 
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult

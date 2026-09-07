@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BrainCircuit,
   Eye,
-  History,
   Map,
   RotateCcw,
   X,
@@ -16,7 +15,6 @@ import {
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
-import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
 import StudyNotebook from './StudyNotebook.jsx';
 
 const HUB_ACTIONS = Object.freeze([
@@ -48,22 +46,14 @@ const HUB_ACTIONS = Object.freeze([
     icon: Map,
     ask: studyWhereNextAsk,
   },
-  {
-    id: 'history',
-    label: 'Assessment history',
-    hint: 'Review your verified checks from the last 30 days.',
-    icon: History,
-    surface: 'history',
-  },
 ]);
 
 /**
- * Progressive-disclosure launcher for tutor interventions.
+ * Progressive-disclosure launcher for tutor interventions only.
  *
- * Assessment History remains here only until the Assessment Sessions surface
- * owns it. Notebook is opened from the composer's + menu through the shared
- * Study surface request contract, so the same durable Notebook is not listed
- * twice. Neither surface becomes learner truth itself.
+ * Durable learner workspaces have separate homes: Assessment (including
+ * History) is owned by the Assessment workspace, while Notebook is opened from
+ * the composer's + menu through the shared Study surface request contract.
  */
 export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend }) {
   const [open, setOpen] = useState(false);
@@ -120,10 +110,6 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
   }, [closeHub, open, surface]);
 
   const runAction = (action) => {
-    if (action.surface) {
-      setSurface(action.surface);
-      return;
-    }
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
     if (onSend) {
       onSend(text, { visibleUserText: studyActionVisibleText(action.id, label) });
@@ -135,15 +121,12 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
 
   const panelClass = [
     'study-h1-hub__panel',
-    surface === 'history' ? ' study-h1-hub__panel--history' : '',
     surface === 'notebook' ? ' study-h1-hub__panel--notebook' : '',
   ].filter(Boolean).join(' ');
 
-  const labelledBy = surface === 'history'
-    ? 'quantora-study-history-title'
-    : surface === 'notebook'
-      ? 'quantora-study-notebook-title'
-      : 'quantora-study-hub-title';
+  const labelledBy = surface === 'notebook'
+    ? 'quantora-study-notebook-title'
+    : 'quantora-study-hub-title';
 
   return (
     <div
@@ -160,9 +143,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend })
           aria-modal="false"
           aria-labelledby={labelledBy}
         >
-          {surface === 'history' ? (
-            <StudyAssessmentHistory onClose={() => setSurface('tools')} />
-          ) : surface === 'notebook' ? (
+          {surface === 'notebook' ? (
             <StudyNotebook
               topic={label}
               onClose={() => setSurface('tools')}

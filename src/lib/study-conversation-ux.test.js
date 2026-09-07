@@ -92,10 +92,11 @@ test('Study flashcards are an interactive hidden-answer deck, not a Front/Back t
   assert.match(markdown, /<StudyFlashcards/);
 });
 
-test('Study keeps three permanent lesson moves while plus and AI have distinct jobs', () => {
+test('Study keeps three permanent lesson moves while plus, AI, and Assessment have distinct jobs', () => {
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const plus = read('src/lib/studio-tools-menu.js');
+  const assessmentWorkspace = read('src/components/StudyAssessmentWorkspace.jsx');
   const history = read('src/components/StudyAssessmentHistory.jsx');
   const notebook = read('src/components/StudyNotebook.jsx');
 
@@ -104,10 +105,10 @@ test('Study keeps three permanent lesson moves while plus and AI have distinct j
   assert.match(shell, />\s*Practice\s*</);
   assert.match(shell, /:\s*'Check'/);
 
-  for (const label of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?', 'Assessment history']) {
+  for (const label of ['Explain differently', 'Show visually', 'Real-world example', 'Where next?']) {
     assert.match(hub, new RegExp(escapeRegExp(label)));
   }
-  for (const duplicated of ['Notebook', 'Flashcards', 'Make concise notes']) {
+  for (const duplicated of ['Notebook', 'Flashcards', 'Make concise notes', 'Assessment history']) {
     assert.doesNotMatch(hub, new RegExp(`label:\\s*['"]${escapeRegExp(duplicated)}['"]`));
   }
 
@@ -125,8 +126,9 @@ test('Study keeps three permanent lesson moves while plus and AI have distinct j
 
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
   assert.match(hub, /aria-expanded=\{open\}/);
-  assert.match(hub, /<StudyAssessmentHistory/);
   assert.match(hub, /<StudyNotebook/);
+  assert.doesNotMatch(hub, /<StudyAssessmentHistory/);
+  assert.match(assessmentWorkspace, /<StudyAssessmentHistory/);
   assert.match(history, /data-quantora-study-assessment-history="true"/);
   assert.match(history, /Last \{state\.data\?\.windowDays \|\| 30\} days/);
   assert.match(notebook, /data-quantora-study-notebook="true"/);
@@ -136,10 +138,11 @@ test('Study keeps three permanent lesson moves while plus and AI have distinct j
   assert.doesNotMatch(hub, />\s*(?:Coming soon|Dashboard)\s*</i);
 });
 
-test('Study plus surfaces are acknowledged by mounted consumers and generic Assessment never implies retry', () => {
+test('Study plus surfaces are acknowledged by mounted owners instead of duplicate implementations', () => {
   const menu = read('src/components/StudioToolsMenu.jsx');
   const shell = read('src/components/StudyTutorShell.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
+  const workspace = read('src/components/StudyTutorWorkspace.jsx');
   const navigation = read('src/lib/study-surface-navigation.js');
 
   assert.match(menu, /item\?\.requiresTopic && !hasStudyTopic/);
@@ -152,10 +155,10 @@ test('Study plus surfaces are acknowledged by mounted consumers and generic Asse
   assert.match(navigation, /handled:\s*false/);
   assert.match(navigation, /return detail\.handled === true/);
 
-  assert.match(shell, /STUDY_SURFACE\.ASSESSMENT/);
-  assert.match(shell, /event\.detail\.handled = true/);
-  assert.match(shell, /completedCheck && assessment\?\.item && assessment\?\.result[\s\S]*setActivity\('check'\)/);
-  assert.match(shell, /requestCheck\(\{ explicitRetry: false \}\)/);
+  assert.match(workspace, /STUDY_SURFACE\.ASSESSMENT/);
+  assert.match(workspace, /event\.detail\.handled = true/);
+  assert.match(workspace, /setAssessmentWorkspaceOpen\(true\)/);
+  assert.doesNotMatch(shell, /STUDY_SURFACE\.ASSESSMENT|STUDY_SURFACE_REQUEST_EVENT/);
   assert.match(shell, /onClick=\{\(\) => requestCheck\(\{ explicitRetry: completedCheck \}\)\}/);
 
   assert.match(hub, /STUDY_SURFACE\.NOTEBOOK/);
