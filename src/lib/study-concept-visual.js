@@ -105,7 +105,7 @@ export function studyActiveConcept(topicHistory = '', responseText = '') {
 
 /**
  * The active concept, not arbitrary words inside generated prose, owns the
- * subject family used for automatic diagrams.
+ * subject family used to validate Study diagrams.
  */
 export function studyTopicVisualFamily(topic = '') {
   const label = normalizedTopic(topic);
@@ -118,15 +118,6 @@ export function studyTopicVisualFamily(topic = '') {
   if (subject === 'biology') return 'biology-cell';
   if (subject === 'chemistry') return 'chemistry-bond';
   return studyVisualKind(label);
-}
-
-/**
- * The legacy automatic fallback remains available only for an established,
- * non-optics concept. Optics uses its narrower subject-aware renderer below.
- */
-export function studyAllowsAutomaticTeachingVisual(topic = '') {
-  const family = studyTopicVisualFamily(topic);
-  return Boolean(family && family !== 'optics');
 }
 
 /**

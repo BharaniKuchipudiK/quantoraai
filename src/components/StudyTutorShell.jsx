@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import {
   studyActionVisibleText,
@@ -35,13 +35,13 @@ export default function StudyTutorShell({
   const learnerModel = verifiedResult?.learnerModel || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
 
-  const askOrSend = (text, action) => {
+  const askOrSend = useCallback((text, action) => {
     const adaptiveText = studyAdaptiveTutorAsk(text, learnerModel);
     if (onSend) onSend(adaptiveText, { visibleUserText: studyActionVisibleText(action, topic) });
     else onAsk?.(adaptiveText);
-  };
+  }, [learnerModel, onAsk, onSend, topic]);
 
-  const requestCheck = async (options) => {
+  const requestCheck = useCallback(async (options) => {
     setActivity('check');
     if (onRequestAssessment) {
       const outcome = await onRequestAssessment(options);
@@ -52,7 +52,7 @@ export default function StudyTutorShell({
     }
     askOrSend(studyQuizAsk(topic), 'quiz');
     setActivity(null);
-  };
+  }, [askOrSend, onRequestAssessment, topic]);
 
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult

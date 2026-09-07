@@ -124,29 +124,35 @@ try {
   await study.click();
   await page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');
 
-  // The Study Hub is deliberately contextual: establish a real learner topic
-  // before asserting the Hub/Notebook surface. A contextless workspace should
-  // not grow an unrelated floating control just to satisfy this browser gate.
+  // Study surfaces are deliberately contextual: establish a real learner topic
+  // before asserting the + menu / Notebook handoff.
   const textarea = page.locator('.app-shell--studio textarea').first();
   await visible(textarea, 'Study prompt input is missing.');
   await textarea.fill('Teach me motion graphs');
   await textarea.press('Enter');
 
   const hub = page.locator('[data-quantora-study-hub-launcher="true"]').first();
-  await visible(hub, 'Study Hub launcher is missing after a Study topic is active.', 10_000);
+  await visible(hub, 'Study AI launcher is missing after a Study topic is active.', 10_000);
   const panel = page.locator('#quantora-study-hub-panel').first();
-  const openHub = async () => {
-    await hub.getByRole('button', { name: 'Open Study tools', exact: true }).click();
-    await visible(panel, 'Study Hub did not open.');
-  };
+  const plusTrigger = page.locator('[data-quantora-plus-trigger="true"]').first();
+  await visible(plusTrigger, 'Study composer has no + action menu.');
+
   const openNotebook = async () => {
-    await panel.getByRole('button', { name: 'Notebook', exact: true }).click();
+    if (await panel.isVisible().catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await panel.waitFor({ state: 'hidden', timeout: 5000 });
+    }
+    await plusTrigger.click();
+    const plusMenu = page.locator('[data-quantora-studio-tools-menu="true"][data-quantora-plus-domain="education"]').first();
+    await visible(plusMenu, 'Study + menu did not open.');
+    const notebookAction = plusMenu.getByRole('button', { name: 'Notebook', exact: true });
+    await visible(notebookAction, 'Study + menu has no Notebook destination.');
+    await notebookAction.click();
     const notebook = page.locator('[data-quantora-study-notebook="true"]').first();
-    await visible(notebook, 'Study Notebook did not open from the Hub.');
+    await visible(notebook, 'Study Notebook did not open from the + menu.');
     return notebook;
   };
 
-  await openHub();
   let notebook = await openNotebook();
   await visible(notebook.getByText('Personal notes do not change mastery.', { exact: true }), 'Notebook lost its mastery truth boundary.');
 
@@ -164,7 +170,7 @@ try {
   const body = notebook.getByRole('textbox', { name: 'Note body' });
   await body.fill('Velocity is the slope of a displacement-time graph. Positive slope means positive velocity.');
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
-  await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study tools after flushing the edit.');
+  await visible(panel.getByRole('button', { name: 'Explain differently', exact: true }), 'Notebook did not return to Study AI after flushing the edit.');
   if (writeCount !== 2 || !notes[0]?.body.includes('positive velocity')) {
     throw new Error('Notebook navigation discarded an edit inside the autosave debounce window.');
   }
@@ -179,10 +185,9 @@ try {
   await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'hidden', timeout: 5000 });
   if (writeCount !== 3 || !notes[0]?.body.includes('negative velocity')) {
-    throw new Error('Closing Study tools with Escape discarded a pending Notebook edit.');
+    throw new Error('Closing Study AI with Escape discarded a pending Notebook edit.');
   }
 
-  await openHub();
   notebook = await openNotebook();
   await notebook.getByRole('textbox', { name: 'Search notes' }).fill('negative velocity');
   await visible(notebook.getByRole('button', { name: /Velocity reminders/ }).first(), 'Notebook did not reload the edit flushed by Escape.');
@@ -193,7 +198,7 @@ try {
   if (writeCount !== 4 || notes.length !== 0) throw new Error('Notebook delete did not remove the learner note exactly once.');
 
   await notebook.getByRole('button', { name: 'Back to Study tools', exact: true }).click();
-  await visible(panel.getByRole('button', { name: 'Assessment history', exact: true }), 'Notebook did not return to Study tools.');
+  await visible(panel.getByRole('button', { name: 'Explain differently', exact: true }), 'Notebook did not return to Study AI.');
 
   console.log('Study Notebook browser gate passed.');
 } catch (error) {

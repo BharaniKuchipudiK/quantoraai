@@ -19,7 +19,7 @@ function formatDate(value) {
   }).format(date);
 }
 
-export default function StudyAssessmentHistory({ onClose }) {
+export default function StudyAssessmentHistory({ onClose, backLabel = 'Back to Assessment' }) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
 
   const load = async () => {
@@ -55,7 +55,7 @@ export default function StudyAssessmentHistory({ onClose }) {
         <button
           type="button"
           className="study-h1-icon-button"
-          aria-label="Back to Study tools"
+          aria-label={backLabel}
           onClick={onClose}
         >
           <ArrowLeft size={16} />

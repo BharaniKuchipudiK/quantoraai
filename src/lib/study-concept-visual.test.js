@@ -3,18 +3,16 @@ import test from 'node:test';
 import {
   isStudyTopicSelection,
   studyActiveConcept,
-  studyAllowsAutomaticTeachingVisual,
   studyOpticsVisualSpec,
   studyPictureFitsTopic,
   studySubjectFamily,
   studyTopicVisualFamily,
 } from './study-concept-visual.js';
 
-test('topic recommendation turns never earn an automatic teaching visual', () => {
+test('topic recommendation turns never earn a subject visual family', () => {
   const topic = 'you suggest me a topic from Science';
   assert.equal(isStudyTopicSelection(topic), true);
   assert.equal(studyTopicVisualFamily(topic), null);
-  assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
   assert.equal(studyOpticsVisualSpec(
     'Try Chemical Reactions and Equations, Light: Reflection and Refraction, or Life Processes.',
     topic,
@@ -68,9 +66,8 @@ test('subject classification is independent of renderer shape', () => {
   assert.equal(studySubjectFamily('Teach me Pythagoras to find side x on a right triangle visually.'), 'geometry');
 });
 
-test('optics is locked as its own automatic visual family', () => {
+test('optics is locked as its own visual family', () => {
   assert.equal(studyTopicVisualFamily('Light: Reflection & Refraction'), 'optics');
-  assert.equal(studyAllowsAutomaticTeachingVisual('Light: Reflection & Refraction'), false);
   assert.equal(studyPictureFitsTopic(
     'A labelled graph showing axes, slope, and change between two points',
     'Light: Reflection & Refraction',
@@ -137,13 +134,11 @@ test('broad optics prose does not invent a concave mirror diagram', () => {
   ), null);
 });
 
-test('existing subject diagrams remain available when the topic itself establishes the subject', () => {
-  assert.equal(studyAllowsAutomaticTeachingVisual('Newtonian inertia'), true);
+test('existing subject diagrams remain available when their governed captions match the topic', () => {
   assert.equal(studyPictureFitsTopic(
     'Passenger motion when a vehicle brakes: velocity continues forward while the braking force acts backward',
     'Newtonian inertia',
   ), true);
-  assert.equal(studyAllowsAutomaticTeachingVisual('What is Algebra?'), true);
   assert.equal(studyPictureFitsTopic(
     'Undo subtraction by adding the same number to both sides of the equation',
     'What is Algebra?',
@@ -161,7 +156,7 @@ test('a later unsupported concept does not inherit an earlier vector visual fami
     'State one concrete trade-off from the scenario in one sentence.',
   ].join('\n');
   const topic = studyActiveConcept(history, reply);
-  assert.equal(studyAllowsAutomaticTeachingVisual(topic), false);
+  assert.equal(studyTopicVisualFamily(topic), null);
 });
 
 test('a Pythagoras caption is a real geometry picture, not a dropped decorative picture', () => {

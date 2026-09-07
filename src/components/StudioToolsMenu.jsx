@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { rememberOfficeToolSelection } from '../lib/office-intent.js';
+import { requestStudySurface } from '../lib/study-surface-navigation.js';
 import { studioToolsMenuGroups } from '../lib/studio-tools-menu.js';
 
 const ICONS = {
@@ -52,6 +53,8 @@ export default function StudioToolsMenu({
 }) {
   const [pos, setPos] = useState({ left: 16, bottom: 88 });
   const compactStudy = studioDomain === 'education';
+  const normalizedTopic = String(topic || '').trim();
+  const hasStudyTopic = Boolean(normalizedTopic && normalizedTopic.toLowerCase() !== 'this topic');
 
   useLayoutEffect(() => {
     if (!isOpen || typeof window === 'undefined') return undefined;
@@ -83,7 +86,14 @@ export default function StudioToolsMenu({
     ? '0 24px 56px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)'
     : '0 28px 64px rgba(0,0,0,0.72), 0 0 0 1px rgba(255,255,255,0.06)';
 
-  const selectTool = (toolId) => {
+  const selectTool = (selection) => {
+    const item = selection && typeof selection === 'object' ? selection : null;
+    const toolId = item?.id || String(selection || '');
+    if (compactStudy && item?.requiresTopic && !hasStudyTopic) return;
+    if (compactStudy && item?.surface) {
+      if (requestStudySurface(item.surface)) onClose?.();
+      return;
+    }
     rememberOfficeToolSelection(toolId);
     onSelectTool(toolId);
     if (compactStudy) onClose?.();
@@ -94,7 +104,7 @@ export default function StudioToolsMenu({
     return (
       <div
         data-quantora-plus-item={item.id}
-        onClick={() => selectTool(item.id)}
+        onClick={() => selectTool(item)}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -145,27 +155,31 @@ export default function StudioToolsMenu({
 
   const StudyAction = ({ item }) => {
     const Icon = ICONS[item.icon] || Sparkles;
-    const isNew = item.id === 'new-topic';
+    const disabled = Boolean(item.requiresTopic && !hasStudyTopic);
+    const title = disabled ? 'Start a Study topic first.' : item.subtitle;
     return (
       <button
         type="button"
         data-quantora-plus-item={item.id}
-        title={item.subtitle}
-        onClick={() => selectTool(item.id)}
+        data-quantora-study-surface={item.surface || undefined}
+        data-quantora-study-requires-topic={item.requiresTopic ? 'true' : undefined}
+        title={title}
+        aria-label={item.title}
+        disabled={disabled}
+        onClick={() => selectTool(item)}
         style={{
-          gridColumn: isNew ? '1 / -1' : 'auto',
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
-          gap: '9px',
-          minHeight: isNew ? '42px' : '54px',
-          padding: '9px 10px',
+          gap: '10px',
+          minHeight: '48px',
+          padding: '10px 12px',
           borderRadius: '12px',
           border: isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(148,163,184,0.18)',
-          background: isNew
-            ? (isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)')
-            : (isLight ? '#fff' : 'rgba(255,255,255,0.035)'),
+          background: isLight ? '#f8fafc' : 'rgba(148,163,184,0.08)',
           color: textColor,
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.48 : 1,
           textAlign: 'left',
           fontFamily: 'inherit',
         }}
@@ -228,7 +242,7 @@ export default function StudioToolsMenu({
                 <X size={16} />
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '7px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
               {(groups[0]?.items || []).map((item) => <StudyAction key={item.id} item={item} />)}
             </div>
           </>
