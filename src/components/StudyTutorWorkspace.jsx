@@ -439,6 +439,7 @@ export default function StudyTutorWorkspace({
       />
       <StudyHubLauncher
         key={`${activeSessionId}:${brief.conceptId}:hub`}
+        topicKey={brief.conceptId}
         topic={brief.label}
         ready
         learnerModel={assessment?.result?.learnerModel || null}
