@@ -19,6 +19,17 @@ import { planCodingTurn } from './coding-turn-planner.js';
  */
 
 const isCodingRequest = (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true });
+/*
+ * The classifier as the guided intake actually sees it: no desk yet, because
+ * the first turn produced a question rather than files. Two tests below used
+ * `() => false` here to stand in for "the strict classifier misses this ask,
+ * as it did in production". That was never measured, and it is wrong — the
+ * real classifier recognises "Build me a boutique website for Hira Silks"
+ * with the desk shut. Standing in for a miss that does not happen hid which
+ * signal was carrying the journey, and #609 widened the wrong one on the
+ * strength of it.
+ */
+const isCodingRequestDeskless = (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: false });
 
 test('a session that has asked for a build is an active build session', () => {
   assert.equal(
@@ -253,9 +264,9 @@ test('an intake answer before any desk or file is still build work', () => {
     priorUserMessages: ['Build me a boutique website for Hira Silks'],
     codingDeskOpen: false, // the first turn only asked a question
     hasDeskFiles: false,   // so there is nothing in the VFS yet
-    isCodingRequest: () => false, // the strict classifier misses this ask, as it did in production
+    isCodingRequest: isCodingRequestDeskless, // the REAL classifier, desk shut, as production has it
   });
-  assert.equal(active, true, 'prior build intent, not an open desk, decides');
+  assert.equal(active, true, 'the strict classifier carries this deskless; no open desk needed');
   assert.equal(
     turnBelongsToBuild({ text: 'Boutique showcase + service booking', buildSessionActive: active }),
     true,
@@ -299,6 +310,7 @@ test('an unrelated question mid-intake still goes to chat', () => {
     priorUserMessages: ['Build me a boutique website for Hira Silks'],
     codingDeskOpen: false,
     hasDeskFiles: false,
+    isCodingRequest: isCodingRequestDeskless,
   });
   assert.equal(active, true);
   for (const aside of ['what is the capital of France?', 'can you show me today\'s weather?']) {
@@ -316,4 +328,115 @@ test('files present still short-circuit, whatever the history says', () => {
     isBuildSessionActive({ priorUserMessages: [], codingDeskOpen: false, hasDeskFiles: true }),
     true,
   );
+});
+
+/*
+ * THE MIRROR IMAGE, found by review on the day #609 landed.
+ *
+ * #609 removed the `codingDeskOpen` requirement from isBuildSessionActive to
+ * fix the guided intake. It removed it from BOTH activation signals, and only
+ * one of them could carry that. IMPERATIVE_BUILD matches a build verb with ANY
+ * object, so in a deskless ordinary chat "Make me a grocery list" activated a
+ * build session, and the next declarative turn — "vegetarian options only" —
+ * planned as mode=execute. A whole build turn, and a nonsense artifact, spent
+ * on somebody's shopping.
+ *
+ * That is the same failure as the one #609 fixed, pointing the other way: a
+ * turn routed as something the person did not ask for.
+ *
+ * The corpus below is deliberately adversarial — imperatives whose objects are
+ * CONTENT rather than software. Per the doctrine on correctness gates, a corpus
+ * containing only the cases that motivated the fix would read clean for a rule
+ * that got more dangerous, so these are the cases nobody wrote the fix for.
+ */
+test('INVARIANT: a generic imperative in a deskless chat is not a build session', () => {
+  const notSoftware = [
+    'Create a poem about the sea',
+    'Make me a grocery list',
+    'Design a workout plan',
+    'make me a cup of tea',
+    'create a playlist for the drive',
+    'build me an argument for the essay',
+    'generate some ideas for my birthday',
+    'design a tattoo for my arm',
+    /*
+     * Found by review AFTER the first version of this fix (2026-09-07), and it
+     * is the sharper case: this one is not caught by IMPERATIVE_BUILD at all.
+     * resolveIsCodingRequest widens itself when a desk is open — BUILD_VERB
+     * plus DESK_OPEN_BUILD_HINT — and all three production callers passed
+     * `codingDeskOpen: true` unconditionally. So "Design" plus "native" was a
+     * build ask in an ordinary chat with no desk, and it entered through the
+     * STRICT half of activation, which the first fix left alone.
+     *
+     * The first version of this test could not see it, because it injected a
+     * deskless classifier that production never used. That is the same defect
+     * this file was written to close, one level up: a fixture asserting
+     * something production does not do.
+     */
+    'Design a native plant garden for my backyard',
+    'make me a native english practice routine',
+  ];
+  for (const ask of notSoftware) {
+    // Fixture check: these are exactly the asks IMPERATIVE_BUILD matches and
+    // the strict classifier does not. If either half stops being true the
+    // test is no longer testing what it claims.
+    assert.equal(resolveIsCodingRequest(ask, { codingDeskOpen: false }), false, `fixture: ${ask}`);
+    assert.equal(
+      isBuildSessionActive({
+        priorUserMessages: [ask],
+        codingDeskOpen: false,
+        hasDeskFiles: false,
+        isCodingRequest: isCodingRequestDeskless,
+      }),
+      false,
+      `"${ask}" must not open a build session with no desk`,
+    );
+  }
+});
+
+test('INVARIANT: the follow-up to a deskless content ask is not planned as a build', () => {
+  // The end of the chain, which is what the user actually experienced: it is
+  // not enough that activation is false — the planner must pass the turn
+  // through rather than execute it.
+  for (const [opening, followUp] of [
+    ['Make me a grocery list', 'vegetarian options only'],
+    ['Create a poem about the sea', 'make the second verse shorter'],
+    ['Design a workout plan', 'three days a week instead'],
+    // Enters through the STRICT half, via the desk-open widening that the
+    // production callers applied with no desk open. planCodingTurn builds that
+    // callback itself, so this asserts the real path rather than a fixture.
+    ['Design a native plant garden for my backyard', 'more shade tolerant ones please'],
+  ]) {
+    const plan = planCodingTurn({
+      message: followUp,
+      priorUserMessages: [opening],
+      codingDeskOpen: false,
+      vfsFileCount: 0,
+      autoMode: true,
+      availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+    });
+    assert.equal(plan.mode, 'pass', `"${opening}" -> "${followUp}" must stay a conversation`);
+    assert.equal(plan.isCodingTurn, false, `${followUp}`);
+  }
+});
+
+test('the loose signal still recovers a real build ask once a desk exists', () => {
+  /*
+   * The other direction, so the fix cannot be "turn the recovery off". An
+   * open desk is corroboration that a build really exists, and with it the
+   * imperative signal keeps doing the job it was added for: recovering asks
+   * the strict classifier misses.
+   */
+  for (const ask of [
+    'build me a currency converter',
+    'make me a thing that renames my photos',
+    'create me a slideshow of my holiday',
+  ]) {
+    assert.equal(resolveIsCodingRequest(ask, { codingDeskOpen: true }), false, `fixture: ${ask}`);
+    assert.equal(
+      isBuildSessionActive({ priorUserMessages: [ask], codingDeskOpen: true, isCodingRequest }),
+      true,
+      ask,
+    );
+  }
 });
