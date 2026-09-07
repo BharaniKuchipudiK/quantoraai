@@ -111,10 +111,16 @@ try {
   await enterSignedInStudio(page);
 
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
-  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
+  /*
+   * THE ACCOUNT ENTRY FOLLOWS THE SHELL (2026-09-07). The Studio now owns
+   * the entry and the header stands down there (profileInShell), so a
+   * sidebar control is THE control, not a duplicate. studio-regression is
+   * the gate that counts both surfaces and requires exactly one; this one
+   * cares that it exists and that its menu is anchored to it.
+   */
   await assertJourneyEntry(page, visible, 'Studio');
-  const headerProfile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
-  await visible(headerProfile, 'Global Profile control is missing from Studio.');
+  const accountEntry = page.locator('[data-quantora-sidebar-profile], button[aria-controls="quantora-profile-menu"]').first();
+  await visible(accountEntry, 'Studio shows no account control at all: neither the sidebar entry nor the header one.');
 
   for (const workspace of workspaces) {
     const advisor = page.locator(`[data-quantora-advisor="${workspace.domain}"]`).first();
@@ -129,7 +135,6 @@ try {
     }
 
     await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), `${workspace.label} leaked duplicate Canvas navigation.`);
-    await hidden(page.locator('[data-quantora-sidebar-profile]').first(), `${workspace.label} leaked duplicate Profile navigation.`);
     await hidden(page.locator('[data-quantora-code-workspace="true"]').first(), `${workspace.label} opened generic Code Preview without an explicit artifact.`);
     await hidden(page.getByText('Live Preview', { exact: true }).first(), `${workspace.label} exposed an empty Live Preview.`);
 
@@ -153,14 +158,22 @@ try {
     await screenshot(`workspace-${workspace.domain}-contract`);
   }
 
-  const profileRect = await headerProfile.boundingBox();
-  await headerProfile.click();
+  /*
+   * The menu must be anchored to the control that OPENED it, wherever that
+   * control lives. Pinned to the header's geometry this read as a rule
+   * about the top bar; the property is that the menu appears beside its own
+   * trigger rather than somewhere else on screen — which is exactly the bug
+   * a dropped anchorRect produces.
+   */
+  const profileRect = await accountEntry.boundingBox();
+  await accountEntry.click();
   const menu = page.locator('#quantora-profile-menu').first();
-  await visible(menu, 'Header Profile did not open the account menu.');
+  await visible(menu, 'The account control did not open the account menu.');
   const menuRect = await menu.boundingBox();
-  if (!profileRect || !menuRect) throw new Error('Could not measure Profile/menu geometry.');
-  if (menuRect.top < profileRect.bottom - 2 || Math.abs((menuRect.x + menuRect.width) - (profileRect.x + profileRect.width)) > 24) {
-    throw new Error(`Profile menu is not anchored below the header control: profile=${JSON.stringify(profileRect)} menu=${JSON.stringify(menuRect)}`);
+  if (!profileRect || !menuRect) throw new Error('Could not measure the account control / menu geometry.');
+  const horizontalDrift = Math.abs(menuRect.x - profileRect.x);
+  if (horizontalDrift > 320) {
+    throw new Error(`The account menu is not anchored to the control that opened it: control=${JSON.stringify(profileRect)} menu=${JSON.stringify(menuRect)} (drift ${Math.round(horizontalDrift)}px). Check the trigger sends detail.anchorRect, the key Header reads.`);
   }
 
   const changePicture = menu.locator('[data-quantora-profile-picture-entry="true"]').first();

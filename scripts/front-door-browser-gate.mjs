@@ -131,7 +131,16 @@ await page.route('**/api/**', async (route) => {
 const signedOutEntry = () => page.locator('[data-quantora-login="true"]').first();
 const enterStudio = () => page.locator('[data-quantora-enter-studio="true"]').first();
 const authModal = () => page.locator('[data-quantora-auth-modal="true"]').first();
-const profileMenu = () => page.locator('[data-quantora-profile-menu="true"]').first();
+/*
+ * WHERE THE PERSON IS SHOWN DEPENDS ON THE SHELL (2026-09-07).
+ *
+ * Outside the Studio the header carries the account entry; inside it the
+ * header stands down (profileInShell) and the sidebar carries it, so there
+ * is exactly one either way. What this gate is about is that the app shows
+ * WHO YOU ARE and can sign you out — not which surface holds the control.
+ * Pinning it to the header made the gate a test of the layout instead.
+ */
+const profileMenu = () => page.locator('[data-quantora-profile-menu="true"], [data-quantora-sidebar-profile="true"]').first();
 const composer = () => page.locator('.app-shell--studio textarea').first();
 const hubModule = (id) => page.locator(`[data-quantora-hub-module="${id}"]`).first();
 
@@ -200,7 +209,7 @@ try {
     await page.locator('[data-quantora-auth-submit="login"]').first().click();
     await gone(authModal(), 'The modal stayed open after the server accepted the sign-in.');
     await visible(hubModule('studio'), 'Signed in, but the hub never offered the Studio ([data-quantora-hub-module="studio"]).');
-    await visible(profileMenu(), 'Signed in, but the header never showed the person ([data-quantora-profile-menu]).');
+    await visible(profileMenu(), 'Signed in, but the hub never showed the person ([data-quantora-profile-menu] in the header).');
     // The hub offers exactly the modules this build shows: parked ones stay parked here too.
     for (const parked of ['canvas', 'quantum']) {
       const offered = await hubModule(parked).isVisible().catch(() => false);
@@ -214,18 +223,18 @@ try {
     }
   });
 
-  await step('the desk opens and its header shows the person', async () => {
+  await step('the desk opens and shows the person', async () => {
     await hubModule('studio').click();
     await page.waitForURL(/\/desk\/?(\?|$)/, { timeout: 20_000 }).catch(() => {});
     await visible(composer(), `The desk did not open after Try Quantora (url: ${page.url()}).`, 20_000);
-    await visible(profileMenu(), 'The desk opened, but its header never showed the person ([data-quantora-profile-menu]).');
+    await visible(profileMenu(), 'The desk opened, but nothing showed the person: neither the header ([data-quantora-profile-menu]) nor the sidebar ([data-quantora-sidebar-profile]).');
   });
 
   await step('a reload comes back signed in from the cookie', async () => {
     const readsBefore = evidence.sessionReads.length;
     await page.reload({ waitUntil: 'domcontentloaded' });
     await visible(composer(), 'After a reload the desk did not come back.', 20_000);
-    await visible(profileMenu(), 'After a reload the header does not show the person: the session did not restore from the cookie.');
+    await visible(profileMenu(), 'After a reload nothing shows the person: the session did not restore from the cookie.');
     if (await authModal().isVisible().catch(() => false)) throw new Error('After a reload the sign-in modal reappeared although the session cookie was present.');
     const reads = evidence.sessionReads.slice(readsBefore);
     if (!reads.includes('with-cookie')) throw new Error(`The reload never asked /api/auth/session with the cookie (reads after reload: ${JSON.stringify(reads)}).`);
@@ -251,7 +260,7 @@ try {
     while (evidence.logoutCalls < 1 && Date.now() < toldBy) await page.waitForTimeout(100);
     if (evidence.logoutCalls !== 1) throw new Error(`Sign Out told the server ${evidence.logoutCalls} time(s); expected exactly one POST /api/auth/logout.`);
     await visible(signedOutEntry(), 'After Sign Out the landing did not come back with its signed-out entry control.');
-    await gone(profileMenu(), 'After Sign Out the header still shows the person.');
+    await gone(profileMenu(), 'After Sign Out the app still shows the person.');
     await page.waitForFunction(() => !localStorage.getItem('quantora_user'), null, { timeout: 5_000 }).catch(() => {});
     if (await hasSessionCookie()) throw new Error('Sign Out left the session cookie in the browser: the server\'s clearing Set-Cookie did not land.');
   });

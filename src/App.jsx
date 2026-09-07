@@ -613,6 +613,9 @@ export default function App() {
             isLight={isLight}
             compact={isWorkspaceShell}
             autoHide={isWorkspaceShell}
+            /* The Studio sidebar shows the account control; every other tab
+             * has no sidebar, so the header keeps showing it there. */
+            profileInShell={isStudioShell}
           />
 
           <main className={isStudioShell ? 'app-main app-main--studio' : 'app-main'} style={{

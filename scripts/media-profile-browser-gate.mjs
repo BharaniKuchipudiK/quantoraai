@@ -112,10 +112,17 @@ try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   await enterSignedInStudio(page);
 
-  await hidden(page.locator('[data-quantora-sidebar-profile]').first(), 'Duplicate Profile leaked into the Studio sidebar.');
+  /*
+   * THE ACCOUNT ENTRY FOLLOWS THE SHELL (2026-09-07). This asserted the
+   * sidebar had no account control, which was right when only the header
+   * had one and a second could only be a duplicate. The Studio now owns the
+   * entry and the header stands down there, so the control below is found
+   * on whichever surface this shell puts it — and studio-regression is the
+   * gate that counts them and requires exactly one.
+   */
   await hidden(page.locator('[data-quantora-sidebar-canvas]').first(), 'Duplicate Canvas leaked into the Studio sidebar.');
-  const profile = page.locator('button[aria-controls="quantora-profile-menu"]').first();
-  await visible(profile, 'Global Profile control is missing.');
+  const profile = page.locator('[data-quantora-sidebar-profile], button[aria-controls="quantora-profile-menu"]').first();
+  await visible(profile, 'No account control anywhere: neither the sidebar entry nor the header one.');
   await page.mouse.move(1400, 12);
   await page.waitForTimeout(250);
   await profile.click({ timeout: 15_000, force: true });
