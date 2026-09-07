@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 40, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 41, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -642,7 +642,17 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Connect GitHub and choose the repository and branch a build writes to',
     entry: 'src/components/GithubDestinationBar.jsx',
-    hooks: ['data-quantora-github-destination', 'data-quantora-github-destination-connect', 'data-quantora-github-destination-menu'],
+    hooks: [
+      'data-quantora-github-destination',
+      'data-quantora-github-destination-connect',
+      'data-quantora-github-destination-menu',
+      'data-quantora-github-destination-chip',
+      'data-quantora-github-destination-repo',
+      'data-quantora-github-destination-writable',
+      'data-quantora-github-destination-branch',
+      'data-quantora-github-destination-open',
+      'data-quantora-github-destination-blocker',
+    ],
     serves: ['api/auth.ts', 'api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -651,8 +661,9 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-principal.test.ts',
         'scripts/github-write-seam-gate.mjs',
       ],
+      browser: ['scripts/desk-destination-browser-gate.mjs'],
     },
-    note: 'Five durable hooks; no browser gate has connected GitHub or opened the destination menu.',
+    note: 'The bar\'s own header states the case for it: "a repository you cannot write to costs nothing to swap now, and costs the whole build to discover at the push." That sentence describes a REFUSAL, and nothing had ever exercised it. desk-destination-browser-gate.mjs drives the bar signed out (the connect door rather than an empty slot), connected with nothing chosen (not choosing is a first-class answer and must read as one), through the repository menu, and into the refusal: a repository the account can READ but not WRITE is offered as unselectable. Two-way checked -- removing the disabled attribute fails the gate by name, "someone-else/upstream-lib is selectable ... this build would run and fail at the push". Choosing a writable repository then sets owner, repo and branch, and the branch menu moves it, each step waiting for the CHIP to change rather than for a click to be accepted -- the lesson from review of #596, where a gate asserted the request and never watched the UI complete. The repository and branch rows had no durable hooks until now, so this journey could not have been driven by anything anchored on hooks rather than prose. Deliberately NOT in the browser gate: the wording a read-only destination shows. A first draft added a step for it that reached into the app\'s own module from the page, unimportable against a built preview, and RETURNED EARLY when that failed -- a step that cannot fail is worse than no step, and that wording is a pure function already covered by github-destination.test.js.',
   }),
   journey({
     id: 'github-import-repo',

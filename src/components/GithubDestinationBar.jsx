@@ -300,6 +300,8 @@ export default function GithubDestinationBar({
                 <button
                   key={row.fullName}
                   type="button"
+                  data-quantora-github-destination-repo={row.fullName}
+                  data-quantora-github-destination-writable={row.canPush ? 'true' : 'false'}
                   disabled={!row.canPush}
                   onClick={() => chooseRepository(row)}
                   style={{ ...itemStyle, opacity: row.canPush ? 1 : 0.45, cursor: row.canPush ? 'pointer' : 'not-allowed' }}
@@ -320,7 +322,13 @@ export default function GithubDestinationBar({
               {busy ? <div style={{ ...itemStyle, color: muted }}>Loading branches…</div> : null}
               {renderError()}
               {branches.map((row) => (
-                <button key={row.name} type="button" onClick={() => chooseBranch(row.name)} style={itemStyle}>
+                <button
+                  key={row.name}
+                  type="button"
+                  data-quantora-github-destination-branch={row.name}
+                  onClick={() => chooseBranch(row.name)}
+                  style={itemStyle}
+                >
                   <span style={{ fontWeight: 600 }}>{row.name}</span>
                   {row.isDefault || row.protected ? (
                     <span style={{ fontSize: '0.7rem', color: muted }}>
