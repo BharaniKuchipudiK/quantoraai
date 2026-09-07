@@ -3,6 +3,11 @@ import {
   readVerifiedStudyMasteryEvidenceWithCursor,
 } from './study-evidence-loader.js';
 import {
+  estimateStudyMastery,
+  estimateStudyMasteryFromAccumulator,
+  type StudyMasteryEstimate,
+} from './study-mastery-estimator.js';
+import {
   replayStudyLearnerProjection,
   type StudyLearnerProjection,
 } from './study-learner-projection.js';
@@ -23,10 +28,11 @@ import {
   replayStudyLearnerProjectionFromCheckpoint,
 } from './study-replay-checkpoint.js';
 
-export const STUDY_PROJECTION_LOADER_VERSION = 'study-projection-loader-2026-09-02.2';
+export const STUDY_PROJECTION_LOADER_VERSION = 'study-projection-loader-2026-09-07.1';
 
 export type StudyLearnerProjectionLoadResult = {
   projection: StudyLearnerProjection;
+  masteryEstimate: StudyMasteryEstimate;
   source: 'checkpoint_delta' | 'full_replay';
 };
 
@@ -56,6 +62,7 @@ async function fullReplay(input: {
     });
     return null;
   }
+  const masteryEstimate = estimateStudyMastery(full.evidence);
   const projection = replayStudyLearnerProjection({
     conceptId: input.conceptId,
     conceptKey: input.conceptKey,
@@ -85,7 +92,7 @@ async function fullReplay(input: {
     durationMs: studyTelemetryElapsedMs(telemetry.startedAtMs),
     dbCalls: currentStudyDbCalls() - telemetry.startingDbCalls,
   });
-  return { projection, source: 'full_replay' };
+  return { projection, masteryEstimate, source: 'full_replay' };
 }
 
 /**
@@ -95,6 +102,10 @@ async function fullReplay(input: {
  * compatibility, ordering, or validation is uncertain, this function performs
  * the bounded authoritative full replay instead. No stale checkpoint state is
  * returned solely because a storage dependency is unavailable.
+ *
+ * The returned mastery estimate is derived from the same canonical replay state
+ * as the learner model. This keeps downstream read-only decision services from
+ * recomputing or inventing a parallel learner truth.
  */
 export async function loadVerifiedStudyLearnerProjection(input: {
   userSub: string;
@@ -124,6 +135,7 @@ export async function loadVerifiedStudyLearnerProjection(input: {
         cursor: delta.cursor,
       });
       if (replayed.status === 'replayed') {
+        const masteryEstimate = estimateStudyMasteryFromAccumulator(replayed.nextCheckpoint.masteryState);
         await syncStudyLearnerCheckpoint({
           userSub: input.userSub,
           projection: replayed.projection,
@@ -137,7 +149,7 @@ export async function loadVerifiedStudyLearnerProjection(input: {
           durationMs: studyTelemetryElapsedMs(startedAtMs),
           dbCalls: currentStudyDbCalls() - startingDbCalls,
         });
-        return { projection: replayed.projection, source: 'checkpoint_delta' };
+        return { projection: replayed.projection, masteryEstimate, source: 'checkpoint_delta' };
       }
       fallbackReason = 'checkpoint_replay_rejected';
     } else if (delta.status === 'requires_full_replay') {
