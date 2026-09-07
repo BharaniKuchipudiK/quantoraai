@@ -19,10 +19,14 @@ import {
   loadStudySchedule,
   updateStudyScheduleBlock,
 } from '../lib/study-schedule-client.js';
+import {
+  applyStudySchedulePrefill,
+  normalizeStudyScheduleDuration,
+  studyScheduleDurationOptions,
+} from '../lib/study-schedule-draft.js';
 import './study-schedule.css';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DURATION_CHOICES = [30, 45, 60, 90, 120];
 
 function startOfWeek(value = new Date()) {
   const date = new Date(value);
@@ -82,6 +86,10 @@ function emptyDraft(defaultSubject = '', defaultTopic = '', date = new Date()) {
   };
 }
 
+function initialScheduleDraft(defaultSubject = '', defaultTopic = '', initialDraft = null, date = new Date()) {
+  return applyStudySchedulePrefill(emptyDraft(defaultSubject, defaultTopic, date), initialDraft);
+}
+
 function draftFromBlock(block) {
   return {
     id: block.id,
@@ -100,7 +108,7 @@ function draftFromBlock(block) {
 function payloadFromDraft(draft) {
   const startsAt = combineLocal(draft.date, draft.startTime);
   if (!startsAt) return null;
-  const duration = Math.max(15, Math.min(24 * 60, Number(draft.duration) || 60));
+  const duration = normalizeStudyScheduleDuration(draft.duration, 60);
   const endsAt = new Date(new Date(startsAt).getTime() + duration * 60_000).toISOString();
   return {
     ...(draft.id ? { id: draft.id } : {}),
@@ -136,13 +144,13 @@ function kindLabel(kind) {
   return 'Study';
 }
 
-export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTopic = '', onClose }) {
+export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTopic = '', initialDraft = null, onClose }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek());
   const [blocks, setBlocks] = useState([]);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [draft, setDraft] = useState(() => emptyDraft(defaultSubject, defaultTopic));
+  const [editorOpen, setEditorOpen] = useState(() => Boolean(initialDraft));
+  const [draft, setDraft] = useState(() => initialScheduleDraft(defaultSubject, defaultTopic, initialDraft));
   const [saving, setSaving] = useState(false);
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
@@ -151,6 +159,7 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
     const now = new Date();
     return now >= weekStart && now < weekEnd ? now : weekStart;
   }, [weekEnd, weekStart]);
+  const durationOptions = useMemo(() => studyScheduleDurationOptions(draft.duration), [draft.duration]);
 
   const blocksByDay = useMemo(() => {
     const grouped = new Map(days.map((day) => [dateKey(day), []]));
@@ -353,7 +362,7 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
             </div>
 
             {editorOpen ? (
-              <aside className="study-schedule-editor" aria-label={draft.id ? 'Edit study block' : 'New study block'}>
+              <aside className="study-schedule-editor" aria-label={draft.id ? 'Edit study block' : 'New study block'} data-quantora-study-schedule-editor="true">
                 <div className="study-schedule-editor__header">
                   <div>
                     <span className="study-schedule-eyebrow">{draft.id ? 'Edit block' : 'New block'}</span>
@@ -390,7 +399,7 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
                   <label className="study-schedule-field">
                     <span>Duration</span>
                     <select value={draft.duration} onChange={(event) => setDraft((current) => ({ ...current, duration: Number(event.target.value) }))}>
-                      {DURATION_CHOICES.map((minutes) => <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} min` : `${minutes / 60} hr${minutes > 60 ? 's' : ''}`}</option>)}
+                      {durationOptions.map((minutes) => <option key={minutes} value={minutes}>{minutes < 60 ? `${minutes} min` : `${minutes / 60} hr${minutes > 60 ? 's' : ''}`}</option>)}
                     </select>
                   </label>
                 </div>
@@ -401,8 +410,8 @@ export default function StudyScheduleWorkspace({ defaultSubject = '', defaultTop
                     ['study', 'Study'],
                     ['exam', 'Exam'],
                     ['deadline', 'Deadline'],
-                  ].map(([value, label]) => (
-                    <button key={value} type="button" aria-pressed={draft.kind === value} onClick={() => setDraft((current) => ({ ...current, kind: value }))}>{label}</button>
+                  ].map(([value, kind]) => (
+                    <button key={value} type="button" aria-pressed={draft.kind === value} onClick={() => setDraft((current) => ({ ...current, kind: value }))}>{kind}</button>
                   ))}
                 </fieldset>
 
