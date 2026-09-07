@@ -1,163 +1,152 @@
 /**
- * Latency breaks ties, and may never do anything else.
+ * Latency breaks ties, moves only routes that have been measured, and may never
+ * do anything else.
  *
  * Phase 6 routes on "capability + measured outcome + health + latency + cost +
  * budget". Latency was the input the platform collected and then dropped:
  * `model_quality_events` records it per turn, `avgLatencyMs` rides on every
- * signal, and nothing read it. Meanwhile both rankers already broke ties, on
- * `a.index - b.index` — catalogue position, an accident of list order standing
- * in for a decision.
+ * signal, and nothing read it. Both rankers meanwhile broke ties on catalogue
+ * position, an accident of list order standing in for a decision.
  *
- * The danger in fixing that is overcorrection. A latency term with real weight
- * makes a fast wrong answer beat a slow right one, which is the worst trade
- * available on a build turn and would show up as "it got dumber" with no
- * failing test anywhere. So the guarantee is arithmetic, not a judgement call
- * about a small-looking weight, and this file proves it by exhaustion rather
- * than asserting it.
+ * There are two ways to get this wrong and both are quiet.
+ *
+ * Overcorrect and a fast wrong answer beats a slow right one, which shows up as
+ * "it got dumber" with nothing failing anywhere.
+ *
+ * Or reorder on evidence that does not exist. The first version of this scored
+ * each route and gave an unmeasured one a zero, which sits in the middle of the
+ * measured range -- so it was treated as faster than every slow route and
+ * slower than every fast one, on no evidence at all. Review of #590 caught it,
+ * and the last three tests here are the ones that would have.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MAX_LATENCY_TIE_BREAK,
   MIN_OUTCOME_SAMPLES,
-  latencyTieBreaks,
+  overallOutcomeSignals,
+  settleLatencyTies,
+  trustedLatencyMs,
 } from '../../shared/model-outcome-routing.js';
 import { rankCodingDeskFallbacks } from './coding-desk-auto-model.js';
 
 const TRUSTED = MIN_OUTCOME_SAMPLES + 4;
 
-function model(id, { latency = null, samples = TRUSTED, ...rest } = {}) {
+function model(id, { latency = null, samples = TRUSTED } = {}) {
   return {
     id,
     name: id,
-    // is_free is the field isFreeReady actually reads; `free` is not one of
-    // them, and a fixture that sets the wrong field silently empties the pool.
+    // is_free is the field isFreeReady actually reads; a fixture that sets the
+    // wrong one silently empties the pool and the test passes for no reason.
     is_free: true,
     quality: latency === null ? undefined : { sampleSize: samples, avgLatencyMs: latency, score: 60 },
-    ...rest,
   };
 }
 
+const entry = (m, index, score) => ({ model: m, index, score });
+const ids = (list) => list.map((e) => e.model.id);
+
+test('a measured route needs both a trusted sample and a real latency', () => {
+  assert.equal(trustedLatencyMs(model('a', { latency: 1200 })), 1200);
+  assert.equal(trustedLatencyMs(model('a', { latency: 1200, samples: MIN_OUTCOME_SAMPLES - 1 })), null);
+  assert.equal(trustedLatencyMs(model('a')), null, 'no evidence at all');
+  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(trustedLatencyMs(model('a', { latency: bad })), null, `${bad} is not a measurement`);
+  }
+});
+
+test('tied routes are reordered fastest first', () => {
+  const settled = settleLatencyTies([
+    entry(model('slow', { latency: 9000 }), 0, 10),
+    entry(model('quick', { latency: 1000 }), 1, 10),
+    entry(model('middle', { latency: 5000 }), 2, 10),
+  ]);
+  assert.deepEqual(ids(settled), ['quick', 'middle', 'slow']);
+});
+
 /*
- * THE PROPERTY THE WHOLE DESIGN RESTS ON.
+ * Merit is what the runs are made of, so latency cannot cross one. This is now
+ * true by construction rather than by an arithmetic bound that had to be argued.
+ */
+test('a difference in merit is never overturned, however large the speed gap', () => {
+  const settled = settleLatencyTies([
+    entry(model('better-but-slow', { latency: 30000 }), 0, 40),
+    entry(model('worse-but-instant', { latency: 5 }), 1, 39),
+  ]);
+  assert.deepEqual(ids(settled), ['better-but-slow', 'worse-but-instant'], 'one point of merit still decides');
+});
+
+/*
+ * THE FINDING FROM REVIEW OF #590.
  *
- * Every other term in both routing scores is an integer, so two routes that
- * differ on merit differ by at least 1. A tie-break bounded strictly under a
- * half cannot close that gap from either side. If someone raises the bound to
- * 0.5 "to make it matter more", this is the test that catches it, because at
- * exactly 0.5 two adjacent merits become reorderable.
+ * An unmeasured route sat at the midpoint of the measured range and was
+ * silently ranked ahead of every slow route and behind every fast one, on
+ * nothing. It must not move, and nothing may move past it on its own account.
  */
-test('the bound is strictly under a half, which is what makes it a tie-break and not a ranker', () => {
-  assert.ok(MAX_LATENCY_TIE_BREAK < 0.5, `${MAX_LATENCY_TIE_BREAK} would let latency overturn a difference in merit`);
-  assert.ok(MAX_LATENCY_TIE_BREAK > 0, 'a tie-break that is always zero breaks no ties');
-});
-
-test('no measured latency can move a route by half a point or more', () => {
-  // Spans chosen to hit the extremes and the awkward shapes between them.
-  const spans = [[1, 2], [1, 100000], [999, 1000], [50, 50.5], [1, 3, 7, 19, 250, 4000]];
-  for (const latencies of spans) {
-    const breaks = latencyTieBreaks(latencies.map((ms, i) => model(`m${i}`, { latency: ms })));
-    for (const [id, value] of breaks) {
-      assert.ok(
-        Math.abs(value) <= MAX_LATENCY_TIE_BREAK,
-        `${id} moved by ${value}, outside the bound that keeps merit decisive`,
-      );
-      assert.ok(Math.abs(value) < 0.5, `${id} moved by ${value}, which can overturn a difference in merit`);
-    }
-  }
-});
-
-test('a difference in merit is never overturned, for every merit gap and every tie-break pair', () => {
-  const extremes = [-MAX_LATENCY_TIE_BREAK, -0.3, -0.0001, 0, 0.0001, 0.3, MAX_LATENCY_TIE_BREAK];
-  for (let better = -40; better <= 40; better += 1) {
-    for (const gap of [1, 2, 7, 30]) {
-      const worse = better - gap;
-      for (const breakBetter of extremes) {
-        for (const breakWorse of extremes) {
-          const scoredBetter = better + breakBetter;
-          const scoredWorse = worse + breakWorse;
-          assert.ok(
-            scoredBetter > scoredWorse,
-            `merit ${better} fell behind merit ${worse} once latency was applied `
-            + `(${scoredBetter} vs ${scoredWorse}); the tie-break has become a ranker`,
-          );
-        }
-      }
-    }
-  }
-});
-
-test('the fastest proven route takes the positive edge and the slowest the negative one', () => {
-  const breaks = latencyTieBreaks([
-    model('slow', { latency: 9000 }),
-    model('quick', { latency: 1000 }),
-    model('middle', { latency: 5000 }),
+test('a route with no latency evidence keeps its position exactly', () => {
+  const settled = settleLatencyTies([
+    entry(model('slow', { latency: 9000 }), 0, 10),
+    entry(model('unknown'), 1, 10),
+    entry(model('fast', { latency: 1000 }), 2, 10),
   ]);
-  assert.equal(breaks.get('quick'), MAX_LATENCY_TIE_BREAK);
-  assert.equal(breaks.get('slow'), -MAX_LATENCY_TIE_BREAK);
-  assert.equal(breaks.get('middle'), 0, 'the midpoint of the span is neutral');
-  assert.ok(breaks.get('quick') > breaks.get('middle'));
-  assert.ok(breaks.get('middle') > breaks.get('slow'));
+  assert.equal(ids(settled)[1], 'unknown', 'the unmeasured route stays exactly where merit and catalogue order put it');
+  assert.deepEqual(ids(settled), ['fast', 'unknown', 'slow'], 'only the two measured routes trade places');
+});
+
+test('one measured route among unmeasured ones changes nothing', () => {
+  const settled = settleLatencyTies([
+    entry(model('a'), 0, 10),
+    entry(model('lonely', { latency: 50 }), 1, 10),
+    entry(model('c'), 2, 10),
+  ]);
+  assert.deepEqual(ids(settled), ['a', 'lonely', 'c'], 'a route with nobody comparable to race has won nothing');
+});
+
+test('an untrusted sample does not get to move anything', () => {
+  const settled = settleLatencyTies([
+    entry(model('proven-slow', { latency: 8000 }), 0, 10),
+    entry(model('hunch', { latency: 5, samples: MIN_OUTCOME_SAMPLES - 1 }), 1, 10),
+    entry(model('proven-fast', { latency: 2000 }), 2, 10),
+  ]);
+  assert.equal(ids(settled)[1], 'hunch', 'a one-turn fluke must not outrank measured evidence');
+  assert.deepEqual(ids(settled), ['proven-fast', 'hunch', 'proven-slow']);
+});
+
+test('equally fast routes keep catalogue order rather than inventing one', () => {
+  const settled = settleLatencyTies([
+    entry(model('first', { latency: 2000 }), 0, 10),
+    entry(model('second', { latency: 2000 }), 1, 10),
+  ]);
+  assert.deepEqual(ids(settled), ['first', 'second']);
+});
+
+test('a cold catalogue is returned untouched', () => {
+  const cold = [entry(model('a'), 0, 10), entry(model('b'), 1, 10)];
+  assert.deepEqual(ids(settleLatencyTies(cold)), ['a', 'b']);
+  assert.deepEqual(settleLatencyTies([]), []);
+  assert.deepEqual(settleLatencyTies(null), []);
+});
+
+test('routes are not moved between different merit runs', () => {
+  const settled = settleLatencyTies([
+    entry(model('topslow', { latency: 9000 }), 0, 20),
+    entry(model('topfast', { latency: 100 }), 1, 20),
+    entry(model('lowfast', { latency: 1 }), 2, 5),
+  ]);
+  assert.deepEqual(ids(settled), ['topfast', 'topslow', 'lowfast'], 'the faster low-merit route stays below both');
 });
 
 /*
- * Fail-safe, the property this whole module family is built on: with no
- * evidence the router must behave exactly as it did the day before.
+ * The wiring: the ordering above is worthless if no ranker applies it. Run in
+ * both directions, so a pass cannot be an accident of the catalogue order this
+ * replaces.
  */
-test('nothing to compare leaves the order exactly as it was', () => {
-  assert.equal(latencyTieBreaks([]).size, 0, 'an empty pool');
-  assert.equal(latencyTieBreaks(null).size, 0, 'not a pool at all');
-  assert.equal(
-    latencyTieBreaks([model('only', { latency: 1000 })]).size,
-    0,
-    'one measured route has nobody to be faster than',
+test('the failover order uses it, and follows the evidence when the evidence flips', () => {
+  const first = rankCodingDeskFallbacks(
+    [model('alpha', { latency: 1200 }), model('beta', { latency: 9000 })],
+    { primaryId: 'none', allowPaid: false },
   );
-  assert.equal(
-    latencyTieBreaks([model('a'), model('b')]).size,
-    0,
-    'a cold catalogue must route identically to before this existed',
-  );
-  assert.equal(
-    latencyTieBreaks([model('a', { latency: 2000 }), model('b', { latency: 2000 })]).size,
-    0,
-    'equally fast is a tie on latency too, and inventing an order would be a guess',
-  );
-});
-
-test('an untrusted sample does not get to break anything', () => {
-  const breaks = latencyTieBreaks([
-    model('proven', { latency: 8000 }),
-    model('hunch', { latency: 5, samples: MIN_OUTCOME_SAMPLES - 1 }),
-    model('alsoproven', { latency: 2000 }),
-  ]);
-  assert.equal(breaks.has('hunch'), false, 'a one-turn fluke must not outrank measured evidence');
-  assert.equal(breaks.get('alsoproven'), MAX_LATENCY_TIE_BREAK, 'the fastest TRUSTED route is the fastest');
-});
-
-test('a latency that is absent, zero or nonsense is not evidence', () => {
-  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, null]) {
-    const breaks = latencyTieBreaks([model('bad', { latency: bad }), model('good', { latency: 1000 })]);
-    assert.equal(breaks.has('bad'), false, `${bad} must not be read as a measured latency`);
-  }
-});
-
-/*
- * The wiring, not the arithmetic: the map above is worthless if no ranker adds
- * it. Two routes identical in every input the scorer reads, differing only in
- * measured latency — and reversed, so a passing test cannot be an accident of
- * catalogue order, which is the very thing being replaced.
- */
-test('the failover order actually uses it, and follows the evidence when the evidence flips', () => {
-  const build = (fastId, slowId) => [
-    model(fastId, { latency: 1200 }),
-    model(slowId, { latency: 9000 }),
-  ];
-
-  const first = rankCodingDeskFallbacks(build('alpha', 'beta'), { primaryId: 'none', allowPaid: false });
   assert.ok(first.indexOf('alpha') < first.indexOf('beta'), `expected the faster route first, got ${first.join(' > ')}`);
 
-  // Same catalogue order, opposite evidence. If catalogue position were still
-  // deciding, this would come back in the same order as above.
   const flipped = rankCodingDeskFallbacks(
     [model('alpha', { latency: 9000 }), model('beta', { latency: 1200 })],
     { primaryId: 'none', allowPaid: false },
@@ -166,4 +155,28 @@ test('the failover order actually uses it, and follows the evidence when the evi
     flipped.indexOf('beta') < flipped.indexOf('alpha'),
     `the order did not follow the measured latency, got ${flipped.join(' > ')}; catalogue position is still deciding`,
   );
+});
+
+/*
+ * ALSO FROM REVIEW OF #590: the number being compared has to be the real one.
+ *
+ * The view computes avg_latency_ms over successful rows only, so combining a
+ * model's categories unweighted lets one sample outvote a hundred. Harmless
+ * while nothing read it; routing on it is what made the weight matter.
+ */
+test('latency across categories is weighted by the calls each average covers', () => {
+  const signals = overallOutcomeSignals([
+    { model_id: 'm', task_category: 'coding', successful_responses: 1, failed_responses: 0, avg_latency_ms: 100 },
+    { model_id: 'm', task_category: 'writing', successful_responses: 100, failed_responses: 0, avg_latency_ms: 1000 },
+  ]);
+  const avg = signals.get('m').avgLatencyMs;
+  assert.equal(avg, 991, `unweighted would read 550 and rank this model ahead of a genuinely faster one; got ${avg}`);
+});
+
+test('a category with no successes cannot drag the average', () => {
+  const signals = overallOutcomeSignals([
+    { model_id: 'm', task_category: 'coding', successful_responses: 10, failed_responses: 0, avg_latency_ms: 500 },
+    { model_id: 'm', task_category: 'writing', successful_responses: 0, failed_responses: 4, avg_latency_ms: 0 },
+  ]);
+  assert.equal(signals.get('m').avgLatencyMs, 500, 'a row whose average covers no successful call is not evidence');
 });

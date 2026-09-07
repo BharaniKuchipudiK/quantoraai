@@ -40,10 +40,25 @@ function addRow(bucket, row) {
   bucket.helpful += num(row.helpful_votes);
   bucket.notHelpful += num(row.not_helpful_votes);
   bucket.fallbacks += num(row.fallback_rescues);
+  /*
+   * WEIGHTED BY THE ROWS THE AVERAGE WAS TAKEN OVER.
+   *
+   * The view computes avg_latency_ms as `avg(latency_ms) filter (where outcome
+   * = 'success')`, so a row's average stands for exactly `successful_responses`
+   * calls. Adding those per-category averages unweighted makes a category with
+   * one sample count as much as one with a hundred: a model with a single 100ms
+   * coding success and a hundred 1000ms writing successes reads as 550ms rather
+   * than the true ~991ms, and can be ranked ahead of a genuinely faster route.
+   *
+   * That inaccuracy was harmless while nothing read this number. Routing on it
+   * is what makes the weight load-bearing, so it is corrected here rather than
+   * left for whoever trusts it next. Raised in review of #590.
+   */
   const lat = num(row.avg_latency_ms);
-  if (lat > 0) {
-    bucket.latSum += lat;
-    bucket.latN += 1;
+  const latSamples = num(row.successful_responses);
+  if (lat > 0 && latSamples > 0) {
+    bucket.latSum += lat * latSamples;
+    bucket.latN += latSamples;
   }
 }
 
@@ -148,22 +163,18 @@ export function outcomeRoutingAdjust(signal) {
 }
 
 /**
- * Largest score a latency tie-break may move a route.
+ * The measured latency of a route, or null when there is not enough evidence.
  *
- * STRICTLY BELOW 0.5, AND THAT IS THE WHOLE DESIGN.
- *
- * Every other term in both routing scores is an integer: name priors, the
- * paid-flagship edge, the finish-reliability prior, and outcomeRoutingAdjust,
- * which rounds. So two routes that differ on merit differ by at least 1, and a
- * term bounded under a half can never close that gap from either side. Latency
- * therefore decides EXACTLY the cases where merit is tied and nothing else
- * does — which is what a tie-breaker means, proved by arithmetic rather than
- * by choosing a small-looking weight and hoping.
- *
- * This bound is load-bearing. Raising it to 0.5 or beyond turns a tie-breaker
- * into a ranker, and a fast wrong answer starts beating a slow right one.
+ * Same trust bar as every other signal in this file: below MIN_OUTCOME_SAMPLES
+ * a number is a hunch, and a zero or missing latency measures nothing.
  */
-export const MAX_LATENCY_TIE_BREAK = 0.49;
+export function trustedLatencyMs(model) {
+  const samples = Number(model?.quality?.sampleSize);
+  const latency = Number(model?.quality?.avgLatencyMs);
+  if (!Number.isFinite(samples) || samples < MIN_OUTCOME_SAMPLES) return null;
+  if (!Number.isFinite(latency) || latency <= 0) return null;
+  return latency;
+}
 
 /**
  * Break ties between routes by how fast they have actually answered.
@@ -172,60 +183,63 @@ export const MAX_LATENCY_TIE_BREAK = 0.49;
  *
  * Both rankers already tie-break, on `a.index - b.index`: the earlier entry in
  * the catalogue wins. That is an accident of list order standing in for a
- * decision, and the platform has measured the answer all along --
- * `model_quality_events` records latency per turn and `avgLatencyMs` has been
- * carried on every signal, read by nobody. Phase 6 routes on "capability +
- * measured outcome + health + latency + cost + budget"; latency was the input
- * that was collected and then dropped.
+ * decision the evidence could make -- model_quality_events records latency per
+ * turn and avgLatencyMs has ridden on every signal since outcome routing
+ * shipped, read by nobody.
  *
- * RELATIVE, NEVER A THRESHOLD
+ * WHY THIS MOVES POSITIONS RATHER THAN SCORING ROUTES
  *
- * There is no constant here saying what "slow" is, because any such number
- * would be a guess that ages badly as models and providers change. The
- * question a tie-break actually asks is comparative -- faster than the OTHER
- * candidates on this turn -- so the fastest route in the pool takes the full
- * positive nudge, the slowest the full negative one, and the rest sit where
- * their measured latency puts them between the two.
+ * The first version added a small number to each route's score, capped below
+ * half a point so it could not overturn a difference in merit. Review of #590
+ * found the flaw: a route with NO latency evidence scored 0, which sits in the
+ * middle of the measured range, so it was silently treated as faster than every
+ * measured-slow route and slower than every measured-fast one. There is no
+ * evidence for either claim. "No data means no adjustment" held per route and
+ * failed pairwise, which is the comparison that actually decides.
  *
- * FAIL-SAFE, LIKE EVERYTHING ELSE IN THIS FILE
+ * A pairwise comparator -- use latency only when BOTH sides are measured -- is
+ * the obvious repair, and it is unsound. With routes slow, unknown, fast in
+ * catalogue order it demands fast before slow from evidence, slow before
+ * unknown from catalogue order, and unknown before fast from catalogue order:
+ * a cycle. Array.prototype.sort with an intransitive comparator has no defined
+ * result, so that repair trades a wrong order for an unpredictable one.
  *
- * A model with no trustworthy sample does not participate and scores 0. Fewer
- * than two participants, or every participant equally fast, returns an empty
- * map: there is nothing to break, and catalogue order remains the final
- * tie-break exactly as before. A cold catalogue routes identically to the day
- * before this function existed.
+ * So the reordering is positional. Within a run of equal merit, the POSITIONS
+ * already held by measured routes are collected, those routes are sorted among
+ * themselves by measured latency, and they are written back into exactly those
+ * positions. A route without evidence never moves and is never compared to
+ * anything. Merit is untouched because the runs are defined by it, so latency
+ * decides ties and nothing else -- by construction now, rather than by an
+ * arithmetic bound that had to be argued.
  *
- * @param {Array<object>} models  Routing models carrying `.quality`.
- * @returns {Map<string, number>} id to a value in [-MAX_LATENCY_TIE_BREAK, MAX_LATENCY_TIE_BREAK].
+ * Equal latencies keep catalogue order, because sort is stable and a tie on the
+ * evidence is not a reason to invent an order.
+ *
+ * @param {Array<{score:number, model:object}>} ranked  Already ordered by merit.
+ * @returns {Array} a new array; the input is not mutated.
  */
-export function latencyTieBreaks(models) {
-  const measured = [];
-  for (const model of Array.isArray(models) ? models : []) {
-    if (!model || typeof model.id !== 'string' || !model.id) continue;
-    const samples = Number(model.quality?.sampleSize);
-    const latency = Number(model.quality?.avgLatencyMs);
-    if (!Number.isFinite(samples) || samples < MIN_OUTCOME_SAMPLES) continue;
-    if (!Number.isFinite(latency) || latency <= 0) continue;
-    measured.push({ id: model.id, latency });
+export function settleLatencyTies(ranked) {
+  const out = Array.isArray(ranked) ? [...ranked] : [];
+  let start = 0;
+  while (start < out.length) {
+    let end = start + 1;
+    while (end < out.length && out[end]?.score === out[start]?.score) end += 1;
+    if (end - start > 1) {
+      const slots = [];
+      for (let i = start; i < end; i += 1) {
+        if (trustedLatencyMs(out[i]?.model) !== null) slots.push(i);
+      }
+      if (slots.length > 1) {
+        const measured = slots.map((i) => out[i]);
+        measured.sort((a, b) => trustedLatencyMs(a.model) - trustedLatencyMs(b.model));
+        slots.forEach((slot, n) => { out[slot] = measured[n]; });
+      }
+    }
+    start = end;
   }
-  const breaks = new Map();
-  if (measured.length < 2) return breaks;
-  let fastest = Infinity;
-  let slowest = -Infinity;
-  for (const entry of measured) {
-    if (entry.latency < fastest) fastest = entry.latency;
-    if (entry.latency > slowest) slowest = entry.latency;
-  }
-  // Every candidate equally fast: a tie on latency too, so leave it unbroken
-  // rather than inventing an order.
-  if (!(slowest > fastest)) return breaks;
-  const span = slowest - fastest;
-  for (const entry of measured) {
-    const speed = (slowest - entry.latency) / span; // 1 fastest, 0 slowest
-    breaks.set(entry.id, Number(((speed * 2 - 1) * MAX_LATENCY_TIE_BREAK).toFixed(6)));
-  }
-  return breaks;
+  return out;
 }
+
 
 /**
  * Attach measured signals onto a list of routing models as `.quality`, in the
