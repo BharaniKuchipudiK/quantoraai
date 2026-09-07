@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { MoreVertical, Pencil, Pin, PinOff, FolderInput, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 
 /*
@@ -34,13 +35,68 @@ export default function ChatRowMenu({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const buttonRef = useRef(null);
+  /*
+   * THE MENU LEAVES THE ROW (2026-09-07).
+   *
+   * Reported: "when I click on three dots, can you not immerse the list
+   * inside the workspace and rather make it fully visible for selection".
+   *
+   * It was positioned `absolute` inside the row, so every scrolling ancestor
+   * clipped it — and a desk's chat list gained `overflowY: auto` the same
+   * day, which is what made a long-standing fragility visible. A menu you
+   * have to scroll a container to read is a menu you cannot choose from.
+   *
+   * Fixed-positioned in a portal, it is outside every one of those
+   * containers by construction, so no future `overflow` can clip it again.
+   * It flips above the button when there is not room below, and is clamped
+   * into the viewport so it can never open off-screen.
+   */
+  const [position, setPosition] = useState(null);
+  const place = useCallback(() => {
+    const anchor = buttonRef.current;
+    if (!anchor || typeof window === 'undefined') return;
+    const rect = anchor.getBoundingClientRect();
+    const WIDTH = 176;
+    const GUTTER = 8;
+    const estimatedHeight = 250;
+    const below = window.innerHeight - rect.bottom;
+    const flipUp = below < estimatedHeight + GUTTER && rect.top > below;
+    const left = Math.min(
+      Math.max(GUTTER, rect.right - WIDTH),
+      Math.max(GUTTER, window.innerWidth - WIDTH - GUTTER),
+    );
+    setPosition({
+      left,
+      width: WIDTH,
+      ...(flipUp
+        ? { bottom: Math.max(GUTTER, window.innerHeight - rect.top + 4), maxHeight: Math.max(160, rect.top - GUTTER - 4) }
+        : { top: rect.bottom + 4, maxHeight: Math.max(160, below - GUTTER - 4) }),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    place();
+    // Anchored to a row that can scroll under it: follow, or close.
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, place]);
   const pinned = session?.pinned === true;
   const archived = session?.archived === true;
 
   useEffect(() => {
     if (!open) return undefined;
     const close = (event) => {
-      if (!wrapRef.current?.contains(event.target)) setOpen(false);
+      // The menu is portalled, so it is NOT inside wrapRef any more; asking
+      // only about the row would close it on its own items.
+      if (wrapRef.current?.contains(event.target)) return;
+      if (event.target?.closest?.('[data-quantora-chat-menu-open]')) return;
+      setOpen(false);
     };
     const onKey = (event) => { if (event.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', close);
@@ -89,6 +145,7 @@ export default function ChatRowMenu({
     <div ref={wrapRef} style={{ position: 'relative', display: 'flex' }}>
       <button
         type="button"
+        ref={buttonRef}
         data-quantora-chat-menu={session?.id}
         aria-label="Chat options"
         aria-haspopup="menu"
@@ -108,16 +165,15 @@ export default function ChatRowMenu({
         <MoreVertical size={15} />
       </button>
 
-      {open ? (
+      {open && position ? createPortal((
         <div
           role="menu"
           data-quantora-chat-menu-open={session?.id}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            zIndex: 80,
-            minWidth: '176px',
+            position: 'fixed',
+            ...position,
+            overflowY: 'auto',
+            zIndex: 4000,
             padding: '5px',
             borderRadius: '11px',
             background: isLight ? '#ffffff' : '#1c1c1c',
@@ -168,7 +224,7 @@ export default function ChatRowMenu({
             onDelete?.(event, session.id);
           }, true)}
         </div>
-      ) : null}
+      ), document.body) : null}
     </div>
   );
 }
