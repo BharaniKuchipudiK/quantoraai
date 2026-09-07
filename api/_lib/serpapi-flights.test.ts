@@ -10,6 +10,22 @@ import {
 } from './serpapi-flights.js';
 
 /*
+ * FIXTURE DATES MOVE WITH THE CLOCK.
+ *
+ * A literal future date is a scheduled failure. validateTravelToolArgs rejects
+ * a departure in the past, so '2026-09-15' was valid the day it was written and
+ * becomes INVALID_ARGUMENT the morning after it passes — a red suite that no
+ * diff caused. That exact trap took main red on 2026-09-03, was fixed in one
+ * file, and was still armed in three others on 2026-09-07.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+function isoDaysFromNow(days: number): string {
+  return new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+}
+const DEPARTURE_DATE = isoDaysFromNow(30);
+const RETURN_DATE = isoDaysFromNow(35);
+
+/*
  * A real SIN→DPS response, trimmed to two offers. Written from live output
  * rather than invented, because every trap in this mapper came from the shape
  * the provider actually sends — not from the shape it was assumed to send.
@@ -173,7 +189,7 @@ const okResponse = (body: any) => ({ ok: true, json: async () => body }) as any;
 
 test('a real answer is labelled with where the numbers came from', async () => {
   const result = await searchSerpApiFlights('key', (async () => okResponse(LIVE_SAMPLE)) as any, {
-    origin: 'SIN', destination: 'DPS', departureDate: '2026-09-15', currency: 'SGD',
+    origin: 'SIN', destination: 'DPS', departureDate: DEPARTURE_DATE, currency: 'SGD',
   });
   assert.equal(result.status, 'success');
   assert.equal(result.source, 'Google Flights', 'not a house brand — the real origin');
@@ -215,14 +231,14 @@ test('a thrown request fails honestly', async () => {
 test('a return date makes it a round trip, and is sent', async () => {
   let called = '';
   await searchSerpApiFlights('key', (async (url: string) => { called = url; return okResponse(LIVE_SAMPLE); }) as any, {
-    origin: 'SIN', destination: 'DPS', departureDate: '2026-09-15', returnDate: '2026-09-20', currency: 'SGD',
+    origin: 'SIN', destination: 'DPS', departureDate: DEPARTURE_DATE, returnDate: RETURN_DATE, currency: 'SGD',
   });
   assert.match(called, /type=1/, 'one way is 2; a return date is a round trip');
-  assert.match(called, /return_date=2026-09-20/);
+  assert.match(called, new RegExp(`return_date=${RETURN_DATE}`), 'the return date reaches the provider, whatever today is');
 
   let oneWay = '';
   await searchSerpApiFlights('key', (async (url: string) => { oneWay = url; return okResponse(LIVE_SAMPLE); }) as any, {
-    origin: 'SIN', destination: 'DPS', departureDate: '2026-09-15',
+    origin: 'SIN', destination: 'DPS', departureDate: DEPARTURE_DATE,
   });
   assert.match(oneWay, /type=2/);
   assert.doesNotMatch(oneWay, /return_date/);

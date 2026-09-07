@@ -11,6 +11,15 @@ import {
   resolveCapabilityCredential,
 } from './credential-broker.js';
 
+/*
+ * Fixture dates move with the clock. A literal future date is valid the day it
+ * is written and INVALID_ARGUMENT the morning after it passes — a red suite no
+ * diff caused. That happened on 2026-09-03 and again, still armed, on 09-07.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysFromNow = (days: number): string =>
+  new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+
 test('pipeline idea contract accepts bounded structured JSON and strips unknown fields', () => {
   const result = parsePipelineIdeaSpec(JSON.stringify({
     title: 'Planner',
@@ -68,8 +77,8 @@ test('travel routing contract rejects half a route instead of guessing', () => {
 test('travel hotel contract still rejects inverted stay dates', () => {
   const result = validateTravelToolArgs('search_hotels', {
     location: 'Bali',
-    checkInDate: '2026-09-15',
-    checkOutDate: '2026-09-10',
+    checkInDate: isoDaysFromNow(30),
+    checkOutDate: isoDaysFromNow(25), // deliberately BEFORE check-in: that is the test
   });
   assert.equal(result.status, 'invalid');
 });
