@@ -67,4 +67,4 @@ if (!files.length) {
 }
 
 console.log(`run-node-tests: ${files.length} test file(s)`);
-process.exit(await runTestsWithFailureSummary('node', ['--test', ...files], 'node'));
+process.exitCode = await runTestsWithFailureSummary('node', ['--test', ...files], 'node');

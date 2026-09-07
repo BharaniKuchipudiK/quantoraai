@@ -33,4 +33,4 @@ if (!files.length) {
 }
 
 console.log(`run-ts-tests: ${files.length} test file(s)`);
-process.exit(await runTestsWithFailureSummary('npx', ['tsx', '--test', ...files], 'TypeScript'));
+process.exitCode = await runTestsWithFailureSummary('npx', ['tsx', '--test', ...files], 'TypeScript');

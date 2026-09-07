@@ -154,3 +154,107 @@ test('a run that ends mid-block still reports the failure it was describing', ()
   assert.equal(failures.length, 1, 'a crash mid-failure must not swallow the failure');
   assert.ok(failures[0].detail.some((l) => /process died here/.test(l)));
 });
+
+/*
+ * FROM REVIEW OF #592: forwarding output through a pipe can lose it.
+ *
+ * The original runners inherited file descriptors, which could not drop a byte.
+ * Piping to forward it introduces backpressure -- when stdout is a CI collector
+ * or a redirect, `write` returns false once its buffer fills. Ignoring that
+ * would truncate the log, and writing the summary before stdout finished
+ * draining would put it somewhere other than the tail. Either defeats the only
+ * reason this change exists.
+ *
+ * A NOTE ON THESE TWO TESTS.
+ *
+ * They were written once already and caught neither bug: a fake stream that
+ * records every chunk loses nothing whether or not the child is paused, and a
+ * stream that accepts instantly makes an awaited flush indistinguishable from a
+ * missing one. Both passed against the broken code. They are rewritten here to
+ * turn on the one thing each fix actually changes -- whether the child is made
+ * to WAIT, and whether the flush COMPLETES before the summary is written.
+ */
+import { runTestsWithFailureSummary } from './lib/run-tests-with-summary.mjs';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('a consumer that stops accepting stalls the run instead of losing its output', async () => {
+  const drainWaiters = [];
+  let accepted = 0;
+  const out = {
+    write(chunk, cb) {
+      accepted += 1;
+      if (cb) cb();
+      // Full after the first chunk, and never drains until told.
+      return accepted < 1;
+    },
+    once(event, fn) { if (event === 'drain') drainWaiters.push(fn); },
+  };
+  const quiet = { write(_c, cb) { if (cb) cb(); return true; }, once() {} };
+
+  // Enough output that the child fills the pipe and blocks while paused.
+  const run = runTestsWithFailureSummary(
+    process.execPath,
+    ['-e', 'for (let i = 0; i < 20000; i += 1) console.log(`line ${i} ${"x".repeat(80)}`);'],
+    'backpressure',
+    { out, err: quiet },
+  );
+
+  const raced = await Promise.race([run.then(() => 'finished'), sleep(400).then(() => 'still-running')]);
+  assert.equal(
+    raced,
+    'still-running',
+    'the run finished while the consumer was refusing writes, which means output was read and dropped rather than held',
+  );
+  assert.ok(drainWaiters.length > 0, 'the forwarder must be waiting on drain, not spinning');
+
+  // Let it complete so the test does not leave a child behind.
+  const pump = setInterval(() => { for (const fn of drainWaiters.splice(0)) fn(); }, 1);
+  await run;
+  clearInterval(pump);
+});
+
+test('the summary is written only after the forwarded output has finished flushing', async () => {
+  const order = [];
+  let flushCompleted = false;
+  const out = {
+    write(chunk, cb) {
+      const text = String(chunk);
+      if (text === '') {
+        // The zero-length flush probe: its callback is what "flushed" awaits.
+        setTimeout(() => { flushCompleted = true; order.push('out:flush-complete'); if (cb) cb(); }, 20);
+        return true;
+      }
+      order.push('out:data');
+      if (cb) cb();
+      return true;
+    },
+    once() {},
+  };
+  const err = {
+    write(_chunk, cb) { order.push(flushCompleted ? 'err:summary-after-flush' : 'err:summary-too-early'); if (cb) cb(); return true; },
+    once() {},
+  };
+
+  await runTestsWithFailureSummary(
+    process.execPath,
+    ['-e', 'console.log("not ok 1 - it broke"); console.log("  ---"); console.log("  error: |-"); console.log("    reason"); console.log("  ..."); process.exit(1);'],
+    'ordering',
+    { out, err },
+  );
+
+  assert.ok(order.includes('err:summary-after-flush'), `the summary must wait for stdout to drain; order was ${order.join(' > ')}`);
+  assert.ok(!order.includes('err:summary-too-early'), 'a summary written before the output flushed is not at the tail');
+  assert.ok(
+    order.indexOf('out:flush-complete') < order.indexOf('err:summary-after-flush'),
+    'the flush has to complete first, not merely be started',
+  );
+});
+
+test('the exit code of the run is passed through untouched', async () => {
+  const quiet = { write(_c, cb) { if (cb) cb(); return true; }, once() {} };
+  const failed = await runTestsWithFailureSummary(process.execPath, ['-e', 'process.exit(3)'], 'code', { out: quiet, err: quiet });
+  assert.equal(failed, 3, 'a summary must never change what the suite reported');
+  const passed = await runTestsWithFailureSummary(process.execPath, ['-e', ''], 'code', { out: quiet, err: quiet });
+  assert.equal(passed, 0);
+});
