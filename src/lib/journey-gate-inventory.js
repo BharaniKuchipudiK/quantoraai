@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 32, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 37, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -124,8 +124,9 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/session-cookie.test.ts',
         'src/lib/auth-modal-styles.test.js',
       ],
+      browser: ['scripts/front-door-browser-gate.mjs'],
     },
-    note: 'Every browser gate restores a synthetic signed-in session; no gate has ever typed into the modal or followed a real sign-in to the desk.',
+    note: 'front-door-browser-gate types into the modal: a wrong password is refused with the server\'s own sentence, the right one signs in, the hub offers the Studio (and only the modules this build shows), and the desk header names the person. The server is stubbed at the wire in the shapes auth-login and auth-session answer; the cookie is real (2026-09-06).',
   }),
   journey({
     id: 'sign-in-google',
@@ -171,8 +172,9 @@ export const JOURNEYS = Object.freeze([
         'src/hooks/useStudioSession.test.js',
         'src/hooks/studio-session-storage.test.js',
       ],
+      browser: ['scripts/front-door-browser-gate.mjs'],
     },
-    note: 'Sign-out from the web header has never been clicked by a gate; the desktop app proves its own.',
+    note: 'front-door-browser-gate reloads the desk and comes back signed in from the session cookie alone, then clicks Sign Out, types its confirmation word, sees the server told, and reloads to stay signed out (2026-09-06). The desktop app proves its own.',
   }),
   journey({
     id: 'desktop-sign-in-handoff',
@@ -583,8 +585,11 @@ export const JOURNEYS = Object.freeze([
     name: 'Copy a shareable link to the preview',
     entry: 'src/components/LivePreviewCanvas.jsx',
     serves: ['api/deploy.ts'],
-    gates: { deterministic: ['src/lib/route-reachability.test.js'] },
-    note: 'The Publish menu is proven to offer it (desk-chrome); nothing has ever clicked it. The deploy function was dead in production for a day on 2026-08-31 behind a green check, and is now proven only to boot.',
+    gates: {
+      deterministic: ['src/lib/route-reachability.test.js'],
+      browser: ['scripts/desk-publish-browser-gate.mjs'],
+    },
+    note: 'desk-publish-browser-gate clicks Share link on a site the desk built: /api/deploy receives the built code with the share confirmation header, the URL lands on the clipboard, and a notice by the Publish control says so — the first click found the copy happening in silence (2026-09-06). The deploy function itself is proven to boot on the deployment; it was dead for a day on 2026-08-31 behind a green check.',
   }),
   journey({
     id: 'publish-vercel',
@@ -593,8 +598,11 @@ export const JOURNEYS = Object.freeze([
     entry: 'src/components/LivePreviewCanvas.jsx',
     serves: ['api/deploy.ts', 'api/domains.ts'],
     modelTurn: 'mixed',
-    gates: { deterministic: ['src/lib/route-reachability.test.js'] },
-    note: 'The menu item is proven present (desk-chrome); no gate has ever published.',
+    gates: {
+      deterministic: ['src/lib/route-reachability.test.js'],
+      browser: ['scripts/desk-publish-browser-gate.mjs'],
+    },
+    note: 'desk-publish-browser-gate opens the dialog, types a project name, and sees /api/deploy receive the built code with the publish confirmation header, /api/domains asked for ideas, and the live URL and domain ideas shown (2026-09-06). A real Vercel deploy is still unproven.',
   }),
   journey({
     id: 'connect-domain',
@@ -661,7 +669,9 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-write-authorization.test.ts',
         'scripts/github-write-seam-gate.mjs',
       ],
+      browser: ['scripts/desk-publish-browser-gate.mjs'],
     },
+    note: 'desk-publish-browser-gate opens the Git rail, names a new repository, and runs the push: create-repo and push receive their stages, both desk files travel, the panel reports the outcome and who acted, and its link points at the pushed branch — the link used to vanish after a push whose reply carried no htmlUrl (2026-09-06).',
   }),
   journey({
     id: 'github-pull-requests',
