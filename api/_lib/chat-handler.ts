@@ -12,6 +12,7 @@ import { classifyFinish, finishFromGemini, finishFromOpenRouter, truncatedArtifa
 import { buildAttachedDocumentsBlock, readAttachedDocuments, summarizeAttachmentReads } from "./attachment-text.js";
 import { ledgerOutcomeFor } from "./model-quality-outcome.js";
 import { readByokCredentials } from "./byok-credentials.js";
+import { describeTurnBudget, turnBudgetVerdict } from "./user-turn-budget.js";
 import { resolveOpenRouterEnvKey } from "./openrouter-key.js";
 import { buildConversationSystemPrompt } from "./conversation-policy.js";
 import { normalizeSessionContext } from "./session-context.js";
@@ -717,6 +718,34 @@ export default async function handler(req: any, res: any) {
 
     if (!effectiveGeminiKey && !effectiveOpenRouterKey && !sessionUser && !goldenCanary) {
       return res.status(401).json({ error: "Please sign in to use Quantora's built-in AI, or add your own API key.", requiresAuth: true });
+    }
+
+    /*
+     * THE PLATFORM'S DAILY SHARE — per person, and in total.
+     *
+     * Checked HERE: after the credential is resolved, so a BYOK turn is exempt,
+     * and BEFORE any routing, so the free ladder is untouched. This gate knows
+     * nothing about pricingKind and changes no model selection; a turn either
+     * happens exactly as it always did, or does not happen.
+     *
+     * That placement is deliberate. The obvious fix for "Gemini spend is
+     * unguarded" is to reclassify Gemini as paid, and it would work — by
+     * moving it out of the free ladder and silently changing which model every
+     * user gets, as a side effect of a cost change. See user-turn-budget.ts.
+     *
+     * The golden canary is exempt because blocking it would stop the release
+     * gates rather than a user, and CI spend is already bounded by the
+     * golden's own per-event transaction limit.
+     */
+    if (usingServerOwnedModelAccess && !goldenCanary) {
+      const budget = await turnBudgetVerdict(activeSessionUser?.sub || null);
+      if (!budget.allowed) {
+        return res.status(429).json({
+          error: describeTurnBudget(budget),
+          turnBudgetExhausted: budget.exhausted,
+          ...(budget.degraded ? { degraded: true } : {}),
+        });
+      }
     }
 
     if (isRepairTask) {
