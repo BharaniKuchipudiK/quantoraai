@@ -4189,7 +4189,22 @@ Paused — ${autoPauseRef.current}.`
                         <button
                           type="button"
                           data-quantora-sidebar-project={project.id}
-                          aria-expanded={isOpenProject}
+                          /*
+                           * SELECTING IS NOT DISCLOSING (2026-09-06).
+                           *
+                           * This button used to carry aria-expanded because the
+                           * chat list appeared whenever the project was active.
+                           * Now that the list has its own fold, that made two
+                           * controls report contradictory states for the SAME
+                           * list — the name saying expanded while the chevron
+                           * beside it said collapsed — and a screen-reader user
+                           * activating the name could not reveal anything,
+                           * because this handler is a no-op for the active
+                           * project. Disclosure belongs to the chevron alone.
+                           * What this button conveys is which project is
+                           * current, which is what aria-current says.
+                           */
+                          aria-current={isOpenProject ? 'true' : undefined}
                           onClick={() => { if (!isOpenProject) setActiveProjectId(project.id); }}
                           title={project.goal || project.description || project.name}
                           style={{
