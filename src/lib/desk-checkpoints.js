@@ -1,4 +1,4 @@
-import { languageForPath } from './github-workspace.js';
+import { languageForPath } from './vfs-language.js';
 /*
  * Desk checkpoints — rewind for the Coding Desk workspace.
  *

@@ -263,20 +263,13 @@ export function githubDestinationBlocker(destination) {
  * whatever the user had, which is a data-loss bug wearing the clothes of a
  * no-op. Callers check the result before setting state.
  */
-const LANGUAGE_BY_EXTENSION = {
-  js: 'jsx', jsx: 'jsx', mjs: 'jsx', cjs: 'jsx',
-  ts: 'tsx', tsx: 'tsx',
-  html: 'html', htm: 'html',
-  css: 'css', scss: 'css', sass: 'css', less: 'css',
-  json: 'json', md: 'markdown', mdx: 'markdown',
-  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java',
-  sh: 'shell', bash: 'shell', yml: 'yaml', yaml: 'yaml', sql: 'sql',
-};
-
-export function languageForPath(path = '') {
-  const extension = String(path).split('.').pop()?.toLowerCase() || '';
-  return LANGUAGE_BY_EXTENSION[extension] || 'plaintext';
-}
+/*
+ * Moved to vfs-language.js so desk-checkpoints.js can use it without pulling
+ * this module -- and the whole GitHub integration -- into the eagerly loaded
+ * desk bundle. Re-exported so every existing caller here is untouched.
+ */
+export { languageForPath } from './vfs-language.js';
+import { languageForPath } from './vfs-language.js';
 
 export function checkoutFilesToVfs(files = []) {
   const vfs = {};
