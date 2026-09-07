@@ -32,14 +32,11 @@ export const STUDY_PROJECTION_LOADER_VERSION = 'study-projection-loader-2026-09-
 
 export type StudyLearnerProjectionLoadResult = {
   projection: StudyLearnerProjection;
+  masteryEstimate: StudyMasteryEstimate;
   source: 'checkpoint_delta' | 'full_replay';
 };
 
-export type StudyLearnerStateLoadResult = StudyLearnerProjectionLoadResult & {
-  masteryEstimate: StudyMasteryEstimate;
-};
-
-async function fullReplayState(input: {
+async function fullReplay(input: {
   userSub: string;
   conceptId: string;
   conceptKey: string;
@@ -48,7 +45,7 @@ async function fullReplayState(input: {
   startedAtMs: number;
   startingDbCalls: number;
   fallbackReason?: StudyReplayFallbackReason;
-}): Promise<StudyLearnerStateLoadResult | null> {
+}): Promise<StudyLearnerProjectionLoadResult | null> {
   const full = await readVerifiedStudyMasteryEvidenceWithCursor(
     input.userSub,
     input.conceptId,
@@ -98,12 +95,24 @@ async function fullReplayState(input: {
   return { projection, masteryEstimate, source: 'full_replay' };
 }
 
-async function loadVerifiedStudyLearnerStateInternal(input: {
+/**
+ * Single H3 learner reconstruction seam.
+ *
+ * Checkpoints are only an optimization. If checkpoint read, delta read,
+ * compatibility, ordering, or validation is uncertain, this function performs
+ * the bounded authoritative full replay instead. No stale checkpoint state is
+ * returned solely because a storage dependency is unavailable.
+ *
+ * The returned mastery estimate is derived from the same canonical replay state
+ * as the learner model. This keeps downstream read-only decision services from
+ * recomputing or inventing a parallel learner truth.
+ */
+export async function loadVerifiedStudyLearnerProjection(input: {
   userSub: string;
   conceptId: string;
   conceptKey: string;
   asOf: string;
-}): Promise<StudyLearnerStateLoadResult | null> {
+}): Promise<StudyLearnerProjectionLoadResult | null> {
   const startedAtMs = studyTelemetryStartedAt();
   const startingDbCalls = currentStudyDbCalls();
   let fallbackReason: StudyReplayFallbackReason | undefined;
@@ -154,37 +163,5 @@ async function loadVerifiedStudyLearnerStateInternal(input: {
       : 'checkpoint_miss';
   }
 
-  return fullReplayState(input, { startedAtMs, startingDbCalls, fallbackReason });
-}
-
-/**
- * Single H3 learner reconstruction seam.
- *
- * This public contract intentionally remains projection-only because multiple
- * production consumers already depend on it. Checkpoints are only an
- * optimization; uncertainty still falls back to bounded authoritative replay.
- */
-export async function loadVerifiedStudyLearnerProjection(input: {
-  userSub: string;
-  conceptId: string;
-  conceptKey: string;
-  asOf: string;
-}): Promise<StudyLearnerProjectionLoadResult | null> {
-  const loaded = await loadVerifiedStudyLearnerStateInternal(input);
-  return loaded ? { projection: loaded.projection, source: loaded.source } : null;
-}
-
-/**
- * Additive read-only seam for decision services that require both canonical
- * learner projection and canonical mastery. Both values are produced from the
- * same checkpoint/delta or full replay above; this is not a second learner
- * model, estimator path, or persistence store.
- */
-export async function loadVerifiedStudyLearnerState(input: {
-  userSub: string;
-  conceptId: string;
-  conceptKey: string;
-  asOf: string;
-}): Promise<StudyLearnerStateLoadResult | null> {
-  return loadVerifiedStudyLearnerStateInternal(input);
+  return fullReplay(input, { startedAtMs, startingDbCalls, fallbackReason });
 }
