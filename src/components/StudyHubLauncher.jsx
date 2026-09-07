@@ -15,6 +15,7 @@ import {
   studyWhereNextAsk,
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
+import { studyCompassSchedulePrefill } from '../lib/study-compass-schedule.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
 import StudyLearningCompass from './StudyLearningCompass.jsx';
@@ -64,6 +65,7 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
   const [surface, setSurface] = useState('tools');
   const [notebookExpanded, setNotebookExpanded] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [schedulePrefill, setSchedulePrefill] = useState(null);
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
   const surfaceCloseGuardRef = useRef(null);
@@ -88,7 +90,7 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
     return true;
   }, []);
 
-  const openSchedule = useCallback(async () => {
+  const openSchedule = useCallback(async (prefill = null) => {
     const guard = surfaceCloseGuardRef.current;
     try {
       if (guard && (await guard()) === false) return false;
@@ -96,6 +98,7 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
       return false;
     }
     surfaceCloseGuardRef.current = null;
+    setSchedulePrefill(prefill && typeof prefill === 'object' ? prefill : null);
     setScheduleOpen(true);
     setOpen(false);
     setSurface('tools');
@@ -164,6 +167,12 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
     void closeHub();
   };
 
+  const scheduleCompassRecommendation = (recommendation) => {
+    const prefill = studyCompassSchedulePrefill(recommendation);
+    if (!prefill) return;
+    void openSchedule(prefill);
+  };
+
   const panelClass = [
     'study-h1-hub__panel',
     surface === 'notebook' ? 'study-h1-hub__panel--notebook' : '',
@@ -188,7 +197,11 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
       {scheduleOpen ? (
         <StudyScheduleWorkspace
           defaultTopic={ready ? label : ''}
-          onClose={() => setScheduleOpen(false)}
+          initialDraft={schedulePrefill}
+          onClose={() => {
+            setScheduleOpen(false);
+            setSchedulePrefill(null);
+          }}
         />
       ) : null}
 
@@ -218,6 +231,7 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
               curriculumKey={curriculumKey}
               onClose={() => setSurface('tools')}
               onStart={startCompassRecommendation}
+              onSchedule={scheduleCompassRecommendation}
             />
           ) : (
             <>
