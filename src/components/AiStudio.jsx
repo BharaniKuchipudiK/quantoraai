@@ -50,6 +50,7 @@ import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
 import { loadDeskCheckpoints, persistDeskCheckpoints } from '../lib/desk-checkpoint-client.js';
+import { applyPatch, patchApplies, proposePatch } from '../lib/candidate-patch.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
 import { wantsStudyLab } from '../lib/study-pictures.js';
@@ -636,7 +637,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * rejection that silently drops real work, or an accepted write that
    * overwrites the wrong project. Neither raises an error.
    */
-  const commitDeskVfs = useCallback((nextVfs, owningSessionId = null) => {
+  const commitDeskVfs = useCallback((nextVfs, owningSessionId = null, { baseVfs = null } = {}) => {
     if (!nextVfs || typeof nextVfs !== 'object') return false;
     const owner = owningSessionId || activeSessionIdRef.current;
     const target = resolveWriteTarget({
@@ -655,6 +656,26 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // edit must leave the last working page intact, not destroy it. Returns
     // whether the commit was accepted so callers can gate their follow-up state.
     if (deskCommitRegressesPreview(before, nextVfs).reject) return false;
+
+    /*
+     * Phase 7: a write is refused when the tree it was computed against is gone.
+     *
+     * The session guard above is one half of this. deferredWriteStillValid
+     * already refuses a write whose CHAT changed underneath it; within one chat
+     * the working TREE can move too -- a repair lands, a person types -- and the
+     * write still carries a whole tree computed from the older one. Landing it
+     * discards whatever happened in between, silently, and the result is valid
+     * enough that the preview guard above has no objection to it.
+     *
+     * Only callers that know which tree they built from opt in, by naming it. A
+     * caller that cannot say is left exactly as it was rather than guessed at.
+     */
+    if (baseVfs) {
+      const proposed = proposePatch(baseVfs, nextVfs, { label: 'Build update' });
+      if (!patchApplies(proposed, before).ok) return false;
+      // Refused again if applying would land something other than what was built.
+      if (!applyPatch(proposed, before).ok) return false;
+    }
 
     desksRef.current = updateDesk(desksRef.current, target.sessionId, { vfs: nextVfs });
     if (!target.isVisible) return true;
@@ -1002,6 +1023,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setDeskCheckpoints(plan.history);
     setDeskReview(diffVfsReview(current, plan.vfs));
     vfsRef.current = plan.vfs;
+    /*
+     * The session's cached desk moves with it. Without this the rewind updated
+     * only React state, desksRef kept the post-build tree commitDeskVfs wrote,
+     * and switching chats and coming back took that cached tree through the
+     * "a live desk beats a saved snapshot" branch -- silently undoing the
+     * rewind, with the restored files still sitting in the snapshot.
+     *
+     * Written here rather than through commitDeskVfs on purpose: the comment
+     * above says why rewind bypasses that guard, and this is the one piece of
+     * its work a rewind still needs.
+     */
+    desksRef.current = updateDesk(desksRef.current, activeSessionIdRef.current, { vfs: plan.vfs });
     setVfs(plan.vfs);
     const code = pickPreviewEntry(plan.vfs);
     if (code) setWorkspaceCode(code);
@@ -1029,12 +1062,30 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * replacing live work with a saved history is the one mistake a rewind
    * feature must never make.
    */
+  /*
+   * BOUND TO THE SESSION IT IS FOR, NOT TO A REF THAT LAGS BY ONE EFFECT.
+   *
+   * This read `deskSessionIdRef.current`, which is updated by an effect
+   * DECLARED LATER in this component. React runs effects in declaration order,
+   * so on every switch from chat A to chat B this ran first and still saw A:
+   * it fetched A's chain, and by the time the promise resolved B had installed
+   * its single `baseline` entry -- which is exactly what the "untouched" test
+   * accepts. B's Rewind menu then offered A's files, and the next checkpoint
+   * persisted the mixed chain under B.
+   *
+   * Not a race: it is the declaration order, so it happened every time. It was
+   * unreachable only because no checkpoint was ever recorded before the shape
+   * fix, which is what made reviving rewind the thing that made it live.
+   */
   useEffect(() => {
-    const sessionId = deskSessionIdRef.current;
+    const sessionId = activeSessionId;
     if (!sessionId) return undefined;
     let cancelled = false;
     loadDeskCheckpoints(sessionId).then((result) => {
-      if (cancelled || !result.ok || !result.entries?.length) return;
+      // The session can change while this is in flight. Adopting a chain the
+      // user has navigated away from is the same defect arriving late.
+      if (cancelled || sessionId !== activeSessionId) return;
+      if (!result.ok || !result.entries?.length) return;
       setDeskCheckpoints((current) => {
         const untouched = current.length <= 1 && (current[0]?.origin === 'baseline' || !current.length);
         return untouched ? result.entries : current;
@@ -1043,8 +1094,14 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
+  /*
+   * The same binding, and the same reason. Saving under the lagging ref would
+   * write the chain the NEW chat just started under the OLD chat's id -- one
+   * baseline entry replacing a real history, which is worse than reading the
+   * wrong one because it destroys it.
+   */
   useEffect(() => {
-    const sessionId = deskSessionIdRef.current;
+    const sessionId = activeSessionId;
     if (!sessionId || !deskCheckpoints.length) return undefined;
     let cancelled = false;
     persistDeskCheckpoints(sessionId, deskCheckpoints).then((result) => {
@@ -1052,7 +1109,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       console.warn('Desk checkpoints were not saved:', result.reason);
     });
     return () => { cancelled = true; };
-  }, [deskCheckpoints]);
+  }, [deskCheckpoints, activeSessionId]);
   const deskCheckpointRows = useMemo(
     () => describeDeskCheckpoints(deskCheckpoints, vfs),
     [deskCheckpoints, vfs],
@@ -1462,14 +1519,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setCanvasVfs(finalVfs);
       setCanvasCode(pickPreviewEntry(finalVfs) || assembled.code);
       if (canAutoOpenCodeWorkspace(studioDomain)) {
-        // Route through the guard: a truncated/broken turn must not overwrite a
-        // working desk, and downstream state must not adopt a rejected VFS.
-        const accepted = Object.keys(finalVfs).length > 0
-          && !deskCommitRegressesPreview(vfsRef.current || {}, finalVfs).reject;
-        if (accepted) {
-          setDeskReview(diffVfsReview(vfs, finalVfs));
-          vfsRef.current = finalVfs;
-          setVfs(finalVfs);
+        /*
+         * Through the SHARED guard, not a copy of two thirds of it.
+         *
+         * This said "route through the guard" and then inlined the regression
+         * check and the review while dropping what commitDeskVfs does after
+         * them: RECORD A CHECKPOINT. This is the path an ordinary build takes,
+         * so ordinary builds left no checkpoints -- and the Rewind control
+         * renders only when there are any. Measured on a two-build session
+         * before this change: 1 file on the desk, 0 checkpoints, no Rewind
+         * control in the DOM at all.
+         *
+         * Rollback was therefore tested (desk-checkpoints, the delta chain),
+         * made durable (Phase 7's desk_checkpoints table), argued to be
+         * sufficient in candidate-patch.js -- and unreachable from the button.
+         * That claim was wrong when it was written; this is what makes it true.
+         *
+         * Calling the shared function also brings the guards this copy never
+         * had: the write target, the stale-tree refusal, and the desk store
+         * update that keeps a background build's files where the store expects
+         * them.
+         */
+        if (commitDeskVfs(finalVfs, activeSessionId)) {
           if (assembled.job) setDeskJob(assembled.job);
           setWorkspaceCode(pickPreviewEntry(finalVfs) || assembled.code);
         }
@@ -5282,6 +5353,7 @@ Paused — ${autoPauseRef.current}.`
               {/* Attachment Dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
+                  data-quantora-attachment-menu="true"
                   onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
                   title="Attach file, image, or GitHub"
                   style={{
@@ -5371,6 +5443,7 @@ Paused — ${autoPauseRef.current}.`
                       <div style={{ height: '1px', background: isLight ? '#e5e5e5' : 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
                       <button 
+                        data-quantora-github-import-open="true"
                         onClick={() => { setIsGithubModalOpen(true); setIsAttachmentMenuOpen(false); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', borderRadius: '8px', transition: 'background 0.2s', fontSize: '0.9rem', textAlign: 'left' }}
                         onMouseEnter={e => e.currentTarget.style.background = isLight ? '#f5f5f5' : 'rgba(255,255,255,0.05)'}
@@ -6220,6 +6293,7 @@ Paused — ${autoPauseRef.current}.`
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: textColor, marginBottom: '8px' }}>GitHub Repository URL</label>
               <input
                 type="text"
+                data-quantora-github-import-url="true"
                 value={githubRepoUrl}
                 onChange={(e) => setGithubRepoUrl(e.target.value)}
                 placeholder="https://github.com/owner/repo"
@@ -6239,10 +6313,12 @@ Paused — ${autoPauseRef.current}.`
                 onFocus={(e) => e.target.style.borderColor = '#f97316'}
                 onBlur={(e) => e.target.style.borderColor = isLight ? '#d4d4d4' : 'rgba(255, 255, 255, 0.2)'}
               />
-              {githubError && <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
+              {githubError && <div data-quantora-github-import-error="true" style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontWeight: '500' }}>{githubError}</div>}
             </div>
 
             <button
+              data-quantora-github-import-run="true"
+              data-quantora-github-import-busy={isFetchingGithub ? 'true' : 'false'}
               onClick={handleImportGithub}
               disabled={isFetchingGithub || !githubRepoUrl}
               style={{

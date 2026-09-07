@@ -306,7 +306,9 @@ test('a stored chain hydrates into the history the desk would have built itself'
   // The restore machinery must accept it without knowing it came from a server.
   const plan = planDeskRestore(hydrated.entries, hydrated.entries[0].id, hydrated.entries[1].vfs);
   assert.equal(plan.ok, true, `a hydrated history must be restorable: ${plan.reason || ''}`);
-  assert.deepEqual(plan.vfs, { 'index.html': 'one' });
+  // A checkpoint STORES text; a restore hands back what the desk renders, so
+  // the file tree can list the files the rewind just brought back.
+  assert.deepEqual(plan.vfs, { 'index.html': { content: 'one', language: 'html' } });
 });
 
 test('hydration refuses a tampered chain rather than offering a restore point that lies', () => {

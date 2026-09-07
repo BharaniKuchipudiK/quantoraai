@@ -84,6 +84,26 @@ export interface PaidRouteVerdict {
 }
 
 /**
+ * WHOSE MONEY THIS KEY SPENDS.
+ *
+ * 'server' is a credential the platform owns and is billed for — the env var
+ * or the Supabase gateway row. 'user' is a key somebody brought themselves.
+ *
+ * The distinction is load-bearing because of what sits below it. The platform's
+ * ceiling is a limit on the PLATFORM's spend; measuring somebody else's key
+ * against it refuses paid routes to the one person who is definitely paying for
+ * them. A BYOK key carrying $49 of its owner's own lifetime usage would be held
+ * back by a $50 platform ceiling that has nothing to do with their account —
+ * and the number they would be told to raise is not a number they can see.
+ *
+ * The vocabulary is deliberately not new: planInferenceRoutes already takes
+ * openRouterCredentialScope: 'user' | 'server', computed from this same fact a
+ * few lines from this gate's caller. Forking a second taxonomy is how one of
+ * them stops getting the next correction.
+ */
+export type PaidCredentialScope = "server" | "user";
+
+/**
  * Classify what the provider actually said.
  *
  * ORDER IS LOAD-BEARING, and for a reason this repo has already paid for once
@@ -160,7 +180,14 @@ export const RESERVE_USD = 1;
 
 /** Cached briefly: a chat turn must not add a round trip to OpenRouter. */
 const TTL_MS = 60_000;
-let cache: { at: number; key: string; verdict: PaidRouteVerdict } | null = null;
+/*
+ * Identified by the credential AND whose it is, because the same token can be
+ * presented both ways — a user pasting the platform's own key as their BYOK
+ * credential — and the two verdicts genuinely differ, since only one of them is
+ * measured against the platform's ceiling. With the scope left out of the cache
+ * identity, whichever arrived first would answer for the other for a minute.
+ */
+let cache: { at: number; key: string; scope: PaidCredentialScope; verdict: PaidRouteVerdict } | null = null;
 
 /**
  * THE PLATFORM'S OWN CEILING (2026-09-06).
@@ -173,11 +200,47 @@ let cache: { at: number; key: string; verdict: PaidRouteVerdict } | null = null;
  * below then applies to whichever is lower. Unset, blank or not a positive
  * number means no ceiling, exactly as before.
  */
+/**
+ * The ceiling that applies when nobody has set one.
+ *
+ * WHY THIS IS A NUMBER AND NOT `null`.
+ *
+ * It was null, and the comment above explains what that cost: the key carried
+ * no limit on the provider's side either, so the meter read "$29.19 spent, no
+ * ceiling set on this key" and every paid route was allowed. The protection
+ * existed in this file and on no deployment -- exactly the failure
+ * user-paid-quota.ts already refused to repeat: "an unset limit is a real
+ * default, not infinity, and a test holds that."
+ *
+ * The shape of the harm is not hypothetical and not ours alone. A runaway loop
+ * or a bad retry does not spend gently: it spends at machine speed, and the
+ * first anyone hears of it is the invoice. A ceiling that must be remembered
+ * is not a ceiling.
+ *
+ * $50 is chosen to be boring: comfortably above this key's lifetime spend, so
+ * arming it changes nothing about a normal day, and low enough that a runaway
+ * stops at a number a pre-revenue platform can absorb. It is a LIFETIME figure,
+ * because OpenRouter's meter reports lifetime usage on the key -- not a monthly
+ * allowance. Operators should set OPENROUTER_SPEND_CEILING_USD deliberately;
+ * this is the floor under forgetting to.
+ *
+ * IT APPLIES TO THE PLATFORM'S OWN CREDENTIAL ONLY. See PaidCredentialScope:
+ * this number is a limit on what THIS platform spends, so charging it against a
+ * key somebody brought themselves would refuse paid routes to the one person
+ * who is definitely paying for them.
+ */
+export const DEFAULT_PLATFORM_SPEND_CEILING_USD = 50;
+
 export function platformSpendCeilingUsd(env: Record<string, string | undefined> = process.env): number | null {
   const raw = String(env.OPENROUTER_SPEND_CEILING_USD || "").trim();
-  if (!raw) return null;
+  if (!raw) return DEFAULT_PLATFORM_SPEND_CEILING_USD;
   const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  /*
+   * A blank, zero, negative or unparseable value is somebody trying to say
+   * something and failing, not somebody asking for no limit. Falling back to
+   * the default is the safe reading; "0" meaning "unlimited" would be a trap.
+   */
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PLATFORM_SPEND_CEILING_USD;
 }
 
 export function decidePaidRoute(auth: {
@@ -242,10 +305,21 @@ export function decidePaidRoute(auth: {
   return { allowed: true, reason: `$${remainingUsd.toFixed(2)} of $${limitUsd.toFixed(2)}${ceilingWord} remaining`, spentUsd, limitUsd, remainingUsd, meterFault: null };
 }
 
-/** The live verdict for this key. Never throws: an error is a refusal. */
+/**
+ * The live verdict for this key. Never throws: an error is a refusal.
+ *
+ * `credentialScope` is REQUIRED and deliberately has no default, because both
+ * possible defaults are wrong in a way that hides. 'server' would silently
+ * measure a future BYOK path against the platform's ceiling and refuse a
+ * paying user. 'user' would silently drop the brake from a future platform
+ * path — which is the exact failure this gate exists to prevent, and the one
+ * whose first symptom is an invoice. Making the compiler ask the question at
+ * every call site costs less than either.
+ */
 export async function paidRouteAllowed(
   key: string | null | undefined,
-  { now = Date.now(), fetchFn }: { now?: number; fetchFn?: typeof fetch } = {},
+  { credentialScope, now = Date.now(), fetchFn }:
+    { credentialScope: PaidCredentialScope; now?: number; fetchFn?: typeof fetch },
 ): Promise<PaidRouteVerdict> {
   const token = String(key || "");
   if (!token) {
@@ -265,10 +339,16 @@ export async function paidRouteAllowed(
       },
     };
   }
-  if (cache && cache.key === token && now - cache.at < TTL_MS) return cache.verdict;
+  if (cache && cache.key === token && cache.scope === credentialScope && now - cache.at < TTL_MS) return cache.verdict;
   try {
     const auth = await checkOpenRouterKey(token, fetchFn ? { fetchFn } : undefined);
-    const verdict = decidePaidRoute(auth, { ceilingUsd: platformSpendCeilingUsd() });
+    /*
+     * The platform's ceiling binds the platform's credential, and nothing else.
+     * On a key the user brought, the authority on what is left is that key's own
+     * limit — which the meter already reports, from their account.
+     */
+    const ceilingUsd = credentialScope === "server" ? platformSpendCeilingUsd() : null;
+    const verdict = decidePaidRoute(auth, { ceilingUsd });
     /*
      * Cached when the PROVIDER ANSWERED, not merely when it approved.
      *
@@ -287,7 +367,7 @@ export async function paidRouteAllowed(
      * has always accepted, so a key repaired in the dashboard is picked up
      * within the same window, with no redeploy.
      */
-    if (auth?.ok || typeof auth?.status === "number") cache = { at: now, key: token, verdict };
+    if (auth?.ok || typeof auth?.status === "number") cache = { at: now, key: token, scope: credentialScope, verdict };
     return verdict;
   } catch {
     // Deliberately not cached: a transient failure must not lock paid routing

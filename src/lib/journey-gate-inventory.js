@@ -59,7 +59,7 @@ export const GATE_LEVELS = Object.freeze(['deterministic', 'browser', 'deployed'
  * rows below and compared to these; a drop fails, and so does a stale floor,
  * so the count in this file is always the true one.
  */
-export const FLOORS = Object.freeze({ proven: 37, deployed: 13 });
+export const FLOORS = Object.freeze({ proven: 41, deployed: 13 });
 
 /*
  * Gate files on disk that no journey claims, each with the reason. Empty is
@@ -435,6 +435,7 @@ export const JOURNEYS = Object.freeze([
         'shared/build-intent-scope.test.js',
         'src/lib/build-session.test.js',
         'src/lib/coding-turn-planner.test.js',
+        'src/lib/candidate-patch.test.js',
         'src/lib/outcome-state.test.js',
       ],
       browser: [
@@ -555,16 +556,22 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Rewind the desk to an earlier checkpoint',
     entry: 'src/components/DeskRewindMenu.jsx',
-    hooks: ['data-quantora-desk-rewind'],
+    hooks: [
+      'data-quantora-desk-rewind',
+      'data-quantora-desk-rewind-menu',
+      'data-quantora-desk-rewind-item',
+      'data-quantora-desk-rewind-current',
+    ],
     gates: {
       deterministic: [
         'src/lib/desk-checkpoints.test.js',
         'src/lib/desk-checkpoint-delta.test.js',
         'src/lib/desk-checkpoint-client.test.js',
       ],
+      browser: ['scripts/desk-rewind-browser-gate.mjs'],
     },
     serves: ['api/desk-checkpoints.ts'],
-    note: 'Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO. Review of #591 found three more: a save REPLACES a session\'s chain rather than adding to it, because the desk trims its own history and renumbers what remains, so checkpoint 21 would arrive claiming the position the dropped one still held and every later read would refuse the chain forever -- each save writes a fresh generation and readers take the newest, so a chain is never seen half-replaced; the rows carry the person\'s source so they cascade on account deletion and appear in the account export, which had still queried only the five tables that predated them; and the desk now reads the stored chain back on session open, rebuilding and re-verifying it locally rather than trusting the answer, and adopting it only when the session has not already moved on.',
+    note: 'THE MENU WAS NEVER OPENED BY A GATE, AND WHEN ONE FINALLY OPENED IT THE CONTROL WAS NOT THERE (2026-09-07). snapshotVfs, hashVfsContent and cleanVfs -- in desk-checkpoints.js, desk-checkpoint-delta.js and candidate-patch.js alike -- kept only entries whose value was a bare STRING. The desk stores { content, language }; studio-file-tree.js will not even list a path without .content, and seven modules read it that way. So a real desk snapshotted to {}, recordDeskCheckpoint saw an empty tree and returned the history unchanged, and NO CHECKPOINT WAS EVER RECORDED. The Rewind control renders only when there are checkpoints, so it never appeared. Measured on a two-build session: 1 file on the desk, 0 checkpoints, no control in the DOM. Everything built on that stream inherited it -- the delta chain, the durable desk_checkpoints table, and the #594 staleness guard, which hashed {} against {} , matched every time and refused nothing: a check that cannot fail, shipped past its own two-way gate because every fixture in the family was a string. vfsFileText reads either shape and deskVfsFromText hands a restore back in the one the desk renders, since installing raw text would leave every restored file without .content -- a rewind that empties the tree it was meant to restore. The streaming build path also carried a comment saying "route through the guard" over an INLINED copy of two thirds of it, keeping the regression check and the review and dropping the checkpoint; it now calls commitDeskVfs, and candidate-patch.test.js asserts that path cannot install a tree itself again. Honest limit: the browser gate passes with or without that routing change -- the shape fix alone revives rewind -- so the routing is held by the source-level assertion, not by the gate. Checkpoints are tested; the menu has never been opened by a gate. Durable rewind (Phase 7, 2026-09-07): desk-checkpoints.js said in its own header that cross-reload history needed a server-side home, and the obstacle it named was size -- twenty full copies of a working tree per session is not a database row. Each stored checkpoint is now the delta since the one before it, with the tree hash recorded alongside, and the replay verifies that hash after EVERY step. A delta chain has one failure a pile of snapshots does not: a damaged or missing link yields a tree assembled from two moments, which looks fine and is not, so it is refused and located instead -- the caller is told which checkpoint stopped being trustworthy and is handed the last state that verified. A hole in the stored sequence is caught before replay, because applying the wrong delta to the wrong tree would blame an intact checkpoint for the mismatch. A checkpoint too large to store is refused with its size rather than truncated: a partial checkpoint is what someone rewinds TO. Review of #591 found three more: a save REPLACES a session\'s chain rather than adding to it, because the desk trims its own history and renumbers what remains, so checkpoint 21 would arrive claiming the position the dropped one still held and every later read would refuse the chain forever -- each save writes a fresh generation and readers take the newest, so a chain is never seen half-replaced; the rows carry the person\'s source so they cascade on account deletion and appear in the account export, which had still queried only the five tables that predated them; and the desk now reads the stored chain back on session open, rebuilding and re-verifying it locally rather than trusting the answer, and adopting it only when the session has not already moved on.',
   }),
   journey({
     id: 'qir-durable-run',
@@ -635,7 +642,17 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Connect GitHub and choose the repository and branch a build writes to',
     entry: 'src/components/GithubDestinationBar.jsx',
-    hooks: ['data-quantora-github-destination', 'data-quantora-github-destination-connect', 'data-quantora-github-destination-menu'],
+    hooks: [
+      'data-quantora-github-destination',
+      'data-quantora-github-destination-connect',
+      'data-quantora-github-destination-menu',
+      'data-quantora-github-destination-chip',
+      'data-quantora-github-destination-repo',
+      'data-quantora-github-destination-writable',
+      'data-quantora-github-destination-branch',
+      'data-quantora-github-destination-open',
+      'data-quantora-github-destination-blocker',
+    ],
     serves: ['api/auth.ts', 'api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -644,15 +661,23 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-principal.test.ts',
         'scripts/github-write-seam-gate.mjs',
       ],
+      browser: ['scripts/desk-destination-browser-gate.mjs'],
     },
-    note: 'Five durable hooks; no browser gate has connected GitHub or opened the destination menu.',
+    note: 'The bar\'s own header states the case for it: "a repository you cannot write to costs nothing to swap now, and costs the whole build to discover at the push." That sentence describes a REFUSAL, and nothing had ever exercised it. desk-destination-browser-gate.mjs drives the bar signed out (the connect door rather than an empty slot), connected with nothing chosen (not choosing is a first-class answer and must read as one), through the repository menu, and into the refusal: a repository the account can READ but not WRITE is offered as unselectable. Two-way checked -- removing the disabled attribute fails the gate by name, "someone-else/upstream-lib is selectable ... this build would run and fail at the push". Choosing a writable repository then sets owner, repo and branch, and the branch menu moves it, each step waiting for the CHIP to change rather than for a click to be accepted -- the lesson from review of #596, where a gate asserted the request and never watched the UI complete. The repository and branch rows had no durable hooks until now, so this journey could not have been driven by anything anchored on hooks rather than prose. Deliberately NOT in the browser gate: the wording a read-only destination shows. A first draft added a step for it that reached into the app\'s own module from the page, unimportable against a built preview, and RETURNED EARLY when that failed -- a step that cannot fail is worse than no step, and that wording is a pure function already covered by github-destination.test.js.',
   }),
   journey({
     id: 'github-import-repo',
     area: 'coding desk',
     name: 'Import an existing repository into the desk',
     entry: 'src/components/AiStudio.jsx',
-    hooks: ['data-quantora-github-checkout-status'],
+    hooks: [
+      'data-quantora-github-checkout-status',
+      'data-quantora-attachment-menu',
+      'data-quantora-github-import-open',
+      'data-quantora-github-import-url',
+      'data-quantora-github-import-run',
+      'data-quantora-github-import-error',
+    ],
     serves: ['api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -660,8 +685,11 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-checkout.test.ts',
         'api/_lib/repository-preview.test.ts',
         'api/_lib/github-intelligence.test.ts',
+        'src/lib/repo-work-comprehension.test.js',
       ],
+      browser: ['scripts/repo-work-browser-gate.mjs'],
     },
+    note: 'The import works; being understood as a CHANGE afterwards did not. Measured 2026-09-07 with a real repository open on the desk, shouldRefineRunningDesk returned false for 26 of 28 ordinary developer requests -- \'fix the null check in auth.ts\', \'add a test for the retry path\', \'bump the eslint version\' -- and the two that passed were accidents: \'migrate the users TABLE\' matched the UI-parts list on an HTML table, and \'can you fix THEM\' matched the rule for iterating on a preview. The first reading of that number was wrong and the correction is the useful part: those turns were still coding turns, because turnBelongsToBuild covers any message once the desk holds files, so buildMode was never wrong. What they were not is REFINEMENTS. On the same desk with the same files, \'make the header blue\' went out as studioMode build with refineMode true, and \'add a test for the retry path\' went out as studioMode ask with refineMode absent -- a change to existing code described to the server as a fresh request. Every intent signal here had been written for somebody who wants software MADE, so a person who already has a repository was speaking a vocabulary the desk did not contain. repo-work-comprehension.test.js is the comprehension gate for that: precision may never leave 100%, because an invention here is not a wrong answer but a WRITE -- a question about the code read as an instruction to change it moves files while somebody was only asking -- and the recall floor, 100% of the corpus and 8 of 8 holdout phrasings against 7% before, may only ever rise, which at 100% means the gate is strengthened by adding cases rather than by moving a number. It also proves the floor is carried by the new vocabulary rather than reachable without it, so the gate cannot pass with the fix deleted. This journey had never been driven and could not have been: until 2026-09-07 the import path carried no durable hook at all, reachable only by its words -- \'Connect to Github\', then \'Import to Context\' -- and this repository has already paid once for a gate anchored on prose. repo-work-browser-gate.mjs drives it by hook: the repository imports and lands as context, a build turn puts files on the desk, a developer-phrased change goes out carrying refineMode, and a QUESTION about the same code does not. That last step is not decoration: with the question guards removed and the app rebuilt, the question went out as an edit, the prose answer failed the desk\'s own \'did this return files?\' verification, and the loop burned SEVEN retries before giving up -- a person asking a question, billed for eight model calls and told their answer failed.',
   }),
   journey({
     id: 'github-push',
@@ -685,7 +713,18 @@ export const JOURNEYS = Object.freeze([
     area: 'coding desk',
     name: 'Open, review, comment on and merge pull requests from the desk',
     entry: 'src/components/GithubPullRequests.jsx',
-    hooks: ['data-quantora-github-prs', 'data-quantora-github-merge', 'data-quantora-github-open-pr'],
+    hooks: [
+      'data-quantora-github-prs',
+      'data-quantora-github-pr',
+      'data-quantora-github-brief',
+      'data-quantora-github-checks',
+      'data-quantora-github-comment',
+      'data-quantora-github-post-comment',
+      'data-quantora-github-merge',
+      'data-quantora-github-open-pr',
+      'data-quantora-github-refresh',
+      'data-quantora-github-status',
+    ],
     serves: ['api/pipeline.ts'],
     gates: {
       deterministic: [
@@ -693,7 +732,9 @@ export const JOURNEYS = Object.freeze([
         'api/_lib/github-tool-promise.test.ts',
         'scripts/github-write-seam-gate.mjs',
       ],
+      browser: ['scripts/desk-pull-requests-browser-gate.mjs'],
     },
+    note: 'The last GitHub journey nothing had ever driven: the server side was tested, the panel was hooked, and no gate had clicked any of it -- which is where github-push sat on the day its link vanished after a successful push. desk-pull-requests-browser-gate.mjs lists, reads, comments, opens and merges through the real panel, asserting what the desk SENT rather than what it rendered. Two of its steps are refusals, and a refusal is what stops being tested, because the happy path still looks right when a guard quietly stops guarding. First: a commit with NO checks must not be shown as green -- GitHub answers the same way for "CI has not started" and "this repository runs none", and the difference on screen is between "safe to merge" and "nobody has looked"; only a unit test held that before. Second: a merge must carry the sha of the commit that was READ, which is the pull-request form of what candidate-patch.js does for a desk write -- an action is bound to the state it was computed against, or it does not happen. Losing that one merges code nobody in the session ever saw, so the gate\'s stub answers 409 to any other sha rather than accepting whatever arrives. Writing it found a live defect in the panel: openDraftPullRequest and mergeCurrent each set their outcome message and then called loadPullRequests, which opens with setStatus(\'\'), so both wrote a sentence and erased it -- a click that visibly did nothing on a write that had actually happened, the same shape as the push link that vanished on 2026-09-06. Both now refresh first and report second.',
   }),
   journey({
     id: 'office-artifacts',

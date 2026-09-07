@@ -42,7 +42,7 @@
  * refuses to produce one and says why, and the caller keeps the in-memory
  * snapshot it already had. Nothing is silently truncated.
  */
-import { hashVfsContent } from './desk-checkpoints.js';
+import { hashVfsContent, vfsFileText } from './desk-checkpoints.js';
 
 /**
  * Largest a single stored delta may be, in bytes of file content.
@@ -58,7 +58,8 @@ function cleanVfs(vfs) {
   const source = vfs && typeof vfs === 'object' ? vfs : {};
   for (const path of Object.keys(source)) {
     const body = source[path];
-    if (typeof body === 'string') out[path] = body;
+    const text = vfsFileText(body);
+    if (text !== null) out[path] = text;
   }
   return out;
 }
@@ -108,7 +109,8 @@ export function applyDeskVfsDelta(vfs, delta) {
   for (const path of removed) delete out[path];
   for (const path of Object.keys(changed)) {
     const body = changed[path];
-    if (typeof body === 'string') out[path] = body;
+    const text = vfsFileText(body);
+    if (text !== null) out[path] = text;
   }
   return out;
 }

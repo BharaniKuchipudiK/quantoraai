@@ -6,6 +6,7 @@
  * saving successfully is failing quietly enough that the person still has what
  * they were writing.
  */
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_CHECKPOINTS_PER_SAVE, persistDeskCheckpoints } from './desk-checkpoint-client.js';
@@ -90,4 +91,74 @@ test('only the newest checkpoints are sent, so one request cannot grow without b
   const sent = calls[0].body.history;
   assert.equal(sent.length, MAX_CHECKPOINTS_PER_SAVE);
   assert.equal(sent[sent.length - 1].id, `ckpt_${history.length - 1}`, 'the tail is what a rewind reaches for');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * A CHECKPOINT CHAIN BELONGS TO ONE CHAT, AND ONLY THAT ONE.
+ *
+ * Both of these were found by review of #598, and both were made LIVE by the
+ * shape fix that finally let checkpoints exist at all. Before it the chain was
+ * always empty, so neither could fire.
+ *
+ * The load and save effects read `deskSessionIdRef.current`, a ref updated by
+ * an effect DECLARED LATER in AiStudio. React runs effects in declaration
+ * order, so on every switch from chat A to chat B they ran first and still saw
+ * A. The loader fetched A's chain and adopted it into B, whose history was a
+ * single `baseline` entry and therefore "untouched" -- so B's Rewind menu
+ * offered A's files and the next save persisted the mixed chain under B. The
+ * save had the worse version of the same bug: B's one baseline entry written
+ * under A's id, replacing a real history.
+ *
+ * Not a race. Declaration order, so it happened every time.
+ *
+ * Asserted against the source because the defect IS the ordering: no unit of
+ * these functions can see it, and a browser gate would have to drive two chats
+ * and a reload to catch what one line states plainly.
+ * ---------------------------------------------------------------------------
+ */
+const studioSource = readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+
+test('the checkpoint load and save are bound to the session, not to a ref that lags', () => {
+  assert.ok(studioSource.length > 5000, `AiStudio.jsx read as ${studioSource.length} bytes; this gate cannot check what it cannot find`);
+
+  const load = studioSource.indexOf('loadDeskCheckpoints(sessionId)');
+  const save = studioSource.indexOf('persistDeskCheckpoints(sessionId, deskCheckpoints)');
+  assert.ok(load > 0 && save > 0, 'the checkpoint load/save effects are no longer recognisable, so this gate is checking nothing');
+
+  for (const [name, at] of [['load', load], ['save', save]]) {
+    // The window is the effect body above the call: enough for its own
+    // `const sessionId = ...`, not enough to reach the neighbouring effect.
+    const body = studioSource.slice(Math.max(0, at - 600), at);
+    const bound = /const sessionId = activeSessionId;/.test(body);
+    const lagging = /const sessionId = deskSessionIdRef\.current;/.test(body);
+    assert.ok(
+      bound && !lagging,
+      `the checkpoint ${name} effect reads deskSessionIdRef, which is updated by a LATER effect. On a chat switch it sees the previous chat, `
+      + `so ${name === 'load' ? "one chat's history is offered in another" : "the new chat's baseline overwrites the old chat's stored history"}.`,
+    );
+  }
+
+  assert.match(
+    studioSource,
+    /if \(cancelled \|\| sessionId !== activeSessionId\) return;/,
+    'the in-flight load no longer re-checks the session on resolve, so a chain adopted late lands in whatever chat is open by then',
+  );
+});
+
+test('a rewind moves the session\'s cached desk, not only React state', () => {
+  const at = studioSource.indexOf('const handleDeskRewind');
+  assert.ok(at > 0, 'handleDeskRewind is no longer recognisable, so this gate is checking nothing');
+  const body = studioSource.slice(at, at + 1400);
+
+  assert.match(
+    body,
+    /desksRef\.current = updateDesk\(desksRef\.current, activeSessionIdRef\.current, \{ vfs: plan\.vfs \}\)/,
+    'a rewind updates only React state again. desksRef keeps the post-build tree, so switching chats and coming back restores it through the '
+    + '"a live desk beats a saved snapshot" branch -- silently undoing the rewind.',
+  );
+  assert.ok(
+    body.indexOf('desksRef.current = updateDesk') < body.indexOf('setVfs(plan.vfs)'),
+    'the cached desk is updated after the render state, which leaves a window where the two disagree',
+  );
 });
