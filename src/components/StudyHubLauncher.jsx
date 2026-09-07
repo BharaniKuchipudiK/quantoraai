@@ -59,6 +59,7 @@ const HUB_ACTIONS = Object.freeze([
 export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, ready = true }) {
   const [open, setOpen] = useState(false);
   const [surface, setSurface] = useState('tools');
+  const [notebookExpanded, setNotebookExpanded] = useState(false);
   const rootRef = useRef(null);
   const firstActionRef = useRef(null);
   const surfaceCloseGuardRef = useRef(null);
@@ -79,6 +80,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     surfaceCloseGuardRef.current = null;
     setOpen(false);
     setSurface('tools');
+    setNotebookExpanded(false);
     return true;
   }, []);
 
@@ -87,6 +89,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
       if (!ready || event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
       event.detail.handled = true;
       setSurface('notebook');
+      setNotebookExpanded(true);
       setOpen(true);
     };
     window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
@@ -125,7 +128,8 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
 
   const panelClass = [
     'study-h1-hub__panel',
-    surface === 'notebook' ? ' study-h1-hub__panel--notebook' : '',
+    surface === 'notebook' ? 'study-h1-hub__panel--notebook' : '',
+    surface === 'notebook' && notebookExpanded ? 'study-h1-hub__panel--notebook-expanded' : '',
   ].filter(Boolean).join(' ');
 
   const labelledBy = surface === 'notebook'
@@ -151,7 +155,12 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
           {surface === 'notebook' ? (
             <StudyNotebook
               topic={label}
-              onClose={() => setSurface('tools')}
+              expanded={notebookExpanded}
+              onToggleExpanded={() => setNotebookExpanded((current) => !current)}
+              onClose={() => {
+                setNotebookExpanded(false);
+                setSurface('tools');
+              }}
               registerCloseGuard={registerSurfaceCloseGuard}
             />
           ) : (
@@ -205,7 +214,10 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
 
       <button
         type="button"
-        className="study-h1-hub__launcher"
+        className={[
+          'study-h1-hub__launcher',
+          surface === 'notebook' && notebookExpanded ? 'study-h1-hub__launcher--notebook-expanded' : '',
+        ].filter(Boolean).join(' ')}
         aria-label={open ? 'Close Study AI' : 'Open Study AI'}
         aria-expanded={open}
         aria-controls="quantora-study-hub-panel"
