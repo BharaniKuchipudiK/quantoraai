@@ -5,6 +5,7 @@
 
 import { assessShopBuildAsk, expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
 import { briefWantsNoImages, briefWantsOnlineSelling } from './commerce-intent.js';
+import { studyGuidedChipBeats } from './study-guided-chips.js';
 
 function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
@@ -63,13 +64,18 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     return officeFollowUpGaps(officeKind);
   }
 
-  // The advice desks (Finance, Study, Research) run their own deterministic
-  // next-moves. The gaps below are travel/property/desk-shaped — direct links,
-  // nightly prices, "Add dates / itinerary", compare-properties — and misfire in
-  // those domains: e.g. a Finance "when will SGD hit 80?" trips the dates/
-  // itinerary chip on the bare word "when". Offer none of them there. (Travel is
-  // intentionally excluded from this list — these chips are its home.)
-  if (studioDomain === 'finance' || studioDomain === 'education' || studioDomain === 'research') {
+  // Study owns deterministic guided next-beats rather than inheriting generic
+  // property/build gap chips or depending on the model to remember a marker.
+  // This is UI guidance only; it does not write learner truth or planning state.
+  if (studioDomain === 'education') {
+    return studyGuidedChipBeats({ userPrompt, aiResponse });
+  }
+
+  // The other advice desks run their own deterministic next-moves. The gaps
+  // below are travel/property/desk-shaped — direct links, nightly prices,
+  // "Add dates / itinerary", compare-properties — and misfire in those domains.
+  // Travel is intentionally excluded: these chips are its home.
+  if (studioDomain === 'finance' || studioDomain === 'research') {
     return [];
   }
 
@@ -156,7 +162,7 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     || studioDomain === 'education'
     || studioDomain === 'finance'
     || studioDomain === 'research';
-    if (wantsShop && !lifeAdvisor) {
+  if (wantsShop && !lifeAdvisor) {
     const intake = assessShopBuildAsk(userPrompt);
     if (intake.oversize) {
       for (const chip of intake.chips) {
@@ -270,7 +276,11 @@ export function injectGapContinues(continueSet, gaps = []) {
   if (!gaps.length) return continueSet;
 
   const existing = continueSet?.items ? [...continueSet.items] : [];
-  const seen = new Set(existing.map((i) => i.label.toLowerCase()));
+  const studyGuided = gaps.some((gap) => gap?.kind === 'study-guided');
+  // Existing behaviour is preserved outside Study. In Study, deterministic
+  // state-aware beats own duplicate labels so a stale model continue cannot
+  // silently replace the fresh value for the new learning state.
+  const seen = new Set(studyGuided ? [] : existing.map((i) => i.label.toLowerCase()));
 
   const merged = [];
   for (const gap of gaps) {
@@ -287,8 +297,9 @@ export function injectGapContinues(continueSet, gaps = []) {
     seen.add(item.label.toLowerCase());
   }
 
+  const guidedPrompt = gaps.find((gap) => gap?.kind === 'study-guided' && gap.prompt)?.prompt;
   return {
-    prompt: gaps.length ? 'I noticed something may be missing — fix it with one tap:' : (continueSet?.prompt || 'Where next?'),
+    prompt: guidedPrompt || (gaps.length ? 'I noticed something may be missing — fix it with one tap:' : (continueSet?.prompt || 'Where next?')),
     items: merged,
   };
 }
