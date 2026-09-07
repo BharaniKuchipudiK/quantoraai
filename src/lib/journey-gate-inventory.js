@@ -1048,8 +1048,10 @@ export const JOURNEYS = Object.freeze([
         'scripts/zip-entry.test.mjs',
         'scripts/business-tool-reconcile.test.mjs',
         'scripts/workflow-playwright-pin.test.mjs',
+        'scripts/test-failure-summary.test.mjs',
       ],
     },
+    note: 'A red check whose evidence cannot be read (2026-09-07): one test of 1630 failed in CI and could not be identified through any route. The TAP reporter prints a failure inline and ends with counters only, so the name was nine thousand lines above the end; GitHub\'s job-log API serves roughly the last five thousand lines at any requested size, and the raw download is on a host this tooling cannot reach. That is rule 1 defeated -- the log is the evidence, and here there was none -- and it is precisely the pressure that gets a real defect labelled flaky. Both suite runners now stream their output unchanged and append a block naming every failure, its assertion and the frame in the project, so a failure anywhere in a 13,000-line run is readable from the last dozen lines.',
   }),
   journey({
     id: 'inventory-true',
