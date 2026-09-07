@@ -150,6 +150,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     <div
       ref={rootRef}
       className="study-h1-hub"
+      style={scheduleOpen ? { zIndex: 60, pointerEvents: 'auto' } : undefined}
       data-quantora-study-hub-launcher="true"
       data-quantora-study-hub-ready={ready ? 'true' : 'false'}
       data-quantora-workspace-capabilities="education"
