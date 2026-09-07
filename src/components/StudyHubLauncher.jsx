@@ -86,14 +86,28 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     return true;
   }, []);
 
+  const openSchedule = useCallback(async () => {
+    const guard = surfaceCloseGuardRef.current;
+    try {
+      if (guard && (await guard()) === false) return false;
+    } catch {
+      return false;
+    }
+    surfaceCloseGuardRef.current = null;
+    setScheduleOpen(true);
+    setOpen(false);
+    setSurface('tools');
+    setNotebookExpanded(false);
+    return true;
+  }, []);
+
   useEffect(() => {
     const handleSurfaceRequest = (event) => {
       if (event?.detail?.surface === STUDY_SURFACE.SCHEDULE) {
+        // Acknowledge the synchronous surface request so the + menu can close,
+        // but never tear down Notebook until its pending-save guard approves.
         event.detail.handled = true;
-        setScheduleOpen(true);
-        setOpen(false);
-        setSurface('tools');
-        setNotebookExpanded(false);
+        void openSchedule();
         return;
       }
       if (!ready || event?.detail?.surface !== STUDY_SURFACE.NOTEBOOK) return;
@@ -104,7 +118,7 @@ export default function StudyHubLauncher({ topic, learnerModel, onAsk, onSend, r
     };
     window.addEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
     return () => window.removeEventListener(STUDY_SURFACE_REQUEST_EVENT, handleSurfaceRequest);
-  }, [ready]);
+  }, [openSchedule, ready]);
 
   useEffect(() => {
     if (!open) return undefined;
