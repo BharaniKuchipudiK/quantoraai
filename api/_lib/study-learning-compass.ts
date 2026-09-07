@@ -8,13 +8,12 @@ import {
 } from './study-learning-priority.js';
 import { readStudySupabaseRows } from './study-supabase.js';
 
-export const STUDY_LEARNING_COMPASS_VERSION = 'study-learning-compass-2026-09-07.1';
+export const STUDY_LEARNING_COMPASS_VERSION = 'study-learning-compass-2026-09-07.2';
 export const STUDY_LEARNING_COMPASS_MAX_FRONTIER = 9;
 export const STUDY_LEARNING_COMPASS_MAX_RECOMMENDATIONS = 5;
 const MIN_PREREQUISITE_CONFIDENCE = 0.8;
 const MAX_RELATED_EDGES = 24;
 const MAX_DOWNSTREAM_EDGES = 100;
-const MAX_ACTIVE_CURRICULA = 20;
 
 type StudyCompassConcept = {
   id: string;
@@ -38,6 +37,7 @@ type StudyCompassMapping = {
 export type StudyLearningCompassRequest = {
   conceptKey: string;
   conceptLabel: string;
+  curriculumKey: string | null;
   availableMinutes: number | null;
 };
 
@@ -51,6 +51,7 @@ export type StudyLearningCompassResult =
       version: string;
       scope: 'active_neighborhood';
       activeConcept: StudyCompassConcept;
+      curriculumKey: string | null;
       recommendations: StudyLearningCompassRecommendation[];
       skipped: Array<{ conceptId: string; reasonCode: string }>;
       asOf: string;
@@ -106,14 +107,16 @@ function inFilter(values: string[]): string {
 
 export function normalizeStudyLearningCompassRequest(value: unknown): StudyLearningCompassRequest | null {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const conceptKey = text(input.conceptKey, 160);
+  const conceptKey = text(input.conceptKey, 160).toLowerCase();
   const conceptLabel = text(input.conceptLabel, 300);
+  const curriculumKey = text(input.curriculumKey, 160).toLowerCase() || null;
   if (!conceptKey || !conceptLabel) return null;
   const providedMinutes = input.availableMinutes;
   if (providedMinutes != null && providedMinutes !== '' && !Number.isFinite(Number(providedMinutes))) return null;
   return {
     conceptKey,
     conceptLabel,
+    curriculumKey,
     availableMinutes: boundedMinutes(providedMinutes),
   };
 }
@@ -193,7 +196,7 @@ async function readConcepts(
 async function readFrontier(
   active: StudyCompassConcept,
   readRows: StudyLearningCompassDependencies['readRows'],
-): Promise<{ concepts: StudyCompassConcept[]; edges: StudyCompassEdge[] } | null> {
+): Promise<StudyCompassConcept[] | null> {
   const relatedRows = await readRows(
     `study_concept_edges?select=source_concept_id,target_concept_id,confidence&relation=eq.prerequisite_of&confidence=gte.${MIN_PREREQUISITE_CONFIDENCE}&or=(source_concept_id.eq.${encodeURIComponent(active.id)},target_concept_id.eq.${encodeURIComponent(active.id)})&order=confidence.desc,source_concept_id.asc,target_concept_id.asc&limit=${MAX_RELATED_EDGES}`,
     { operation: 'learning_compass_frontier_edges' },
@@ -208,11 +211,10 @@ async function readFrontier(
   const connectedIds = [...relevance.keys()].filter((id) => id !== active.id);
   const connected = await readConcepts(connectedIds, readRows);
   if (connected === null) return null;
-  const concepts = [active, ...connected
+  return [active, ...connected
     .sort((left, right) => (relevance.get(right.id) || 0) - (relevance.get(left.id) || 0)
       || left.canonicalKey.localeCompare(right.canonicalKey))]
     .slice(0, STUDY_LEARNING_COMPASS_MAX_FRONTIER);
-  return { concepts, edges: relatedEdges };
 }
 
 async function readDownstream(
@@ -247,24 +249,23 @@ async function readDownstream(
 
 async function readCurriculumSignals(
   concepts: StudyCompassConcept[],
+  curriculumKey: string | null,
   readRows: StudyLearningCompassDependencies['readRows'],
 ): Promise<Map<string, StudyLearningCurriculumSignal> | null> {
+  if (!curriculumKey || !concepts.length) return new Map();
   const curriculaRows = await readRows(
-    `study_curricula?select=id&status=eq.active&order=curriculum_key.asc&limit=${MAX_ACTIVE_CURRICULA}`,
-    { operation: 'learning_compass_active_curricula' },
+    `study_curricula?select=id&curriculum_key=eq.${encodeURIComponent(curriculumKey)}&status=eq.active&order=updated_at.desc&limit=1`,
+    { operation: 'learning_compass_active_curriculum' },
   );
   if (curriculaRows === null) return null;
-  const curriculumIds = curriculaRows.map((row: any) => uuidish(row?.id)).filter(Boolean);
-  if (!curriculumIds.length || !concepts.length) return new Map();
+  const curriculumId = uuidish((curriculaRows[0] as any)?.id);
+  if (!curriculumId) return new Map();
   const conceptIds = concepts.map((concept) => concept.id);
   const conceptFilter = conceptIds.length === 1
     ? `concept_id=eq.${encodeURIComponent(conceptIds[0])}`
     : `concept_id=in.(${inFilter(conceptIds)})`;
-  const curriculumFilter = curriculumIds.length === 1
-    ? `curriculum_id=eq.${encodeURIComponent(curriculumIds[0])}`
-    : `curriculum_id=in.(${inFilter(curriculumIds)})`;
   const rows = await readRows(
-    `study_curriculum_mappings?select=concept_id,curriculum_id,exam_weight,confidence&${conceptFilter}&${curriculumFilter}&order=concept_id.asc,confidence.desc,curriculum_id.asc&limit=${Math.max(20, conceptIds.length * curriculumIds.length)}`,
+    `study_curriculum_mappings?select=concept_id,curriculum_id,exam_weight,confidence&${conceptFilter}&curriculum_id=eq.${encodeURIComponent(curriculumId)}&order=concept_id.asc,confidence.desc&limit=${Math.max(20, conceptIds.length * 4)}`,
     { operation: 'learning_compass_curriculum_mappings' },
   );
   if (rows === null) return null;
@@ -275,6 +276,8 @@ async function readCurriculumSignals(
  * Build a bounded, read-only Learning Compass around the learner's active concept.
  * The ranking engine never owns learner truth: every candidate is reconstructed
  * through the canonical verified projection loader and canonical mastery estimate.
+ * Curriculum importance is admitted only when the caller supplies one explicit
+ * curriculum key; unrelated frameworks are never mixed to inflate priority.
  */
 export async function buildStudyLearningCompass(input: {
   userSub: string;
@@ -299,14 +302,14 @@ export async function buildStudyLearningCompass(input: {
 
   const frontier = await readFrontier(activeConcept, dependencies.readRows);
   if (!frontier) return { status: 'unavailable', reasonCode: 'concept_graph_unavailable' };
-  const downstream = await readDownstream(frontier.concepts, dependencies.readRows);
+  const downstream = await readDownstream(frontier, dependencies.readRows);
   if (!downstream) return { status: 'unavailable', reasonCode: 'downstream_graph_unavailable' };
-  const curriculum = await readCurriculumSignals(frontier.concepts, dependencies.readRows);
+  const curriculum = await readCurriculumSignals(frontier, input.request.curriculumKey, dependencies.readRows);
   if (!curriculum) return { status: 'unavailable', reasonCode: 'curriculum_store_unavailable' };
 
   const candidates: StudyLearningPriorityCandidate[] = [];
   const serviceSkipped: Array<{ conceptId: string; reasonCode: string }> = [];
-  for (const concept of frontier.concepts) {
+  for (const concept of frontier) {
     const loaded = await dependencies.loadProjection({
       userSub: input.userSub,
       conceptId: concept.id,
@@ -335,12 +338,13 @@ export async function buildStudyLearningCompass(input: {
     availableMinutes: input.request.availableMinutes,
     limit: STUDY_LEARNING_COMPASS_MAX_RECOMMENDATIONS,
   });
-  const labels = new Map(frontier.concepts.map((concept) => [concept.id, concept.label]));
+  const labels = new Map(frontier.map((concept) => [concept.id, concept.label]));
   return {
     status: 'ok',
     version: STUDY_LEARNING_COMPASS_VERSION,
     scope: 'active_neighborhood',
     activeConcept,
+    curriculumKey: input.request.curriculumKey,
     recommendations: ranked.recommendations.map((recommendation) => ({
       ...recommendation,
       label: labels.get(recommendation.conceptId) || recommendation.conceptKey || 'Study concept',
@@ -348,7 +352,7 @@ export async function buildStudyLearningCompass(input: {
     skipped: [...serviceSkipped, ...ranked.skipped],
     asOf,
     availableMinutes: ranked.availableMinutes,
-    frontierSize: frontier.concepts.length,
+    frontierSize: frontier.length,
     loadedCandidateCount: candidates.length,
   };
 }
