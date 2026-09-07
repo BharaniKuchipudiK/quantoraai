@@ -143,7 +143,9 @@ export function planTurnDeterministically(input: TurnPlanInput): TurnPlan {
     priorUserMessages: boundedHistory(input?.history).filter((item) => item.sender === 'user').map((item) => item.text),
     codingDeskOpen: Boolean(input?.codingDeskOpen),
     hasDeskFiles: Boolean(input?.hasDeskFiles),
-    isCodingRequest: (candidate: string) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+    // The REAL desk state, as the `buildAsk` line below already used it. The
+    // hard-coded true ran the desk-open widening with no desk open.
+    isCodingRequest: (candidate: string) => resolveIsCodingRequest(candidate, { codingDeskOpen: Boolean(input?.codingDeskOpen) }),
   });
   const buildAsk = turnBelongsToBuild({ text: message, buildSessionActive })
     || resolveIsCodingRequest(message, { codingDeskOpen: Boolean(input?.codingDeskOpen) })

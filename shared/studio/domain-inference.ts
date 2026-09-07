@@ -149,6 +149,21 @@ export function inferStudioDomain(input: {
    * trip word. Pinned means the workspace decided, whatever the message.
    */
   pinned?: boolean;
+  /**
+   * ROUTING MEMORY, and deliberately NOT `explicit` (2026-09-07).
+   *
+   * The caller used to fold this into `explicit` — `studioDomain ||
+   * rememberedDomain` — and `explicit` short-circuits above the coding check.
+   * So one travel word anywhere in a thread pinned it to Travel for life: with
+   * a live coding workspace AND an explicit build ask it still returned
+   * `travel`, and the studio chrome showed the Travel desk while the person
+   * was building a site. Reproduced before this was written.
+   *
+   * Membership outranks a live coding workspace, because a person chose it.
+   * A remembered desk does not — it is only what the words happened to say
+   * earlier, and an open workspace is the stronger evidence of the two.
+   */
+  remembered?: unknown;
 }): StudioDomain | null {
   const explicit = normalizeStudioDomain(input.explicit);
   if (input.pinned === true) return explicit;
@@ -162,6 +177,12 @@ export function inferStudioDomain(input: {
   // Coding desk is represented as a null domain. Once that desk (or its
   // preview/VFS) is live, keyword inference must not swap the whole studio.
   if (input.codingWorkspace || hasCodingDeskContext(current, prior)) return null;
+
+  // Only now: the desk this thread has been answering as. Below the coding
+  // check so a build can always take the thread back, above scoring so turn
+  // two of a trip still gets travel tools when the words alone say nothing.
+  const remembered = normalizeStudioDomain(input.remembered);
+  if (remembered) return remembered;
 
   /*
    * THE CURRENT MESSAGE MUST SAY SO (2026-09-06).
@@ -205,6 +226,7 @@ export function resolveTurnStudioDomain(input: {
   isCodingRequest?: boolean;
   hasCodingWorkspace?: boolean;
   pinned?: boolean;
+  remembered?: unknown;
 } = {}): StudioDomain | null {
   return inferStudioDomain({
     explicit: input.explicit,
@@ -212,6 +234,7 @@ export function resolveTurnStudioDomain(input: {
     history: input.history,
     codingWorkspace: Boolean(input.isCodingRequest || input.hasCodingWorkspace),
     pinned: input.pinned === true,
+    remembered: input.remembered,
   });
 }
 

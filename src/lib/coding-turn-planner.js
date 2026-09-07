@@ -208,7 +208,10 @@ export function planCodingTurn({
     priorUserMessages: prior,
     codingDeskOpen: Boolean(codingDeskOpen),
     hasDeskFiles: Number(vfsFileCount) > 0,
-    isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: true }),
+    // The REAL desk state — see the note in useChatStream. A hard-coded true
+    // runs the desk-open widening with no desk, which is how a garden design
+    // became a build.
+    isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: Boolean(codingDeskOpen) }),
   });
 
   const isCodingTurn = (

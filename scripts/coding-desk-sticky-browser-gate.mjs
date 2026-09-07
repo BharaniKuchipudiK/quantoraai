@@ -41,6 +41,10 @@ await page.addInitScript(() => {
   localStorage.removeItem('quantora_active_specialist_domain');
 });
 
+/** Every /api/chat body this run sent, so ROUTING can be proven and not assumed. */
+const chatRequests = [];
+const lastChatRequest = () => chatRequests[chatRequests.length - 1] || {};
+
 await page.route('**/api/**', async (route) => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
@@ -66,6 +70,7 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
+    chatRequests.push(body);
     const message = String(body.message || '');
     const reply = /calculator/i.test(message) ? calculatorReply : advisorishReply;
     return route.fulfill({
@@ -157,16 +162,47 @@ try {
     throw new Error('Explicit Study Tutor click did not mark the specialist active.');
   }
 
-  // Cold chat advisor inference still works (no coding desk / files).
+  /*
+   * A COLD CHAT IS ANSWERED BY THE RIGHT DESK AND STILL DOES NOT MOVE
+   * (2026-09-07).
+   *
+   * This step used to assert the opposite of its first half: a cold finance
+   * question had to re-skin the studio to Finance Advisor. That is what people
+   * reported as "a New chat with no workspace suddenly moves to Finance
+   * Advisor" — the chat had not moved, but its chrome had, and from the
+   * outside there is no difference.
+   *
+   * BOTH HALVES ARE ASSERTED, deliberately, because either alone is a check
+   * that cannot fail for the reason that matters. Asserting only that the
+   * chrome stays put would pass with advisor routing entirely dead — the exact
+   * shape of gate this project has thrown away before. So:
+   *
+   *   1. the studio does NOT re-skin  (the chat stays where it started), and
+   *   2. the request still asked for the finance desk  (the tools still answer).
+   *
+   * Mutation note: restore `studioDomain || inferredDomain` in
+   * chromeDomainForSession and half 1 fails; stop sending the inferred desk
+   * from useChatStream and half 2 fails.
+   */
   await newChat.click();
   await page.waitForTimeout(400);
   await prompt.fill('help me with my taxes and portfolio');
   await prompt.press('Enter');
   await page.getByText(/help me with my taxes and portfolio/i).first().waitFor({ state: 'visible', timeout: 8_000 });
   await page.waitForTimeout(800);
+
   const domainAfterColdFinance = await page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
-  if (domainAfterColdFinance !== 'finance') {
-    throw new Error(`Cold finance question did not open Finance Advisor (saw "${domainAfterColdFinance || '(empty)'}").`);
+  if (domainAfterColdFinance) {
+    throw new Error(`A top-level New Chat re-skinned itself to "${domainAfterColdFinance}". A chat stays where it started; only a person moves it.`);
+  }
+  for (const specialist of ['finance', 'travel', 'education', 'research']) {
+    if (await page.locator(`[data-quantora-active-specialist="${specialist}"]`).count()) {
+      throw new Error(`A top-level New Chat marked ${specialist} active. Inference routes the turn; it does not claim the chat.`);
+    }
+  }
+  const coldFinanceRequest = lastChatRequest();
+  if (coldFinanceRequest.studioDomain !== 'finance') {
+    throw new Error(`The cold finance question was not routed to the finance desk (request asked for "${coldFinanceRequest.studioDomain || '(none)'}"). The chrome staying put must not cost the answer its tools.`);
   }
 
   /*
