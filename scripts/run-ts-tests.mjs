@@ -8,7 +8,7 @@
  */
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { runTestsWithFailureSummary } from './lib/run-tests-with-summary.mjs';
 
 const ROOTS = ['api', 'src', 'shared', 'desktop'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
@@ -33,5 +33,4 @@ if (!files.length) {
 }
 
 console.log(`run-ts-tests: ${files.length} test file(s)`);
-const result = spawnSync('npx', ['tsx', '--test', ...files], { stdio: 'inherit' });
-process.exit(result.status ?? 1);
+process.exit(await runTestsWithFailureSummary('npx', ['tsx', '--test', ...files], 'TypeScript'));

@@ -30,7 +30,7 @@
  */
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { runTestsWithFailureSummary } from './lib/run-tests-with-summary.mjs';
 
 const ROOTS = ['api', 'src', 'shared', 'scripts', 'desktop'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'coverage']);
@@ -67,5 +67,4 @@ if (!files.length) {
 }
 
 console.log(`run-node-tests: ${files.length} test file(s)`);
-const result = spawnSync('node', ['--test', ...files], { stdio: 'inherit' });
-process.exit(result.status ?? 1);
+process.exit(await runTestsWithFailureSummary('node', ['--test', ...files], 'node'));
