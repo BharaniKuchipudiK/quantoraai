@@ -122,6 +122,18 @@ export function studyWhereNextAsk(topic) {
   return `Based only on this learner's conversation and verified evidence, offer three concise next moves after ${label}: one to strengthen understanding, one to apply it, and one to explore next. Explain the value of each in a short phrase and ask the learner to choose. Do not prescribe a generic chapter sequence or invent mastery.`;
 }
 
+export function studyCompassMissionAsk(recommendation) {
+  const label = String(recommendation?.label || 'this concept').trim();
+  const action = String(recommendation?.recommendedActionType || 'guided_repair').trim();
+  const minutes = Math.max(3, Math.min(240, Number(recommendation?.suggestedDurationMinutes) || 10));
+  return [
+    `Begin the Learning Compass recommendation for ${label}.`,
+    `The governed deterministic engine selected action type ${action} for a ${minutes}-minute learning step.`,
+    'Use the verified learner context already present, but do not invent mastery, scores, or evidence.',
+    'Teach or diagnose one focused step now, then ask one short question and stop for the learner.',
+  ].join(' ');
+}
+
 export function studyPlanAsk(topic) {
   return `Help me plan the next study steps for ${String(topic || 'this idea').trim()} from the context already known in this conversation. Use known constraints first, ask only for material information that is missing, protect realistic study and rest time, and prioritize prerequisite gaps before extra volume.`;
 }

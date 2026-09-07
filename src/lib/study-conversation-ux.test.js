@@ -99,6 +99,7 @@ test('Study keeps three permanent lesson moves while plus, AI, and Assessment ha
   const assessmentWorkspace = read('src/components/StudyAssessmentWorkspace.jsx');
   const history = read('src/components/StudyAssessmentHistory.jsx');
   const notebook = read('src/components/StudyNotebook.jsx');
+  const compass = read('src/components/StudyLearningCompass.jsx');
 
   assert.match(shell, /data-quantora-study-next-choices="true"/);
   assert.match(shell, />\s*Explain\s*</);
@@ -127,6 +128,11 @@ test('Study keeps three permanent lesson moves while plus, AI, and Assessment ha
   assert.match(hub, /data-quantora-study-hub-launcher="true"/);
   assert.match(hub, /aria-expanded=\{open\}/);
   assert.match(hub, /<StudyNotebook/);
+  assert.match(hub, /<StudyLearningCompass/);
+  assert.match(hub, /action\.id === 'where-next'/);
+  assert.match(compass, /data-quantora-study-learning-compass="true"/);
+  assert.match(compass, /Your highest-value next step/);
+  assert.match(compass, /loadStudyLearningCompass/);
   assert.doesNotMatch(hub, /<StudyAssessmentHistory/);
   assert.match(assessmentWorkspace, /<StudyAssessmentHistory/);
   assert.match(history, /data-quantora-study-assessment-history="true"/);

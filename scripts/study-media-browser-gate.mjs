@@ -12,6 +12,7 @@ const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 let assessmentIssueCount = 0;
+let compassRequestBody = null;
 
 function sseBody(text) {
   return [
@@ -109,6 +110,37 @@ await page.route('**/api/**', async (route) => {
           picture: null,
           isAdmin: false,
         },
+      }),
+    });
+  }
+
+  if (path === '/api/study-learning-compass') {
+    compassRequestBody = request.postDataJSON();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        recommendations: [{
+          conceptId: '22222222-2222-4222-8222-222222222222',
+          conceptKey: 'physics.forces.newtons-third-law',
+          label: "Newton's Third Law",
+          rank: 1,
+          score: 0.82,
+          recommendedActionType: 'guided_repair',
+          factors: [
+            { key: 'masteryGap', contribution: 0.2 },
+            { key: 'prerequisiteLeverage', contribution: 0.18 },
+          ],
+          reasonCodes: ['next_move:guided_repair'],
+          confidence: 0.74,
+          confidenceBand: 'high',
+          dataSufficiency: 'sufficient',
+          missingInputs: ['curriculum_exam_weight'],
+          suggestedDurationMinutes: 15,
+          baseDurationMinutes: 15,
+          fitsAvailableTime: true,
+        }],
       }),
     });
   }
@@ -378,6 +410,15 @@ try {
     if (await studyHubPanel.getByRole('button', { name: duplicateName, exact: true }).count()) {
       throw new Error(`Study AI still duplicates a durable Study action: ${duplicateName}.`);
     }
+  }
+  await studyHubPanel.getByRole('button', { name: 'Where next?', exact: true }).click();
+  const compass = studyHubPanel.locator('[data-quantora-study-learning-compass="true"]');
+  await visible(compass, 'Where next did not open the governed Learning Compass.');
+  await visible(compass.getByText('Your highest-value next step', { exact: true }), 'Learning Compass has no clear purpose.');
+  await visible(compass.getByText("Newton's Third Law", { exact: true }), 'Learning Compass did not render the ranked recommendation.');
+  await visible(compass.getByRole('button', { name: 'Start this step', exact: true }), 'Learning Compass recommendation has no action.');
+  if (compassRequestBody?.availableMinutes !== 20 || !compassRequestBody?.conceptLabel) {
+    throw new Error('Learning Compass did not send the active Study concept and selected time budget.');
   }
   await page.keyboard.press('Escape');
   await hidden(studyHubPanel, 'Escape did not close the Study AI.');
