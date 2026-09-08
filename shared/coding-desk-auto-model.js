@@ -243,13 +243,55 @@ export function rankCodingDeskFallbacks(availableModels = [], { primaryId = '', 
  * Whether this coding turn should leave the Gemini default for a stronger coder.
  * Switch is decided once here — callers must not re-route mid-stream.
  */
+/*
+ * A REFINE IS NOT AUTOMATICALLY A HARD BUILD (2026-09-08).
+ *
+ * `if (refineMode) return true` sent EVERY follow-up edit to a strong coder.
+ * Measured on the live catalogue with a paid credential present, all of these
+ * routed to anthropic/claude-opus-5:
+ *
+ *     "Can you add descriptions as a drop-down list"
+ *     "make the header blue"
+ *     "shorter please"
+ *
+ * That is wrong twice over, and the second way is what makes it a reliability
+ * bug rather than a billing one.
+ *
+ * It cost a real turn. A one-line refine went to Opus, which is slow; the
+ * attempt consumed the turn's whole wall clock, so planTurnEscalation found
+ * less than MIN_VIABLE_ATTEMPT_MS remaining, `mayAttempt` was false, NO
+ * FALLBACK RAN, nothing was written, and the user got the last-resort
+ * "this turn ended without a reply". Escalating to a slow route on a trivial
+ * ask spends the budget that recovery needs. This is the #445 shape again —
+ * "one route spent essentially the whole budget, fallbacks got ~0ms".
+ *
+ * And it is the wrong route on the merits: the fast default BUILT the artifact
+ * in the first place. A model good enough to write the page is good enough to
+ * add a dropdown to it.
+ *
+ * The rule is deliberately narrow, so anything ambiguous still escalates: only
+ * a SHORT ask against a SMALL project skips the escalation. Every other reason
+ * to escalate is checked below and still applies to a small refine — a failed
+ * probe, a repair, a shop build, a complex or multi-file ask. So a small refine
+ * that is also a repair still gets the stronger coder, via the next line down.
+ */
+const SMALL_REFINE_MAX_CHARS = 200;
+const SMALL_REFINE_MAX_FILES = 3;
+
+function isSmallRefine(text, qualityHints) {
+  if (String(text || '').trim().length >= SMALL_REFINE_MAX_CHARS) return false;
+  // Unknown file count reads as small, exactly as the fileCount rule below
+  // already treats a missing hint. Unknown is unknown in both directions.
+  return (Number(qualityHints?.fileCount) || 0) <= SMALL_REFINE_MAX_FILES;
+}
+
 export function shouldEscalateCodingDeskModel({
   message = '',
   refineMode = false,
   hasVFS = false,
   qualityHints = null,
 } = {}) {
-  if (refineMode) return true;
+  if (refineMode && !isSmallRefine(message, qualityHints)) return true;
   if (qualityHints?.probeFailure || qualityHints?.repair) return true;
   if (qualityHints?.shopImageOversize) return true;
   const text = String(message || '');
