@@ -1681,7 +1681,32 @@ export default async function handler(req: any, res: any) {
           formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat);
           if (route.provider === 'gemini') {
-            const openRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
+            /*
+             * SILENT WHILE CONNECTING IS STILL SILENT.
+             *
+             * The content window bounds a stream once one EXISTS. Opening it was
+             * bounded by the whole remaining attempt budget — for a non-build
+             * turn that is the whole remaining TURN — so a route that accepts
+             * the connection and never answers burned everything before the
+             * liveness guard could run at all.
+             *
+             * Seen in production on 2026-09-08, in a trace the user sent: four
+             * engines, every one 504, and single attempts of 30.4s, 25.3s,
+             * 65.7s and 27.5s against a 25-SECOND no-content window. Only the
+             * 25.3s one was the window working; the rest never reached it.
+             *
+             * This is the same defect as the one it was meant to fix — a guard
+             * measuring the wrong thing — moved one step earlier in the
+             * pipeline. Fixing where the trace pointed and not asking what else
+             * had the same shape is exactly what CLAUDE.md §7 exists to stop.
+             *
+             * A route that has not produced a STREAM in NO_CONTENT_MS is dead by
+             * the same definition, so it gets the same deadline.
+             */
+            const openRemainingMs = Math.min(
+              NO_CONTENT_MS,
+              attemptBudgetMs - (Date.now() - attemptStartedAt),
+            );
             if (openRemainingMs <= 0) throw inferenceAttemptTimeout(route, attemptBudgetMs);
             const openController = new AbortController();
             const openTimer = setTimeout(() => openController.abort(), openRemainingMs);
@@ -1787,7 +1812,12 @@ export default async function handler(req: any, res: any) {
               temperature: dynamicTemperature,
               grounding,
               jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
-              timeoutMs: attemptBudgetMs,
+              /* Bounded by the CONTENT window, not the attempt budget: the
+               * helper clamps this to at most 55s, so a dead route could hold
+               * the connection open for 55 seconds before the stream — and the
+               * liveness guard — existed at all. Same reason as the Gemini
+               * opener above. */
+              timeoutMs: Math.min(NO_CONTENT_MS, attemptBudgetMs),
             });
             if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
             const reader = response.body.getReader();

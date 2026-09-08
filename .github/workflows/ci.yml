@@ -112,10 +112,15 @@ jobs:
       - name: Build production artifacts
         run: npm run build
 
-      - name: Audit high-severity dependencies
-        run: |
-          npm audit --json > audit.json || true
-          node -e "const a=require('./audit.json');const allow=new Set(['image-size','pptxgenjs']);const bad=Object.entries(a.vulnerabilities||{}).filter(([k,v])=>['high','critical'].includes(v.severity)&&!allow.has(k));if(bad.length){console.error('Disallowed high/critical advisories:',bad.map(([k])=>k).join(', '));process.exit(1);}console.log('Audit OK (allowlisted unreachable transitives:',[...allow].join(', '),')');"
+      # Was a one-liner allowlisting image-size and pptxgenjs BY NAME, printing
+      # "allowlisted unreachable transitives" on every green run. image-size is
+      # neither: it is a direct production dependency and api/generate-office.ts
+      # feeds it bytes a stranger chose. That sentence is why nobody looked, and
+      # a name-based allowlist would also have swallowed any NEW advisory on
+      # either package in silence. Acceptance is now per cause, with a written
+      # reason, and a stale acceptance fails as loudly as an unaccepted one.
+      - name: Dependency advisories are fixed, or accepted by cause with a reason
+        run: npm run test:advisories
 
   browser-gates:
     name: Browser release gates

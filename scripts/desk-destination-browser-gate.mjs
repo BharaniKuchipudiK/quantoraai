@@ -72,6 +72,17 @@ const evidence = {
 
 let connected = false;
 
+/*
+ * Held responses, so the first assertion does not depend on how loaded the runner is.
+ *
+ * The bar is read while /api/github/connection is STILL IN FLIGHT. That is the exact
+ * window in which the component used to render its connected shape to a signed-out
+ * user, and the only reason this gate caught it on 2026-09-08 was a slow runner —
+ * it passed on the parent commit twice and passed locally on the same tree. A gate
+ * that only fails when the machine is busy is one the next person calls flaky.
+ */
+let connectionDelayMs = 0;
+
 const browser = await chromium.launch({
   headless: true,
   ...(process.env.QUANTORA_E2E_CHROMIUM ? { executablePath: process.env.QUANTORA_E2E_CHROMIUM } : {}),
@@ -102,7 +113,8 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/plan-turn') return route.fulfill(json(500, { error: 'planner offline in this gate' }));
   if (path === '/api/github/connection') {
-    evidence.githubRequests.push({ path, connected });
+    evidence.githubRequests.push({ path, connected, delayedMs: connectionDelayMs });
+    if (connectionDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, connectionDelayMs));
     return connected
       ? route.fulfill(json(200, { connected: true, login: ACCOUNT, scopes: ['repo'] }))
       : route.fulfill(json(200, { connected: false, reason: 'Connect your GitHub account to choose where this build is saved.' }));
@@ -166,11 +178,21 @@ async function step(name, run) {
 
 try {
   await step('signed out of GitHub, the bar offers the door rather than an empty slot', async () => {
+    // Hold the connection answer so the bar is read while the fetch is unresolved.
+    // Whatever it shows in that window is what a signed-out user actually sees first.
+    connectionDelayMs = 4_000;
     await page.goto(`${BASE_URL}/desk`, { waitUntil: 'domcontentloaded' });
     await enterSignedInStudio(page);
     await visible(bar(), 'The composer has no destination bar ([data-quantora-github-destination]).', 20_000);
     const state = await bar().getAttribute('data-quantora-github-destination');
-    if (state !== 'disconnected') throw new Error(`With GitHub not connected the bar reads ${JSON.stringify(state)}; expected "disconnected".`);
+    if (state !== 'disconnected') {
+      throw new Error(
+        `While /api/github/connection was still in flight the bar read ${JSON.stringify(state)}; ` +
+        `expected "disconnected". An unconfirmed connection must never be shown as a chosen ` +
+        `destination — see the guard at the top of GithubDestinationBar's render.`,
+      );
+    }
+    connectionDelayMs = 0;
     await visible(
       page.locator('[data-quantora-github-destination-connect="true"]').first(),
       'Signed out, the bar shows no way to connect GitHub ([data-quantora-github-destination-connect]).',
