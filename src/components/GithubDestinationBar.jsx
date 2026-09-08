@@ -247,7 +247,16 @@ export default function GithubDestinationBar({
     );
   };
 
-  if (connection && connection.connected !== true) {
+  // An UNRESOLVED connection is not a connected one. This guard used to read
+  // `connection && connection.connected !== true`, so while /api/github/connection
+  // was still in flight — connection null — it fell through to the chips below and
+  // showed a signed-out user a destination bar implying a repository was chosen.
+  // Locally that window is milliseconds; on a loaded CI runner the destination gate
+  // read the bar inside it and reported `data-quantora-github-destination="true"`
+  // with GitHub not connected. Unknown takes the same branch as not-connected, which
+  // is what `!== true` already meant everywhere else: never claim a destination that
+  // has not been confirmed.
+  if (!connection || connection.connected !== true) {
     return (
       <a
         href={GITHUB_CONNECT_URL}
