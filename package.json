@@ -26,6 +26,7 @@
     "test:ts": "node scripts/run-ts-tests.mjs",
     "test:node": "node scripts/run-node-tests.mjs",
     "test:all": "npm run test:imports && npm run test:hook-order && npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring && npm run test:served-routes && npm run test:journeys",
+    "test:ci": "npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:served-routes",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'",
     "test:wiring": "node scripts/wiring-gate.mjs",
     "test:stress": "node scripts/stress/pipeline-stress.mjs",
