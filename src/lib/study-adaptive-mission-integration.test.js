@@ -117,3 +117,16 @@ test('an incorrect mission retry re-enters VERIFIED_CHECK before reserving the r
   assert.match(retry, /explicitRetry: true/);
   assert.match(shell, /onClick=\{\(\) => handleRemediationAction\('retry'\)\}/);
 });
+
+test('mission review stays grounded in the exact passed governed attempt', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  assert.match(shell, /const missionReviewResultRef = useRef\(null\)/);
+  assert.match(shell, /missionReviewResultRef\.current = \{[\s\S]*attemptId: assessment\.attemptId,[\s\S]*result: assessment\.result/);
+  assert.match(shell, /reviewSnapshot\.attemptId !== mission\.verifiedAttemptId/);
+  assert.match(shell, /studyAdaptiveMissionReviewAsk\(label, reviewSnapshot\.result\)/);
+  assert.match(
+    shell,
+    /assessment\.result\.correct \? \([\s\S]*mission\.status === 'active' && mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.REVIEW \? null/,
+    'ordinary next/retry controls must not replace the passed result before mission review is closed',
+  );
+});
