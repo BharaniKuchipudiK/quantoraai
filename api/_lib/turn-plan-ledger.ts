@@ -73,9 +73,26 @@ export function summarizeTurnPlans(rows: TurnPlanEventRow[] | null | undefined):
   };
 }
 
+/**
+ * How a ledger reading came to be what it is. Four states, because three of
+ * them arrive as an empty list and mean entirely different things — and the
+ * remedy differs: a missing table wants a migration, an unanswered query wants
+ * the store looked at, and a real zero wants nothing at all.
+ */
+export type LedgerSource = 'measured' | 'no-rows' | 'not_configured' | 'unavailable';
+
 /** The dashboard's one line, from the summary — the same words wherever it is shown. */
-export function describeTurnPlans(summary: TurnPlanSummary, source: 'measured' | 'no-rows' | 'not_configured'): string {
+export function describeTurnPlans(summary: TurnPlanSummary, source: LedgerSource): string {
   if (source === 'not_configured') return 'Turn planner: the store is not configured, so no plan is recorded.';
+  /*
+   * Not 'no-rows'. That branch tells the operator to apply a migration, which
+   * is the wrong errand when the table is fine and the query simply did not
+   * come back — and an unanswered query is the reading most worth knowing is
+   * unreliable, because it is the one that looks like a quiet day.
+   */
+  if (source === 'unavailable') {
+    return 'Turn planner: the store did not answer, so this is not a measurement — nothing here is evidence that turns are or are not being planned.';
+  }
   if (source === 'no-rows' || summary.turns === 0) {
     return 'Turn planner: no plans recorded in the last 24 hours. If turns are being made, the turn_plan_events table is missing — apply migration 20260906170000_turn_plan_events.sql.';
   }

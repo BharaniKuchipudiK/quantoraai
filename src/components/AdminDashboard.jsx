@@ -281,6 +281,7 @@ const TechnicalPredictiveTab = ({ metrics }) => {
         window={metrics.window}
         daily={metrics.daily}
         turnPlans={metrics.turnPlans}
+        turnFailures={metrics.turnFailures}
         isLight={isLight}
       />
     </div>
