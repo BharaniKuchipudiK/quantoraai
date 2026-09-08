@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { stripNonCode } from "../../src/lib/wiring-audit.js";
 
 /**
  * ---------------------------------------------------------------------------
@@ -41,7 +42,29 @@ import { dirname, join } from "node:path";
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SOURCE = readFileSync(join(HERE, "chat-handler.ts"), "utf8");
+
+/*
+ * RAW is what a human reads; SOURCE is what this test reasons about.
+ *
+ * Everything below walks braces and matches identifiers. Doing that on raw
+ * text means a `{` inside a string, a template literal, a regex or one of this
+ * file's long block comments moves the walker, and a name mentioned in a
+ * comment counts as code. stripNonCode is the repository's own answer to that
+ * — the same function the wiring gate uses, and the one that fixed
+ * audit:lonely this morning when it was counting comments as callers.
+ *
+ * It blanks what it removes rather than deleting it, so every index in SOURCE
+ * is the same index in RAW. It does NOT preserve newlines inside block
+ * comments, so LINE NUMBERS must be counted in RAW. The assertion below pins
+ * the offset property, because everything here is wrong by exactly one
+ * comment if it ever stops holding.
+ */
+const RAW = readFileSync(join(HERE, "chat-handler.ts"), "utf8");
+const SOURCE = stripNonCode(RAW);
+assert.equal(SOURCE.length, RAW.length, "stripNonCode must blank in place, or every index below is wrong");
+
+/** The 1-based line of an index, counted in the text a human would read. */
+const lineOf = (index: number) => RAW.slice(0, index).split("\n").length;
 
 /** The two ways this handler waits on a provider stream. */
 const READERS = ["readWithIdleTimeout", "nextAsyncIteratorWithIdleTimeout"];
@@ -63,7 +86,7 @@ function callSites(source: string, name: string) {
       else if (source[i] === ")") depth -= 1;
     }
     sites.push({
-      line: source.slice(0, match.index).split("\n").length,
+      line: lineOf(match.index),
       index: match.index,
       args: source.slice(match.index + match[0].length, i - 1),
     });
