@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useReducer, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import {
   studyActionVisibleText,
@@ -59,6 +59,7 @@ export default function StudyTutorShell({
     undefined,
     createStudyAdaptiveMissionState,
   );
+  const missionReviewResultRef = useRef(null);
 
   const topic = brief?.label || 'this topic';
   const conceptId = brief?.conceptId || '';
@@ -151,6 +152,7 @@ export default function StudyTutorShell({
     if (!label) return;
     const phase = studyAdaptiveMissionStartPhase(recommendation);
     const aligned = sameStudyMissionLabel(topic, label);
+    missionReviewResultRef.current = null;
     setActivity(null);
     dispatchMission({ type: 'START_COMPASS', recommendation, activeTopic: topic });
 
@@ -172,6 +174,7 @@ export default function StudyTutorShell({
 
   const beginGuidedMission = useCallback((item) => {
     if (!brief?.active || !String(topic || '').trim()) return;
+    missionReviewResultRef.current = null;
     setActivity(null);
     dispatchMission({ type: 'START_GUIDED', topic });
     sendMission(
@@ -216,6 +219,7 @@ export default function StudyTutorShell({
   useEffect(() => {
     if (mission.status === 'idle' || !mission.topicAligned || !mission.label) return;
     if (!String(topic || '').trim() || sameStudyMissionLabel(topic, mission.label)) return;
+    missionReviewResultRef.current = null;
     dispatchMission({ type: 'RESET' });
     setActivity(null);
   }, [mission.label, mission.status, mission.topicAligned, topic]);
@@ -229,6 +233,9 @@ export default function StudyTutorShell({
   // concept and only once per server attempt. This blocks both the old-concept
   // result that can coexist for one render during a focus handoff and the old
   // incorrect result that can coexist while a retry reserves a new attempt.
+  // A correct result is also snapshotted in a ref so mission review remains
+  // grounded in the exact attempt that advanced the mission even if ordinary
+  // assessment controls mutate the workspace afterward.
   useEffect(() => {
     if (mission.status !== 'active'
       || !mission.topicAligned
@@ -236,12 +243,20 @@ export default function StudyTutorShell({
       || !assessmentMatchesMission
       || !assessment?.attemptId
       || typeof assessment?.result?.correct !== 'boolean') return;
+    if (assessment.result.correct) {
+      missionReviewResultRef.current = {
+        attemptId: assessment.attemptId,
+        result: assessment.result,
+      };
+    } else {
+      missionReviewResultRef.current = null;
+    }
     dispatchMission({
       type: 'VERIFIED_RESULT',
       correct: assessment.result.correct,
       attemptId: assessment.attemptId,
     });
-  }, [assessment?.attemptId, assessment?.result?.correct, assessmentMatchesMission, mission.phase, mission.status, mission.topicAligned]);
+  }, [assessment?.attemptId, assessment?.result, assessmentMatchesMission, mission.phase, mission.status, mission.topicAligned]);
 
   const runMissionPractice = useCallback(() => {
     const label = mission.label || topic;
@@ -258,12 +273,15 @@ export default function StudyTutorShell({
 
   const runMissionReview = useCallback(() => {
     const label = mission.label || topic;
+    const reviewSnapshot = missionReviewResultRef.current;
+    if (!reviewSnapshot || reviewSnapshot.attemptId !== mission.verifiedAttemptId) return;
     sendMission(
-      studyAdaptiveMissionReviewAsk(label, assessment?.result),
+      studyAdaptiveMissionReviewAsk(label, reviewSnapshot.result),
       `Recap the mission result for ${label}`,
     );
+    missionReviewResultRef.current = null;
     dispatchMission({ type: 'REVIEW_SENT' });
-  }, [assessment?.result, mission.label, sendMission, topic]);
+  }, [mission.label, mission.verifiedAttemptId, sendMission, topic]);
 
   const handleRemediationAction = useCallback((kind) => {
     if (kind === 'retry'
@@ -512,14 +530,16 @@ export default function StudyTutorShell({
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {assessment.result.correct ? (
-                    <>
-                      <button type="button" onClick={onAdvance} className="study-h1-action study-h1-action--primary">
-                        Next question <ArrowRight size={12} style={{ verticalAlign: '-2px' }} />
-                      </button>
-                      <button type="button" onClick={() => requestCheck({ explicitRetry: true })} className="study-h1-action">
-                        Retry this one
-                      </button>
-                    </>
+                    mission.status === 'active' && mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.REVIEW ? null : (
+                      <>
+                        <button type="button" onClick={onAdvance} className="study-h1-action study-h1-action--primary">
+                          Next question <ArrowRight size={12} style={{ verticalAlign: '-2px' }} />
+                        </button>
+                        <button type="button" onClick={() => requestCheck({ explicitRetry: true })} className="study-h1-action">
+                          Retry this one
+                        </button>
+                      </>
+                    )
                   ) : (
                     <>
                       <button type="button" onClick={() => handleRemediationAction('retry')} className="study-h1-action study-h1-action--primary">
