@@ -50,21 +50,21 @@ function UsageTrend({ daily }) {
 
   return (
     <section style={panelStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '22px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', marginBottom: '22px' }}>
         <SectionHeader title="Usage trend" subtitle="Daily prompts with token intensity scaled independently for readability" />
         <div style={{ display: 'flex', gap: '14px', color: '#94a3b8', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>
           <LegendDot color="#2563eb" label="Prompts" />
           <LegendDot color="#8b5cf6" label="Tokens (scaled)" />
         </div>
       </div>
-      <div style={{ height: '260px', display: 'flex', alignItems: 'stretch', gap: '5px', borderBottom: '1px solid #1f2937', padding: '10px 0 0' }}>
+      <div style={{ height: '260px', display: 'flex', alignItems: 'stretch', gap: '5px', borderBottom: '1px solid #1f2937', padding: '10px 0 0', overflowX: 'auto' }}>
         {days.map((day) => {
           const requests = Number(day.requests) || 0;
           const tokens = Number(day.tokens_est) || 0;
           const requestPct = Math.max(requests > 0 ? 4 : 0, Math.round((requests / maxRequests) * 100));
           const tokenPct = Math.max(tokens > 0 ? 3 : 0, Math.round((tokens / maxTokens) * 100));
           return (
-            <div key={day.day} title={`${day.day}: ${requests.toLocaleString()} prompts · ${tokens.toLocaleString()} estimated tokens`} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'stretch', gap: '7px' }}>
+            <div key={day.day} title={`${day.day}: ${requests.toLocaleString()} prompts · ${tokens.toLocaleString()} estimated tokens`} style={{ flex: '1 0 42px', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'stretch', gap: '7px' }}>
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: '2px', minHeight: 0 }}>
                 <div style={{ flex: 1, height: `${requestPct}%`, minHeight: requests ? '3px' : 0, background: 'linear-gradient(to top, rgba(37,99,235,0.38), #2563eb)', borderRadius: '3px 3px 0 0' }} />
                 <div style={{ width: '3px', height: `${tokenPct}%`, minHeight: tokens ? '3px' : 0, background: '#8b5cf6', borderRadius: '3px 3px 0 0', opacity: 0.9 }} />
@@ -133,9 +133,9 @@ function InsightStrip({ product, growth, workspaceUse }) {
 
   return (
     <section style={{ ...panelStyle, padding: '18px 20px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0 }}>
-        {items.map(([label, value, note], index) => (
-          <div key={label} style={{ padding: '4px 18px', borderLeft: index ? '1px solid #1f2937' : 'none' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+        {items.map(([label, value, note]) => (
+          <div key={label} style={{ padding: '4px 10px' }}>
             <div style={{ color: '#64748b', fontSize: '0.65rem', marginBottom: '7px' }}>{label}</div>
             <div style={{ color: '#f8fafc', fontSize: '1.08rem', fontWeight: 720 }}>{value}</div>
             <div style={{ color: '#475569', fontSize: '0.6rem', marginTop: '3px' }}>{note}</div>
@@ -201,13 +201,13 @@ export default function ProductAnalyticsPanel({ product, growth, workspaceUse, w
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '12px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: '12px' }}>
         {kpis.map(([label, value, note]) => <KpiCard key={label} label={label} value={value} note={note} />)}
       </div>
 
       <UsageTrend daily={daily} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
         <RankingCard
           title="Top workspaces"
           subtitle="Where users are sending the most prompts — with users, token burn and dominant model in context"
