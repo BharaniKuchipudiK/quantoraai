@@ -85,8 +85,11 @@ jobs:
       - name: Pipeline stress (hostile replies, no model calls)
         run: npm run test:stress
 
-      - name: Run all tests
-        run: npm run test:all
+      # The fast fail-first gates above and the journey inventory below are
+      # deliberately separate. test:ci carries the remaining test:all coverage
+      # once, so CI does not execute imports, hook-order, wiring or journeys twice.
+      - name: Run all remaining tests
+        run: npm run test:ci
 
       - name: Finance judgment gate
         run: npm run test:judgment
