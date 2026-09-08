@@ -1712,6 +1712,26 @@ export default async function handler(req: any, res: any) {
                 await iterator.return?.(undefined);
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              /*
+               * ONE catch, cleanup FIRST, then classify — the same shape as the
+               * other three reads.
+               *
+               * This was two nested try/catches: the inner one converted a bare
+               * idle rejection to inferenceNoContent and threw, and the outer
+               * one returned the iterator ONLY when the attempt budget had also
+               * expired. On the common path — the 25s content window expiring
+               * well inside a longer attempt budget — that test is false, so the
+               * conversion fell through `throw error` and the Gemini iterator
+               * was never returned. It stayed open upstream while the ladder
+               * moved to the next route.
+               *
+               * Found by Codex, on the read I had just written a contract test
+               * to protect. The test passed this site because it searched a
+               * window for a catch, a conversion and a cleanup INDEPENDENTLY,
+               * and found the cleanup on the unrelated attempt-budget path.
+               * Three separate places answering three separate questions is not
+               * the same as one correct path.
+               */
               let next;
               try {
                 const geminiStop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
@@ -1720,26 +1740,19 @@ export default async function handler(req: any, res: any) {
                     ? inferenceNoContent(route, NO_CONTENT_MS)
                     : inferenceAttemptTimeout(route, attemptBudgetMs);
                 }
-                try {
-                  next = await nextAsyncIteratorWithIdleTimeout(
-                    iterator,
-                    nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
-                    'Gemini stream',
-                  );
-                } catch (error) {
-                  /* Same trap as the OpenRouter side: a bare idle rejection
-                   * carries no status, so the ladder would stop rather than
-                   * fall back. */
-                  if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
-                    || /idle for more than/i.test(String((error as any)?.message || ''))) {
-                    throw inferenceNoContent(route, NO_CONTENT_MS);
-                  }
-                  throw error;
-                }
+                next = await nextAsyncIteratorWithIdleTimeout(
+                  iterator,
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  'Gemini stream',
+                );
               } catch (error) {
+                await iterator.return?.(undefined).catch(() => {});
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
-                  await iterator.return?.(undefined);
                   throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                  || /idle for more than/i.test(String((error as any)?.message || ''))) {
+                  throw inferenceNoContent(route, NO_CONTENT_MS);
                 }
                 throw error;
               }

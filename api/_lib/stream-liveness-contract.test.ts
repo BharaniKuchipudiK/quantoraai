@@ -48,7 +48,7 @@ const READERS = ["readWithIdleTimeout", "nextAsyncIteratorWithIdleTimeout"];
 
 /** Call sites of `name(`, with their argument text, ignoring the definition. */
 function callSites(source: string, name: string) {
-  const sites: Array<{ line: number; args: string }> = [];
+  const sites: Array<{ line: number; index: number; args: string }> = [];
   const re = new RegExp(`(?<!function\\s)\\b${name}\\s*\\(`, "g");
   let match: RegExpExecArray | null;
   while ((match = re.exec(source)) !== null) {
@@ -64,6 +64,7 @@ function callSites(source: string, name: string) {
     }
     sites.push({
       line: source.slice(0, match.index).split("\n").length,
+      index: match.index,
       args: source.slice(match.index + match[0].length, i - 1),
     });
   }
@@ -135,66 +136,82 @@ test("every content budget reads a timestamp that something actually advances", 
   );
 });
 
-test("every bounded read converts its own expiry instead of stopping the ladder", () => {
+/** The body of the block starting at `open` (the index of its `{`). */
+function blockBody(source: string, open: number) {
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return "";
+}
+
+/** The catch block belonging to the try that encloses `index`, or null. */
+function enclosingCatch(source: string, index: number) {
+  const before = source.slice(0, index);
+  const openedTry = before.lastIndexOf("try {");
+  if (openedTry < 0) return null;
+  /* A catch between that try and the read means the try already closed. */
+  if (/\}\s*catch\s*\(/.test(before.slice(openedTry))) return null;
+
+  const brace = source.indexOf("{", openedTry);
+  let depth = 0;
+  for (let i = brace; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const after = source.slice(i, i + 200);
+        const m = /^\}\s*catch\s*\([^)]*\)\s*\{/.exec(after);
+        if (!m) return null;
+        return blockBody(source, i + m[0].length - 1);
+      }
+    }
+  }
+  return null;
+}
+
+test("every bounded read converts AND cleans up in the catch that encloses it", () => {
   /*
-   * THE ASSERTION THIS FILE WAS MISSING, AND THE BUG IT LET THROUGH.
+   * THE ASSERTION THIS FILE WAS MISSING, AND THEN GOT WRONG.
    *
-   * Bounding a read by the no-content window means the WINDOW is what usually
-   * expires — and readWithIdleTimeout / nextAsyncIteratorWithIdleTimeout reject
-   * with a plain Error: no status, and the word "idle".
-   * shouldFallbackBeforeStreaming tests status against a list of codes and the
-   * message against a list of words that includes "timeout" but not "idle", so
-   * it returns false: the outer handler calls it a non-retryable 500, the
-   * client never retries, and the upstream stream is left open.
+   * Bounding a read by the no-content window makes the window the thing that
+   * usually expires — and the helpers reject with a plain Error: no status,
+   * and the word "idle". shouldFallbackBeforeStreaming matches neither, so the
+   * outer handler calls it a non-retryable 500 and the client never retries,
+   * with the upstream stream left open.
    *
-   * Codex caught this on the streaming pair. I fixed it there and then shipped
-   * it again in the tool-calling and refine loops, in the same change that
-   * claimed to close the class — because the two tests above ask only whether
-   * the budget is content-derived and whether its clock moves. Neither asks
-   * what happens when the read they bound actually expires. Tightening a
-   * deadline without handling the deadline is a net loss: the repair for a
-   * 90-second silence becomes a turn that gives up entirely.
+   * The first cut of this test searched a 2,500-character window after each
+   * read for a catch, a conversion and a cleanup — INDEPENDENTLY. Codex found
+   * what that lets through: at the Gemini streaming read, the catch that
+   * actually handled an idle expiry converted it and threw WITHOUT returning
+   * the iterator, and the only `iterator.return()` nearby belonged to a
+   * separate attempt-budget branch that this path never takes. Three unrelated
+   * places answered three unrelated questions and the site read as protected
+   * while it leaked its iterator on the commonest abandonment path there is.
    *
-   * So: every read site must sit in a try whose catch cancels the stream and
-   * converts the rejection to a typed timeout.
+   * A window is not a scope. This walks braces from the try that encloses the
+   * read to its matching catch, and asks for both properties INSIDE THAT
+   * BLOCK — which is the only place that runs when this read throws.
    */
-  /* `} catch (` — a catch BLOCK, never a promise's .catch() method. */
-  const CATCH_BLOCK = /\}\s*catch\s*\(/;
   const unhandled: string[] = [];
 
   for (const reader of READERS) {
     for (const site of callSites(SOURCE, reader)) {
-      const at = SOURCE.split("\n").slice(0, site.line).join("\n").length;
-      const before = SOURCE.slice(Math.max(0, at - 3000), at);
-      const after = SOURCE.slice(at, at + 2500);
-
-      /*
-       * Inside a try, checked properly rather than by proximity. The first cut
-       * looked for `try {` within 400 characters and reported the OpenRouter
-       * streaming loop as unguarded — its try sits behind a long comment and
-       * the pre-read stop check. The code was right and the test was wrong,
-       * which is the §3 mistake in miniature. Now: find the LAST `try {`
-       * before the call, and require no `catch (` between it and the call,
-       * which is what "still inside that try" actually means.
-       */
-      const openedTry = before.lastIndexOf("try {");
-      /*
-       * A real catch block follows a closing brace: `} catch (`. Matching
-       * /\bcatch\s*\(/ instead also matched `.catch(() => {})` — the
-       * reader-cancel on the line above — because \b matches after a dot, so
-       * the guarded loop read as unguarded. The test was wrong twice about
-       * the same site before it was right about the two that were.
-       */
-      const guarded = openedTry >= 0 && !CATCH_BLOCK.test(before.slice(openedTry));
-      const catches = CATCH_BLOCK.test(after);
-      const converts = /inferenceNoContent\s*\(/.test(after);
-      const cleansUp = /\.cancel\(\)|\.return\?\.\(/.test(after);
-
-      if (!(guarded && catches && converts && cleansUp)) {
+      const body = enclosingCatch(SOURCE, site.index);
+      if (body === null) {
+        unhandled.push(`  api/_lib/chat-handler.ts:${site.line}  ${reader}(...) is not inside a try/catch at all.`);
+        continue;
+      }
+      const converts = /inferenceNoContent\s*\(/.test(body);
+      const cleansUp = /\.cancel\(\)|\.return\?\.\(/.test(body);
+      if (!converts || !cleansUp) {
         unhandled.push(
           `  api/_lib/chat-handler.ts:${site.line}  ${reader}(...) `
-          + `[try:${guarded ? "y" : "N"} catch:${catches ? "y" : "N"} `
-          + `convert:${converts ? "y" : "N"} cleanup:${cleansUp ? "y" : "N"}]`,
+          + `its own catch [convert:${converts ? "y" : "N"} cleanup:${cleansUp ? "y" : "N"}]`,
         );
       }
     }
@@ -203,9 +220,9 @@ test("every bounded read converts its own expiry instead of stopping the ladder"
   assert.deepEqual(
     unhandled,
     [],
-    `\n${unhandled.join("\n")}\n\n  A bounded read that rejects bare is read as a 500 the client will not\n`
-    + "  retry, and its stream stays open. Wrap the read: cancel the reader or\n"
-    + "  return the iterator, then throw inferenceNoContent (504) when the\n"
-    + "  content window expired, or inferenceAttemptTimeout when the budget did.\n",
+    `\n${unhandled.join("\n")}\n\n  The catch that encloses the read must do BOTH, because it is the only\n`
+    + "  code that runs when that read throws: cancel the reader or return the\n"
+    + "  iterator, and throw inferenceNoContent (504) so the ladder falls back\n"
+    + "  instead of stopping on a statusless error.\n",
   );
 });
