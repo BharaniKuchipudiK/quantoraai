@@ -23,6 +23,20 @@ export const MAX_DOCUMENT_FILE_BYTES = 3 * 1024 * 1024;
 
 export const READABLE_TYPES_COPY = 'images (PNG/JPG), PDFs, Word, Excel, PowerPoint, CSV and plain-text files';
 
+/*
+ * Private transport linkage. The chat loop already calls
+ * `carryDocuments(ref, sessionId, partitioned.documents)` after taking
+ * `partitioned.images` by reference. This WeakMap links those two temporary
+ * buckets without putting metadata on either array and without changing the
+ * large send loop: carried pixels are pushed into the same image array after
+ * the visible user message has already been recorded, so follow-ups keep
+ * vision context without rendering duplicate attachment chips.
+ *
+ * Weak keys also mean this bookkeeping has no persistence or serialization
+ * surface and disappears as soon as the temporary partition is unreachable.
+ */
+const partitionContinuity = new WeakMap();
+
 function extensionOf(name) {
   const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/);
   return match ? match[1] : '';
@@ -49,8 +63,10 @@ export function partitionAttachments(attachments) {
   let totalChars = 0;
   let imageChars = 0;
   let documentChars = 0;
+  let hadSourceAttachment = false;
   for (const item of attachments || []) {
     if (!item || item.type === 'context') continue;
+    hadSourceAttachment = true;
     const url = typeof item.dataUrl === 'string' ? item.dataUrl : '';
     if (item.excludedReason) { excluded.push({ name: item.name, reason: item.excludedReason }); continue; }
     if (url.startsWith('data:image/')) {
@@ -69,6 +85,7 @@ export function partitionAttachments(attachments) {
     }
     excluded.push({ name: item.name, reason: 'unsupported' });
   }
+  partitionContinuity.set(documents, { images, hadSourceAttachment });
   return { images, documents, excluded };
 }
 
@@ -100,25 +117,131 @@ export function explainNothingToSend(excluded) {
 
 /** How many later turns of the same chat a document stays attached to. */
 export const CARRIED_DOCUMENT_TURNS = 8;
+/** Images are expensive payloads, so keep only a short follow-up window. */
+export const CARRIED_IMAGE_TURNS = 3;
+/**
+ * Hard browser-memory bound for transient source carry.
+ *
+ * One source partition is already capped by MAX_ATTACHED_TOTAL_CHARS (~4 MB of
+ * encoded data). Keeping only the four most recently used attachment sessions
+ * therefore prevents the per-session continuity feature from becoming an
+ * unbounded heap cache when a learner opens, archives, or abandons many chats.
+ */
+export const MAX_CARRIED_ATTACHMENT_SESSIONS = 4;
+
+function sessionAttachmentStore(ref) {
+  const current = ref.current;
+  if (current?.sessions instanceof Map) return current.sessions;
+
+  const sessions = new Map();
+  // Migrate the old one-session shape if a live client is updated in place.
+  if (current?.sessionId != null && Array.isArray(current.documents)) {
+    sessions.set(current.sessionId, {
+      sessionId: current.sessionId,
+      documents: current.documents,
+      documentTurnsLeft: Number.isInteger(current.documentTurnsLeft)
+        ? current.documentTurnsLeft
+        : Number.isInteger(current.turnsLeft) ? current.turnsLeft : 0,
+      images: Array.isArray(current.images) ? current.images : [],
+      imageTurnsLeft: Number.isInteger(current.imageTurnsLeft) ? current.imageTurnsLeft : 0,
+    });
+  }
+  ref.current = { sessions };
+  return sessions;
+}
+
+function rememberAttachmentSession(sessions, sessionId, value) {
+  // Map insertion order is our tiny LRU: delete + set moves an existing key to
+  // the newest edge, then evict the least-recent entry if the cap is exceeded.
+  sessions.delete(sessionId);
+  sessions.set(sessionId, value);
+  while (sessions.size > MAX_CARRIED_ATTACHMENT_SESSIONS) {
+    const oldestSessionId = sessions.keys().next().value;
+    sessions.delete(oldestSessionId);
+  }
+}
+
+function readAttachmentSession(sessions, sessionId) {
+  const carried = sessions.get(sessionId);
+  if (!carried) return null;
+  // A follow-up is real use, so keep this session ahead of abandoned chats.
+  sessions.delete(sessionId);
+  sessions.set(sessionId, carried);
+  return carried;
+}
 
 /**
- * Documents stay with the CONVERSATION, not only with the message they arrived
- * on. The real flow is attach → ask for a site → answer the designer's one
- * question → build; without this the build turn had no documents, and the
- * model built without them or asked for them again. Fresh documents replace
- * what was carried; a new chat starts empty; carried copies are marked so the
- * server can say "attached earlier in this conversation".
+ * Attachments stay with the CONVERSATION, not only with the message they
+ * arrived on. Documents need this for intake → build handoffs; images need it
+ * for natural follow-ups such as "why is step 3 wrong?" after a photographed
+ * assessment or handwritten solution.
  *
- * @param {{ current: null | { sessionId: any, documents: any[], turnsLeft: number } }} ref
+ * State is keyed by sessionId, so switching from chat A to chat B and back does
+ * not make one chat overwrite the other's carried source. Nothing crosses
+ * between sessions; each chat advances only its own bounded counters. The
+ * session store itself is a four-entry LRU, so abandoned/deleted chats cannot
+ * make transient attachment data grow without bound in the browser heap.
+ *
+ * Fresh source attachments replace older carried source context for that same
+ * session. If the new source could not be sent (unsupported/oversize), that
+ * session's old carried context is cleared rather than silently substituted.
+ *
+ * On a no-attachment follow-up, recent images take precedence over documents
+ * from the same fresh source. This keeps the combined request inside the
+ * existing body budget; once the short image window expires, document carry
+ * can resume if that source included documents too. Carried documents remain
+ * marked so the server can say "attached earlier in this conversation". Images
+ * stay raw strings because that is the vision API's existing wire contract.
+ *
+ * The function name is retained for the existing send-loop call site. The
+ * module-private WeakMap links the partition's image bucket to this same
+ * continuity decision without widening that large, high-risk hook.
+ *
+ * @param {{ current: any }} ref
  */
 export function carryDocuments(ref, sessionId, fresh) {
   const freshDocuments = Array.isArray(fresh) ? fresh : [];
-  if (freshDocuments.length) {
-    ref.current = { sessionId, documents: freshDocuments, turnsLeft: CARRIED_DOCUMENT_TURNS };
+  const continuity = partitionContinuity.get(freshDocuments);
+  const imageBucket = continuity?.images;
+  const partitionAware = Array.isArray(imageBucket);
+  const freshImages = partitionAware ? imageBucket : [];
+  const hadFreshSource = partitionAware
+    ? continuity.hadSourceAttachment === true
+    : freshDocuments.length > 0;
+  const sessions = sessionAttachmentStore(ref);
+
+  if (hadFreshSource) {
+    if (!freshDocuments.length && !freshImages.length) {
+      sessions.delete(sessionId);
+      return [];
+    }
+    rememberAttachmentSession(sessions, sessionId, {
+      sessionId,
+      documents: freshDocuments,
+      documentTurnsLeft: freshDocuments.length ? CARRIED_DOCUMENT_TURNS : 0,
+      images: [...freshImages],
+      imageTurnsLeft: freshImages.length ? CARRIED_IMAGE_TURNS : 0,
+    });
     return freshDocuments;
   }
-  const carried = ref.current;
-  if (!carried || carried.sessionId !== sessionId || carried.turnsLeft <= 0) return [];
-  carried.turnsLeft -= 1;
-  return carried.documents.map((doc) => ({ ...doc, carried: true }));
+
+  const carried = readAttachmentSession(sessions, sessionId);
+  if (!carried) return [];
+
+  if (partitionAware && Array.isArray(carried.images) && carried.images.length && carried.imageTurnsLeft > 0) {
+    imageBucket.push(...carried.images);
+    carried.imageTurnsLeft -= 1;
+    if (carried.imageTurnsLeft <= 0 && carried.documentTurnsLeft <= 0) sessions.delete(sessionId);
+    return [];
+  }
+
+  if (Array.isArray(carried.documents) && carried.documents.length && carried.documentTurnsLeft > 0) {
+    carried.documentTurnsLeft -= 1;
+    const output = carried.documents.map((doc) => ({ ...doc, carried: true }));
+    if (carried.documentTurnsLeft <= 0 && carried.imageTurnsLeft <= 0) sessions.delete(sessionId);
+    return output;
+  }
+
+  if (carried.imageTurnsLeft <= 0 && carried.documentTurnsLeft <= 0) sessions.delete(sessionId);
+  return [];
 }
