@@ -50,6 +50,9 @@ test('Notebook opens as a dedicated expandable Study workspace without creating 
   assert.match(hub, /<StudyNotebook[\s\S]*expanded=\{notebookExpanded\}/);
   assert.match(hub, /study-h1-hub__panel--notebook-expanded/);
   assert.match(css, /\.study-h1-hub__panel--notebook-expanded\s*\{[\s\S]*position:\s*fixed/);
-  assert.match(css, /grid-template-columns:\s*190px 280px minmax\(0, 1fr\)/);
+  assert.match(css, /grid-template-columns:\s*minmax\(280px, 320px\) minmax\(0, 1fr\)/);
+  assert.match(css, /grid-template-rows:\s*minmax\(132px, 1fr\) minmax\(220px, 2fr\)/);
+  assert.doesNotMatch(css, /grid-template-rows:\s*minmax\(132px, 32%\)/);
+  assert.doesNotMatch(css, /grid-template-columns:\s*190px 280px minmax\(0, 1fr\)/);
   assert.doesNotMatch(hub, /<StudyNotebook[\s\S]*<StudyNotebook/);
 });
