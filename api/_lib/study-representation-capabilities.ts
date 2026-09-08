@@ -1,4 +1,4 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-07.1';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-08.3';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
@@ -23,7 +23,9 @@ export type StudyRepresentationCapability = {
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
 const NEWTON_THIRD = /\b(?:newton(?:'s|’s)?\s+third\s+law|third\s+law\s+of\s+motion|action\s+and\s+reaction)\b/i;
-const ANIMATION = /\b(?:animation|animate|animated|simulation|interactive)\b/i;
+const NEWTON_THIRD_KEY = /(?:newton(?:s)?[-_. ]*third[-_. ]*law|third[-_. ]*law)/i;
+const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive(?:\s+(?:animation|demonstration|simulation|lab))?)\b/i;
+const DIRECT_VISUAL_REQUEST = /\b(?:show|draw|sketch)\b.{0,80}\b(?:image|picture|diagram|visual(?:ly)?)\b|\bexplain\b.{0,60}\bvisually\b/i;
 const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
 const FIELD = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
 const GEOMETRY = /\b(?:pythagoras|pythagorean|right[- ]angled triangle|right triangle|hypotenuse|geometry)\b/i;
@@ -39,6 +41,14 @@ function capability(representation: StudyRepresentationCapability['representatio
   return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation, rendererKind, reason };
 }
 
+function requestsNewtonThirdLawLab(context = '', conceptKey = ''): boolean {
+  const text = String(context || '');
+  const key = String(conceptKey || '').trim().toLowerCase();
+  const isThirdLaw = NEWTON_THIRD.test(text) || NEWTON_THIRD_KEY.test(key);
+  const directlyRequestsLabCapableVisual = ANIMATION_REQUEST.test(text) || DIRECT_VISUAL_REQUEST.test(text);
+  return isThirdLaw && directlyRequestsLabCapableVisual;
+}
+
 /**
  * Text resolver retained as a discovery/bootstrap fallback. Downstream planners
  * should prefer resolveStudyRepresentationCapabilityForConcept() so the same
@@ -48,7 +58,7 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
   const context = String(contextText || '').trim();
   if (!context) return null;
 
-  if (NEWTON_THIRD.test(context) && ANIMATION.test(context)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
+  if (requestsNewtonThirdLawLab(context)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
   if (NUMBER_LINE.test(context)) return capability('number_line', 'number-line', 'number_line');
   if (GRAPH.test(context)) return capability('graph', 'graph', 'graph_semantics');
   if (MECHANICS.test(context)) return capability('annotated_diagram', 'physics-motion', 'mechanics');
@@ -78,7 +88,7 @@ export function resolveStudyRepresentationCapabilityForConcept(input: {
   const fallback = String(input.fallbackText || '').trim();
   const discoveryText = `${label}\n${fallback}`.trim();
 
-  if (NEWTON_THIRD.test(discoveryText) && ANIMATION.test(discoveryText)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
+  if (requestsNewtonThirdLawLab(discoveryText, key)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
 
   if (key) {
     if (/number[-_. ]?line|inequalit/.test(key)) return capability('number_line', 'number-line', 'number_line');

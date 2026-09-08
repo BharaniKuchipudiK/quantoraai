@@ -47,7 +47,8 @@ export function studyVisualExplainAsk(topic) {
   const label = String(topic || 'this idea').trim();
   return [
     `Show ${label} visually in the simplest useful way.`,
-    'Use one subject-aware <quantora-study-picture> caption when the existing Study visual system can teach the relationship. Never add a decorative image merely to make the answer pretty.',
+    'Honor the active Study representation directive for this turn. If it requires the native lab, render that governed lab instead of substituting a static picture.',
+    'Otherwise use one subject-aware <quantora-study-picture> caption when the existing Study visual system can teach the relationship. Never add a decorative image merely to make the answer pretty.',
     studyPicturePromptHint(label),
     'Give at most two short sentences around the visual: what to notice before it, and one question after it.',
     'If the concept cannot be represented honestly with the available visual language, say that briefly and use a tiny text sketch instead of inventing an image URL or pretending a diagram exists.',

@@ -71,10 +71,13 @@ test('Explain differently switches teaching modality instead of regenerating the
   assert.match(ask, /STOP/i);
 });
 
-test('Show visually prefers a truthful teaching visual over decoration', () => {
+test('Show visually obeys the governed representation before falling back to a static picture', () => {
   const ask = studyVisualExplainAsk('inertia');
   assert.match(ask, /visually/i);
+  assert.match(ask, /active Study representation directive/i);
+  assert.match(ask, /native lab/i);
   assert.match(ask, /subject-aware/i);
+  assert.match(ask, /Otherwise use one subject-aware <quantora-study-picture>/i);
   assert.match(ask, /Never add a decorative image/i);
   assert.match(ask, /STOP after one question/i);
 });
