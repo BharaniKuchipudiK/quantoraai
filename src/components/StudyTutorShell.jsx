@@ -142,7 +142,7 @@ export default function StudyTutorShell({
       return outcome;
     }
 
-    const outcome = await onRequestAssessment({ explicitRetry });
+    const outcome = await onRequestAssessment({ explicitRetry, conceptKey: targetKey });
     if (outcome?.stale) return outcome;
     if (outcome?.issued) {
       const issuedAttemptId = String(outcome?.issued?.attemptId || outcome?.attemptId || '').trim();
