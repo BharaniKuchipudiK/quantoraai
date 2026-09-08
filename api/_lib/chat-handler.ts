@@ -50,6 +50,7 @@ import {
   normalizeWatchQuestion,
 } from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { NO_CONTENT_MS, nextReadBudgetMs, streamStopReason } from '../../shared/stream-liveness.js';
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -376,6 +377,20 @@ async function nextAsyncIteratorWithIdleTimeout(iterator: AsyncIterator<any>, id
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/*
+ * A route that streams keepalives and no content. Separated from the attempt
+ * timeout because the two mean different things to the loop above: this one
+ * says THIS ROUTE is gone and another should be tried, while an attempt
+ * timeout says the turn itself is running out. Reported as one thing, a dead
+ * provider reads as the platform being slow.
+ */
+function inferenceNoContent(route: InferenceRoute, silentMs: number) {
+  const error: any = new Error(`${route.gateway} route "${route.id}" produced no content for ${silentMs}ms.`);
+  error.status = 504;
+  error.code = 'INFERENCE_NO_CONTENT';
+  return error;
 }
 
 function inferenceAttemptTimeout(route: InferenceRoute, budgetMs: number) {
@@ -1568,6 +1583,13 @@ export default async function handler(req: any, res: any) {
         }
         const attemptStartedAt = Date.now();
         /*
+         * When this route last produced CONTENT — not bytes. Starts at the
+         * attempt's own start, so a route that never says anything is
+         * abandoned NO_CONTENT_MS after it was called rather than when its
+         * whole budget runs out.
+         */
+        let lastContentAt = attemptStartedAt;
+        /*
          * The paid rung is being taken, so the person's share is spent NOW.
          *
          * Counted where the call is made, never where it was permitted: a turn
@@ -1656,7 +1678,17 @@ export default async function handler(req: any, res: any) {
               }
               let next;
               try {
-                next = await nextAsyncIteratorWithIdleTimeout(iterator, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'Gemini stream');
+                const geminiStop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                if (geminiStop) {
+                  throw geminiStop === 'no-content'
+                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    : inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                next = await nextAsyncIteratorWithIdleTimeout(
+                  iterator,
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  'Gemini stream',
+                );
               } catch (error) {
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   await iterator.return?.(undefined);
@@ -1668,6 +1700,7 @@ export default async function handler(req: any, res: any) {
               const chunk = next.value;
               attemptFinishReason = finishFromGemini(chunk) || attemptFinishReason;
               if (chunk?.text) {
+                lastContentAt = Date.now();
                 attemptReply += chunk.text;
                 emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                 if (!effectiveBuildMode) sse.text(chunk.text);
@@ -1709,7 +1742,25 @@ export default async function handler(req: any, res: any) {
               }
               let chunkResult;
               try {
-                chunkResult = await readWithIdleTimeout(reader, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'OpenRouter stream');
+                /*
+                 * Bounded by CONTENT, not bytes. OpenRouter streams
+                 * ": OPENROUTER PROCESSING" while a request is queued; the
+                 * parser below skips those lines, but they are bytes, and a
+                 * byte-based idle guard treated them as life. That is how one
+                 * attempt ran 89.7s of a 90s budget having produced nothing.
+                 */
+                const stop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                if (stop) {
+                  await reader.cancel().catch(() => {});
+                  throw stop === 'no-content'
+                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    : inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                chunkResult = await readWithIdleTimeout(
+                  reader,
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  'OpenRouter stream',
+                );
               } catch (error) {
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   await reader.cancel().catch(() => {});
@@ -1731,6 +1782,8 @@ export default async function handler(req: any, res: any) {
                   attemptFinishReason = finishFromOpenRouter(parsed) || attemptFinishReason;
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
+                    /* The only thing that counts as this route being alive. */
+                    lastContentAt = Date.now();
                     attemptReply += token;
                     emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);
