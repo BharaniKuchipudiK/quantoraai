@@ -368,7 +368,7 @@ function looksLikeReactSource(source = '') {
   return /(?:from\s+['\"]react['\"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(text);
 }
 
-function vfsText(vfs, key) {
+export function vfsText(vfs, key) {
   const entry = vfs?.[key];
   if (typeof entry === 'string') return entry;
   if (entry && typeof entry.content === 'string') return entry.content;
@@ -544,6 +544,57 @@ export function pickPreviewEntryPath(vfs = {}) {
 export function pickPreviewEntry(vfs = {}) {
   const path = pickPreviewEntryPath(vfs);
   return path ? vfsText(vfs, path) : '';
+}
+
+/*
+ * WHICH PAGE IS PREVIEW RUNNING, AND CAN THE PERSON CHANGE IT?
+ *
+ * pickPreviewEntryPath above prefers index.html unconditionally, which is right
+ * for a project and wrong for a desk holding two unrelated pages. On 2026-09-08
+ * a build shipped its new page as `hello.html` and kept an older `index.html`;
+ * Preview rendered the old one, silently, and the reply's only offer was
+ * "say the word and I'll make it the Preview entry instead" — a PAID MODEL TURN
+ * to change which local file an iframe points at.
+ *
+ * Which file renders is a view concern. It should cost nothing and be visible.
+ *
+ * Deliberately NOT a smarter default (CLAUDE.md §5, and the blast radius:
+ * pickPreviewEntryPath decides every preview in the product from 14+ call
+ * sites). Making the choice visible and correctable beats guessing better —
+ * a wrong default becomes one click instead of an invisible failure.
+ */
+
+/**
+ * The pages a person may choose between, conventional entry first.
+ *
+ * Empty unless there are genuinely TWO OR MORE HTML pages: one page is not a
+ * choice, and a React project's `src/main.jsx` vs `App.jsx` is not one either —
+ * it has a single entry and offering its internals as "pages" would invent a
+ * decision nobody has. An unambiguous signal, per §5, so the control appears
+ * only where it means something.
+ */
+export function previewEntryChoices(vfs = {}) {
+  const pages = Object.keys(vfs || {})
+    .filter((key) => /\.html$/i.test(key) && vfsText(vfs, key));
+  if (pages.length < 2) return [];
+  const conventional = pickPreviewEntryPath(vfs);
+  const rest = pages.filter((page) => page !== conventional).sort((a, b) => a.localeCompare(b));
+  return conventional && pages.includes(conventional) ? [conventional, ...rest] : pages.sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The entry to render: the person's pick when it is still real, else the
+ * convention.
+ *
+ * The pin is validated against the live VFS rather than cleared by an event,
+ * so it cannot go stale. A build that replaces the product drops the pinned
+ * file and the pin dies with it — no separate invalidation signal to wire, and
+ * none to forget.
+ */
+export function resolvePreviewEntryPath(vfs = {}, pinned = null) {
+  const path = String(pinned || '').trim();
+  if (path && vfsText(vfs, path)) return path;
+  return pickPreviewEntryPath(vfs);
 }
 
 export function prepareCodeForPreview(code, vfs = {}) {

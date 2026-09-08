@@ -2,7 +2,7 @@ import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, app
 import { shareNoticeText } from '../lib/share-notice.js';
 import { attachmentKindForFile, MAX_DOCUMENT_FILE_BYTES, MAX_IMAGE_FILE_BYTES } from '../lib/chat-attachments.js';
 import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
-import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { pickPreviewEntry, previewEntryChoices, resolvePreviewEntryPath } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
@@ -1928,7 +1928,25 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [commitDeskVfs]);
 
-  const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
+  /*
+   * The page the person chose for Preview, when the desk holds more than one.
+   * Null means "use the convention", which is every ordinary build.
+   *
+   * Held as a path rather than an index, and validated against the live VFS on
+   * every read (resolvePreviewEntryPath), so a build that replaces the product
+   * drops the pinned file and the pin dies with it. There is no invalidation
+   * event to wire, and therefore none to forget.
+   */
+  const [previewEntryPin, setPreviewEntryPin] = useState(null);
+  const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
+  const previewActiveEntry = useMemo(
+    () => resolvePreviewEntryPath(vfs, previewEntryPin) || '',
+    [vfs, previewEntryPin],
+  );
+  const previewRunCode = useMemo(
+    () => runningPreviewCode(vfs, workspaceCode, previewEntryPin),
+    [vfs, workspaceCode, previewEntryPin],
+  );
   const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
   const qirCoding = useQirCodingRun({
     enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
@@ -5985,6 +6003,9 @@ Paused — ${autoPauseRef.current}.`
                     onDownload={() => previewCanvasRef.current?.download?.()}
                     onImprove={() => previewCanvasRef.current?.improve?.()}
                     onViewport={(next) => previewCanvasRef.current?.setViewport?.(next)}
+                    entryChoices={previewEntryChoiceList}
+                    activeEntry={previewActiveEntry}
+                    onSelectEntry={setPreviewEntryPin}
                     isLight={isLight}
                     textColor={textColor}
                     subtextColor={subtextColor}

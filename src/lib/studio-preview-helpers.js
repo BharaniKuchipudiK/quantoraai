@@ -1,7 +1,7 @@
 /** HTML extraction and live-preview button state for studio chat messages. */
 
 import { parseVFSWithReport, isolateHtmlDocument } from './vfs-parser.js';
-import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, vfsAssetToDataUri } from './preview-utils.js';
+import { pickPreviewEntry, pickPreviewEntryPath, prepareCodeForPreview, resolvePreviewEntryPath, vfsAssetToDataUri, vfsText } from './preview-utils.js';
 import { isInlineReactRuntimeCode } from './project-runtime-preview.js';
 import {
   countRealPreviewPhotos,
@@ -474,8 +474,16 @@ export function ensureShopDeskInVfs(vfs = {}, job = null, options = {}) {
 }
 
 /** Preview runs the project, not the file currently open in the editor. */
-export function runningPreviewCode(vfs = {}, fallback = '') {
-  return pickPreviewEntry(vfs) || String(fallback || '');
+export function runningPreviewCode(vfs = {}, fallback = '', pinned = null) {
+  /*
+   * `pinned` is the page the person chose in the Preview control. Unpinned,
+   * this is byte-for-byte the old behaviour: resolvePreviewEntryPath falls
+   * through to pickPreviewEntryPath, whose text IS pickPreviewEntry. The
+   * default path is unchanged on purpose — see the note above
+   * previewEntryChoices in preview-utils.js.
+   */
+  const path = resolvePreviewEntryPath(vfs, pinned);
+  return (path ? vfsText(vfs, path) : '') || String(fallback || '');
 }
 
 /**
