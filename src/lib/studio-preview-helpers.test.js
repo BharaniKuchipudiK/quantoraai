@@ -7,7 +7,6 @@ import {
   assembleStudioPreview,
   canOpenStudioPreviewPane,
   extractRunnableCode,
-  hasPreviewableContent,
   runningPreviewCode,
   writeHealedPreviewToVfs,
   applyDeskReviewPatch,
@@ -47,7 +46,7 @@ test('assembled preview keeps HTML as the entry and sibling CSS/JS in the VFS', 
 
 test('a travel answer with a fenced hotel name is not previewable', () => {
   const text = 'Stay in Ubud.\n\n```text\nHotel Indigo\n```\n';
-  assert.equal(hasPreviewableContent(text), false);
+  assert.equal(canOpenStudioPreviewPane(text), false);
   assert.equal(extractRunnableCode(text), null);
 });
 
@@ -60,7 +59,6 @@ struct ScientificCalculator: View { var body: some View { Text("0") } }
 \`\`\`
 `;
   assert.equal(canOpenStudioPreviewPane(text), false);
-  assert.equal(hasPreviewableContent(text), false);
 });
 
 test('a CSS patch on an existing workspace still counts as a previewable follow-up', () => {
