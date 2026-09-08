@@ -1,7 +1,8 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
 import { authenticateAdminRequest } from "../admin-auth.js";
-import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured, readTurnPlanEvents } from "../store.js";
-import { TURN_PLAN_WINDOW_HOURS, describeTurnPlans, summarizeTurnPlans } from "../turn-plan-ledger.js";
+import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured, readRecentFailures, readTurnPlanEvents } from "../store.js";
+import { FAILURE_WINDOW_HOURS, summarizeTurnFailures } from "../turn-failure-digest.js";
+import { TURN_PLAN_WINDOW_HOURS, describeTurnPlans, summarizeTurnPlans, type LedgerSource } from "../turn-plan-ledger.js";
 import { getProductInsights } from "../product-analytics.js";
 import { getTechnicalInsights } from "../technical-analytics.js";
 import { reportStudyRepresentationCoverage } from "../study-representation-coverage.js";
@@ -25,14 +26,39 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const [growth, series, suggestionAcceptance, turnPlanRows] = await Promise.all([
+  const [growth, series, suggestionAcceptance, turnPlanRows, failureRows] = await Promise.all([
     getGrowthSummary(),
     getDailySeries(14),
     getSuggestionAcceptance(),
     readTurnPlanEvents(new Date(Date.now() - TURN_PLAN_WINDOW_HOURS * 3_600_000).toISOString()),
+    /*
+     * What users actually hit, without waiting for a screenshot.
+     *
+     * Every failed turn was already recorded and only readable if you held its
+     * reference id -- which people learn from a screenshot of it. Read-only,
+     * additive, and on the shared admin entrypoint so it costs no new
+     * serverless function.
+     */
+    readRecentFailures(new Date(Date.now() - FAILURE_WINDOW_HOURS * 3_600_000).toISOString()),
   ]);
-  const turnPlanSummary = summarizeTurnPlans(turnPlanRows);
-  const turnPlanSource = !isStoreConfigured() ? 'not_configured' : (turnPlanRows.length ? 'measured' : 'no-rows');
+  /*
+   * FOUR STATES, BECAUSE THREE OF THEM LOOK LIKE ZERO.
+   *
+   * A reader returns null when the store did not answer and [] when it
+   * answered with nothing. Told apart here so a query that timed out is never
+   * reported as a quiet day -- the one misreading that turns a total outage
+   * into the best numbers the platform has ever shown. Shared by both ledgers
+   * on this screen so they cannot describe the same silence differently.
+   */
+  const sourceOf = (rows: unknown[] | null): LedgerSource => {
+    if (!isStoreConfigured()) return 'not_configured';
+    if (rows === null) return 'unavailable';
+    return rows.length ? 'measured' : 'no-rows';
+  };
+  const failures = summarizeTurnFailures(failureRows ?? [], FAILURE_WINDOW_HOURS);
+  const failureSource = sourceOf(failureRows);
+  const turnPlanSummary = summarizeTurnPlans(turnPlanRows ?? []);
+  const turnPlanSource = sourceOf(turnPlanRows);
   const product = await getProductInsights(growth);
   const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
 
@@ -77,6 +103,12 @@ export default async function handler(req: any, res: any) {
      * where it overruled them, and its latency. 'no-rows' says the table is
      * empty or missing; it is never reported as a perfect planner. */
     turnPlans: { ...turnPlanSummary, windowHours: TURN_PLAN_WINDOW_HOURS, source: turnPlanSource, line: describeTurnPlans(turnPlanSummary, turnPlanSource) },
+    /*
+     * `source` matters as much as the counts: "no failures recorded" and "the
+     * store never answered" look identical as an empty list and mean opposite
+     * things. An operator reading zero must be able to tell which.
+     */
+    turnFailures: { ...failures, source: failureSource },
 
     /*
      * Capability catalog, not live traffic. Operators can see which Study

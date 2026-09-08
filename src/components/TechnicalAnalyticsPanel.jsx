@@ -209,7 +209,85 @@ function TurnPlannerSection({ turnPlans, isLight }) {
   );
 }
 
-export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, turnPlans = null, isLight }) {
+/**
+ * The failed turns of the last window, worst first.
+ *
+ * This exists because a failure was legible only to whoever held its reference
+ * id — which people learn from a screenshot, after the fact, one at a time.
+ *
+ * A refusal is drawn differently from a fault on purpose: a spent budget is
+ * Quantora declining by design and needs nobody woken, while a fault is the
+ * platform breaking. Rendering them the same colour is how a real outage hides
+ * inside a busy day of honest limits. `kind` is decided on the server so this
+ * panel cannot drift from the summariser about which is which.
+ */
+function TurnFailureSection({ turnFailures, isLight }) {
+  if (!turnFailures) return null;
+  const groups = Array.isArray(turnFailures.groups) ? turnFailures.groups : [];
+  const clean = turnFailures.total === 0;
+  return (
+    <section
+      data-quantora-turn-failures={turnFailures.source || 'unknown'}
+      data-quantora-turn-faults={turnFailures.faults ?? 0}
+      style={{
+        marginTop: '20px',
+        padding: '16px',
+        background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+        border: isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '12px',
+      }}
+    >
+      <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '8px' }}>
+        Failed turns · last {turnFailures.windowHours || 24}h
+      </div>
+      <div style={{ fontSize: '0.86rem', color: isLight ? '#0f172a' : '#f1f5f9', lineHeight: 1.5 }}>{turnFailures.headline}</div>
+      {turnFailures.source !== 'measured' && !clean && (
+        <div data-quantora-failure-source-warning={turnFailures.source || 'unknown'} style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '8px' }}>
+          Source: {turnFailures.source} — this is not a measured zero.
+        </div>
+      )}
+      {groups.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+          {groups.map((group) => {
+            const fault = group.kind === 'fault';
+            return (
+              <div
+                key={group.detailCode || group.reason}
+                data-quantora-failure-group={group.kind}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'baseline',
+                  gap: '8px',
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  borderLeft: `3px solid ${fault ? '#ef4444' : '#64748b'}`,
+                  background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
+                }}
+              >
+                <span style={{ fontSize: '0.8rem', color: isLight ? '#0f172a' : '#f1f5f9', fontWeight: fault ? 600 : 400 }}>
+                  {group.words}
+                </span>
+                <span style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                  {group.count}x · {group.users} user(s)
+                  {group.statuses?.length ? ` · ${group.statuses.join('/')}` : ''}
+                  {group.engines?.length ? ` · ${group.engines.join(', ')}` : ''}
+                </span>
+                {group.sampleReferences?.length > 0 && (
+                  <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+                    {group.sampleReferences.join(' ')}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, turnPlans = null, turnFailures = null, isLight }) {
   const tracking = technical?.tracking;
   const keyMix = technical?.keyMix;
   const latency = technical?.latencySummary;
@@ -372,6 +450,7 @@ export default function TechnicalAnalyticsPanel({ technical, studyRepresentation
         />
         <LatencyTrendChart usageDays={usageDays} />
         <TurnPlannerSection turnPlans={turnPlans} isLight={isLight} />
+        <TurnFailureSection turnFailures={turnFailures} isLight={isLight} />
         <BarChart
           title="Model latency — avg ms (7d, min 3 reqs)"
           rows={modelRows}

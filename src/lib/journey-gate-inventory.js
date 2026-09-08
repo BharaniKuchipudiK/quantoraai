@@ -986,9 +986,9 @@ export const JOURNEYS = Object.freeze([
     entry: 'src/components/AdminDashboard.jsx',
     serves: ['api/admin.ts'],
     gates: {
-      deterministic: ['src/lib/model-dashboard-ranking.test.js', 'api/_lib/model-lifecycle.test.js', 'api/_lib/model-store.test.js'],
+      deterministic: ['src/lib/model-dashboard-ranking.test.js', 'api/_lib/model-lifecycle.test.js', 'api/_lib/model-store.test.js', 'api/_lib/turn-failure-digest.test.ts', 'src/components/turn-failure-panel.test.tsx'],
     },
-    note: 'Ranking and lifecycle are tested; the metrics and feedback handlers, and every admin screen, are not.',
+    note: 'Ranking and lifecycle are tested. One admin screen is now proved end to end: until 2026-09-08 a failed turn was legible only to whoever held its reference id, which people learn from a screenshot, after the fact, one at a time -- so the owner could not answer "what is breaking today" at all. The failed-turn digest reads the boundary events the platform already wrote and ranks them by reach, and turn-failure-digest.test.ts holds every hop from the store query to the dashboard prop, because a summariser nothing calls is the shape this repo shipped twice in one week. turn-failure-panel.test.tsx is the first RENDER test here: a component is only proved to render by rendering it, and on 2026-09-07 a useState declared below a useCallback that named it passed lint and every unit test while the desk failed to mount for everyone. It also holds the distinction the digest exists for -- a spent budget is Quantora declining by design, a 500 is Quantora broken -- because drawn the same, a real outage hides inside a busy day of honest limits. The other admin screens, and the feedback handler, still have nothing, and no admin screen has ever been driven in a browser.',
   }),
   journey({
     id: 'isolated-desk-route',
@@ -1250,7 +1250,7 @@ export function claimedGates(journeys = JOURNEYS) {
   return { files, golden };
 }
 
-const GATE_PATH = /^(?:api|src|shared|scripts|desktop)\/[\w./-]+\.(?:mjs|cjs|js|ts)$/;
+const GATE_PATH = /^(?:api|src|shared|scripts|desktop)\/[\w./-]+\.(?:mjs|cjs|js|ts|tsx)$/;
 
 export function validateInventoryShape(journeys = JOURNEYS) {
   const problems = [];
@@ -1407,6 +1407,18 @@ export function wiringOf(script, runBy, importers, seen = new Set()) {
 
 export function runnerRoots(runnerSource) {
   const match = /const ROOTS = \[([^\]]*)\]/.exec(String(runnerSource || ''));
+  return match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
+}
+
+/*
+ * Which filenames a runner's scan actually collects, read from the runner
+ * rather than copied here. A runner that learns a new suffix and a checker
+ * that still believes the old list is two truths about the same scan, and the
+ * disagreement is silent in the direction that matters: the checker reports a
+ * real, running test as registered by nothing.
+ */
+export function runnerSuffixes(runnerSource) {
+  const match = /const TEST_SUFFIXES = \[([^\]]*)\]/.exec(String(runnerSource || ''));
   return match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
 }
 

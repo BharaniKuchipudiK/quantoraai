@@ -26,6 +26,19 @@ test('an empty window is zero turns and null rates — never a perfect planner',
   assert.deepEqual(summary.lanes, { build: 0, office: 0, advisor: 0, chat: 0 });
   assert.match(describeTurnPlans(summary, 'no-rows'), /no plans recorded .* apply migration 20260906170000/);
   assert.match(describeTurnPlans(summary, 'not_configured'), /store is not configured/);
+
+  /*
+   * A store that did not answer is NOT no-rows, and the difference is the
+   * errand the operator is sent on: 'no-rows' tells them to apply a migration,
+   * which is the wrong repair when the table is fine and the query timed out.
+   * Until 2026-09-08 the reader returned [] on a fault, so an unanswered query
+   * was indistinguishable from a quiet day -- the one misreading that makes a
+   * total outage render as the best numbers the platform has ever shown.
+   */
+  const unavailable = describeTurnPlans(summary, 'unavailable');
+  assert.match(unavailable, /did not answer/, 'an unanswered read must say so');
+  assert.doesNotMatch(unavailable, /apply migration/, 'and must not send the operator to fix a table that is fine');
+  assert.notEqual(unavailable, describeTurnPlans(summary, 'no-rows'), 'the two silences must not read the same');
 });
 
 test('the summary counts lanes, the planner\'s share, its agreement with the rules, where it overruled them, and its median latency', () => {

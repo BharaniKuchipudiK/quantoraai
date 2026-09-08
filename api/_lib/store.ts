@@ -787,16 +787,85 @@ export type TurnPlanEventRow = {
   created_at: string | null;
 };
 
-/** The recent plans, newest first, capped; empty on any fault, never a throw. */
-export async function readTurnPlanEvents(sinceIso: string, limit = 1000): Promise<TurnPlanEventRow[]> {
+/**
+ * The recent plans, newest first, capped; null when the store did not answer,
+ * never a throw.
+ *
+ * This returned [] on a fault until 2026-09-08, which the dashboard could only
+ * report as 'no-rows' -- a timed-out query and a genuinely quiet day rendered
+ * as the same sentence. Same class as readRecentFailures below; both say null.
+ */
+export async function readTurnPlanEvents(sinceIso: string, limit = 1000): Promise<TurnPlanEventRow[] | null> {
   const since = encodeURIComponent(String(sinceIso || ""));
   const response = await request(
     `turn_plan_events?select=lane,source,agreed,confidence,deterministic_lane,planner_ms,planner_error,created_at&created_at=gte.${since}&order=created_at.desc&limit=${Math.max(1, Math.min(5000, Number(limit) || 1000))}`,
     { method: "GET" },
   );
-  if (!response) return [];
-  const rows = await response.json().catch(() => []);
-  return Array.isArray(rows) ? rows : [];
+  if (!response) return null;
+  const rows = await response.json().catch(() => null);
+  return Array.isArray(rows) ? rows : null;
+}
+
+/* One row shape for both boundary readers. Extracted rather than duplicated:
+ * two copies of a twenty-field mapping drift, and a field that drifts here is
+ * a field the digest silently stops reporting. */
+function mapBoundaryRow(row: any): BoundaryEventRecord {
+  return {
+    correlationId: String(row.correlation_id || ""),
+    boundary: String(row.boundary || ""),
+    state: String(row.state || ""),
+    transaction: row.transaction ?? null,
+    route: row.route ?? null,
+    modelId: row.model_id ?? null,
+    gateway: row.gateway ?? null,
+    upstreamProvider: row.upstream_provider ?? null,
+    failureDomain: row.failure_domain ?? null,
+    quotaDomain: row.quota_domain ?? null,
+    costClass: row.cost_class ?? null,
+    health: row.health ?? null,
+    circuit: row.circuit ?? null,
+    durationMs: row.duration_ms ?? null,
+    budgetMs: row.budget_ms ?? null,
+    statusCode: row.status_code ?? null,
+    fileCount: row.file_count ?? null,
+    detailCode: row.detail_code ?? null,
+    userSub: row.user_sub ?? null,
+    at: row.created_at ?? null,
+  };
+}
+
+/*
+ * FAILED TURNS ACROSS A WINDOW, NOT UNDER ONE REFERENCE.
+ *
+ * readBoundaryEvents below answers "what happened to THIS turn", which needs a
+ * correlation id you already hold. That made every failure legible only to
+ * whoever had been sent one — in practice, the owner receiving a screenshot,
+ * hours later, one at a time.
+ *
+ * This is the other question: what failed lately, to anyone. Same table, same
+ * operational-only columns, filtered to failures. Read-only and additive: it
+ * introduces no new serverless function (the admin entrypoint is shared for
+ * the Hobby function budget) and changes no path a turn takes.
+ */
+export async function readRecentFailures(sinceIso: string, limit = 500): Promise<BoundaryEventRecord[] | null> {
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const response = await request(
+    `transaction_boundary_events?select=${BOUNDARY_EVENT_COLUMNS}`
+    + `&state=eq.failed&created_at=gte.${since}`
+    + `&order=created_at.desc&limit=${Math.max(1, Math.min(2000, Number(limit) || 500))}`,
+    { method: "GET" },
+  );
+  /*
+   * null, not []. `request` returns null for three different situations — not
+   * configured, the fetch timed out or threw, and a non-2xx answer — and only
+   * the first is knowable from outside. Collapsing them into an empty array
+   * makes a store that never answered indistinguishable from a store with
+   * nothing to report, which is precisely how a total outage renders as the
+   * best day the platform has ever had.
+   */
+  if (!response) return null;
+  const rows = await response.json().catch(() => null);
+  return Array.isArray(rows) ? rows.map(mapBoundaryRow) : null;
 }
 
 /*
@@ -871,28 +940,7 @@ export async function readBoundaryEvents(correlationId: string, limit = 200): Pr
   if (!res) return null;
   const rows = await res.json().catch(() => null);
   if (!Array.isArray(rows)) return null;
-  return rows.map((row: any) => ({
-    correlationId: String(row.correlation_id || ""),
-    boundary: String(row.boundary || ""),
-    state: String(row.state || ""),
-    transaction: row.transaction ?? null,
-    route: row.route ?? null,
-    modelId: row.model_id ?? null,
-    gateway: row.gateway ?? null,
-    upstreamProvider: row.upstream_provider ?? null,
-    failureDomain: row.failure_domain ?? null,
-    quotaDomain: row.quota_domain ?? null,
-    costClass: row.cost_class ?? null,
-    health: row.health ?? null,
-    circuit: row.circuit ?? null,
-    durationMs: row.duration_ms ?? null,
-    budgetMs: row.budget_ms ?? null,
-    statusCode: row.status_code ?? null,
-    fileCount: row.file_count ?? null,
-    detailCode: row.detail_code ?? null,
-    userSub: row.user_sub ?? null,
-    at: row.created_at ?? null,
-  }));
+  return rows.map(mapBoundaryRow);
 }
 
 /* Real counts for the admin dashboard, replacing fabricated values. */
