@@ -249,3 +249,54 @@ test("every bounded read converts AND cleans up in the catch that encloses it", 
     + "  instead of stopping on a statusless error.\n",
   );
 });
+
+test("opening a provider stream is bounded by the content window too", () => {
+  /*
+   * THE HALF THIS FILE MISSED, FOUND IN PRODUCTION BY THE USER.
+   *
+   * Every assertion above bounds a stream that EXISTS. Opening one was bounded
+   * by the attempt budget — for a non-build turn, the whole remaining turn —
+   * so a route that accepts the connection and never answers burned everything
+   * before any liveness guard ran.
+   *
+   * The trace that proved it, 2026-09-08: four engines, all 504, with single
+   * attempts of 30.4s, 25.3s, 65.7s and 27.5s against a 25-second no-content
+   * window. One of the four was the window working. The other three never
+   * reached it, and the person waited 159.6 seconds for no reply.
+   *
+   * "Silent while connecting" is the same condition as "silent while
+   * streaming", so it gets the same deadline. This asserts both openers keep
+   * it: the abort timer on the Gemini opener, and the timeoutMs handed to the
+   * OpenRouter one — which its helper otherwise clamps to 55s.
+   */
+  const unbounded: string[] = [];
+
+  /* Gemini: the abort timer that bounds opening the stream. */
+  const openRemaining = /const\s+openRemainingMs\s*=\s*([\s\S]{0,200}?);/.exec(SOURCE);
+  assert.ok(openRemaining, "expected the Gemini opener's deadline; the shape changed");
+  if (!/NO_CONTENT_MS/.test(openRemaining![1])) {
+    unbounded.push(
+      "  the Gemini opener's deadline is not derived from NO_CONTENT_MS — a route that "
+      + "never returns a stream holds the whole attempt budget.",
+    );
+  }
+
+  /* OpenRouter: the timeout handed to openOpenRouterResponse. */
+  for (const match of SOURCE.matchAll(/timeoutMs:\s*([^,\n]+)/g)) {
+    if (!/NO_CONTENT_MS/.test(match[1])) {
+      unbounded.push(
+        `  openOpenRouterResponse is given timeoutMs: ${match[1].trim()} — not the content `
+        + "window, so its helper clamps it to as much as 55s of silence.",
+      );
+    }
+  }
+
+  assert.deepEqual(
+    unbounded,
+    [],
+    `\n${unbounded.join("\n")}\n\n  Bound the OPEN with Math.min(NO_CONTENT_MS, remaining budget). A route that\n`
+    + "  has not produced a stream within the content window is dead by the same\n"
+    + "  definition as one that stopped producing tokens.\n",
+  );
+});
+
