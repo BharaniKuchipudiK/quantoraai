@@ -61,7 +61,11 @@ test('Compass and the work-together chip both hand off to one persistent mission
 
   assert.match(shell, /addEventListener\(STUDY_ADAPTIVE_MISSION_REQUEST_EVENT/);
   assert.match(shell, /data-quantora-study-adaptive-mission=\{mission\.phase\}/);
-  assert.match(shell, /onRequestAssessment\(\{ explicitRetry \}\)/, 'mission checks must reuse the existing governed assessment owner');
+  assert.match(
+    shell,
+    /onRequestAssessment\(\{ explicitRetry, conceptKey: targetKey \}\)/,
+    'mission checks must reuse the existing governed assessment owner while preserving the canonical Compass concept key',
+  );
   assert.doesNotMatch(shell, /requestStudyAssessment|gradeStudyAssessment|saveStudyMasteryEstimate/);
 });
 
