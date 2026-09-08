@@ -14,6 +14,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DESK_EVAL_CASES, TIERS, casesForTier, estimateRun, turnsForCase } from './desk-eval-corpus.js';
 import { OUTCOME, isBlocking, renderReport, scoreRun, verdictFor } from './desk-eval-outcome.js';
 
@@ -159,4 +160,139 @@ test('tiers are cumulative and the cost of each is knowable before it runs', () 
   assert.equal(full.turns, DESK_EVAL_CASES.reduce((n, c) => n + turnsForCase(c), 0));
   assert.ok(full.turns > full.cases, 'multi-turn cases must be counted per turn, not per case');
   assert.ok(full.estimatedUsd > 0, 'a run that spends real money must say so before it spends it');
+});
+
+/* The driver with comments blanked. Its header DOCUMENTS the invented hooks as
+ * part of the incident record, and a scan that reads prose as code would flag
+ * the very note explaining the fix -- the same trap the TDZ scanner hit. */
+const driverCode = () => readFileSync(new URL('../../scripts/desk-eval.mjs', import.meta.url), 'utf8')
+  .replace(/\/\*[^]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+  .replace(/\/\/[^\n]*/g, '');
+
+/*
+ * WHAT REVIEW CAUGHT, AND THE CHECK THAT WOULD HAVE CAUGHT IT FIRST.
+ *
+ * The corpus declared `filesUnchanged` and `headingColorChanged`; the gate
+ * above accepted both as proof a case was "mechanically checkable"; and the
+ * driver read NEITHER. So the refine case and the question case — two of the
+ * four adversarial cases, the half of the corpus that matters most — passed
+ * unconditionally, forever.
+ *
+ * That is a check that cannot fail (§4), sitting inside the suite written to
+ * enforce §4, asserted as rigorous by a test that only looked at one side of
+ * the contract. A key in the corpus and a reader in the driver are two strings
+ * that must agree, and nothing was comparing them.
+ */
+test('[was-red] every expectation the corpus declares is read by the driver', () => {
+  const driver = driverCode();
+
+  const declared = new Set();
+  for (const testCase of DESK_EVAL_CASES) {
+    for (const turn of testCase.turns || [{ expect: testCase.expect }]) {
+      for (const key of Object.keys(turn.expect || {})) declared.add(key);
+      for (const step of (turn.expect || {}).steps || []) {
+        for (const key of Object.keys(step)) declared.add(key);
+      }
+    }
+  }
+  assert.ok(declared.size >= 8, 'the corpus should exercise a real spread of expectation kinds');
+
+  /*
+   * Scoped to checkExpectations, which is where an expectation is ASSERTED.
+   * A whole-file scan was too weak: `filesUnchanged` is also read upstream to
+   * decide whether a turn owes a preview, so deleting its assertion left the
+   * word present and the gate green. "Mentioned somewhere" is not "checked".
+   */
+  const asserts = driver.slice(
+    driver.indexOf('async function checkExpectations'),
+    driver.indexOf('async function clickIn'),
+  );
+  assert.ok(asserts.length > 500, 'the expectation checker should be found, not an empty slice');
+  const unread = [...declared].filter((key) => !new RegExp(`\\b${key}\\b`).test(asserts));
+  assert.deepEqual(
+    unread,
+    [],
+    `the corpus declares expectations the driver never reads, so those cases can never fail: ${unread.join(', ')}`,
+  );
+});
+
+test('[was-red] the driver anchors only on hooks that exist in the product', () => {
+  /*
+   * The first driver waited on `data-quantora-turn-busy` and read file names
+   * from `data-quantora-file-name`. NEITHER IS A REAL HOOK. The wait fell
+   * straight through whenever a preview was already on screen, so every second
+   * turn graded the previous artifact — and a correct multi-file build scored
+   * as a miss for want of a selector.
+   *
+   * A harness anchored on a hook nobody publishes measures nothing and says so
+   * to no one. This compares the two sides.
+   */
+  const used = new Set([...driverCode().matchAll(/data-quantora-[a-z-]+/g)].map((m) => m[0]));
+
+  const sources = ['../components/AiStudio.jsx', '../components/LivePreviewCanvas.jsx',
+    '../components/ProjectRuntimePreview.jsx', '../components/StudioFileTree.jsx',
+    '../components/StudioPreviewControls.jsx', '../components/LandingPage.jsx'];
+  const published = new Set();
+  for (const rel of sources) {
+    const text = readFileSync(new URL(rel, import.meta.url), 'utf8');
+    for (const match of text.matchAll(/data-quantora-[a-z-]+/g)) published.add(match[0]);
+  }
+
+  const invented = [...used].filter((hook) => !published.has(hook));
+  assert.deepEqual(
+    invented,
+    [],
+    `the driver anchors on hooks the product does not publish, so those checks are dead: ${invented.join(', ')}`,
+  );
+});
+
+test('[was-red] a failed preview is a platform fault, not a wrong answer', () => {
+  /*
+   * ProjectRuntimePreview keeps `data-quantora-real-project-preview` mounted
+   * when compilation or startup fails and reports through
+   * `data-quantora-preview-error`. Reading only visibility scored a preview
+   * OUTAGE as a non-blocking behaviour miss — CI green over a dead product,
+   * which is the one outcome this corpus exists to make impossible.
+   */
+  const driver = driverCode();
+  assert.match(driver, /data-quantora-preview-error/, 'the driver must read the preview failure hook');
+  const block = driver.slice(driver.indexOf('data-quantora-preview-error'));
+  assert.match(
+    block.slice(0, 400),
+    /OUTCOME\.NO_PREVIEW/,
+    'a preview that reports an error must be classified NO_PREVIEW (blocking), never a behaviour miss',
+  );
+});
+
+test('[was-red] each case runs in its own browser context', () => {
+  /*
+   * Pages in one BrowserContext share localStorage for the same origin, and
+   * Studio persists chat sessions and desk snapshots there. Per-page isolation
+   * meant case two reopened case one's conversation and graded its build.
+   */
+  const driver = readFileSync(new URL('../../scripts/desk-eval.mjs', import.meta.url), 'utf8');
+  const perCase = driver.slice(driver.indexOf('for (const testCase of cases)'));
+  assert.match(perCase, /browser\.newContext\(/, 'every case needs its own storage');
+  assert.match(perCase, /context\.close\(\)/, 'and must release it');
+});
+
+test('[was-red] findings survive a run that is killed mid-way', () => {
+  /*
+   * A full run can outlast the CI job. Writing the report only at the end
+   * loses every finding precisely when widespread failure makes them most
+   * valuable.
+   */
+  const driver = driverCode();
+  /*
+   * Bounded to the LOOP BODY. The first version sliced to end-of-file, which
+   * contains the final persist() after browser.close() -- so deleting the
+   * per-case write still passed. A gate that measures the wrong region is the
+   * same defect as one that reads a comment: it cannot fail.
+   */
+  const loopBody = driver.slice(
+    driver.indexOf('for (const testCase of cases)'),
+    driver.indexOf('await browser.close()'),
+  );
+  assert.ok(loopBody.length > 200, 'the loop body should be found, not an empty slice');
+  assert.match(loopBody, /persist\(\)/, 'the report must be written after every case, not only at the end');
 });

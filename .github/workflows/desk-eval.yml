@@ -48,7 +48,12 @@ concurrency:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A full run is 18 turns at up to 180s each -- 54 minutes of turns alone,
+    # before checkout, npm ci, browser install and page loads. At 45 the job
+    # could be killed BEFORE the report was written, precisely when widespread
+    # failure makes it most valuable. The driver now also persists after every
+    # case, so a kill loses at most the case in flight rather than everything.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
