@@ -7,6 +7,8 @@ import {
   partitionAttachments,
   carryDocuments,
   CARRIED_DOCUMENT_TURNS,
+  CARRIED_IMAGE_TURNS,
+  MAX_CARRIED_ATTACHMENT_SESSIONS,
   MAX_ATTACHED_DOCUMENTS,
   MAX_ATTACHED_TOTAL_CHARS,
 } from './chat-attachments.js';
@@ -65,4 +67,112 @@ test('documents stay with the conversation across the intake handoff, and leave 
   assert.equal(replaced[0].name, 'form.pdf', 'fresh documents replace what was carried');
   for (let i = 0; i < CARRIED_DOCUMENT_TURNS; i += 1) carryDocuments(ref, 'chat-1', []);
   assert.equal(carryDocuments(ref, 'chat-1', []).length, 0, 'and they do not follow the chat forever');
+});
+
+test('[was-red] a photographed solution stays available for three follow-up turns in the same chat', () => {
+  const ref = { current: null };
+  const first = partitionAttachments([image('working.png')]);
+  assert.equal(first.images.length, 1);
+  assert.deepEqual(carryDocuments(ref, 'study-chat', first.documents), []);
+
+  for (let turn = 0; turn < CARRIED_IMAGE_TURNS; turn += 1) {
+    const followUp = partitionAttachments([]);
+    assert.deepEqual(carryDocuments(ref, 'study-chat', followUp.documents), []);
+    assert.deepEqual(followUp.images, first.images, `follow-up ${turn + 1} lost the original pixels`);
+  }
+
+  const expired = partitionAttachments([]);
+  carryDocuments(ref, 'study-chat', expired.documents);
+  assert.equal(expired.images.length, 0, 'image context must expire instead of following the chat forever');
+});
+
+test('carried image pixels never cross into a different chat', () => {
+  const ref = { current: null };
+  const first = partitionAttachments([image('assessment.png')]);
+  carryDocuments(ref, 'study-a', first.documents);
+
+  const otherChat = partitionAttachments([]);
+  carryDocuments(ref, 'study-b', otherChat.documents);
+  assert.equal(otherChat.images.length, 0);
+});
+
+test('[was-red] interleaved chats keep their own carried image context', () => {
+  const ref = { current: null };
+  const sourceA = partitionAttachments([image('a-working.png', 80)]);
+  const sourceB = partitionAttachments([image('b-working.png', 120)]);
+  carryDocuments(ref, 'study-a', sourceA.documents);
+  carryDocuments(ref, 'study-b', sourceB.documents);
+
+  const followUpA = partitionAttachments([]);
+  carryDocuments(ref, 'study-a', followUpA.documents);
+  assert.deepEqual(followUpA.images, sourceA.images, 'chat B must not overwrite chat A source context');
+
+  const followUpB = partitionAttachments([]);
+  carryDocuments(ref, 'study-b', followUpB.documents);
+  assert.deepEqual(followUpB.images, sourceB.images, 'returning to chat B must recover chat B source context');
+});
+
+test('[was-red] carried attachment sessions are a bounded LRU instead of an unbounded heap cache', () => {
+  const ref = { current: null };
+  const sources = [];
+
+  for (let i = 0; i < MAX_CARRIED_ATTACHMENT_SESSIONS; i += 1) {
+    const source = partitionAttachments([image(`working-${i}.png`, 80 + i)]);
+    sources.push(source);
+    carryDocuments(ref, `study-${i}`, source.documents);
+  }
+
+  // Touch the oldest so the second-oldest becomes the LRU entry.
+  const touchOldest = partitionAttachments([]);
+  carryDocuments(ref, 'study-0', touchOldest.documents);
+  assert.deepEqual(touchOldest.images, sources[0].images);
+
+  const newest = partitionAttachments([image('working-newest.png', 160)]);
+  carryDocuments(ref, 'study-newest', newest.documents);
+
+  const evicted = partitionAttachments([]);
+  carryDocuments(ref, 'study-1', evicted.documents);
+  assert.equal(evicted.images.length, 0, 'least-recent attachment session should be evicted once the hard cap is exceeded');
+
+  const retained = partitionAttachments([]);
+  carryDocuments(ref, 'study-0', retained.documents);
+  assert.deepEqual(retained.images, sources[0].images, 'recently used attachment context should survive LRU eviction');
+});
+
+test('fresh source attachments replace stale carried context across image and document kinds', () => {
+  const ref = { current: null };
+
+  const firstImage = partitionAttachments([image('old-working.png')]);
+  carryDocuments(ref, 'study-chat', firstImage.documents);
+
+  const freshDocument = partitionAttachments([doc('mark-scheme.pdf')]);
+  assert.deepEqual(carryDocuments(ref, 'study-chat', freshDocument.documents).map((entry) => entry.name), ['mark-scheme.pdf']);
+  assert.equal(freshDocument.images.length, 0, 'a fresh document must not silently inherit an older image');
+
+  const afterDocument = partitionAttachments([]);
+  const carriedDocument = carryDocuments(ref, 'study-chat', afterDocument.documents);
+  assert.equal(afterDocument.images.length, 0);
+  assert.deepEqual(carriedDocument.map((entry) => entry.name), ['mark-scheme.pdf']);
+  assert.equal(carriedDocument[0].carried, true);
+
+  const freshImage = partitionAttachments([image('new-working.png')]);
+  carryDocuments(ref, 'study-chat', freshImage.documents);
+  const afterImage = partitionAttachments([]);
+  const documentsWhileImageIsActive = carryDocuments(ref, 'study-chat', afterImage.documents);
+  assert.equal(documentsWhileImageIsActive.length, 0, 'recent image context takes precedence over older document carry');
+  assert.deepEqual(afterImage.images, freshImage.images);
+});
+
+test('an unsupported or oversize fresh source clears old image context instead of answering against stale pixels', () => {
+  const ref = { current: null };
+  const first = partitionAttachments([image('old-working.png')]);
+  carryDocuments(ref, 'study-chat', first.documents);
+
+  const refused = partitionAttachments([{ name: 'new-source.exe', type: 'file', excludedReason: 'unsupported' }]);
+  assert.deepEqual(carryDocuments(ref, 'study-chat', refused.documents), []);
+  assert.equal(refused.images.length, 0);
+
+  const next = partitionAttachments([]);
+  carryDocuments(ref, 'study-chat', next.documents);
+  assert.equal(next.images.length, 0, 'the rejected fresh source must not fall back to an unrelated old image');
 });
