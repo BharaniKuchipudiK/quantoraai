@@ -59,6 +59,7 @@ export default function StudyTutorShell({
     undefined,
     createStudyAdaptiveMissionState,
   );
+  const missionCheckAttemptRef = useRef('');
   const missionReviewResultRef = useRef(null);
 
   const topic = brief?.label || 'this topic';
@@ -72,6 +73,7 @@ export default function StudyTutorShell({
   // changes so an Adaptive Mission can survive a Compass prerequisite handoff.
   // Preserve only mission state; the old concept's transient UI should reset.
   useEffect(() => {
+    missionCheckAttemptRef.current = '';
     setDismissed(false);
     setActivity(null);
   }, [conceptId]);
@@ -116,6 +118,7 @@ export default function StudyTutorShell({
       return { issued: false, focusMismatch: true };
     }
 
+    missionCheckAttemptRef.current = '';
     dispatchMission({ type: 'CHECK_REQUESTED' });
     setActivity('check');
 
@@ -128,6 +131,7 @@ export default function StudyTutorShell({
     const activeItemKey = normalizedConceptKey(assessment?.item?.conceptKey);
     const activeAttemptMatchesTarget = !targetKey || (activeItemKey && activeItemKey === targetKey);
     if (assessment?.item && assessment?.attemptId && !assessment?.result && activeAttemptMatchesTarget) {
+      missionCheckAttemptRef.current = String(assessment.attemptId);
       return { issued: true, reused: true };
     }
 
@@ -139,7 +143,18 @@ export default function StudyTutorShell({
     }
 
     const outcome = await onRequestAssessment({ explicitRetry });
-    if (outcome?.issued || outcome?.stale) return outcome;
+    if (outcome?.stale) return outcome;
+    if (outcome?.issued) {
+      const issuedAttemptId = String(outcome?.issued?.attemptId || outcome?.attemptId || '').trim();
+      if (issuedAttemptId) {
+        missionCheckAttemptRef.current = issuedAttemptId;
+        return outcome;
+      }
+      const error = 'The governed verified checker returned no attempt identity.';
+      dispatchMission({ type: 'CHECK_UNAVAILABLE', error });
+      setActivity(null);
+      return { ...outcome, issued: false, error };
+    }
 
     const error = missionCheckError(outcome);
     dispatchMission({ type: 'CHECK_UNAVAILABLE', error });
@@ -152,6 +167,7 @@ export default function StudyTutorShell({
     if (!label) return;
     const phase = studyAdaptiveMissionStartPhase(recommendation);
     const aligned = sameStudyMissionLabel(topic, label);
+    missionCheckAttemptRef.current = '';
     missionReviewResultRef.current = null;
     setActivity(null);
     dispatchMission({ type: 'START_COMPASS', recommendation, activeTopic: topic });
@@ -174,6 +190,7 @@ export default function StudyTutorShell({
 
   const beginGuidedMission = useCallback((item) => {
     if (!brief?.active || !String(topic || '').trim()) return;
+    missionCheckAttemptRef.current = '';
     missionReviewResultRef.current = null;
     setActivity(null);
     dispatchMission({ type: 'START_GUIDED', topic });
@@ -219,20 +236,26 @@ export default function StudyTutorShell({
   useEffect(() => {
     if (mission.status === 'idle' || !mission.topicAligned || !mission.label) return;
     if (!String(topic || '').trim() || sameStudyMissionLabel(topic, mission.label)) return;
+    missionCheckAttemptRef.current = '';
     missionReviewResultRef.current = null;
     dispatchMission({ type: 'RESET' });
     setActivity(null);
   }, [mission.label, mission.status, mission.topicAligned, topic]);
 
-  const missionTargetKey = normalizedConceptKey(mission.conceptKey);
-  const assessmentConceptKey = normalizedConceptKey(assessment?.item?.conceptKey);
-  const assessmentMatchesMission = !missionTargetKey
-    || Boolean(assessmentConceptKey && assessmentConceptKey === missionTargetKey);
+  // A mission consumes only the exact governed attempt that requestMissionCheck
+  // opened (or deliberately reused). This is stronger than comparing the public
+  // item concept: transfer checks intentionally ask about a target concept while
+  // the resulting evidence belongs to the source concept selected by Compass.
+  const assessmentMatchesMission = Boolean(
+    missionCheckAttemptRef.current
+      && assessment?.attemptId
+      && String(assessment.attemptId) === missionCheckAttemptRef.current,
+  );
 
   // Consume a governed result only after the mission is aligned to its target
-  // concept and only once per server attempt. This blocks both the old-concept
-  // result that can coexist for one render during a focus handoff and the old
-  // incorrect result that can coexist while a retry reserves a new attempt.
+  // concept and only once per server attempt. Binding to the issued attempt ID
+  // blocks old-concept results during focus handoff, stale retry results, and
+  // correctly accepts transfer evidence whose public item names a target concept.
   // A correct result is also snapshotted in a ref so mission review remains
   // grounded in the exact attempt that advanced the mission even if ordinary
   // assessment controls mutate the workspace afterward.
@@ -279,6 +302,7 @@ export default function StudyTutorShell({
       studyAdaptiveMissionReviewAsk(label, reviewSnapshot.result),
       `Recap the mission result for ${label}`,
     );
+    missionCheckAttemptRef.current = '';
     missionReviewResultRef.current = null;
     dispatchMission({ type: 'REVIEW_SENT' });
   }, [mission.label, mission.verifiedAttemptId, sendMission, topic]);
