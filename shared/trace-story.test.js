@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { describeTrace, describeTraceEvent } from './trace-story.js';
 
 const at = (offsetMs) => new Date(1_788_614_000_000 + offsetMs).toISOString();
@@ -101,4 +102,137 @@ test('an empty stream is not called a reply that was read', () => {
 test('an unknown boundary is still shown rather than dropped, and an unknown code is spelled out', () => {
   assert.equal(describeTraceEvent({ boundary: 'study.replay', state: 'skipped', detailCode: 'checkpoint-stale' }), 'study.replay skipped: checkpoint stale.');
   assert.equal(describeTraceEvent({ boundary: 'api.chat', state: 'failed', statusCode: 500, detailCode: 'chat-failure' }), 'The server ended the turn with an error (HTTP 500): the turn failed on the server.');
+});
+
+/*
+ * A REFUSAL TOLD AS A CRASH (2026-09-08). /api/chat refused a turn with 429 —
+ * the daily budget was spent — and returned having recorded only the 'started'
+ * event. describeTrace reads "started, then nothing" as a function that died
+ * mid-flight, so "What happened?" told the user the server "stopped before
+ * choosing an engine: a timeout or a crash on Quantora's side, NOT A REFUSAL
+ * and not anything you did."
+ *
+ * Every clause of that was invented from an absence, and the last one was the
+ * precise inverse of the truth. That is this gate's own class: an account that
+ * names a cause the record does not prove. The fix is on both sides — the
+ * handler writes the refusal it is making, and the story reads a recorded 429
+ * as the decision it is.
+ */
+
+test('[was-red] a recorded 429 refusal is told as a limit, never as a crash', () => {
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'turn-budget', at: at(90) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.headline, /declined to run this turn — a limit on your account, not a failure/);
+  assert.match(story.detail, /daily turn budget for this account was already spent/);
+  assert.match(story.detail, /Nothing broke/);
+  assert.doesNotMatch(story.detail, /crash/i, 'a refusal is not a crash');
+  assert.doesNotMatch(story.detail, /fault on our side/i, 'a limit is not a platform fault');
+});
+
+test('a per-minute refusal names the guard that fired, and says it clears itself', () => {
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'rate-limited', at: at(12) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.detail, /more requests than the per-minute guard allows/);
+  assert.match(story.detail, /clears on its own within a minute/);
+});
+
+test('an engine quota is still our problem to route around, not the account’s limit', () => {
+  /*
+   * The narrowing that keeps the branch honest (§5), and the regression that
+   * proved it necessary. /api/chat stamps its OWN boundary with 429 when every
+   * engine's provider quota is exhausted, so the first draft of the refusal
+   * branch — keyed on the status — told that user "a limit on your account,
+   * not a failure" while the deployment's provider credit was the thing that
+   * had died. The status is ambiguous; the detail code Quantora writes when it
+   * declines is not.
+   */
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'inference.provider', state: 'failed', modelId: 'gemini-2.5-flash', gateway: 'gemini', statusCode: 429, detailCode: 'quota-exhausted', at: at(400) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'quota-exhausted', durationMs: 420, at: at(420) },
+  ]);
+  assert.equal(story.outcome, 'server-failed', 'an exhausted engine is a server failure, not the user’s limit');
+  assert.match(story.headline, /ended this turn with an error/);
+  assert.doesNotMatch(story.detail, /declined/i, 'nobody declined this turn — every engine’s quota died');
+});
+
+test('[was-red] the handler records the refusal it makes, at every 429 it can return', () => {
+  /*
+   * The story can only be honest about what was written. This asserts the
+   * write side: each of /api/chat's three own 429s — the per-minute guard,
+   * its durable twin, and the daily turn budget — trace a failed api.chat
+   * boundary before replying. A handler that refuses silently puts the
+   * "timeout or a crash" sentence back on the screen, and no assertion about
+   * describeTrace would catch it.
+   */
+  const handler = readFileSync(new URL('../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
+
+  /* Each refusal must record BOTH halves: the status the caller sees and the
+   * reason describeTrace keys on. A detailCode without its 429 renders as an
+   * error again; a 429 without its detailCode falls into the provider-quota
+   * branch and blames the deployment for the user's own limit.
+   *
+   * Counted on `statusCode: 429`, not on a literal detail code: the turn-budget
+   * refusal now COMPUTES its code from budget.exhausted, and an assertion that
+   * only matched string literals would have quietly stopped counting it. */
+  const traced = handler.match(/statusCode: 429,/g) || [];
+  assert.equal(traced.length, 3, `expected three traced refusals in /api/chat, found ${traced.length}`);
+
+  const chatReturns429 = (handler.match(/return res\.status\(429\)/g) || []).length;
+  assert.equal(
+    chatReturns429,
+    traced.length,
+    `every 429 /api/chat returns must be recorded: ${chatReturns429} returned, ${traced.length} traced`,
+  );
+
+  /* And the budget refusal must distinguish WHOSE budget ran out — the finding
+   * Codex raised on this PR. One code for both meant a student caught by the
+   * shared ceiling read "a limit on your account" under a reply that had just
+   * told them "nothing you did caused this". */
+  assert.match(
+    handler,
+    /detailCode: budget\.exhausted === 'platform' \? 'platform-budget' : 'turn-budget'/,
+    'the platform ceiling and a personal budget must not record the same reason',
+  );
+});
+
+test('[codex-p2] the shared platform ceiling is never told as the reader’s own limit', () => {
+  /*
+   * turnBudgetVerdict refuses for two different reasons and describeTurnBudget
+   * says two different things: "you have used your N turns" versus "Quantora
+   * has reached its shared daily limit … nothing you did caused this". The
+   * trace recorded one code for both, so "What happened?" contradicted the
+   * reply the same person had just read.
+   *
+   * This matters most exactly when it is worst: a shared ceiling pauses every
+   * student at once, and each of them would have been told it was personal.
+   */
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'platform-budget', durationMs: 40, at: at(40) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.headline, /paused new turns for everyone — a shared limit/);
+  assert.doesNotMatch(story.headline, /your account/i, 'a shared ceiling is not the reader’s allowance');
+  assert.match(story.detail, /shared daily limit for AI work was already spent/);
+  assert.match(story.detail, /not your allowance/i);
+  assert.doesNotMatch(story.detail, /crash/i);
+});
+
+test('the two budget refusals never collapse into one account', () => {
+  const of = (detailCode) => describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode, at: at(40) },
+  ]);
+  const mine = of('turn-budget');
+  const shared = of('platform-budget');
+  assert.notEqual(mine.headline, shared.headline, 'the two refusals must not read identically');
+  assert.match(mine.headline, /your account/i);
+  assert.match(shared.headline, /everyone/i);
 });

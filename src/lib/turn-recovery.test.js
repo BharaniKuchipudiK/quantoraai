@@ -14,14 +14,25 @@ test('the retryable flag the server streams is actually honored', () => {
   assert.equal(resolveTurnRecovery({ attempt: 1, retryable: false }).retry, false);
 });
 
-test('transient gateway statuses retry, credential failures never do', () => {
-  for (const status of [408, 425, 429, 500, 502, 503, 504]) {
+test('transient gateway statuses retry, credential failures and refusals never do', () => {
+  /*
+   * 429 was in the first list until 2026-09-08, and this test asserted it —
+   * so the contract was wrong here before the code was. A rate-limit refusal
+   * is not a transient gateway fault: it is Quantora declining, and retrying
+   * it walks the engine ladder spending the very budget it waits on (eight
+   * requests for one message, in a pilot user's Network tab). See the
+   * REFUSED_STATUS note in turn-recovery.js and the storm tests in
+   * turn-heal-contract.test.js.
+   */
+  for (const status of [408, 425, 500, 502, 503, 504]) {
     assert.equal(resolveTurnRecovery({ attempt: 1, status }).retry, true, `status ${status}`);
   }
   for (const status of [401, 402, 403]) {
     assert.equal(resolveTurnRecovery({ attempt: 1, status }).retry, false, `status ${status}`);
     assert.equal(resolveTurnRecovery({ attempt: 1, status }).reason, 'credentials');
   }
+  assert.equal(resolveTurnRecovery({ attempt: 1, status: 429 }).retry, false, 'a refusal is never retried');
+  assert.equal(resolveTurnRecovery({ attempt: 1, status: 429 }).reason, 'rate-limited');
 });
 
 test('recovery is bounded, so a broken route cannot loop', () => {

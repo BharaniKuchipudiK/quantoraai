@@ -34,8 +34,39 @@
 
 export const MAX_TURN_ATTEMPTS = 2;
 
-const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504]);
 const FATAL_STATUS = new Set([401, 402, 403]);
+
+/*
+ * A REFUSAL IS NOT A ROUTE FAILURE.
+ *
+ * 429 sat in RETRYABLE_STATUS above until 2026-09-08, so a rate-limit refusal
+ * was diagnosed as a dead route and repaired by switching engines — once per
+ * rung. With a ladder of eight, one user message became eight requests in
+ * fourteen seconds (observed in a pilot user's Network tab: 8 x 429 on
+ * /api/chat, ~2s apart), and the desk narrated each one as
+ * "That model route failed. Switching to X".
+ *
+ * Every property of that was wrong:
+ *
+ *   - THE DIAGNOSIS. Every 429 the browser can see from /api/chat is one of
+ *     Quantora's own three refusals — the per-minute guard, its durable twin,
+ *     or the daily turn budget. A provider's own 429 never arrives as one: the
+ *     handler converts an upstream quota failure to 503 before replying. So a
+ *     429 says "we declined to run this", which no other engine changes.
+ *   - THE REPAIR. Each retry spends the very budget it is waiting on, so the
+ *     loop inflicts the refusal it is trying to escape. A student on a small
+ *     daily budget could lose the whole day to one message.
+ *   - THE ACCOUNT. The server sends the honest sentence ("You have used your
+ *     N turns for today"), and eight route-failure notices buried it.
+ *
+ * Checked BEFORE the retryable branch, not merely removed from the set, so a
+ * server that one day marks a 429 retryable still cannot restart this loop.
+ * The caller shows the server's own message verbatim (responseErrorMessage
+ * returns payload.error untouched), which is the whole point: a refusal
+ * explains itself, and waiting is the only repair.
+ */
+const REFUSED_STATUS = new Set([429]);
 
 /**
  * The memory a rebuild attempt carries about the attempt that failed. Without
@@ -118,6 +149,7 @@ export function resolveTurnRecovery({
   }
 
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
+  if (REFUSED_STATUS.has(Number(status))) return no('rate-limited');
 
   // Chat-only "plans" on Coding Desk often arrive as a full paragraph before
   // we notice there were no fences. Rebuild anyway — Preview/files are the

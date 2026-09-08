@@ -1687,11 +1687,23 @@ export function useChatStream({
               continue;
             }
             const message = responseErrorMessage(res.status, errData, targetModel.name);
+            /*
+             * A REFUSAL IS NOT A FAILURE, AND THE HEADING IS WHAT GETS READ.
+             *
+             * "Request failed" over a rate-limit message tells a student their
+             * platform broke when it did exactly what it was configured to do,
+             * and sends them retrying — the behaviour turn-recovery.js just
+             * stopped doing automatically. Same correction as the one in
+             * shared/trace-story.js, on the surface people see first.
+             */
+            const refused = res.status === 429;
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               text: res.status === 401 && errData.requiresAuth
                 ? `🔒 **Please sign in to continue.**\n\n${message}`
-                : `⚠️ **Request failed:** ${message}`,
+                : refused
+                  ? `⏳ **Quantora paused this turn — a limit, not a fault.**\n\n${message}`
+                  : `⚠️ **Request failed:** ${message}`,
               isAuthPrompt: res.status === 401 && errData.requiresAuth,
               isError: true,
               executionStatus: null,

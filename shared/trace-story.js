@@ -19,6 +19,9 @@ const SERVER_BOUNDARY = /^(api\.|inference\.|preview\.)/;
 
 const DETAIL_WORDS = Object.freeze({
   'quota-exhausted': 'the engine quota was exhausted',
+  'rate-limited': 'this account sent more requests than the per-minute guard allows',
+  'turn-budget': 'the daily turn budget for this account was already spent',
+  'platform-budget': "Quantora's shared daily limit for AI work was already spent",
   'chat-failure': 'the turn failed on the server',
   'provider-failure': 'the engine returned an error',
   'attempt-timeout': 'the engine did not answer in time',
@@ -34,6 +37,16 @@ const DETAIL_WORDS = Object.freeze({
   'compile-failed': 'the preview could not compile the files',
   'iframe-failed': 'the preview page failed while running',
 });
+
+/* The refusals Quantora itself makes, as written by /api/chat. A provider's
+ * own 'quota-exhausted' is deliberately absent: that is a fault, not a
+ * decision about this account. */
+const REFUSAL_DETAIL = new Set(['rate-limited', 'turn-budget', 'platform-budget']);
+
+/* The one refusal that is NOT about the person reading it. Everyone is paused,
+ * so "a limit on your account" would be false and "nothing you did caused
+ * this" is the whole point of saying it. */
+const SHARED_REFUSAL_DETAIL = 'platform-budget';
 
 function detailWords(code) {
   if (!code) return '';
@@ -70,6 +83,13 @@ export function describeTraceEvent(event = {}) {
   if (boundary === 'api.chat') {
     if (state === 'started') return 'Quantora received the request.';
     if (state === 'succeeded') return `The server finished the turn${took ? ` in ${took}` : ''}${event.modelId ? ` with ${engineWords(event)}` : ''}.`;
+    /* A refusal we chose is not "an error": that wording reads as a fault and
+     * sends the person hunting for a break that never happened. Keyed on the
+     * detail code, not the 429 — an exhausted provider quota reaches this
+     * boundary at 429 too, and that one IS a fault. */
+    if (state === 'failed' && REFUSAL_DETAIL.has(String(event.detailCode || ''))) {
+      return `Quantora declined to run the turn${status ? ` (HTTP ${status})` : ''}${detail ? `: ${detail}` : ''}.`;
+    }
     if (state === 'failed') return `The server ended the turn with an error${status ? ` (HTTP ${status})` : ''}${detail ? `: ${detail}` : ''}.`;
   }
   if (boundary === 'inference.plan' && state === 'selected') return `Chose ${engineWords(event)} to run it.`;
@@ -172,6 +192,34 @@ export function describeTrace(events = []) {
         detail: `The server's last word was: ${lastWords}`,
         steps,
       };
+  }
+
+  /*
+   * A LIMIT IS NOT A BREAKAGE.
+   *
+   * Kept ahead of the generic failure branch and narrow on purpose (§5): the
+   * STATUS ALONE IS AMBIGUOUS EVIDENCE. /api/chat also records a failed
+   * boundary at 429 when every engine's provider quota died — the deployment's
+   * routing problem, and a real fault. The first draft of this branch keyed on
+   * 429 and told that user "a limit on your account, not a failure", which was
+   * false; the gate below caught it. Only the two detail codes the handler
+   * writes when IT declines are unambiguous, so only they qualify.
+   */
+  if (apiState === 'failed' && REFUSAL_DETAIL.has(String(last.detailCode || ''))) {
+    const shared = String(last.detailCode || '') === SHARED_REFUSAL_DETAIL;
+    return {
+      outcome: 'server-refused',
+      headline: shared
+        ? 'Quantora paused new turns for everyone — a shared limit, not a failure.'
+        : 'Quantora declined to run this turn — a limit on your account, not a failure.',
+      detail: `${lastWords} Nothing broke: the request was turned away before any engine ran, `
+        + 'so no work was lost and your message is unchanged. '
+        + (shared
+          ? 'This is not your allowance: Quantora reached its own shared ceiling and it resets within 24 hours. '
+            + 'Adding your own API key in Settings lifts it immediately, because your key has its own allowance.'
+          : 'A per-minute limit clears on its own within a minute; a daily budget clears at the next reset.'),
+      steps,
+    };
   }
 
   if (apiState === 'failed') {

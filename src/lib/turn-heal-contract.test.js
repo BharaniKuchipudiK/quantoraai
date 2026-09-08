@@ -524,3 +524,111 @@ test('[was-red] the durable journal is told every engine, once', () => {
   assert.match(body, /\.\.\.spentEngineIds\]/, 'and the server’s rungs must be in the set that gets journaled');
   assert.match(body, /engineIds,/, 'the journal takes the whole list, not a single engine');
 });
+
+/*
+ * THE 429 STORM (2026-09-08). A pilot user's Network tab showed eight `429`
+ * responses from /api/chat, ~2s apart, for ONE message. 429 was in
+ * RETRYABLE_STATUS, so a refusal was diagnosed as a dead route and "repaired"
+ * by walking the engine ladder — a retry that changed nothing about why the
+ * request was refused, which is contract 2 of this gate violated by status
+ * code rather than by prompt. It also spent the very budget it was waiting on,
+ * and buried the server's honest sentence under eight route notices.
+ *
+ * Verified two-way per CLAUDE.md §2: with 429 restored to RETRYABLE_STATUS,
+ * the first two tests below fail (`retry` true, reason 'route').
+ */
+
+test('[was-red] a rate-limit refusal is terminal — one request, never a ladder walk', () => {
+  const recovery = resolveTurnRecovery({
+    attempt: 1,
+    maxAttempts: 9,
+    status: 429,
+    failureDetail: 'You have used your 15 AI turns for today.',
+    fallbackEngineName: 'Gemini 2.5 Flash',
+  });
+
+  assert.equal(recovery.retry, false, 'retrying a refusal spends the budget it is waiting on');
+  assert.equal(recovery.resume, false);
+  assert.equal(recovery.reason, 'rate-limited', 'the diagnosis names the refusal, not a route');
+  assert.equal(recovery.notice, '', 'no notice: the server already said why, verbatim');
+});
+
+test('[was-red] one user message costs exactly one refused request', () => {
+  /*
+   * The count IS the defect. Simulating the caller's loop is the only way to
+   * see that a per-attempt "retry: true" becomes eight requests once the
+   * engine ladder is long — a property no single-call assertion can show.
+   */
+  let requests = 0;
+  for (let attempt = 1; attempt <= 9; attempt += 1) {
+    requests += 1;
+    const recovery = resolveTurnRecovery({
+      attempt,
+      maxAttempts: 9,
+      status: 429,
+      fallbackEngineName: `engine-${attempt + 1}`,
+    });
+    if (!recovery.retry) break;
+  }
+  assert.equal(requests, 1, `one message must cost one refused request, spent ${requests}`);
+});
+
+test('a 429 the server marks retryable still cannot restart the loop', () => {
+  /*
+   * Defence in depth. Removing 429 from RETRYABLE_STATUS alone leaves the
+   * `retryable === true` branch as a second door: any future handler that
+   * marks a refusal retryable would reopen the storm. The refusal check runs
+   * first, so it cannot.
+   */
+  const recovery = resolveTurnRecovery({ attempt: 1, maxAttempts: 9, status: 429, retryable: true });
+  assert.equal(recovery.retry, false, 'a refusal is a refusal however the server labels it');
+  assert.equal(recovery.reason, 'rate-limited');
+});
+
+test('a genuine transport failure is still repaired by switching engines', () => {
+  /*
+   * The guard against over-correcting: 503 and 502 are the provider dying,
+   * where another engine is exactly the right repair. Narrowing the retry set
+   * must not have narrowed it to nothing.
+   */
+  for (const status of [408, 425, 500, 502, 503, 504]) {
+    const recovery = resolveTurnRecovery({ attempt: 1, maxAttempts: 3, status, fallbackEngineName: 'Gemini 2.5 Flash' });
+    assert.equal(recovery.retry, true, `HTTP ${status} is a route failure and must still fail over`);
+    assert.equal(recovery.switchModel, true, `HTTP ${status} must not be retried on the engine that just died`);
+  }
+});
+
+test('the refusal message the user reads is the server’s own sentence', () => {
+  /*
+   * Terminal is only an improvement if the copy that renders instead of the
+   * retry notice is the honest one. responseErrorMessage returns payload.error
+   * untouched when the server sent one — the budget sentence, the per-minute
+   * sentence — rather than the generic HTTP 429 fallback beneath it.
+   */
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  const fn = hook.slice(hook.indexOf('function responseErrorMessage'), hook.indexOf('function activeStudioDomain'));
+  assert.match(fn, /if \(payload\?\.error\) return/, 'a server-provided message must win over the status-derived line');
+  assert.ok(
+    fn.indexOf('if (payload?.error) return') < fn.indexOf('status === 429'),
+    'the server’s own sentence must be reached before the generic 429 wording',
+  );
+});
+
+test('the desk does not call a refusal a failure', () => {
+  /*
+   * The heading is what gets read. "Request failed" over a rate-limit message
+   * tells a student the platform broke when it did exactly what it was
+   * configured to do — and invites the manual retry the loop above just
+   * stopped taking automatically. Asserted on the source because this branch
+   * lives inside the streaming hook, which has no unit-testable seam.
+   */
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  assert.match(hook, /const refused = res\.status === 429;/, 'the terminal render must know a refusal from a fault');
+  const branch = hook.slice(hook.indexOf('const refused = res.status === 429;'));
+  const render = branch.slice(0, branch.indexOf('isError: true'));
+  assert.match(render, /a limit, not a fault/, 'the heading must say what actually happened');
+  assert.ok(
+    render.indexOf('refused') < render.indexOf('Request failed'),
+    'the refusal branch must be reached before the generic failure heading',
+  );
+});
