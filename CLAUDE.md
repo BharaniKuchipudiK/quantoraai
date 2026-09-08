@@ -22,6 +22,22 @@ read.
 - The same applies to any summary — a check API, a status badge, another
   agent's report. Go to the primary source.
 
+**A missing check is the quietest lie of all.** A red check argues with you; an
+absent one agrees with everything. On 2026-09-08 four commits were pushed to a
+branch whose PR had just merged, so no `pull_request` event existed to start
+`ci.yml` — and the next four, on a branch with an open PR, produced no
+`synchronize` run either. The PR page showed a green Vercel deployment and no
+CI section at all, which reads as *nothing wrong* rather than *nothing
+measured*. The same thing happened on 2026-09-04, and `workflow_dispatch` was
+added to ci.yml then precisely so a run can be forced; it is only useful if
+somebody notices there is nothing to read.
+
+So: **check that a run EXISTS for the exact head SHA**, not that no run failed.
+List the runs for the branch and match the sha; if none is there, dispatch one
+and wait for it. `npm run test:all` passing locally is not a substitute — the
+browser gates do not run in it at all (§4's cousin: a suite you did not run is
+indistinguishable from a suite that passed, right up until it isn't).
+
 ## 2. Reproduce the failure, then reproduce the fix.
 
 Never claim a fix without seeing the bad state fail and the good state pass.
