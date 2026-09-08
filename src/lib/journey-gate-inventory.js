@@ -198,8 +198,22 @@ export const JOURNEYS = Object.freeze([
     name: 'Export my data, or delete my account',
     entry: 'src/components/Header.jsx',
     serves: ['api/_lib/handlers/account.ts'],
-    gates: {},
-    note: 'No test opens the account handler. A deletion that fails silently, or lands on the wrong account, would be found by a user.',
+    gates: { deterministic: ['api/_lib/handlers/account.test.ts'] },
+    /*
+     * This row read `gates: {}` and "a deletion that fails silently, or lands
+     * on the wrong account, would be found by a user" — on the most
+     * destructive operation the platform offers, over ten students' personal
+     * data. The handler takes its dependencies now, so the four one-line
+     * properties that make it safe are each held by a test that was watched
+     * failing with that line broken: the sub comes from the session and never
+     * from the body, confirm is required, a failed delete never reports
+     * success, a successful one ends the session.
+     *
+     * Still NOT proven: nothing drives the button in a browser, and no gate
+     * has ever watched a real row leave a real database. The handler's
+     * decisions are held; the round trip is not.
+     */
+    note: 'The handler is held: session-scoped sub, required confirmation, loud failure, session ended on success. The button and the real database round trip are still undriven.',
   }),
   journey({
     id: 'profile-picture',
