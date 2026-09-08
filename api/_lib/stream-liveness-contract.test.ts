@@ -134,3 +134,78 @@ test("every content budget reads a timestamp that something actually advances", 
     + "  byte-counting bug this bound replaced.\n",
   );
 });
+
+test("every bounded read converts its own expiry instead of stopping the ladder", () => {
+  /*
+   * THE ASSERTION THIS FILE WAS MISSING, AND THE BUG IT LET THROUGH.
+   *
+   * Bounding a read by the no-content window means the WINDOW is what usually
+   * expires — and readWithIdleTimeout / nextAsyncIteratorWithIdleTimeout reject
+   * with a plain Error: no status, and the word "idle".
+   * shouldFallbackBeforeStreaming tests status against a list of codes and the
+   * message against a list of words that includes "timeout" but not "idle", so
+   * it returns false: the outer handler calls it a non-retryable 500, the
+   * client never retries, and the upstream stream is left open.
+   *
+   * Codex caught this on the streaming pair. I fixed it there and then shipped
+   * it again in the tool-calling and refine loops, in the same change that
+   * claimed to close the class — because the two tests above ask only whether
+   * the budget is content-derived and whether its clock moves. Neither asks
+   * what happens when the read they bound actually expires. Tightening a
+   * deadline without handling the deadline is a net loss: the repair for a
+   * 90-second silence becomes a turn that gives up entirely.
+   *
+   * So: every read site must sit in a try whose catch cancels the stream and
+   * converts the rejection to a typed timeout.
+   */
+  /* `} catch (` — a catch BLOCK, never a promise's .catch() method. */
+  const CATCH_BLOCK = /\}\s*catch\s*\(/;
+  const unhandled: string[] = [];
+
+  for (const reader of READERS) {
+    for (const site of callSites(SOURCE, reader)) {
+      const at = SOURCE.split("\n").slice(0, site.line).join("\n").length;
+      const before = SOURCE.slice(Math.max(0, at - 3000), at);
+      const after = SOURCE.slice(at, at + 2500);
+
+      /*
+       * Inside a try, checked properly rather than by proximity. The first cut
+       * looked for `try {` within 400 characters and reported the OpenRouter
+       * streaming loop as unguarded — its try sits behind a long comment and
+       * the pre-read stop check. The code was right and the test was wrong,
+       * which is the §3 mistake in miniature. Now: find the LAST `try {`
+       * before the call, and require no `catch (` between it and the call,
+       * which is what "still inside that try" actually means.
+       */
+      const openedTry = before.lastIndexOf("try {");
+      /*
+       * A real catch block follows a closing brace: `} catch (`. Matching
+       * /\bcatch\s*\(/ instead also matched `.catch(() => {})` — the
+       * reader-cancel on the line above — because \b matches after a dot, so
+       * the guarded loop read as unguarded. The test was wrong twice about
+       * the same site before it was right about the two that were.
+       */
+      const guarded = openedTry >= 0 && !CATCH_BLOCK.test(before.slice(openedTry));
+      const catches = CATCH_BLOCK.test(after);
+      const converts = /inferenceNoContent\s*\(/.test(after);
+      const cleansUp = /\.cancel\(\)|\.return\?\.\(/.test(after);
+
+      if (!(guarded && catches && converts && cleansUp)) {
+        unhandled.push(
+          `  api/_lib/chat-handler.ts:${site.line}  ${reader}(...) `
+          + `[try:${guarded ? "y" : "N"} catch:${catches ? "y" : "N"} `
+          + `convert:${converts ? "y" : "N"} cleanup:${cleansUp ? "y" : "N"}]`,
+        );
+      }
+    }
+  }
+
+  assert.deepEqual(
+    unhandled,
+    [],
+    `\n${unhandled.join("\n")}\n\n  A bounded read that rejects bare is read as a 500 the client will not\n`
+    + "  retry, and its stream stays open. Wrap the read: cancel the reader or\n"
+    + "  return the iterator, then throw inferenceNoContent (504) when the\n"
+    + "  content window expired, or inferenceAttemptTimeout when the budget did.\n",
+  );
+});

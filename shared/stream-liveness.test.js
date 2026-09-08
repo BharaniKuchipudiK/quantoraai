@@ -172,9 +172,25 @@ test('[was-red] a read that expires on the window falls back instead of stopping
   const { readFileSync } = await import('node:fs');
   const handler = readFileSync(new URL('../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
 
+  /*
+   * FOUR, NOT TWO — and the number grew for the right reason.
+   *
+   * This said two, because two provider loops were known to bound their reads
+   * by the content window. chat-handler.ts has FOUR stream reads: the Gemini
+   * tool-calling turn and the OpenRouter refine pass were left on a bare
+   * idle constant when the streaming pair was fixed, and were content-bounded
+   * on 2026-09-08. Codex then found that bounding them without catching their
+   * expiry reproduced this very defect in the new pair, so both now convert
+   * too.
+   *
+   * Corrected rather than loosened: the count is the point. The general
+   * property — EVERY read site converts, whatever the count becomes — is held
+   * per-site by api/_lib/stream-liveness-contract.test.ts, which is what a
+   * fifth loop will answer to.
+   */
   const conversions = handler.match(/idle for more than\/i\.test\(String\(\(error as any\)\?\.message \|\| ''\)\)/g) || [];
-  assert.equal(conversions.length, 2,
-    `both provider loops must convert a bare idle rejection into a falling-back error, found ${conversions.length}`);
+  assert.equal(conversions.length, 4,
+    `all four provider stream reads must convert a bare idle rejection into a falling-back error, found ${conversions.length}`);
 
   /*
    * inferenceNoContent carries status 504, which shouldFallbackBeforeStreaming

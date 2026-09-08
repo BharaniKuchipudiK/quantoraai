@@ -2261,17 +2261,49 @@ export default async function handler(req: any, res: any) {
               ? inferenceNoContent(toolRoute, NO_CONTENT_MS)
               : inferenceAttemptTimeout(toolRoute, toolStreamBudgetMs);
           }
-          const next = await nextAsyncIteratorWithIdleTimeout(
-            iterator,
-            nextReadBudgetMs({
+          let next: Awaited<ReturnType<typeof nextAsyncIteratorWithIdleTimeout>>;
+          try {
+            next = await nextAsyncIteratorWithIdleTimeout(
+              iterator,
+              nextReadBudgetMs({
+                now: Date.now(),
+                lastContentAt: toolLastContentAt,
+                attemptStartedAt: toolStreamStartedAt,
+                attemptBudgetMs: toolStreamBudgetMs,
+                idleMs: PROVIDER_STREAM_IDLE_MS,
+              }),
+              'Gemini stream',
+            );
+          } catch (error) {
+            /*
+             * THE READ EXPIRED, AND A BARE `idle` ERROR STOPS THE LADDER.
+             *
+             * Bounding this read by the no-content window means the WINDOW is
+             * what usually expires, and the helper rejects with a plain Error:
+             * no status, and the word "idle". shouldFallbackBeforeStreaming
+             * recognises neither, so the outer handler calls it a 500 and the
+             * client never retries — while this iterator stays open upstream.
+             *
+             * Codex caught exactly this on the streaming pair this morning. I
+             * fixed it there, then reproduced it here in the same change that
+             * claimed to close the class, because my contract test asked only
+             * whether the budget was content-derived and never whether the
+             * rejection was handled. The test asks now.
+             */
+            await iterator.return?.(undefined).catch(() => {});
+            if (Date.now() - toolStreamStartedAt >= toolStreamBudgetMs) {
+              throw inferenceAttemptTimeout(toolRoute, toolStreamBudgetMs);
+            }
+            if (streamStopReason({
               now: Date.now(),
               lastContentAt: toolLastContentAt,
               attemptStartedAt: toolStreamStartedAt,
               attemptBudgetMs: toolStreamBudgetMs,
-              idleMs: PROVIDER_STREAM_IDLE_MS,
-            }),
-            'Gemini stream',
-          );
+            }) === 'no-content' || /idle for more than/i.test(String((error as any)?.message || ''))) {
+              throw inferenceNoContent(toolRoute, NO_CONTENT_MS);
+            }
+            throw error;
+          }
           if (next.done) break;
           const chunk = next.value;
           legacyFinishReason = finishFromGemini(chunk) || legacyFinishReason;
@@ -2535,17 +2567,38 @@ export default async function handler(req: any, res: any) {
           ? inferenceNoContent(refineRoute, NO_CONTENT_MS)
           : inferenceAttemptTimeout(refineRoute, refineBudgetMs);
       }
-      const { done, value } = await readWithIdleTimeout(
-        reader,
-        nextReadBudgetMs({
+      let done: boolean;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await readWithIdleTimeout(
+          reader,
+          nextReadBudgetMs({
+            now: Date.now(),
+            lastContentAt: refineLastContentAt,
+            attemptStartedAt: refineStartedAt,
+            attemptBudgetMs: refineBudgetMs,
+            idleMs: PROVIDER_STREAM_IDLE_MS,
+          }),
+          'OpenRouter stream',
+        ));
+      } catch (error) {
+        /* Same as the streaming pair, and for the same reason: a bare `idle`
+         * rejection carries no status, so the fallback policy refuses it and
+         * the whole ladder stops instead of trying the next route. */
+        await reader.cancel().catch(() => {});
+        if (Date.now() - refineStartedAt >= refineBudgetMs) {
+          throw inferenceAttemptTimeout(refineRoute, refineBudgetMs);
+        }
+        if (streamStopReason({
           now: Date.now(),
           lastContentAt: refineLastContentAt,
           attemptStartedAt: refineStartedAt,
           attemptBudgetMs: refineBudgetMs,
-          idleMs: PROVIDER_STREAM_IDLE_MS,
-        }),
-        'OpenRouter stream',
-      );
+        }) === 'no-content' || /idle for more than/i.test(String((error as any)?.message || ''))) {
+          throw inferenceNoContent(refineRoute, NO_CONTENT_MS);
+        }
+        throw error;
+      }
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
