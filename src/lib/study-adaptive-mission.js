@@ -72,6 +72,7 @@ export function createStudyAdaptiveMissionState() {
     topicAligned: false,
     repairRequired: false,
     verifiedOutcome: null,
+    verifiedAttemptId: '',
     error: '',
   };
 }
@@ -99,6 +100,7 @@ export function transitionStudyAdaptiveMission(state, event = {}) {
         topicAligned: sameStudyMissionLabel(event.activeTopic, label),
         repairRequired: false,
         verifiedOutcome: null,
+        verifiedAttemptId: '',
         error: '',
       };
     }
@@ -118,6 +120,7 @@ export function transitionStudyAdaptiveMission(state, event = {}) {
         topicAligned: true,
         repairRequired: false,
         verifiedOutcome: null,
+        verifiedAttemptId: '',
         error: '',
       };
     }
@@ -151,16 +154,20 @@ export function transitionStudyAdaptiveMission(state, event = {}) {
       if (current.status !== 'active' || current.phase !== STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK) return current;
       return { ...current, error: clean(event.error, 240) || 'The governed verified check is unavailable right now.' };
 
-    case 'VERIFIED_RESULT':
+    case 'VERIFIED_RESULT': {
+      const attemptId = clean(event.attemptId, 160);
       if (current.status !== 'active'
         || current.phase !== STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK
-        || typeof event.correct !== 'boolean') return current;
+        || typeof event.correct !== 'boolean'
+        || !attemptId
+        || attemptId === current.verifiedAttemptId) return current;
       if (event.correct) {
         return {
           ...current,
           phase: STUDY_ADAPTIVE_MISSION_PHASE.REVIEW,
           repairRequired: false,
           verifiedOutcome: 'correct',
+          verifiedAttemptId: attemptId,
           error: '',
         };
       }
@@ -169,8 +176,10 @@ export function transitionStudyAdaptiveMission(state, event = {}) {
         phase: STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE,
         repairRequired: true,
         verifiedOutcome: 'incorrect',
+        verifiedAttemptId: attemptId,
         error: '',
       };
+    }
 
     case 'REVIEW_SENT':
       if (current.status !== 'active' || current.phase !== STUDY_ADAPTIVE_MISSION_PHASE.REVIEW) return current;
