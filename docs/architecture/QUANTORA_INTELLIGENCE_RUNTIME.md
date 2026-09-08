@@ -596,7 +596,7 @@ thing this repository has an incident for.
 | 4 — Universal Tool Fabric | closed | `api/_lib/tool-registry.ts` — one registration per tool, carrying identity, declaration, enablement, dispatch and time budget | `tool-registry.test.ts` |
 | 5 — Outcome & Verification Engine | closing — the claim is bound, the act deliberately is not | `qir-contracts.ts` (a Run reaches COMPLETE only on verified Proof of Done + matching independent verification), `buildJobOutcome`/`deskFingerprint`, `completion-claim.ts` + `unproved-claim-note.js` | `completion-claim.test.ts` (precision 100%, recall floor), `qir-contracts.test.ts`, `unproved-claim-note.test.js` |
 | 6 — Model Fabric v2 | closing — the ledger is measured AND read: every route plan takes the last thirty minutes of `model_quality_events` and moves a model that failed most of its recent turns (≥5 turns, ≥50% failures) down the free ladder; Auto starts on a route the ledger has not condemned, a model the person named stays first with its evidence on the route; the paid rung is never promoted and the platform spend ceiling (`OPENROUTER_SPEND_CEILING_USD`) bounds it. One `StreamFinish` and one ledger row shape serve both gateways. Still open: latency as a tie-breaker, and a per-tenant budget | `measured-outcome.ts` (summary, restraint, cached reader), `store.readModelQualityEvents`, `planInferenceRoutes` (`measuredOutcomes`, `autoRouting`), `paid-route-gate.ts` | `measured-outcome.test.ts`, `inference-control-plane.test.ts` (a failing fallback moves down and says why; a named model stays first; Auto yields; no evidence changes nothing), `model-quality-outcome.test.ts`, `paid-route-gate.test.ts` |
-| 7 — Coding / Software Engineering Runtime | first cut — one model-owned plan per turn: `POST /api/plan-turn` reads the whole brief, what is attached and a bounded history, and names the lane (build, office, advisor, chat) before any keyword rule runs; the keyword rules are the fallback when the planner is slow or down, never the judge. Two invariants: a pinned desk is never moved, and a build the desk already owns is never vetoed. The plan rides on the user turn (`lanePlan`), so the desk reads the same decision the server did — a website brief that says "excel-like" builds a site instead of a workbook. Still open: the durable repository sandbox, shell, tests, checkpoints, candidate patches, rollback and deployment verification | `turn-planner.ts` (schema, deterministic plan, reconcile), `handlers/plan-turn.ts`, `semantic-router.ts` (shared with `classify-intent`), `shared/office-intent.js`, `src/lib/turn-plan-client.js` | `turn-planner.test.ts` (corpus, invariants), `turn-plan-client.test.js`, `office-intent.test.js` (a planned turn decides), `scripts/turn-planner-browser-gate.mjs` (the plan decides the lane, a dead planner changes nothing, a pin holds) |
+| 7 — Coding / Software Engineering Runtime | first cut — one model-owned plan per turn: `POST /api/plan-turn` reads the whole brief, what is attached and a bounded history, and names the lane (build, office, advisor, chat) before any keyword rule runs; the keyword rules are the fallback when the planner is slow or down, never the judge. Two invariants: a pinned desk is never moved, and a build the desk already owns is never vetoed. The plan rides on the user turn (`lanePlan`), so the desk reads the same decision the server did — a website brief that says "excel-like" builds a site instead of a workbook. Checkpoints and rollback landed 2026-09-06/07 (durable rewind chain, Rewind a proven journey). Still open: the durable repository sandbox, shell and tests; deployment verification; and the candidate-patch integration — the stale-tree refusal exists in `commitDeskVfs` but is opt-in and no production caller passes `baseVfs` | `turn-planner.ts` (schema, deterministic plan, reconcile), `handlers/plan-turn.ts`, `semantic-router.ts` (shared with `classify-intent`), `shared/office-intent.js`, `src/lib/turn-plan-client.js` | `turn-planner.test.ts` (corpus, invariants), `turn-plan-client.test.js`, `office-intent.test.js` (a planned turn decides), `scripts/turn-planner-browser-gate.mjs` (the plan decides the lane, a dead planner changes nothing, a pin holds) |
 
 **Where Phase 5 binds, and where it deliberately does not.** "Make Outcome
 Contracts mandatory" has two readings and they are not the same product. Bound
@@ -669,9 +669,76 @@ Normalize provider adapters and route using capability + measured outcome + heal
 
 Add durable repository sandbox, shell, tests, browser, checkpoints, candidate patches, rollback, deployment verification, and end-to-end coding evals.
 
-**First cut (2026-09-06): the turn planner.** Before this phase the first decision of every turn — build, Office document, advisor desk, or chat — was made by regular expressions over the first few words, and a website brief that mentioned an "excel-like tracker" was sent to the workbook generator on the word alone. A coding agent does not work that way: the model reads the whole brief and decides. `POST /api/plan-turn` now does exactly that, through the same semantic router `classify-intent` uses, and answers with one plan per turn: the lane, the desk or Office kind, a confidence and a reason. `reconcileTurnPlan` keeps the plan honest against two invariants a model may not override — a pinned desk never moves, and a build the desk already owns is never vetoed — and the deterministic rules remain as the fallback, so a slow or dead planner changes nothing about how the turn ran yesterday. The plan travels on the user turn as `lanePlan`, which is how the desk (whose Office detection runs from the transcript) follows the same decision the request carried. Not in this cut: the durable sandbox and its shell, checkpoints and rollback, which are the rest of the phase.
+**First cut (2026-09-06): the turn planner.** Before this phase the first decision of every turn — build, Office document, advisor desk, or chat — was made by regular expressions over the first few words, and a website brief that mentioned an "excel-like tracker" was sent to the workbook generator on the word alone. A coding agent does not work that way: the model reads the whole brief and decides. `POST /api/plan-turn` now does exactly that, through the same semantic router `classify-intent` uses, and answers with one plan per turn: the lane, the desk or Office kind, a confidence and a reason. `reconcileTurnPlan` keeps the plan honest against two invariants a model may not override — a pinned desk never moves, and a build the desk already owns is never vetoed — and the deterministic rules remain as the fallback, so a slow or dead planner changes nothing about how the turn ran yesterday. The plan travels on the user turn as `lanePlan`, which is how the desk (whose Office detection runs from the transcript) follows the same decision the request carried. Not in this cut: the durable sandbox and its shell, checkpoints and rollback — of which checkpoints and rollback landed in the third cut below, and the sandbox has not.
 
 **Second cut (2026-09-06): the planner is measured.** Every plan is recorded as one row of `turn_plan_events` — lane, source (planner or fallback), agreement with the deterministic lane, confidence, planner latency and the error class, never the message — and `turn-plan-ledger.ts` turns the last 24 hours into the numbers the admin dashboard shows: how often the planner decided, how often it agreed with the rules it replaced, where it overruled them, and its median latency. An empty window reads as zero turns with null rates, never as a perfect planner. This is what decides, on evidence, whether the deterministic fallback can be demoted further.
+
+**Third cut (2026-09-06/07): the desk keeps its work, and a patch is reversible.**
+Checkpoints and rollback — named above as "the rest of the phase" — are in:
+
+- **A durable rewind history.** The desk's checkpoints are copied to
+  `desk_checkpoints`, stored as a delta chain, owned by one chat rather than one
+  account, and read back on demand. The save is a SECOND COPY, never a handover:
+  the in-memory history is not trimmed or trusted less because a save
+  succeeded, so a backup that fails can never cost somebody the work it was
+  backing up. The endpoint answers `503` rather than `saved` on a write that did
+  not land, because a desk told "saved" on the strength of nothing is worse
+  than one told the truth.
+- **Candidate patches that name the tree they were computed against** — as a
+  MECHANISM, and it is not yet wired. `commitDeskVfs` refuses a write whose base
+  tree has moved, applying atomically and reverting exactly, but the check sits
+  behind `if (baseVfs)` and is opt-in by design: "only callers that know which
+  tree they built from opt in, by naming it." At this commit NO production
+  caller does — not the streaming build path, not the desk job path, not the
+  workspace writer. So a build in flight can still land on a tree that moved
+  under it. The mechanism is real and tested; the integration is the open half,
+  and it is listed below rather than counted as done.
+- **Rewind is a proven journey** — a browser gate drives it, rather than only
+  its helpers being tested.
+
+**WHAT IS NOT IN PHASE 7 (2026-09-08).** Three things, not one. An earlier
+draft of this section named only the first and was corrected in review — which
+is the failure mode a close-out exists to prevent, so it is recorded rather
+than quietly fixed.
+
+1. **The execution surface.** A durable repository sandbox, its shell, and
+   running the project's own tests inside it. There is no `api/sandbox`, no
+   shell endpoint, and no sandbox provider dependency in the tree — this is not
+   partially built, it is not built.
+2. **Deployment verification**, named in this phase's own scope line above. The
+   `publish-vercel` journey's browser gate mocks `/api/deploy`; a real
+   deployment has never been driven end to end by a gate.
+3. **The candidate-patch integration**, per the third cut above: the stale-tree
+   refusal exists and no caller opts into it.
+
+The first is deferred deliberately, and the reasoning belongs here rather than
+in a commit message nobody will find:
+
+- It is the largest single piece of the phase and needs infrastructure the
+  platform does not currently hold.
+- Nothing above it depends on it. The turn planner, the checkpoint chain and
+  candidate patches were built so that they do not: patches address a tree by
+  hash, not a live filesystem, and rewind is a client history with a durable
+  copy. A sandbox would give those a second place to run, not their first.
+- The desk's current proof path — VFS plus Preview plus the compile gate — is
+  what the platform's users actually exercise. Server-side execution buys
+  correctness for a class of work (running a repository's own test suite) that
+  no current journey reaches.
+
+So Phase 7 is CLOSED WITH THREE ITEMS OPEN, stated plainly rather than left to
+look finished. The second and third are smaller than the first and are not
+deferred on principle — they are simply not done. What that costs is worth naming too: without a
+sandbox the platform cannot run a user's tests, so "the build passes" continues
+to mean the artifact contract and the preview compiler agreed — not that the
+project's own suite was green. Every claim the desk makes about a build should
+stay inside that bound until this is built.
+
+**A NAMING COLLISION, recorded so it stops costing time.** `ROADMAP.md` also
+has a "Phase 7" — *The Generative Studio* (brand systems, launch-ready content,
+seed data, multi-modal input, generative variants), none of it started. It is
+a different phase of a different sequence. This one is the QIR runtime phase;
+they are unrelated, and neither number moves, so the only defence is knowing
+which document is being read.
 
 ### Phase 8 — Creative / 3D Runtime
 
