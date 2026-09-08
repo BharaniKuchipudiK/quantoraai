@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { describeTrace, describeTraceEvent } from './trace-story.js';
 
 const at = (offsetMs) => new Date(1_788_614_000_000 + offsetMs).toISOString();
@@ -101,4 +102,94 @@ test('an empty stream is not called a reply that was read', () => {
 test('an unknown boundary is still shown rather than dropped, and an unknown code is spelled out', () => {
   assert.equal(describeTraceEvent({ boundary: 'study.replay', state: 'skipped', detailCode: 'checkpoint-stale' }), 'study.replay skipped: checkpoint stale.');
   assert.equal(describeTraceEvent({ boundary: 'api.chat', state: 'failed', statusCode: 500, detailCode: 'chat-failure' }), 'The server ended the turn with an error (HTTP 500): the turn failed on the server.');
+});
+
+/*
+ * A REFUSAL TOLD AS A CRASH (2026-09-08). /api/chat refused a turn with 429 —
+ * the daily budget was spent — and returned having recorded only the 'started'
+ * event. describeTrace reads "started, then nothing" as a function that died
+ * mid-flight, so "What happened?" told the user the server "stopped before
+ * choosing an engine: a timeout or a crash on Quantora's side, NOT A REFUSAL
+ * and not anything you did."
+ *
+ * Every clause of that was invented from an absence, and the last one was the
+ * precise inverse of the truth. That is this gate's own class: an account that
+ * names a cause the record does not prove. The fix is on both sides — the
+ * handler writes the refusal it is making, and the story reads a recorded 429
+ * as the decision it is.
+ */
+
+test('[was-red] a recorded 429 refusal is told as a limit, never as a crash', () => {
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'turn-budget', at: at(90) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.headline, /declined to run this turn — a limit on your account, not a failure/);
+  assert.match(story.detail, /daily turn budget for this account was already spent/);
+  assert.match(story.detail, /Nothing broke/);
+  assert.doesNotMatch(story.detail, /crash/i, 'a refusal is not a crash');
+  assert.doesNotMatch(story.detail, /fault on our side/i, 'a limit is not a platform fault');
+});
+
+test('a per-minute refusal names the guard that fired, and says it clears itself', () => {
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'rate-limited', at: at(12) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.detail, /more requests than the per-minute guard allows/);
+  assert.match(story.detail, /clears on its own within a minute/);
+});
+
+test('an engine quota is still our problem to route around, not the account’s limit', () => {
+  /*
+   * The narrowing that keeps the branch honest (§5), and the regression that
+   * proved it necessary. /api/chat stamps its OWN boundary with 429 when every
+   * engine's provider quota is exhausted, so the first draft of the refusal
+   * branch — keyed on the status — told that user "a limit on your account,
+   * not a failure" while the deployment's provider credit was the thing that
+   * had died. The status is ambiguous; the detail code Quantora writes when it
+   * declines is not.
+   */
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'inference.provider', state: 'failed', modelId: 'gemini-2.5-flash', gateway: 'gemini', statusCode: 429, detailCode: 'quota-exhausted', at: at(400) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'quota-exhausted', durationMs: 420, at: at(420) },
+  ]);
+  assert.equal(story.outcome, 'server-failed', 'an exhausted engine is a server failure, not the user’s limit');
+  assert.match(story.headline, /ended this turn with an error/);
+  assert.doesNotMatch(story.detail, /declined/i, 'nobody declined this turn — every engine’s quota died');
+});
+
+test('[was-red] the handler records the refusal it makes, at every 429 it can return', () => {
+  /*
+   * The story can only be honest about what was written. This asserts the
+   * write side: each of /api/chat's three own 429s — the per-minute guard,
+   * its durable twin, and the daily turn budget — trace a failed api.chat
+   * boundary before replying. A handler that refuses silently puts the
+   * "timeout or a crash" sentence back on the screen, and no assertion about
+   * describeTrace would catch it.
+   */
+  const handler = readFileSync(new URL('../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
+
+  /* Each refusal must record BOTH halves: the status the caller sees and the
+   * reason describeTrace keys on. A detailCode without its 429 renders as an
+   * error again; a 429 without its detailCode falls into the provider-quota
+   * branch and blames the deployment for the user's own limit. */
+  const paired = handler.match(/statusCode: 429,\s*(?:\n\s*)?detailCode: '(?:rate-limited|turn-budget)'/g) || [];
+  const reasons = handler.match(/detailCode: '(?:rate-limited|turn-budget)'/g) || [];
+  assert.equal(reasons.length, 3, `expected three traced refusals in /api/chat, found ${reasons.length}`);
+  assert.equal(
+    paired.length,
+    reasons.length,
+    `every traced refusal must carry statusCode 429: ${reasons.length} reasons, ${paired.length} paired with a status`,
+  );
+
+  const chatReturns429 = (handler.match(/return res\.status\(429\)/g) || []).length;
+  assert.equal(
+    chatReturns429,
+    reasons.length,
+    `every 429 /api/chat returns must be recorded: ${chatReturns429} returned, ${reasons.length} traced`,
+  );
 });

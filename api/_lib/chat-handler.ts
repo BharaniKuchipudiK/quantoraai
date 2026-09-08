@@ -497,6 +497,19 @@ export default async function handler(req: any, res: any) {
     ? 'chat:golden-canary'
     : sessionUser ? `chat:user:${sessionUser.sub}` : `chat:ip:${clientIp(req)}`;
   if (isRateLimited(limitKey, RATE_LIMIT_PER_MINUTE, 60_000)) {
+    /*
+     * A REFUSAL MUST BE RECORDED AS ONE.
+     *
+     * These three 429s used to return with only the 'started' event on the
+     * record. describeTrace reads "started, then nothing" as the shape of a
+     * function that died mid-flight, so "What happened?" told the user the
+     * server "stopped before choosing an engine: a timeout or a crash on
+     * Quantora's side, NOT A REFUSAL" — the exact inverse of what happened,
+     * invented from an absence. That is the class shared/trace-story.test.js
+     * exists to close: an account that names a cause the record does not
+     * prove. The refusal is a fact we hold at the moment we refuse; write it.
+     */
+    trace({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
@@ -504,6 +517,7 @@ export default async function handler(req: any, res: any) {
   const durableGuard = applyDurableCostBearingGuard(limitKey, RATE_LIMIT_PER_MINUTE, durable);
   if (durableGuard.limited) {
     if (durableGuard.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
+    trace({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
     return res.status(429).json({
       error: 'Too many requests. Please wait a minute and try again.',
       resetsAt: durableGuard.resetsAt,
@@ -740,6 +754,16 @@ export default async function handler(req: any, res: any) {
     if (usingServerOwnedModelAccess && !goldenCanary) {
       const budget = await turnBudgetVerdict(activeSessionUser?.sub || null);
       if (!budget.allowed) {
+        trace({
+          correlationId,
+          boundary: 'api.chat',
+          state: 'failed',
+          transaction,
+          route: '/api/chat',
+          durationMs: Date.now() - startTime,
+          statusCode: 429,
+          detailCode: 'turn-budget',
+        });
         return res.status(429).json({
           error: describeTurnBudget(budget),
           turnBudgetExhausted: budget.exhausted,
