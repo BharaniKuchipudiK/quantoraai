@@ -145,6 +145,10 @@ Not journeys, and not counted above, but every journey stands on them.
 | `hostile-reply-safety` | A hostile or malformed model reply cannot destroy the build | `pipeline-stress.mjs`, `never-discard-model-output.test.js`, `chat-turn-safety.test.js` | — | — |
 | `experience-budget` | The shell, a workspace switch and the input stay inside their time budgets | — | `platform-experience-browser-gate.mjs` | — |
 | `turn-allowance-visible` | A person can see their turn allowance and when it comes back, before being refused | `user-turn-budget.test.ts`, `turn-budget-view.test.js`, `turn-budget-meter.test.tsx`, `turn-budget-ring.test.tsx` | — | — |
+| `preview-updates-itself` | A page the model wrote appears without being asked, or says why it did not | `preview-autocommit.test.js` | — | — |
+| `no-orphan-turns` | A turn stops calling engines once nobody is waiting for it | `client-gone.test.ts` | — | — |
+| `handover-opens-with-work` | A continued chat opens with the work, and carries everything it does not show | `handover-headline.test.js` | — | — |
+| `dead-route-abandoned-fast` | A route that produces no content is abandoned in seconds, not at the end of the turn | `stream-liveness.test.js` | — | — |
 | `turn-fits-its-function` | A turn cannot plan more time than the function running it is allowed | `turn-budget-fits-function.test.ts`, `transaction-trace.test.ts` | — | — |
 | `use-and-cost-visible` | The owner can see which models and workspaces are used, and what they cost | `workspace-analytics.test.ts` | — | — |
 | `models-governed` | Models are listed, canaried, routed and retired on evidence | `model-canary.test.js`, `model-smoke-test.test.js`, `model-execution-policy.test.ts`, `server-key-resolution.test.ts`, `user-paid-quota.test.ts`, `user-paid-quota-wiring.test.ts`, `model-outcome-routing.test.js`, `latency-tie-breaker.test.js`, `provider-health.test.mjs` | — | `provider-health-probe.mjs` |

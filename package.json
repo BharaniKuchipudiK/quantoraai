@@ -40,7 +40,8 @@
     "desktop:build": "npm --prefix desktop run build",
     "test:desktop": "xvfb-run -a node scripts/desktop-smoke-gate.mjs",
     "test:served-routes": "node scripts/served-route-gate.mjs",
-    "test:journeys": "node scripts/journey-gate-inventory-gate.mjs"
+    "test:journeys": "node scripts/journey-gate-inventory-gate.mjs",
+    "audit:lonely": "node scripts/lonely-capability-audit.mjs"
   },
   "dependencies": {
     "@duffel/api": "^4.28.0",

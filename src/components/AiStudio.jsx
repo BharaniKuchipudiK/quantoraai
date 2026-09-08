@@ -119,6 +119,7 @@ const StudioGit = lazy(() => import('./StudioGit.jsx'));
 import ChatRowMenu from './ChatRowMenu.jsx';
 import TurnBudgetMeter from './TurnBudgetMeter.jsx';
 import TurnBudgetRing from './TurnBudgetRing.jsx';
+import { decidePreviewCommit, describeHeldPreview } from '../lib/preview-autocommit.js';
 import { archivedChats, visibleChats } from '../lib/chat-organization.js';
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
@@ -1020,6 +1021,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * allowance.
    */
   const [turnBudget, setTurnBudget] = useState(null);
+  /* Why a page was NOT applied, when the guard declined it. */
+  const [previewHeldNotice, setPreviewHeldNotice] = useState(null);
   /*
    * A pin belongs to the desk it was chosen on. This state outlives any one
    * chat, so switching sessions used to carry the choice across: pin
@@ -2091,6 +2094,71 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setIsWorkspaceMode(true);
   }, [studioDomain, messages, vfs]);
 
+  /*
+   * THE PREVIEW UPDATES ITSELF.
+   *
+   * Quantora made the user press a button to see a page the model had already
+   * written. No other tool in this class does that, and the reason it existed
+   * was never the user's problem to solve: a snippet from a chat reply can
+   * overwrite a working build with a fragment, so SOMETHING had to decide
+   * whether this code was safe to apply.
+   *
+   * deskCommitRegressesPreview has been able to decide that the whole time —
+   * the desk's own build path has used it for months. Only the chat path
+   * asked a human instead. Now the machine answers its own question, and the
+   * button below remains only for the case it declines.
+   */
+  /*
+   * Keyed by SESSION, not one ref for the whole component. A single ref held
+   * the last message id of whichever chat you were in; switch away, edit the
+   * desk by hand, come back, and that chat's historical reply read as new —
+   * reapplying an old page over your edits. Found by review before it shipped.
+   */
+  const autoPreviewedBySessionRef = useRef(new Map());
+  useEffect(() => {
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
+    if (!lastAi || lastAi.isError) return;
+    if (isGenerating) return;
+    if (!activeSessionId) return;
+    if (autoPreviewedBySessionRef.current.get(activeSessionId) === lastAi.id) return;
+    if (!canExplicitlyPreviewCode(studioDomain)) return;
+
+    /*
+     * A page the proof pipeline REJECTED must never become the visible
+     * preview. The first cut wrote straight to setVfs, which skipped that
+     * check along with session ownership, checkpoints and the stale-tree
+     * guard that commitDeskVfs performs.
+     */
+    if (lastAi.codingProof && lastAi.codingProof.ok === false) return;
+
+    const assembled = assembleStudioPreview(lastAi.text || '', vfsRef.current || {});
+    const html = assembled.code && /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code) ? assembled.code : '';
+    const candidateVfs = Object.keys(assembled.vfs).length > 0
+      ? assembled.vfs
+      : (html ? { 'index.html': { content: html, language: 'html' } } : {});
+
+    const decision = decidePreviewCommit({
+      before: vfsRef.current || {},
+      after: candidateVfs,
+      canPreview: true,
+      hasHtml: Boolean(html),
+    });
+    autoPreviewedBySessionRef.current.set(activeSessionId, lastAi.id);
+    if (!decision.apply) {
+      if (decision.tell) setPreviewHeldNotice({ sessionId: activeSessionId, text: describeHeldPreview(decision.reason) });
+      return;
+    }
+    /* Through the verified path, so every guard the desk's own build honours
+     * applies here too. It returns false when it refuses. */
+    if (!commitDeskVfs(candidateVfs, activeSessionId)) {
+      setPreviewHeldNotice({ sessionId: activeSessionId, text: describeHeldPreview('incoming-entry-not-runnable') });
+      return;
+    }
+    setPreviewHeldNotice(null);
+    setWorkspaceCode(html);
+    setWorkspaceActiveTab('preview');
+  }, [messages, isGenerating, studioDomain, activeSessionId, commitDeskVfs]);
+
   const handleTravelPlacePlay = useCallback((place) => {
     const html = travelPlacePreviewHtml({
       name: place?.name,
@@ -2613,6 +2681,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       <div
                         className="markdown-prose"
                         data-quantora-assistant-prose={msg.sender === 'ai' ? 'true' : undefined}
+                        /*
+                         * A handover note, and how many files came with it.
+                         * The browser gate proving a continued chat carries
+                         * its desk was anchored on the SENTENCE, so rewording
+                         * that note in this same change turned the gate red —
+                         * exactly the prose-anchoring this repo has been burned
+                         * by before. The count is the fact; the words are not.
+                         */
+                        data-quantora-handover-note={msg.handoverNote ? 'true' : undefined}
+                        data-quantora-handover-desk-files={msg.handoverNote ? String(msg.handoverDeskFiles ?? 0) : undefined}
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         data-quantora-modal-failure={modalFailure || undefined}
@@ -5312,6 +5390,23 @@ Paused — ${autoPauseRef.current}.`
 
               {/* What is left, where it is about to be spent. */}
               <TurnBudgetRing budget={turnBudget} isLight={isLight} />
+
+              {/*
+                * Why a page was NOT applied. Set but never rendered in the
+                * first cut, which meant the change delivered exactly the
+                * silent rejection it set out to remove — and the gate passed,
+                * because SETTING state is not SHOWING it. Scoped to the
+                * session that produced it so it cannot follow you into
+                * another chat.
+                */}
+              {previewHeldNotice && previewHeldNotice.sessionId === activeSessionId ? (
+                <span
+                  data-quantora-preview-held="true"
+                  style={{ fontSize: '0.68rem', color: '#f59e0b', maxWidth: '340px', lineHeight: 1.35 }}
+                >
+                  {previewHeldNotice.text}
+                </span>
+              ) : null}
 
               {/* Attachment Button */}
               <button

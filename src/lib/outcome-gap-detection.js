@@ -189,7 +189,12 @@ export function detectOutcomeGaps(userPrompt = '', aiResponse = '', {
     if (!/\b(domestic|international|shipping|deliver(?:y|ies)|ship to|pickup)\b/i.test(chatWithoutCode)) {
       gaps.push(beat(
         'gap-shipping',
-        'Domestic or international?',
+        /*
+         * Was "Domestic or international?", which out of context reads like a
+         * flight question — it was reported twice as a travel chip appearing
+         * on a coding desk. The rule was right; the words were ambiguous.
+         */
+        'Where do you ship to?',
         'Do you ship only domestically, internationally as well, or in-store pickup only? Update the boutique site for that.',
         95,
       ));

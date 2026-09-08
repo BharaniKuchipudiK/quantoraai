@@ -50,6 +50,7 @@ import {
   normalizeWatchQuestion,
 } from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
+import { NO_CONTENT_MS, nextReadBudgetMs, streamStopReason } from '../../shared/stream-liveness.js';
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -376,6 +377,20 @@ async function nextAsyncIteratorWithIdleTimeout(iterator: AsyncIterator<any>, id
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/*
+ * A route that streams keepalives and no content. Separated from the attempt
+ * timeout because the two mean different things to the loop above: this one
+ * says THIS ROUTE is gone and another should be tried, while an attempt
+ * timeout says the turn itself is running out. Reported as one thing, a dead
+ * provider reads as the platform being slow.
+ */
+function inferenceNoContent(route: InferenceRoute, silentMs: number) {
+  const error: any = new Error(`${route.gateway} route "${route.id}" produced no content for ${silentMs}ms.`);
+  error.status = 504;
+  error.code = 'INFERENCE_NO_CONTENT';
+  return error;
 }
 
 function inferenceAttemptTimeout(route: InferenceRoute, budgetMs: number) {
@@ -1566,7 +1581,50 @@ export default async function handler(req: any, res: any) {
           });
           continue;
         }
+        /*
+         * NOBODY IS LISTENING ANY MORE.
+         *
+         * The client aborts its fetch when its own attempt times out and then
+         * starts a new request. Aborting a fetch does NOT stop a serverless
+         * function: this handler kept working for a browser that had walked
+         * away, calling engine after engine and spending real money on a reply
+         * no one would ever read.
+         *
+         * Seen in production 2026-09-08: one reference id carrying TWO
+         * "Quantora received the request" events 62s apart and TWO "the server
+         * ended the turn" events, with four engine failures interleaved from
+         * two ladders running at once. The 176 seconds the person waited was
+         * two overlapping turns, and they were charged for both.
+         *
+         * Checked between attempts rather than mid-stream on purpose: a turn
+         * already streaming tokens may finish, because the desk can still use
+         * what it produced. What must not happen is STARTING another engine
+         * for a connection that is gone.
+         */
+        if (sse.isFinished && index > 0) {
+          trace({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'abandoned',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            detailCode: 'client-gone',
+            durationMs: Date.now() - startTime,
+          });
+          throw Object.assign(new Error('The client disconnected before this attempt began.'), {
+            status: 499,
+            code: 'CLIENT_GONE',
+          });
+        }
         const attemptStartedAt = Date.now();
+        /*
+         * When this route last produced CONTENT — not bytes. Starts at the
+         * attempt's own start, so a route that never says anything is
+         * abandoned NO_CONTENT_MS after it was called rather than when its
+         * whole budget runs out.
+         */
+        let lastContentAt = attemptStartedAt;
         /*
          * The paid rung is being taken, so the person's share is spent NOW.
          *
@@ -1656,7 +1714,28 @@ export default async function handler(req: any, res: any) {
               }
               let next;
               try {
-                next = await nextAsyncIteratorWithIdleTimeout(iterator, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'Gemini stream');
+                const geminiStop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                if (geminiStop) {
+                  throw geminiStop === 'no-content'
+                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    : inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                try {
+                  next = await nextAsyncIteratorWithIdleTimeout(
+                    iterator,
+                    nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                    'Gemini stream',
+                  );
+                } catch (error) {
+                  /* Same trap as the OpenRouter side: a bare idle rejection
+                   * carries no status, so the ladder would stop rather than
+                   * fall back. */
+                  if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                    || /idle for more than/i.test(String((error as any)?.message || ''))) {
+                    throw inferenceNoContent(route, NO_CONTENT_MS);
+                  }
+                  throw error;
+                }
               } catch (error) {
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   await iterator.return?.(undefined);
@@ -1668,6 +1747,7 @@ export default async function handler(req: any, res: any) {
               const chunk = next.value;
               attemptFinishReason = finishFromGemini(chunk) || attemptFinishReason;
               if (chunk?.text) {
+                lastContentAt = Date.now();
                 attemptReply += chunk.text;
                 emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                 if (!effectiveBuildMode) sse.text(chunk.text);
@@ -1709,11 +1789,46 @@ export default async function handler(req: any, res: any) {
               }
               let chunkResult;
               try {
-                chunkResult = await readWithIdleTimeout(reader, Math.min(PROVIDER_STREAM_IDLE_MS, attemptRemainingMs), 'OpenRouter stream');
-              } catch (error) {
-                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
+                /*
+                 * Bounded by CONTENT, not bytes. OpenRouter streams
+                 * ": OPENROUTER PROCESSING" while a request is queued; the
+                 * parser below skips those lines, but they are bytes, and a
+                 * byte-based idle guard treated them as life. That is how one
+                 * attempt ran 89.7s of a 90s budget having produced nothing.
+                 */
+                const stop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                if (stop) {
                   await reader.cancel().catch(() => {});
+                  throw stop === 'no-content'
+                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    : inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                chunkResult = await readWithIdleTimeout(
+                  reader,
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  'OpenRouter stream',
+                );
+              } catch (error) {
+                await reader.cancel().catch(() => {});
+                if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                /*
+                 * THE READ EXPIRED BECAUSE THE ROUTE WENT QUIET.
+                 *
+                 * This read is now bounded by the no-content window, so it is
+                 * the window that usually expires — and readWithIdleTimeout
+                 * rejects with a bare Error carrying no status and the word
+                 * "idle". shouldFallbackBeforeStreaming recognises neither, so
+                 * it returned false and the whole ladder STOPPED instead of
+                 * trying the next route, leaving the upstream request open.
+                 * Shortening the read made that far more likely: the fix for a
+                 * 90-second silence would have become a turn that gives up
+                 * entirely. Found by review before it shipped.
+                 */
+                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                  || /idle for more than/i.test(String((error as any)?.message || ''))) {
+                  throw inferenceNoContent(route, NO_CONTENT_MS);
                 }
                 throw error;
               }
@@ -1731,6 +1846,8 @@ export default async function handler(req: any, res: any) {
                   attemptFinishReason = finishFromOpenRouter(parsed) || attemptFinishReason;
                   const token = parsed.choices?.[0]?.delta?.content || '';
                   if (token) {
+                    /* The only thing that counts as this route being alive. */
+                    lastContentAt = Date.now();
                     attemptReply += token;
                     emitBuildProgress(sse, effectiveBuildMode, buildBeat);
                     if (!effectiveBuildMode) sse.text(token);

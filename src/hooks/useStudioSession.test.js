@@ -100,7 +100,7 @@ test('handover creates a child chat in the owning project without copying transc
   assert.deepEqual(session.messages[0], greeting);
   assert.equal(session.messages[1].handoverNote, true);
   assert.match(session.messages[1].text, /Continued from the previous chat, which stays exactly as it was\./);
-  assert.match(session.messages[1].text, /- Goal: Master forces\n- Free-body diagrams next\n- No files were on that desk\./);
+  assert.match(session.messages[1].text, /Picking up: Master forces[\s\S]*- Free-body diagrams next[\s\S]*No files were on that desk\./);
 });
 
 /*
@@ -134,7 +134,7 @@ test('the build travels with the handover, because the transcript is what got to
   assert.deepEqual(session.desk, DESK, 'the new session opens on the same build');
   assert.equal(session.handover.deskCarried, true);
   assert.equal(session.messages.length, 2, 'and still without the transcript');
-  assert.match(session.messages[1].text, /- The desk, with 1 file — Preview runs the same build\./);
+  assert.match(session.messages[1].text, /Your desk came with it — 1 file, and Preview runs the same build\./);
 });
 
 test('a chat continued from a pinned chat stays pinned, and names the chat it came from', () => {
@@ -150,7 +150,14 @@ test('a chat continued from a pinned chat stays pinned, and names the chat it ca
   assert.equal(unpinned.deskPinned, false);
   const note = handoverNoteMessage({ contract: HANDOVER, sourceSession: null, desk: null });
   assert.equal(note.sender, 'ai');
-  assert.match(note.text, /Carried over:\n- Goal: Coffee shop\n- No files were on that desk\./);
+  /*
+   * Short by design since 2026-09-08: the goal, where things stand, the desk,
+   * and a COUNT of anything not shown. The model still receives the whole
+   * contract.summary — only this human-facing note is trimmed.
+   */
+  assert.match(note.text, /Picking up: Coffee shop/);
+  assert.match(note.text, /No files were on that desk\./);
+  assert.doesNotMatch(note.text, /Carried over:/, 'the wall of bullets is gone');
 });
 
 test('a handover cannot take a desk belonging to a different session', () => {
