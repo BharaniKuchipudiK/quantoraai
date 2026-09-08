@@ -176,9 +176,18 @@ test('[was-red] a read that expires on the window falls back instead of stopping
   assert.equal(conversions.length, 2,
     `both provider loops must convert a bare idle rejection into a falling-back error, found ${conversions.length}`);
 
-  /* inferenceNoContent carries status 504, which shouldFallbackBeforeStreaming
-   * accepts — that is the whole point of converting it. */
-  assert.match(handler, /function inferenceNoContent\(route: InferenceRoute, silentMs: number\) \{[\s\S]{0,200}error\.status = 504;/,
+  /*
+   * inferenceNoContent carries status 504, which shouldFallbackBeforeStreaming
+   * accepts — that is the whole point of converting it.
+   *
+   * This used to pin the parameter as `route: InferenceRoute`. That is the
+   * spelling, not the property: widening it to Pick<InferenceRoute, 'gateway'
+   * | 'id'>, so the later phases of the handler could raise the same error
+   * without a full route in scope, turned this red while 504 was still there
+   * and still correct. Anchoring on incidental text is the failure §6 names,
+   * and it cost a red gate this morning too. The status is the fact.
+   */
+  assert.match(handler, /function inferenceNoContent\([\s\S]{0,120}?\) \{[\s\S]{0,200}error\.status = 504;/,
     'the no-content error must carry a status the fallback policy recognises');
 
   /* And the reader is cancelled before throwing, or the upstream request

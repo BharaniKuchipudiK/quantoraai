@@ -386,14 +386,14 @@ async function nextAsyncIteratorWithIdleTimeout(iterator: AsyncIterator<any>, id
  * timeout says the turn itself is running out. Reported as one thing, a dead
  * provider reads as the platform being slow.
  */
-function inferenceNoContent(route: InferenceRoute, silentMs: number) {
+function inferenceNoContent(route: Pick<InferenceRoute, 'gateway' | 'id'>, silentMs: number) {
   const error: any = new Error(`${route.gateway} route "${route.id}" produced no content for ${silentMs}ms.`);
   error.status = 504;
   error.code = 'INFERENCE_NO_CONTENT';
   return error;
 }
 
-function inferenceAttemptTimeout(route: InferenceRoute, budgetMs: number) {
+function inferenceAttemptTimeout(route: Pick<InferenceRoute, 'gateway' | 'id'>, budgetMs: number) {
   const error: any = new Error(`${route.gateway} route "${route.id}" timed out after its ${budgetMs}ms attempt budget.`);
   error.status = 504;
   error.code = 'INFERENCE_ATTEMPT_TIMEOUT';
@@ -2235,9 +2235,43 @@ export default async function handler(req: any, res: any) {
         const iterator = stream[Symbol.asyncIterator]();
         let signedFunctionTurn: ReturnType<typeof extractSignedFunctionTurn> = null;
 
+        /*
+         * Bounded by CONTENT, like the streaming turn above. A chunk that
+         * carries no text — grounding metadata, an empty candidate, a keepalive
+         * — is not progress, and a chunk-based idle timer counted it as life.
+         * This loop was left on the bare constant when the streaming pair was
+         * fixed, because the production trace only named those two.
+         */
+        const toolStreamStartedAt = Date.now();
+        let toolLastContentAt = toolStreamStartedAt;
+        const toolStreamBudgetMs = Math.max(0, turnBudgetMs - (toolStreamStartedAt - startTime));
+        const toolRoute = { gateway: 'gemini' as const, id: usedModel };
+
         while (true) {
           assertBudget(startTime, turnBudgetMs, 'chat turn');
-          const next = await nextAsyncIteratorWithIdleTimeout(iterator, PROVIDER_STREAM_IDLE_MS, 'Gemini stream');
+          const toolStop = streamStopReason({
+            now: Date.now(),
+            lastContentAt: toolLastContentAt,
+            attemptStartedAt: toolStreamStartedAt,
+            attemptBudgetMs: toolStreamBudgetMs,
+          });
+          if (toolStop) {
+            await iterator.return?.(undefined).catch(() => {});
+            throw toolStop === 'no-content'
+              ? inferenceNoContent(toolRoute, NO_CONTENT_MS)
+              : inferenceAttemptTimeout(toolRoute, toolStreamBudgetMs);
+          }
+          const next = await nextAsyncIteratorWithIdleTimeout(
+            iterator,
+            nextReadBudgetMs({
+              now: Date.now(),
+              lastContentAt: toolLastContentAt,
+              attemptStartedAt: toolStreamStartedAt,
+              attemptBudgetMs: toolStreamBudgetMs,
+              idleMs: PROVIDER_STREAM_IDLE_MS,
+            }),
+            'Gemini stream',
+          );
           if (next.done) break;
           const chunk = next.value;
           legacyFinishReason = finishFromGemini(chunk) || legacyFinishReason;
@@ -2249,6 +2283,7 @@ export default async function handler(req: any, res: any) {
 
           if (chunk?.text) {
             fullReply += chunk.text;
+            toolLastContentAt = Date.now();
             sse.text(chunk.text);
           }
           const gcs = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -2475,9 +2510,42 @@ export default async function handler(req: any, res: any) {
     let fullReply = '';
     let refineFinishReason: string | null = null;
     let buffer = '';
+    /*
+     * The same content bound as the streaming turn, on the same gateway, for
+     * the same reason: ": OPENROUTER PROCESSING" arrives as bytes while a
+     * request is queued, the parser below skips it, and a byte-based idle
+     * timer read that as a healthy route. Left bare when the streaming pair
+     * was fixed — the trace named those two, so only those two were looked at.
+     */
+    const refineStartedAt = Date.now();
+    let refineLastContentAt = refineStartedAt;
+    const refineBudgetMs = Math.max(0, turnBudgetMs - (refineStartedAt - startTime));
+    const refineRoute = { gateway: 'openrouter' as const, id: usedOpenRouterModel };
     while (true) {
       assertBudget(startTime, turnBudgetMs, 'chat turn');
-      const { done, value } = await readWithIdleTimeout(reader, PROVIDER_STREAM_IDLE_MS, 'OpenRouter stream');
+      const refineStop = streamStopReason({
+        now: Date.now(),
+        lastContentAt: refineLastContentAt,
+        attemptStartedAt: refineStartedAt,
+        attemptBudgetMs: refineBudgetMs,
+      });
+      if (refineStop) {
+        await reader.cancel().catch(() => {});
+        throw refineStop === 'no-content'
+          ? inferenceNoContent(refineRoute, NO_CONTENT_MS)
+          : inferenceAttemptTimeout(refineRoute, refineBudgetMs);
+      }
+      const { done, value } = await readWithIdleTimeout(
+        reader,
+        nextReadBudgetMs({
+          now: Date.now(),
+          lastContentAt: refineLastContentAt,
+          attemptStartedAt: refineStartedAt,
+          attemptBudgetMs: refineBudgetMs,
+          idleMs: PROVIDER_STREAM_IDLE_MS,
+        }),
+        'OpenRouter stream',
+      );
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -2492,6 +2560,7 @@ export default async function handler(req: any, res: any) {
           const token = parsed.choices?.[0]?.delta?.content || '';
           if (token) {
             fullReply += token;
+            refineLastContentAt = Date.now();
             sse.text(token);
           }
         } catch { /* ignore malformed upstream event */ }
