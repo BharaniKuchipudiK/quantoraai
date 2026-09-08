@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowRight, Sparkles, X } from 'lucide-react';
+import { requestStudyAdaptiveMission } from '../lib/study-adaptive-mission-event.js';
 
 /**
  * Unified inline suggestions — lives under the latest AI message in the thread.
@@ -44,6 +45,13 @@ export default function StudioInlineSuggestions({
 
   if (!items.length) return null;
 
+  const selectContinue = (item) => {
+    if (item?.id === 'study-work-together' && requestStudyAdaptiveMission({ source: 'guided_chip', item })) {
+      return;
+    }
+    onSelectContinue?.(item);
+  };
+
   return (
     <div
       className={`studio-inline-suggestions${isLight ? ' is-light' : ''}`}
@@ -62,7 +70,7 @@ export default function StudioInlineSuggestions({
               onClick={() => (
                 isChoices
                   ? onSelectChoice(item)
-                  : onSelectContinue(item)
+                  : selectContinue(item)
               )}
             >
               <span>{item.label}</span>

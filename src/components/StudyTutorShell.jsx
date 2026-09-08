@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
 import {
   studyActionVisibleText,
@@ -7,6 +7,32 @@ import {
   studyQuizAsk,
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveStateLabel, studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
+import { STUDY_ADAPTIVE_MISSION_REQUEST_EVENT } from '../lib/study-adaptive-mission-event.js';
+import {
+  STUDY_ADAPTIVE_MISSION_PHASE,
+  createStudyAdaptiveMissionState,
+  sameStudyMissionLabel,
+  studyAdaptiveMissionFocusAsk,
+  studyAdaptiveMissionGuidedPracticeAsk,
+  studyAdaptiveMissionPhaseCopy,
+  studyAdaptiveMissionReviewAsk,
+  studyAdaptiveMissionStartAsk,
+  studyAdaptiveMissionStartPhase,
+  transitionStudyAdaptiveMission,
+} from '../lib/study-adaptive-mission.js';
+
+function missionCheckError(outcome = {}) {
+  if (outcome?.error) return outcome.error;
+  if (outcome?.code === 'verified_assessment_bank_exhausted') return 'No fresh reviewed question remains for this topic right now.';
+  if (outcome?.code === 'verified_misconception_confirmation_unavailable') return 'A fresh reviewed misconception check is not available yet.';
+  if (outcome?.code === 'verified_retention_probe_unavailable') return 'A fresh reviewed retention question is not available yet.';
+  if (outcome?.code === 'verified_transfer_unavailable') return 'A governed transfer question is not available for this topic yet.';
+  return 'The governed verified check is unavailable for this topic right now.';
+}
+
+function normalizedConceptKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
 
 /**
  * Conversation-first Study shell.
@@ -28,18 +54,40 @@ export default function StudyTutorShell({
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [activity, setActivity] = useState(null);
+  const [mission, dispatchMission] = useReducer(
+    transitionStudyAdaptiveMission,
+    undefined,
+    createStudyAdaptiveMissionState,
+  );
+  const missionCheckAttemptRef = useRef('');
+  const missionReviewResultRef = useRef(null);
 
   const topic = brief?.label || 'this topic';
+  const conceptId = brief?.conceptId || '';
   const gaps = brief?.gaps || [];
   const verifiedResult = assessment?.result || null;
   const learnerModel = verifiedResult?.learnerModel || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
+
+  // StudyTutorWorkspace deliberately keeps this shell mounted across concept
+  // changes so an Adaptive Mission can survive a Compass prerequisite handoff.
+  // Preserve only mission state; the old concept's transient UI should reset.
+  useEffect(() => {
+    missionCheckAttemptRef.current = '';
+    setDismissed(false);
+    setActivity(null);
+  }, [conceptId]);
 
   const askOrSend = useCallback((text, action) => {
     const adaptiveText = studyAdaptiveTutorAsk(text, learnerModel);
     if (onSend) onSend(adaptiveText, { visibleUserText: studyActionVisibleText(action, topic) });
     else onAsk?.(adaptiveText);
   }, [learnerModel, onAsk, onSend, topic]);
+
+  const sendMission = useCallback((text, visibleUserText) => {
+    if (onSend) onSend(text, { visibleUserText });
+    else onAsk?.(text);
+  }, [onAsk, onSend]);
 
   const requestCheck = useCallback(async (options) => {
     setActivity('check');
@@ -53,6 +101,245 @@ export default function StudyTutorShell({
     askOrSend(studyQuizAsk(topic), 'quiz');
     setActivity(null);
   }, [askOrSend, onRequestAssessment, topic]);
+
+  const requestMissionCheck = useCallback(async ({
+    targetLabel = mission.label,
+    targetConceptKey = mission.conceptKey,
+    explicitRetry = completedCheck,
+  } = {}) => {
+    const label = String(targetLabel || '').trim();
+    if (!label || !sameStudyMissionLabel(topic, label)) {
+      dispatchMission({
+        type: 'CHECK_UNAVAILABLE',
+        error: label
+          ? `Study is still focused on ${topic}. The verified check will not run against a different concept.`
+          : 'The mission has no verified Study topic.',
+      });
+      return { issued: false, focusMismatch: true };
+    }
+
+    missionCheckAttemptRef.current = '';
+    dispatchMission({ type: 'CHECK_REQUESTED' });
+    setActivity('check');
+
+    // A topic switch resets Assessment in StudyTutorWorkspace, but React effects
+    // may observe the new topic before that reset is committed. Reuse an active
+    // attempt only when its public canonical concept key agrees with the Compass
+    // target. Guided-chip missions have no Compass key and stay on the already
+    // aligned current topic, so their existing same-topic attempt remains usable.
+    const targetKey = normalizedConceptKey(targetConceptKey);
+    const activeItemKey = normalizedConceptKey(assessment?.item?.conceptKey);
+    const activeAttemptMatchesTarget = !targetKey || (activeItemKey && activeItemKey === targetKey);
+    if (assessment?.item && assessment?.attemptId && !assessment?.result && activeAttemptMatchesTarget) {
+      missionCheckAttemptRef.current = String(assessment.attemptId);
+      return { issued: true, reused: true };
+    }
+
+    if (!onRequestAssessment) {
+      const outcome = { fallback: false, error: 'The governed verified checker is not connected.' };
+      dispatchMission({ type: 'CHECK_UNAVAILABLE', error: outcome.error });
+      setActivity(null);
+      return outcome;
+    }
+
+    const outcome = await onRequestAssessment({ explicitRetry, conceptKey: targetKey });
+    if (outcome?.stale) return outcome;
+    if (outcome?.issued) {
+      const issuedAttemptId = String(outcome?.issued?.attemptId || outcome?.attemptId || '').trim();
+      if (issuedAttemptId) {
+        missionCheckAttemptRef.current = issuedAttemptId;
+        return outcome;
+      }
+      const error = 'The governed verified checker returned no attempt identity.';
+      dispatchMission({ type: 'CHECK_UNAVAILABLE', error });
+      setActivity(null);
+      return { ...outcome, issued: false, error };
+    }
+
+    const error = missionCheckError(outcome);
+    dispatchMission({ type: 'CHECK_UNAVAILABLE', error });
+    setActivity(null);
+    return { ...outcome, issued: false, error };
+  }, [assessment?.attemptId, assessment?.item, assessment?.result, completedCheck, mission.conceptKey, mission.label, onRequestAssessment, topic]);
+
+  const beginCompassMission = useCallback((recommendation) => {
+    const label = String(recommendation?.label || '').trim();
+    if (!label) return;
+    const phase = studyAdaptiveMissionStartPhase(recommendation);
+    const aligned = sameStudyMissionLabel(topic, label);
+    missionCheckAttemptRef.current = '';
+    missionReviewResultRef.current = null;
+    setActivity(null);
+    dispatchMission({ type: 'START_COMPASS', recommendation, activeTopic: topic });
+
+    if (phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK) {
+      if (aligned) {
+        void requestMissionCheck({
+          targetLabel: label,
+          targetConceptKey: recommendation?.conceptKey,
+          explicitRetry: completedCheck,
+        });
+      } else {
+        sendMission(studyAdaptiveMissionFocusAsk(recommendation), `Help me with ${label}`);
+      }
+      return;
+    }
+
+    sendMission(studyAdaptiveMissionStartAsk(recommendation), `Teach me ${label}`);
+  }, [completedCheck, requestMissionCheck, sendMission, topic]);
+
+  const beginGuidedMission = useCallback((item) => {
+    if (!brief?.active || !String(topic || '').trim()) return;
+    missionCheckAttemptRef.current = '';
+    missionReviewResultRef.current = null;
+    setActivity(null);
+    dispatchMission({ type: 'START_GUIDED', topic });
+    sendMission(
+      studyAdaptiveMissionGuidedPracticeAsk(topic),
+      String(item?.label || 'Let’s work through it together').trim(),
+    );
+  }, [brief?.active, sendMission, topic]);
+
+  useEffect(() => {
+    const handleMissionRequest = (event) => {
+      const detail = event?.detail;
+      if (!detail || detail.handled === true || !brief?.active) return;
+      if (detail.source === 'compass' && detail.recommendation?.label) {
+        detail.handled = true;
+        beginCompassMission(detail.recommendation);
+        return;
+      }
+      if (detail.source === 'guided_chip' && String(topic || '').trim()) {
+        detail.handled = true;
+        beginGuidedMission(detail.item);
+      }
+    };
+
+    window.addEventListener(STUDY_ADAPTIVE_MISSION_REQUEST_EVENT, handleMissionRequest);
+    return () => window.removeEventListener(STUDY_ADAPTIVE_MISSION_REQUEST_EVENT, handleMissionRequest);
+  }, [beginCompassMission, beginGuidedMission, brief?.active, topic]);
+
+  // A Compass recommendation can legitimately target a prerequisite rather
+  // than the concept that was active when Compass opened. The visible Study
+  // turn changes the canonical session focus first. Mark alignment in its own
+  // render and let the learner open the governed check from the mission card;
+  // this avoids racing StudyTutorWorkspace's assessment reset for the old topic.
+  useEffect(() => {
+    if (mission.status !== 'active' || mission.topicAligned || !mission.label) return;
+    if (!sameStudyMissionLabel(topic, mission.label)) return;
+    dispatchMission({ type: 'TOPIC_ALIGNED' });
+  }, [mission.label, mission.status, mission.topicAligned, topic]);
+
+  // Once a mission has aligned, a later explicit topic change supersedes it.
+  // Session changes still unmount StudyTutorWorkspace, so mission state cannot
+  // leak across chats even though concept focus changes no longer remount here.
+  useEffect(() => {
+    if (mission.status === 'idle' || !mission.topicAligned || !mission.label) return;
+    if (!String(topic || '').trim() || sameStudyMissionLabel(topic, mission.label)) return;
+    missionCheckAttemptRef.current = '';
+    missionReviewResultRef.current = null;
+    dispatchMission({ type: 'RESET' });
+    setActivity(null);
+  }, [mission.label, mission.status, mission.topicAligned, topic]);
+
+  // A mission consumes only the exact governed attempt that requestMissionCheck
+  // opened (or deliberately reused). This is stronger than comparing the public
+  // item concept: transfer checks intentionally ask about a target concept while
+  // the resulting evidence belongs to the source concept selected by Compass.
+  const assessmentMatchesMission = Boolean(
+    missionCheckAttemptRef.current
+      && assessment?.attemptId
+      && String(assessment.attemptId) === missionCheckAttemptRef.current,
+  );
+
+  // Consume a governed result only after the mission is aligned to its target
+  // concept and only once per server attempt. Binding to the issued attempt ID
+  // blocks old-concept results during focus handoff, stale retry results, and
+  // correctly accepts transfer evidence whose public item names a target concept.
+  // A correct result is also snapshotted in a ref so mission review remains
+  // grounded in the exact attempt that advanced the mission even if ordinary
+  // assessment controls mutate the workspace afterward.
+  useEffect(() => {
+    if (mission.status !== 'active'
+      || !mission.topicAligned
+      || mission.phase !== STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK
+      || !assessmentMatchesMission
+      || !assessment?.attemptId
+      || typeof assessment?.result?.correct !== 'boolean') return;
+    if (assessment.result.correct) {
+      missionReviewResultRef.current = {
+        attemptId: assessment.attemptId,
+        result: assessment.result,
+      };
+    } else {
+      missionReviewResultRef.current = null;
+    }
+    dispatchMission({
+      type: 'VERIFIED_RESULT',
+      correct: assessment.result.correct,
+      attemptId: assessment.attemptId,
+    });
+  }, [assessment?.attemptId, assessment?.result, assessmentMatchesMission, mission.phase, mission.status, mission.topicAligned]);
+
+  const runMissionPractice = useCallback(() => {
+    const label = mission.label || topic;
+    const repair = mission.repairRequired === true;
+    dispatchMission({ type: 'PRACTICE', repair });
+    sendMission(
+      studyAdaptiveMissionGuidedPracticeAsk(label, {
+        repair,
+        explanation: repair ? assessment?.result?.explanation : '',
+      }),
+      repair ? 'Work through the repair with me' : 'Let’s work through it together',
+    );
+  }, [assessment?.result?.explanation, mission.label, mission.repairRequired, sendMission, topic]);
+
+  const runMissionReview = useCallback(() => {
+    const label = mission.label || topic;
+    const reviewSnapshot = missionReviewResultRef.current;
+    if (!reviewSnapshot || reviewSnapshot.attemptId !== mission.verifiedAttemptId) return;
+    sendMission(
+      studyAdaptiveMissionReviewAsk(label, reviewSnapshot.result),
+      `Recap the mission result for ${label}`,
+    );
+    missionCheckAttemptRef.current = '';
+    missionReviewResultRef.current = null;
+    dispatchMission({ type: 'REVIEW_SENT' });
+  }, [mission.label, mission.verifiedAttemptId, sendMission, topic]);
+
+  const handleRemediationAction = useCallback((kind) => {
+    if (kind === 'retry'
+      && mission.status === 'active'
+      && mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE
+      && mission.repairRequired) {
+      void requestMissionCheck({
+        targetLabel: mission.label,
+        targetConceptKey: mission.conceptKey,
+        explicitRetry: true,
+      });
+      return;
+    }
+    onRemediation?.(kind);
+  }, [mission.conceptKey, mission.label, mission.phase, mission.repairRequired, mission.status, onRemediation, requestMissionCheck]);
+
+  const missionPrimaryCheckReady = mission.status === 'active'
+    && mission.topicAligned
+    && (mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE
+      || mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK);
+
+  const handlePrimaryCheck = useCallback(() => {
+    if (mission.status === 'active') {
+      if (missionPrimaryCheckReady) {
+        void requestMissionCheck({
+          targetLabel: mission.label,
+          targetConceptKey: mission.conceptKey,
+          explicitRetry: completedCheck,
+        });
+      }
+      return;
+    }
+    void requestCheck({ explicitRetry: completedCheck });
+  }, [completedCheck, mission.conceptKey, mission.label, mission.status, missionPrimaryCheckReady, requestCheck, requestMissionCheck]);
 
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult
@@ -119,8 +406,11 @@ export default function StudyTutorShell({
           <button
             type="button"
             aria-label="Test me on this"
-            disabled={assessment?.status === 'loading' || assessment?.status === 'grading' || verifiedResult?.correct}
-            onClick={() => requestCheck({ explicitRetry: completedCheck })}
+            disabled={assessment?.status === 'loading'
+              || assessment?.status === 'grading'
+              || verifiedResult?.correct
+              || (mission.status === 'active' && !missionPrimaryCheckReady)}
+            onClick={handlePrimaryCheck}
             className="study-h1-action study-h1-action--primary"
           >
             {assessment?.status === 'loading'
@@ -143,6 +433,90 @@ export default function StudyTutorShell({
             <X size={16} />
           </button>
         </div>
+
+        {mission.status !== 'idle' ? (
+          <div
+            data-quantora-study-adaptive-mission={mission.phase}
+            className="study-h1-next-move"
+            style={{ marginTop: '8px', fontSize: '0.72rem', lineHeight: 1.45 }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '6px' }}>
+              <strong>Learning mission · {mission.label}</strong>
+              {mission.durationMinutes ? <span>{mission.durationMinutes} min</span> : null}
+            </div>
+            <div style={{ marginTop: '2px' }}>Explain → Guided practice → Verified check → Review/retention</div>
+            <div style={{ marginTop: '3px' }}>{studyAdaptiveMissionPhaseCopy(mission)}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '7px' }}>
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.EXPLAIN ? (
+                <button type="button" className="study-h1-action study-h1-action--primary" onClick={runMissionPractice}>
+                  Work through it together
+                </button>
+              ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE ? (
+                <>
+                  {mission.repairRequired ? (
+                    <button type="button" className="study-h1-action" onClick={runMissionPractice}>
+                      Work through the repair
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="study-h1-action study-h1-action--primary"
+                    disabled={!mission.topicAligned || assessment?.status === 'loading' || assessment?.status === 'grading'}
+                    onClick={() => void requestMissionCheck({
+                      targetLabel: mission.label,
+                      targetConceptKey: mission.conceptKey,
+                      explicitRetry: completedCheck,
+                    })}
+                  >
+                    Verified check
+                  </button>
+                </>
+              ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK
+                && mission.topicAligned
+                && !assessment?.item
+                && !mission.error ? (
+                  <button
+                    type="button"
+                    className="study-h1-action study-h1-action--primary"
+                    disabled={assessment?.status === 'loading' || assessment?.status === 'grading'}
+                    onClick={() => void requestMissionCheck({
+                      targetLabel: mission.label,
+                      targetConceptKey: mission.conceptKey,
+                      explicitRetry: completedCheck,
+                    })}
+                  >
+                    {assessment?.status === 'loading' ? 'Preparing…' : 'Open verified check'}
+                  </button>
+                ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK && assessment?.item && activity !== 'check' ? (
+                <button type="button" className="study-h1-action study-h1-action--primary" onClick={() => setActivity('check')}>
+                  Open verified check
+                </button>
+              ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK && mission.error && !assessment?.item ? (
+                <button
+                  type="button"
+                  className="study-h1-action"
+                  disabled={!mission.topicAligned || assessment?.status === 'loading' || assessment?.status === 'grading'}
+                  onClick={() => void requestMissionCheck({
+                    targetLabel: mission.label,
+                    targetConceptKey: mission.conceptKey,
+                    explicitRetry: completedCheck,
+                  })}
+                >
+                  Try verified check again
+                </button>
+              ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.REVIEW ? (
+                <button type="button" className="study-h1-action study-h1-action--primary" onClick={runMissionReview}>
+                  Review & retention
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {activity === 'check' && assessment?.item ? (
           <div
@@ -202,23 +576,25 @@ export default function StudyTutorShell({
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {assessment.result.correct ? (
-                    <>
-                      <button type="button" onClick={onAdvance} className="study-h1-action study-h1-action--primary">
-                        Next question <ArrowRight size={12} style={{ verticalAlign: '-2px' }} />
-                      </button>
-                      <button type="button" onClick={() => requestCheck({ explicitRetry: true })} className="study-h1-action">
-                        Retry this one
-                      </button>
-                    </>
+                    mission.status === 'active' && mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.REVIEW ? null : (
+                      <>
+                        <button type="button" onClick={onAdvance} className="study-h1-action study-h1-action--primary">
+                          Next question <ArrowRight size={12} style={{ verticalAlign: '-2px' }} />
+                        </button>
+                        <button type="button" onClick={() => requestCheck({ explicitRetry: true })} className="study-h1-action">
+                          Retry this one
+                        </button>
+                      </>
+                    )
                   ) : (
                     <>
-                      <button type="button" onClick={() => onRemediation?.('retry')} className="study-h1-action study-h1-action--primary">
+                      <button type="button" onClick={() => handleRemediationAction('retry')} className="study-h1-action study-h1-action--primary">
                         <RotateCcw size={12} style={{ verticalAlign: '-2px' }} /> Retry
                       </button>
-                      <button type="button" onClick={() => onRemediation?.('example')} className="study-h1-action">
+                      <button type="button" onClick={() => handleRemediationAction('example')} className="study-h1-action">
                         Another example
                       </button>
-                      <button type="button" onClick={() => onRemediation?.('reference')} className="study-h1-action">
+                      <button type="button" onClick={() => handleRemediationAction('reference')} className="study-h1-action">
                         Useful reference
                       </button>
                     </>
