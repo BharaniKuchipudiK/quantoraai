@@ -1,6 +1,10 @@
 import { applyCors, clientIp, isRateLimited } from "../rate-limit.js";
 import { authenticateAdminRequest } from "../admin-auth.js";
-import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured, readRecentFailures, readTurnPlanEvents } from "../store.js";
+import { getGrowthSummary, getDailySeries, getSuggestionAcceptance, isStoreConfigured, readRecentFailures, readRecentUsage, readTurnPlanEvents } from "../store.js";
+import { summarizeWorkspaceUse } from "../workspace-analytics.js";
+
+/** How far back the usage picture reaches. Stated with every number it produces. */
+const USAGE_WINDOW_HOURS = 24;
 import { FAILURE_WINDOW_HOURS, summarizeTurnFailures } from "../turn-failure-digest.js";
 import { TURN_PLAN_WINDOW_HOURS, describeTurnPlans, summarizeTurnPlans, type LedgerSource } from "../turn-plan-ledger.js";
 import { getProductInsights } from "../product-analytics.js";
@@ -26,7 +30,7 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const [growth, series, suggestionAcceptance, turnPlanRows, failureRead] = await Promise.all([
+  const [growth, series, suggestionAcceptance, turnPlanRows, failureRead, usageRead] = await Promise.all([
     getGrowthSummary(),
     getDailySeries(14),
     getSuggestionAcceptance(),
@@ -40,6 +44,12 @@ export default async function handler(req: any, res: any) {
      * serverless function.
      */
     readRecentFailures(new Date(Date.now() - FAILURE_WINDOW_HOURS * 3_600_000).toISOString()),
+    /*
+     * What the platform is being used FOR, and what it costs. The usage table
+     * has carried model, provider, workspace mode and whether the platform's
+     * key paid since migration 0001; this screen asked it nothing.
+     */
+    readRecentUsage(new Date(Date.now() - USAGE_WINDOW_HOURS * 3_600_000).toISOString()),
   ]);
   /*
    * FOUR STATES, BECAUSE THREE OF THEM LOOK LIKE ZERO.
@@ -59,6 +69,8 @@ export default async function handler(req: any, res: any) {
   const failureSource = sourceOf(failureRead ? failureRead.rows : null);
   const turnPlanSummary = summarizeTurnPlans(turnPlanRows ?? []);
   const turnPlanSource = sourceOf(turnPlanRows);
+  const workspaceUse = summarizeWorkspaceUse(usageRead?.rows ?? [], USAGE_WINDOW_HOURS, { truncated: usageRead?.truncated ?? false });
+  const usageSource = sourceOf(usageRead ? usageRead.rows : null);
   const product = await getProductInsights(growth);
   const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
 
@@ -109,6 +121,13 @@ export default async function handler(req: any, res: any) {
      * things. An operator reading zero must be able to tell which.
      */
     turnFailures: { ...failures, source: failureSource },
+    /*
+     * Top models, use by workspace, and which accounts are spending the
+     * platform's own key. Tokens, never dollars: OpenRouter exposes one
+     * lifetime total for the whole key and Gemini exposes nothing, so a
+     * per-model currency figure does not exist to be shown.
+     */
+    workspaceUse: { ...workspaceUse, source: usageSource },
 
     /*
      * Capability catalog, not live traffic. Operators can see which Study

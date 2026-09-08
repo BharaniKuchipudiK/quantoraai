@@ -303,7 +303,113 @@ function TurnFailureSection({ turnFailures, isLight }) {
   );
 }
 
-export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, turnPlans = null, turnFailures = null, isLight }) {
+/**
+ * What the platform is being used FOR, and what it costs.
+ *
+ * Three questions an owner needs daily and had no answer to: which models
+ * people reach for, what each workspace costs, and whether one account is
+ * quietly burning the shared key. All of it was in the usage table since
+ * migration 0001 and nothing queried it.
+ *
+ * Tokens, never dollars. OpenRouter exposes one lifetime total for the whole
+ * key and Gemini exposes nothing, so a per-model currency figure does not
+ * exist to be shown, and a column headed with a currency symbol would be an
+ * invention. The word "tokens" is doing real work here.
+ */
+function WorkspaceUseSection({ workspaceUse, isLight }) {
+  if (!workspaceUse) return null;
+  const blind = workspaceUse.source === 'unavailable' || workspaceUse.source === 'not_configured';
+  const models = Array.isArray(workspaceUse.models) ? workspaceUse.models : [];
+  const workspaces = Array.isArray(workspaceUse.workspaces) ? workspaceUse.workspaces : [];
+  const spend = Array.isArray(workspaceUse.spendConcentration) ? workspaceUse.spendConcentration : [];
+  const cardStyle = {
+    padding: '10px 12px',
+    borderRadius: '10px',
+    background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
+    flex: '1 1 200px',
+    minWidth: 0,
+  };
+  const heading = { fontSize: '0.68rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#64748b', marginBottom: '6px' };
+  const rowStyle = { display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.78rem', padding: '2px 0' };
+  const numeric = { fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums', color: isLight ? '#334155' : '#cbd5e1', whiteSpace: 'nowrap' };
+  const name = { color: isLight ? '#0f172a' : '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
+  return (
+    <section
+      data-quantora-workspace-use={workspaceUse.source || 'unknown'}
+      style={{
+        marginTop: '20px',
+        padding: '16px',
+        background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+        border: isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+        borderRadius: '12px',
+      }}
+    >
+      <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '8px' }}>
+        Use and cost · last {workspaceUse.windowHours || 24}h
+      </div>
+
+      {blind ? (
+        <div data-quantora-workspace-source-warning={workspaceUse.source} style={{ fontSize: '0.86rem', color: '#f59e0b' }}>
+          {workspaceUse.source === 'not_configured'
+            ? 'The store is not configured, so usage is not being read. Nothing here is a measurement.'
+            : 'The store did not answer, so usage could not be read. Nothing here is a measurement — this is not a quiet day.'}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: '0.86rem', color: isLight ? '#0f172a' : '#f1f5f9', lineHeight: 1.5 }}>{workspaceUse.headline}</div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+            <span data-quantora-active-users={workspaceUse.activeUsers} style={{ ...numeric, fontSize: '0.72rem', padding: '4px 8px', borderRadius: '999px', background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)' }}>
+              {workspaceUse.activeUsers} account(s) active
+            </span>
+            {/* Not "concurrent". Nothing observes a live session, so the window
+                travels with the number rather than a stronger word. */}
+            <span data-quantora-recent-users={workspaceUse.recentlyActiveUsers} style={{ ...numeric, fontSize: '0.72rem', padding: '4px 8px', borderRadius: '999px', background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)' }}>
+              {workspaceUse.recentlyActiveUsers} in the last {workspaceUse.recentWindowMinutes}m
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '12px' }}>
+            <div style={cardStyle}>
+              <div style={heading}>Top models</div>
+              {models.length === 0 ? <div style={{ ...numeric, fontSize: '0.76rem' }}>—</div> : models.slice(0, 5).map((m) => (
+                <div key={m.modelId} style={rowStyle}>
+                  <span style={name} title={m.modelId}>{m.modelId}</span>
+                  <span style={numeric}>{m.turns} · {m.sharePercent}%</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={cardStyle}>
+              <div style={heading}>By workspace</div>
+              {workspaces.length === 0 ? <div style={{ ...numeric, fontSize: '0.76rem' }}>—</div> : workspaces.map((w) => (
+                <div key={w.workspace} style={rowStyle}>
+                  <span style={name} title={w.topModel || ''}>{w.workspace}</span>
+                  <span style={numeric}>{w.turns} · {w.users}u</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={cardStyle}>
+              <div style={heading}>Platform key · tokens</div>
+              {spend.length === 0 ? (
+                <div style={{ ...numeric, fontSize: '0.76rem' }}>nothing on the platform key</div>
+              ) : spend.map((account) => (
+                <div key={account.account} style={rowStyle}>
+                  <span style={name}>{account.account}</span>
+                  <span style={numeric}>{account.serverKeyTokens.toLocaleString()} · {account.sharePercent}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+export default function TechnicalAnalyticsPanel({ technical, studyRepresentationCoverage, window, daily, turnPlans = null, turnFailures = null, workspaceUse = null, isLight }) {
   const tracking = technical?.tracking;
   const keyMix = technical?.keyMix;
   const latency = technical?.latencySummary;
@@ -467,6 +573,7 @@ export default function TechnicalAnalyticsPanel({ technical, studyRepresentation
         <LatencyTrendChart usageDays={usageDays} />
         <TurnPlannerSection turnPlans={turnPlans} isLight={isLight} />
         <TurnFailureSection turnFailures={turnFailures} isLight={isLight} />
+        <WorkspaceUseSection workspaceUse={workspaceUse} isLight={isLight} />
         <BarChart
           title="Model latency — avg ms (7d, min 3 reqs)"
           rows={modelRows}

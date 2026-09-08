@@ -323,6 +323,7 @@ export function useChatStream({
   updateActiveSession,
   onCodingTurnExecute = null,
   onToolInvoked = null,
+  onTurnBudget = null,
   onCodingTurnProved = null,
   qirCoding = null,
   onDeskRename = null,
@@ -335,6 +336,8 @@ export function useChatStream({
    */
   const onToolInvokedRef = useRef(onToolInvoked);
   onToolInvokedRef.current = onToolInvoked;
+  const onTurnBudgetRef = useRef(onTurnBudget);
+  onTurnBudgetRef.current = onTurnBudget;
   /*
    * PER SESSION, not per studio. This is what makes two builds possible.
    *
@@ -1667,6 +1670,17 @@ export function useChatStream({
           timeoutId = setTimeout(() => controller.abort('timeout'), attemptBudgetMs);
           if (!stillCurrent()) return;
           const responseCorrelationId = normalizeClientCorrelationId(res.headers.get('X-Quantora-Correlation-Id')) || turnCorrelationId;
+
+          /*
+           * The allowance, on every turn rather than only the refused one.
+           * Read here beside the correlation id because both are true of the
+           * response whether it streamed a build or answered with JSON, and
+           * the number is worth seeing at turn 45, not at 61.
+           */
+          try {
+            const raw = res.headers.get('X-Quantora-Turn-Budget');
+            if (raw) onTurnBudgetRef.current?.(JSON.parse(raw));
+          } catch { /* a meter is never worth failing a turn over */ }
 
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));

@@ -118,6 +118,7 @@ const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 import ChatRowMenu from './ChatRowMenu.jsx';
 import TurnBudgetMeter from './TurnBudgetMeter.jsx';
+import TurnBudgetRing from './TurnBudgetRing.jsx';
 import { archivedChats, visibleChats } from '../lib/chat-organization.js';
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
@@ -1012,6 +1013,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * event to wire, and therefore none to forget.
    */
   const [previewEntryPin, setPreviewEntryPin] = useState(null);
+  /*
+   * The account's turn allowance, refreshed by every turn's response header.
+   * Null until the first turn of the session reports it -- the ring draws
+   * nothing rather than guessing, because a guessed ring reads as a full
+   * allowance.
+   */
+  const [turnBudget, setTurnBudget] = useState(null);
   /*
    * A pin belongs to the desk it was chosen on. This state outlives any one
    * chat, so switching sessions used to carry the choice across: pin
@@ -2023,6 +2031,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      * always existed on opposite sides of this component and were never joined.
      */
     onToolInvoked: qirCoding.reportToolUse,
+    onTurnBudget: setTurnBudget,
     onCodingTurnProved,
     qirCoding,
     onDeskRename,
@@ -5300,6 +5309,9 @@ Paused — ${autoPauseRef.current}.`
                 style={{ display: 'none' }}
                 multiple
               />
+
+              {/* What is left, where it is about to be spent. */}
+              <TurnBudgetRing budget={turnBudget} isLight={isLight} />
 
               {/* Attachment Button */}
               <button

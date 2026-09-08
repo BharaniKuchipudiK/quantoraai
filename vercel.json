@@ -2,6 +2,9 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
+    "api/chat.ts": {
+      "maxDuration": 300
+    },
     "api/generate-office.ts": {
       "maxDuration": 300
     },

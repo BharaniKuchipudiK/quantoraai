@@ -76,8 +76,8 @@ import {
   stripDesktopAuthParams,
 } from './lib/desktop-auth-handoff.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from './lib/coding-desk-auto-model.js';
-// import { Analytics } from '@vercel/analytics/react';
-// import { SpeedInsights } from '@vercel/speed-insights/react';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -761,8 +761,20 @@ export default function App() {
       {!isStudioShell && (
         <Footer isLight={isLight} />
       )}
-      {/* {shouldLoadVercelTelemetry && <Analytics />} */}
-      {/* {shouldLoadVercelTelemetry && <SpeedInsights />} */}
+      {/*
+        * Visitors and page views, which nothing else here can answer: the
+        * usage table only ever sees a signed-in account making an AI turn, so
+        * "how many people reached the site" had no source at all. Both
+        * packages have been dependencies since #429 with the guard written and
+        * the components left commented — planned in docs/roadmap/pipeline.md
+        * and never finished.
+        *
+        * The guard is load-bearing, not caution: browser gates drive the app
+        * on 127.0.0.1, and a third-party script loading there would add
+        * network noise to every one of them.
+        */}
+      {shouldLoadVercelTelemetry && <Analytics />}
+      {shouldLoadVercelTelemetry && <SpeedInsights />}
     </div>
   );
 

@@ -834,6 +834,63 @@ function mapBoundaryRow(row: any): BoundaryEventRecord {
   };
 }
 
+export type UsageRow = {
+  userSub: string | null;
+  modelId: string | null;
+  provider: string | null;
+  studioMode: string | null;
+  tokensEst: number | null;
+  latencyMs: number | null;
+  usedServerKey: boolean;
+  at: string | null;
+};
+
+/** The newest turns read in one window. Fetched +1 to detect a cut. */
+export const USAGE_ROW_LIMIT = 5000;
+
+/*
+ * EVERY TURN IN A WINDOW, FOR THE QUESTIONS ONLY THE SHAPE OF USE ANSWERS.
+ *
+ * The usage table has carried model, provider, workspace mode, tokens and
+ * whether the deployment's own key paid since migration 0001, and the admin
+ * screen queried none of it: which models people actually reach for, what a
+ * workspace costs, whether one account is burning the shared key. All of it
+ * was a GROUP BY away and nobody had written it.
+ *
+ * Null when the store did not answer -- same rule as readRecentFailures, and
+ * for the same reason: an empty list and a dead store are indistinguishable
+ * from the outside, and the one that looks like a quiet day is the wrong
+ * guess.
+ */
+export async function readRecentUsage(
+  sinceIso: string,
+  limit = USAGE_ROW_LIMIT,
+): Promise<{ rows: UsageRow[]; truncated: boolean } | null> {
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const cap = Math.max(1, Math.min(USAGE_ROW_LIMIT, Number(limit) || USAGE_ROW_LIMIT));
+  const response = await request(
+    `usage?select=user_sub,model_id,provider,studio_mode,tokens_est,latency_ms,used_server_key,created_at`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=${cap + 1}`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  const rows = await response.json().catch(() => null);
+  if (!Array.isArray(rows)) return null;
+  return {
+    rows: rows.slice(0, cap).map((row: any) => ({
+      userSub: row.user_sub ?? null,
+      modelId: row.model_id ?? null,
+      provider: row.provider ?? null,
+      studioMode: row.studio_mode ?? null,
+      tokensEst: row.tokens_est ?? null,
+      latencyMs: row.latency_ms ?? null,
+      usedServerKey: row.used_server_key === true,
+      at: row.created_at ?? null,
+    })),
+    truncated: rows.length > cap,
+  };
+}
+
 /** The newest failed turns read in one window. Fetched +1 to detect a cut. */
 export const FAILURE_ROW_LIMIT = 2000;
 

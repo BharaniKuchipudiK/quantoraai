@@ -761,6 +761,27 @@ export default async function handler(req: any, res: any) {
       const budget = await turnBudgetVerdict(activeSessionUser?.sub || null, {
         email: activeSessionUser?.email || null,
       });
+      /*
+       * THE STANDING TRAVELS ON EVERY TURN, NOT ONLY THE REFUSED ONE.
+       *
+       * A meter that appears when you are already stopped is the same defect
+       * it was built to fix, in a nicer font: the moment the number is worth
+       * knowing is at turn 45, not at 61. A header rather than a stream event
+       * because this handler answers with SSE for a build and with JSON for a
+       * repair, and committing to a stream here would break the second.
+       */
+      const standing = {
+        scope: budget.exhausted,
+        used: budget.used,
+        remaining: budget.remaining,
+        limit: budget.exhausted === 'platform' ? budget.platformLimit : budget.userLimit,
+        resetsAt: budget.resetsAt,
+        exempt: budget.exempt,
+      };
+      try {
+        res.setHeader('X-Quantora-Turn-Budget', JSON.stringify(standing));
+        res.setHeader('Access-Control-Expose-Headers', 'X-Quantora-Turn-Budget');
+      } catch { /* a meter is never worth failing a turn over */ }
       if (!budget.allowed) {
         trace({
           correlationId,
