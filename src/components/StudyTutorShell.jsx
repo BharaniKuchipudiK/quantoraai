@@ -220,12 +220,28 @@ export default function StudyTutorShell({
     setActivity(null);
   }, [mission.label, mission.status, mission.topicAligned, topic]);
 
+  const missionTargetKey = normalizedConceptKey(mission.conceptKey);
+  const assessmentConceptKey = normalizedConceptKey(assessment?.item?.conceptKey);
+  const assessmentMatchesMission = !missionTargetKey
+    || Boolean(assessmentConceptKey && assessmentConceptKey === missionTargetKey);
+
+  // Consume a governed result only after the mission is aligned to its target
+  // concept and only once per server attempt. This blocks both the old-concept
+  // result that can coexist for one render during a focus handoff and the old
+  // incorrect result that can coexist while a retry reserves a new attempt.
   useEffect(() => {
     if (mission.status !== 'active'
+      || !mission.topicAligned
       || mission.phase !== STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK
+      || !assessmentMatchesMission
+      || !assessment?.attemptId
       || typeof assessment?.result?.correct !== 'boolean') return;
-    dispatchMission({ type: 'VERIFIED_RESULT', correct: assessment.result.correct });
-  }, [assessment?.result?.correct, mission.phase, mission.status]);
+    dispatchMission({
+      type: 'VERIFIED_RESULT',
+      correct: assessment.result.correct,
+      attemptId: assessment.attemptId,
+    });
+  }, [assessment?.attemptId, assessment?.result?.correct, assessmentMatchesMission, mission.phase, mission.status, mission.topicAligned]);
 
   const runMissionPractice = useCallback(() => {
     const label = mission.label || topic;
