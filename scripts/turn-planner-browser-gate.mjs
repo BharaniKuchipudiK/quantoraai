@@ -29,6 +29,7 @@ const context = await browser.newContext({ viewport: { width: 1600, height: 1000
 const page = await context.newPage();
 
 const TRACKER_BRIEF = 'I need an excel-like tracker for my association members and their payments, as a web page people can fill in from their phones';
+const REFINE_ASK = 'make the header blue';
 const CALCULATOR_ASK = 'Build me a simple calculator';
 const TRIP_ASK = 'help me plan a trip with hotels and flights';
 
@@ -164,6 +165,41 @@ try {
   if (fallback.lanePlan !== null && fallback.lanePlan !== undefined) throw new Error(`A dead planner still produced a plan: ${JSON.stringify(fallback.lanePlan)}`);
   if (fallback.buildMode !== true) throw new Error('With the planner down, the build was not sent as a build turn.');
   plannerMode = 'answer';
+
+  /*
+   * 2b. A REFINE IS NOT A REPAIR — asserted on the WIRE, because that is the
+   * only place it was ever wrong (2026-09-08).
+   *
+   * The client used to send `qualityHints.repair: refineDesk`, true on EVERY
+   * refine. The server re-resolves the route (the client sends `id: 'auto'`,
+   * so select-models re-runs resolveCodingDeskModel), and there `repair` hits
+   * the escalation on the line straight after the small-refine check — so
+   * "make the header blue" reached the paid flagship and its slow attempt ate
+   * the turn budget that recovery needed.
+   *
+   * Every unit test missed it. The rule lives in shared/, the defect lived in
+   * the REQUEST BODY, and nothing asserted the body. Restoring the bad line
+   * still passes `npm run test:all` today; only this check sees it.
+   *
+   * A genuine repair is unaffected: chat-handler derives repair as
+   * `qualityHints.repair === true || task === "repair"`, and api/_lib/repair.ts
+   * sends that task.
+   */
+  const chatCountBeforeRefine = chatRequests.length;
+  await prompt.fill(REFINE_ASK);
+  await prompt.press('Enter');
+  await page.getByText(REFINE_ASK.slice(0, 24), { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await page.waitForTimeout(900);
+  if (chatRequests.length === chatCountBeforeRefine) {
+    throw new Error('The refine never reached /api/chat, so nothing could be asserted about it.');
+  }
+  const refined = lastChatRequest();
+  if (refined.refineMode !== true) {
+    throw new Error(`A follow-up on a built desk was not sent as a refine (refineMode ${JSON.stringify(refined.refineMode)}).`);
+  }
+  if (refined.qualityHints && refined.qualityHints.repair === true) {
+    throw new Error('An ordinary refine was sent as a repair (qualityHints.repair true). That escalates every small edit to the paid flagship and spends the budget a fallback needs.');
+  }
 
   // 3. A plan that names Travel cannot move a chat pinned to the Coding desk.
   const codingPlus = page.locator('[data-quantora-workspace-new-chat="coding"]').first();
