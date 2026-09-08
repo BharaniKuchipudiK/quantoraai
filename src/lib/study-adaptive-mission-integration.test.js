@@ -1,0 +1,153 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  STUDY_ADAPTIVE_MISSION_REQUEST_EVENT,
+  requestStudyAdaptiveMission,
+} from './study-adaptive-mission-event.js';
+import { extractStudyTopicLabel } from './study-syllabus-overlay.js';
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('mission request bridge is synchronous and falls back cleanly when no Study shell owns it', () => {
+  const originalWindow = globalThis.window;
+  const originalCustomEvent = globalThis.CustomEvent;
+  const listeners = new Map();
+
+  class FakeCustomEvent {
+    constructor(type, init = {}) {
+      this.type = type;
+      this.detail = init.detail;
+    }
+  }
+
+  globalThis.CustomEvent = FakeCustomEvent;
+  globalThis.window = {
+    addEventListener(type, listener) {
+      const rows = listeners.get(type) || [];
+      rows.push(listener);
+      listeners.set(type, rows);
+    },
+    dispatchEvent(event) {
+      for (const listener of listeners.get(event.type) || []) listener(event);
+      return true;
+    },
+  };
+
+  try {
+    assert.equal(requestStudyAdaptiveMission({ source: 'guided_chip', item: { id: 'study-work-together' } }), false);
+    window.addEventListener(STUDY_ADAPTIVE_MISSION_REQUEST_EVENT, (event) => {
+      event.detail.handled = true;
+    });
+    assert.equal(requestStudyAdaptiveMission({ source: 'guided_chip', item: { id: 'study-work-together' } }), true);
+    assert.equal(requestStudyAdaptiveMission({ source: 'unknown' }), false);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+    if (originalCustomEvent === undefined) delete globalThis.CustomEvent;
+    else globalThis.CustomEvent = originalCustomEvent;
+  }
+});
+
+test('Compass and the work-together chip both hand off to one persistent mission owner with legacy fallback intact', () => {
+  const hub = read('components/StudyHubLauncher.jsx');
+  const suggestions = read('components/StudioInlineSuggestions.jsx');
+  const shell = read('components/StudyTutorShell.jsx');
+
+  assert.match(hub, /requestStudyAdaptiveMission\(\{ source: 'compass', recommendation \}\)/);
+  assert.match(hub, /if \(!missionHandled\)[\s\S]*studyCompassMissionAsk/);
+  assert.match(suggestions, /item\?\.id === 'study-work-together'[\s\S]*requestStudyAdaptiveMission/);
+  assert.match(suggestions, /onSelectContinue\?\.\(item\)/, 'unhandled chips must keep their existing continuation behavior');
+
+  assert.match(shell, /addEventListener\(STUDY_ADAPTIVE_MISSION_REQUEST_EVENT/);
+  assert.match(shell, /data-quantora-study-adaptive-mission=\{mission\.phase\}/);
+  assert.match(shell, /onRequestAssessment\(\{ explicitRetry \}\)/, 'mission checks must reuse the existing governed assessment owner');
+  assert.doesNotMatch(shell, /requestStudyAssessment|gradeStudyAssessment|saveStudyMasteryEstimate/);
+});
+
+test('mission check wiring fails closed instead of converting unavailable verified evidence into a model quiz', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
+  assert.match(missionCheck, /CHECK_UNAVAILABLE/);
+  assert.doesNotMatch(missionCheck, /studyQuizAsk|askOrSend/);
+  assert.match(missionCheck, /sameStudyMissionLabel\(topic, label\)/);
+  assert.match(missionCheck, /returned no attempt identity/,
+    'a governed issue without a stable attempt identity must fail closed');
+});
+
+test('cross-concept Compass handoff preserves the mission and cannot reuse the old concept assessment', () => {
+  const workspace = read('components/StudyTutorWorkspace.jsx');
+  const shell = read('components/StudyTutorShell.jsx');
+  const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
+  const alignmentEffect = shell.slice(
+    shell.indexOf('// A Compass recommendation can legitimately target a prerequisite'),
+    shell.indexOf('// Once a mission has aligned'),
+  );
+
+  assert.doesNotMatch(
+    workspace,
+    /<StudyTutorShell[\s\S]{0,120}key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/,
+    'concept changes must not remount the shell and erase the active mission',
+  );
+  assert.match(shell, /setDismissed\(false\);[\s\S]*setActivity\(null\);[\s\S]*\[conceptId\]/,
+    'concept changes should still reset transient shell UI');
+  assert.match(missionCheck, /assessment\?\.item\?\.conceptKey/);
+  assert.match(missionCheck, /activeAttemptMatchesTarget/);
+  assert.match(missionCheck, /activeItemKey === targetKey/);
+  assert.match(alignmentEffect, /TOPIC_ALIGNED/);
+  assert.doesNotMatch(alignmentEffect, /requestMissionCheck/, 'focus alignment must settle before a new governed attempt is requested');
+  assert.match(shell, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.VERIFIED_CHECK[\s\S]*mission\.topicAligned[\s\S]*!assessment\?\.item[\s\S]*Open verified check/);
+});
+
+test('transfer missions consume the exact governed issued attempt instead of assuming the public item concept is the evidence concept', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
+  const resultGate = shell.slice(
+    shell.indexOf('// A mission consumes only the exact governed attempt'),
+    shell.indexOf('const runMissionPractice'),
+  );
+
+  assert.match(shell, /const missionCheckAttemptRef = useRef\(''\)/);
+  assert.match(missionCheck, /outcome\?\.issued\?\.attemptId/,
+    'new governed checks must bind to the attempt identity returned by the assessment owner');
+  assert.match(missionCheck, /missionCheckAttemptRef\.current = issuedAttemptId/);
+  assert.match(missionCheck, /missionCheckAttemptRef\.current = String\(assessment\.attemptId\)/,
+    'deliberately reused same-concept attempts must bind to that exact attempt too');
+  assert.match(resultGate, /String\(assessment\.attemptId\) === missionCheckAttemptRef\.current/);
+  assert.doesNotMatch(resultGate, /assessment\?\.item\?\.conceptKey/,
+    'result consumption must not reject transfer evidence because the public item names the transfer target');
+});
+
+test('mission review visible text cannot be parsed as a replacement Study topic', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  assert.match(shell, /`Recap the mission result for \$\{label\}`/);
+  assert.equal(extractStudyTopicLabel("Recap the mission result for Newton's Third Law"), '');
+  assert.equal(
+    extractStudyTopicLabel('Review what I proved and what I should retain'),
+    'what I proved and what I should retain',
+    'the former copy demonstrates why leading Review was unsafe',
+  );
+});
+
+test('an incorrect mission retry re-enters VERIFIED_CHECK before reserving the replacement attempt', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const retry = shell.slice(shell.indexOf('const handleRemediationAction'), shell.indexOf('const adaptiveState'));
+  assert.match(retry, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.GUIDED_PRACTICE/);
+  assert.match(retry, /mission\.repairRequired/);
+  assert.match(retry, /requestMissionCheck\(\{/);
+  assert.match(retry, /explicitRetry: true/);
+  assert.match(shell, /onClick=\{\(\) => handleRemediationAction\('retry'\)\}/);
+});
+
+test('mission review stays grounded in the exact passed governed attempt', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  assert.match(shell, /const missionReviewResultRef = useRef\(null\)/);
+  assert.match(shell, /missionReviewResultRef\.current = \{[\s\S]*attemptId: assessment\.attemptId,[\s\S]*result: assessment\.result/);
+  assert.match(shell, /reviewSnapshot\.attemptId !== mission\.verifiedAttemptId/);
+  assert.match(shell, /studyAdaptiveMissionReviewAsk\(label, reviewSnapshot\.result\)/);
+  assert.match(
+    shell,
+    /assessment\.result\.correct \? \([\s\S]*mission\.status === 'active' && mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.REVIEW \? null/,
+    'ordinary next/retry controls must not replace the passed result before mission review is closed',
+  );
+});

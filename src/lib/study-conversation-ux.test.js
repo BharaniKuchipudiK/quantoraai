@@ -29,8 +29,16 @@ test('incorrect resolution offers repair choices without punitive red failure st
   assert.match(shell, /Good attempt — here is the key distinction/);
   assert.match(shell, />\s*Another example\s*</);
   assert.match(shell, />\s*Useful reference\s*</);
-  assert.match(shell, /onRemediation\?\.\('retry'\)/);
+  assert.match(shell, /handleRemediationAction\('retry'\)/);
+  assert.match(shell, /onRemediation\?\.\(kind\)/);
   assert.doesNotMatch(shell, /#9f1239|#fb7185/);
+});
+
+test('the permanent Check control stays inside an active Adaptive Mission', () => {
+  const shell = read('src/components/StudyTutorShell.jsx');
+  assert.match(shell, /const handlePrimaryCheck = useCallback/);
+  assert.match(shell, /mission\.status === 'active'[\s\S]*requestMissionCheck\(\{/);
+  assert.match(shell, /onClick=\{handlePrimaryCheck\}/);
 });
 
 test('Study affordances stay hard-gated at the education render boundary', () => {
@@ -165,7 +173,7 @@ test('Study plus surfaces are acknowledged by mounted owners instead of duplicat
   assert.match(workspace, /event\.detail\.handled = true/);
   assert.match(workspace, /setAssessmentWorkspaceOpen\(true\)/);
   assert.doesNotMatch(shell, /STUDY_SURFACE\.ASSESSMENT|STUDY_SURFACE_REQUEST_EVENT/);
-  assert.match(shell, /onClick=\{\(\) => requestCheck\(\{ explicitRetry: completedCheck \}\)\}/);
+  assert.match(shell, /onClick=\{handlePrimaryCheck\}/);
 
   assert.match(hub, /STUDY_SURFACE\.NOTEBOOK/);
   assert.match(hub, /event\.detail\.handled = true/);

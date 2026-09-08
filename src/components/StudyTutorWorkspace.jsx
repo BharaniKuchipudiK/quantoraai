@@ -426,7 +426,6 @@ export default function StudyTutorWorkspace({
   return (
     <>
       <StudyTutorShell
-        key={`${activeSessionId}:${brief.conceptId}`}
         brief={brief}
         onAsk={onAsk}
         onSend={contextualSend}

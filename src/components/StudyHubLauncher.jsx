@@ -16,6 +16,7 @@ import {
 } from '../lib/study-learning-resources.js';
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import { studyCompassSchedulePrefill } from '../lib/study-compass-schedule.js';
+import { requestStudyAdaptiveMission } from '../lib/study-adaptive-mission-event.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
 import StudyLearningCompass from './StudyLearningCompass.jsx';
@@ -160,10 +161,13 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
   };
 
   const startCompassRecommendation = (recommendation) => {
-    const text = studyCompassMissionAsk(recommendation);
-    const visibleUserText = `Start my recommended next step: ${recommendation.label}.`;
-    if (onSend) onSend(text, { visibleUserText });
-    else onAsk?.(text);
+    const missionHandled = requestStudyAdaptiveMission({ source: 'compass', recommendation });
+    if (!missionHandled) {
+      const text = studyCompassMissionAsk(recommendation);
+      const visibleUserText = `Start my recommended next step: ${recommendation.label}.`;
+      if (onSend) onSend(text, { visibleUserText });
+      else onAsk?.(text);
+    }
     void closeHub();
   };
 
