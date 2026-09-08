@@ -9,13 +9,26 @@ on:
   # transactions that is 132 production builds, next to 120 from the fifteen
   # production deployments that are what this gate is actually for.
   #
-  # SEPARATION, NOT SUPPRESSION (doctrine §5). Nothing here is muted and the
-  # suite still checks exactly what it checked: the full eight transactions run
-  # on every Production deployment_status, which is the signal that caught three
-  # dead API functions on 2026-08-31. What is dropped is the re-run on each
-  # intermediate commit of a branch nobody has finished yet. `opened` and
-  # `ready_for_review` still cover the PR itself, and `[golden:all]` in a PR
-  # title still forces the whole roster when a change warrants it.
+  # SEPARATION, NOT SUPPRESSION (doctrine §5). Nothing here is muted. What is
+  # dropped is the re-run on each intermediate commit of a branch nobody has
+  # finished yet. `opened` and `ready_for_review` still cover the PR itself, and
+  # `[golden:all]` in a PR title still forces the whole roster.
+  #
+  # THIS HEADER USED TO SAY the suite still checks exactly what it checked, and
+  # that the full eight transactions run on every Production deployment_status.
+  # Both stopped being true on 2026-09-07, when the transaction limit below
+  # became '2' for every event that is not a [golden:all] pull request — a
+  # deployment_status carries no pull_request, so PRODUCTION RUNS TWO. The
+  # trade is deliberate and its cost is argued at the limit itself; the header
+  # was simply not updated with it, and a reader of this file would have
+  # believed production behavioural coverage was four times what it is.
+  # Correcting the record rather than the behaviour: §3, out loud.
+  #
+  # What is unchanged is the part that matters most: deployed-readiness-gate.mjs
+  # still runs on EVERY deployment, blocking, and it is the signal that caught
+  # three dead API functions on 2026-08-31. Liveness is checked every time.
+  # BEHAVIOUR is now sampled at two of eight, and the limit's own comment says
+  # that trade should be revisited the day real users are on the platform.
   #
   # The cost of the trade, stated plainly: a commit pushed AFTER a PR is marked
   # ready is not golden-checked until it reaches Production. That is later than
