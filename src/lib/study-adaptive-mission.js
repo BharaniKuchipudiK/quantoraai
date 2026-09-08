@@ -242,6 +242,17 @@ export function studyAdaptiveMissionReviewAsk(topic, result = null) {
   const nextMoveType = clean(learnerModel?.nextLearningMove?.type, 80);
   const nextMoveText = clean(learnerModel?.nextLearningMove?.learnerFacingText, 260);
   const dueAt = clean(learnerModel?.retention?.dueAt, 80);
+  const explanation = clean(result?.explanation, 420);
+  const evidenceKind = clean(result?.evidenceKind, 80);
+  const evidenceConcept = clean(result?.evidenceConcept?.label || result?.evidenceConcept?.key, 160);
+  const transferTarget = clean(result?.transferTarget, 160);
+  const governedResult = [
+    evidenceKind ? `Governed evidence kind: ${evidenceKind}.` : '',
+    evidenceConcept ? `Governed evidence concept: ${evidenceConcept}.` : '',
+    transferTarget ? `Governed transfer target: ${transferTarget}.` : '',
+    explanation ? `Reviewed explanation from the passed check: ${explanation}` : '',
+  ].filter(Boolean).join(' ')
+    || 'No bounded governed result detail is available beyond the pass signal; do not invent question-specific facts.';
   const nextMove = nextMoveType
     ? `The governed learner model's next move is ${nextMoveType}${nextMoveText ? `: ${nextMoveText}` : '.'}`
     : 'No governed next move is available in this result; do not invent one.';
@@ -251,6 +262,7 @@ export function studyAdaptiveMissionReviewAsk(topic, result = null) {
 
   return [
     `Close the Adaptive Learning Mission for ${label} with a concise review grounded only in the governed check that just passed.`,
+    governedResult,
     'State what was verified by that check and clearly separate it from what remains unverified.',
     nextMove,
     retention,
