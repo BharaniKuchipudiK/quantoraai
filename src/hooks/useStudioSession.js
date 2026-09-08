@@ -475,6 +475,8 @@ export function handoverNoteMessage({ contract, sourceSession = null, desk = nul
     id: `handover-note-${contract?.createdAt || Date.now()}`,
     sender: 'ai',
     handoverNote: true,
+    /* The fact a gate should assert, separate from the words that state it. */
+    handoverDeskFiles: fileCount,
     text: `Continued from ${fromTitle ? `"${fromTitle}"` : 'the previous chat'}, which stays exactly as it was.\n\n${parts.join('\n\n')}`,
   };
 }

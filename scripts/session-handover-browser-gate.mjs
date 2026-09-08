@@ -159,8 +159,19 @@ try {
   const note = page.getByText(/Continued from ".*", which stays exactly as it was\./).first();
   await visible(note, 'The chip did not open a new chat that names where it came from.', 8_000);
   const noteText = await page.locator('[data-quantora-assistant-prose]').first().innerText().catch(() => '');
-  const carried = await page.getByText(/The desk, with \d+ files? — Preview runs the same build\./).first().isVisible().catch(() => false);
-  if (!carried) throw new Error(`The new chat did not carry the desk. Note read: ${noteText.slice(0, 300)}`);
+  /*
+   * The COUNT, from a durable hook — not the sentence.
+   *
+   * This asserted the exact prose "The desk, with N files — Preview runs the
+   * same build." On 2026-09-08 that note was shortened, in the same change, and
+   * this gate went red over wording while the desk it guards carried perfectly.
+   * That is the prose-anchoring this repository has already paid for once.
+   */
+  const carriedFiles = Number(await page.locator('[data-quantora-handover-note="true"]').first()
+    .getAttribute('data-quantora-handover-desk-files').catch(() => '0'));
+  if (!Number.isFinite(carriedFiles) || carriedFiles < 1) {
+    throw new Error(`The new chat did not carry the desk (files=${carriedFiles}). Note read: ${noteText.slice(0, 300)}`);
+  }
   if (!(await visibleFrame('[data-testid="calculator-display"]', 20_000))) {
     throw new Error('The carried desk never ran the calculator in Preview.');
   }

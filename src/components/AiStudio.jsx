@@ -2681,6 +2681,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                       <div
                         className="markdown-prose"
                         data-quantora-assistant-prose={msg.sender === 'ai' ? 'true' : undefined}
+                        /*
+                         * A handover note, and how many files came with it.
+                         * The browser gate proving a continued chat carries
+                         * its desk was anchored on the SENTENCE, so rewording
+                         * that note in this same change turned the gate red —
+                         * exactly the prose-anchoring this repo has been burned
+                         * by before. The count is the fact; the words are not.
+                         */
+                        data-quantora-handover-note={msg.handoverNote ? 'true' : undefined}
+                        data-quantora-handover-desk-files={msg.handoverNote ? String(msg.handoverDeskFiles ?? 0) : undefined}
                         data-quantora-desk-claim-filter={claimFiltered ? 'true' : undefined}
                         data-quantora-modal-unreadable={modalUnreadable ? 'true' : undefined}
                         data-quantora-modal-failure={modalFailure || undefined}
