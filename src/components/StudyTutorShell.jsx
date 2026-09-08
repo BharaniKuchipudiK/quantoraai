@@ -30,6 +30,10 @@ function missionCheckError(outcome = {}) {
   return 'The governed verified check is unavailable for this topic right now.';
 }
 
+function normalizedConceptKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 /**
  * Conversation-first Study shell.
  *
@@ -86,7 +90,11 @@ export default function StudyTutorShell({
     setActivity(null);
   }, [askOrSend, onRequestAssessment, topic]);
 
-  const requestMissionCheck = useCallback(async ({ targetLabel = mission.label, explicitRetry = completedCheck } = {}) => {
+  const requestMissionCheck = useCallback(async ({
+    targetLabel = mission.label,
+    targetConceptKey = mission.conceptKey,
+    explicitRetry = completedCheck,
+  } = {}) => {
     const label = String(targetLabel || '').trim();
     if (!label || !sameStudyMissionLabel(topic, label)) {
       dispatchMission({
@@ -101,15 +109,22 @@ export default function StudyTutorShell({
     dispatchMission({ type: 'CHECK_REQUESTED' });
     setActivity('check');
 
-    // Re-open an already-issued governed attempt instead of reserving a second
-    // one. StudyTutorWorkspace remains the single owner of issuance + grading.
-    if (assessment?.item && assessment?.attemptId && !assessment?.result) {
+    // A topic switch resets Assessment in StudyTutorWorkspace, but React effects
+    // may observe the new topic before that reset is committed. Reuse an active
+    // attempt only when its public canonical concept key agrees with the Compass
+    // target. Guided-chip missions have no Compass key and stay on the already
+    // aligned current topic, so their existing same-topic attempt remains usable.
+    const targetKey = normalizedConceptKey(targetConceptKey);
+    const activeItemKey = normalizedConceptKey(assessment?.item?.conceptKey);
+    const activeAttemptMatchesTarget = !targetKey || (activeItemKey && activeItemKey === targetKey);
+    if (assessment?.item && assessment?.attemptId && !assessment?.result && activeAttemptMatchesTarget) {
       return { issued: true, reused: true };
     }
 
     if (!onRequestAssessment) {
       const outcome = { fallback: false, error: 'The governed verified checker is not connected.' };
       dispatchMission({ type: 'CHECK_UNAVAILABLE', error: outcome.error });
+      setActivity(null);
       return outcome;
     }
 
@@ -120,18 +135,23 @@ export default function StudyTutorShell({
     dispatchMission({ type: 'CHECK_UNAVAILABLE', error });
     setActivity(null);
     return { ...outcome, issued: false, error };
-  }, [assessment?.attemptId, assessment?.item, assessment?.result, completedCheck, mission.label, onRequestAssessment, topic]);
+  }, [assessment?.attemptId, assessment?.item, assessment?.result, completedCheck, mission.conceptKey, mission.label, onRequestAssessment, topic]);
 
   const beginCompassMission = useCallback((recommendation) => {
     const label = String(recommendation?.label || '').trim();
     if (!label) return;
     const phase = studyAdaptiveMissionStartPhase(recommendation);
     const aligned = sameStudyMissionLabel(topic, label);
+    setActivity(null);
     dispatchMission({ type: 'START_COMPASS', recommendation, activeTopic: topic });
 
     if (phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK) {
       if (aligned) {
-        void requestMissionCheck({ targetLabel: label, explicitRetry: completedCheck });
+        void requestMissionCheck({
+          targetLabel: label,
+          targetConceptKey: recommendation?.conceptKey,
+          explicitRetry: completedCheck,
+        });
       } else {
         sendMission(studyAdaptiveMissionFocusAsk(recommendation), `Help me with ${label}`);
       }
@@ -143,6 +163,7 @@ export default function StudyTutorShell({
 
   const beginGuidedMission = useCallback((item) => {
     if (!brief?.active || !String(topic || '').trim()) return;
+    setActivity(null);
     dispatchMission({ type: 'START_GUIDED', topic });
     sendMission(
       studyAdaptiveMissionGuidedPracticeAsk(topic),
@@ -171,16 +192,14 @@ export default function StudyTutorShell({
 
   // A Compass recommendation can legitimately target a prerequisite rather
   // than the concept that was active when Compass opened. The visible Study
-  // turn changes the canonical session focus first; only then may the governed
-  // checker run. This prevents a recommendation for B from grading A.
+  // turn changes the canonical session focus first. Mark alignment in its own
+  // render and let the learner open the governed check from the mission card;
+  // this avoids racing StudyTutorWorkspace's assessment reset for the old topic.
   useEffect(() => {
     if (mission.status !== 'active' || mission.topicAligned || !mission.label) return;
     if (!sameStudyMissionLabel(topic, mission.label)) return;
     dispatchMission({ type: 'TOPIC_ALIGNED' });
-    if (mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK) {
-      void requestMissionCheck({ targetLabel: mission.label, explicitRetry: completedCheck });
-    }
-  }, [completedCheck, mission.label, mission.phase, mission.status, mission.topicAligned, requestMissionCheck, topic]);
+  }, [mission.label, mission.status, mission.topicAligned, topic]);
 
   // Once a mission has aligned, a later explicit topic change supersedes it.
   // Session changes already unmount this shell because StudyTutorWorkspace is
@@ -340,12 +359,33 @@ export default function StudyTutorShell({
                     type="button"
                     className="study-h1-action study-h1-action--primary"
                     disabled={!mission.topicAligned || assessment?.status === 'loading' || assessment?.status === 'grading'}
-                    onClick={() => void requestMissionCheck({ targetLabel: mission.label, explicitRetry: completedCheck })}
+                    onClick={() => void requestMissionCheck({
+                      targetLabel: mission.label,
+                      targetConceptKey: mission.conceptKey,
+                      explicitRetry: completedCheck,
+                    })}
                   >
                     Verified check
                   </button>
                 </>
               ) : null}
+              {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK
+                && mission.topicAligned
+                && !assessment?.item
+                && !mission.error ? (
+                  <button
+                    type="button"
+                    className="study-h1-action study-h1-action--primary"
+                    disabled={assessment?.status === 'loading' || assessment?.status === 'grading'}
+                    onClick={() => void requestMissionCheck({
+                      targetLabel: mission.label,
+                      targetConceptKey: mission.conceptKey,
+                      explicitRetry: completedCheck,
+                    })}
+                  >
+                    {assessment?.status === 'loading' ? 'Preparing…' : 'Open verified check'}
+                  </button>
+                ) : null}
               {mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK && assessment?.item && activity !== 'check' ? (
                 <button type="button" className="study-h1-action study-h1-action--primary" onClick={() => setActivity('check')}>
                   Open verified check
@@ -356,7 +396,11 @@ export default function StudyTutorShell({
                   type="button"
                   className="study-h1-action"
                   disabled={!mission.topicAligned || assessment?.status === 'loading' || assessment?.status === 'grading'}
-                  onClick={() => void requestMissionCheck({ targetLabel: mission.label, explicitRetry: completedCheck })}
+                  onClick={() => void requestMissionCheck({
+                    targetLabel: mission.label,
+                    targetConceptKey: mission.conceptKey,
+                    explicitRetry: completedCheck,
+                  })}
                 >
                   Try verified check again
                 </button>
