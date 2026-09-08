@@ -6,7 +6,13 @@ import { normalizeStudioMode, type StudioMode } from "../studio-modes.js";
 import { detectBuildIntent } from "../../../shared/build-intent.js";
 import { normalizeStudyRequestContext, type StudyRequestContext } from "../study-adaptive-learning.js";
 
-export type AttachedDocument = { name: string; mimeType: string; dataUrl: string; carried: boolean };
+export type AttachedDocument = {
+  name: string;
+  mimeType: string;
+  dataUrl?: string;
+  storageRef?: string;
+  carried: boolean;
+};
 
 export type CommunicationRequest = {
   message: string;
@@ -37,6 +43,19 @@ function hasLiveCodingDeskPacket(deskContext: unknown): boolean {
   return Array.isArray(files) && files.some((path) => typeof path === "string" && path.trim());
 }
 
+function validInlineDocument(item: any): boolean {
+  return typeof item?.dataUrl === "string"
+    && /^data:[^;,]*(?:;[^,]*)?;base64,/.test(item.dataUrl)
+    && !item.dataUrl.startsWith("data:image/")
+    && item.dataUrl.length <= 4_500_000;
+}
+
+function validStoredDocument(item: any): boolean {
+  return typeof item?.storageRef === "string"
+    && /^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(item.storageRef)
+    && item.storageRef.length <= 2048;
+}
+
 export function normalizeCommunicationRequest(body: any): CommunicationRequest {
   const studioMode = normalizeStudioMode(body?.studioMode);
   const studioModeExplicit = body?.studioMode === "ask" || body?.studioMode === "build" || body?.studioMode === "plan";
@@ -61,24 +80,27 @@ export function normalizeCommunicationRequest(body: any): CommunicationRequest {
     ? body.attachedImages.filter((value: unknown): value is string => typeof value === "string" && value.startsWith("data:image/")).slice(0, 4)
     : [];
   /*
-   * Documents ride in beside images as base64 data URLs and are read on the
-   * server (attachment-text.ts). Images are routed the other way, so a data
-   * URL for one is not a document. Bounds keep the body under Vercel's limit.
+   * Small documents still ride inline as base64 data URLs. Documents above the
+   * inline envelope travel by opaque, HMAC-signed private-storage reference;
+   * the server resolves that reference before using the same deterministic
+   * document readers. Raw storage paths and arbitrary URLs are never accepted.
+   * A valid stored ref wins exclusively over any co-supplied inline data, so a
+   * crafted request cannot make the server read Storage while still dragging a
+   * multi-megabyte dead payload through Vercel.
    */
   const attachedDocuments: AttachedDocument[] = Array.isArray(body?.attachedDocuments)
     ? body.attachedDocuments
-      .filter((item: any) => item && typeof item === "object"
-        && typeof item.dataUrl === "string"
-        && /^data:[^;,]*(?:;[^,]*)?;base64,/.test(item.dataUrl)
-        && !item.dataUrl.startsWith("data:image/")
-        && item.dataUrl.length <= 4_500_000)
+      .filter((item: any) => item && typeof item === "object" && (validInlineDocument(item) || validStoredDocument(item)))
       .slice(0, 4)
-      .map((item: any) => ({
-        name: String(item.name || "attachment").slice(0, 200),
-        mimeType: typeof item.mimeType === "string" ? item.mimeType.slice(0, 100) : "",
-        dataUrl: item.dataUrl as string,
-        carried: item.carried === true,
-      }))
+      .map((item: any) => {
+        const stored = validStoredDocument(item);
+        return {
+          name: String(item.name || "attachment").slice(0, 200),
+          mimeType: typeof item.mimeType === "string" ? item.mimeType.slice(0, 100) : "",
+          ...(stored ? { storageRef: item.storageRef as string } : { dataUrl: item.dataUrl as string }),
+          carried: item.carried === true,
+        };
+      })
     : [];
   const nestedProjectId = body?.sessionContext && typeof body.sessionContext === "object"
     ? body.sessionContext.projectId

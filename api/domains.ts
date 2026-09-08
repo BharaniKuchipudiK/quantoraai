@@ -7,6 +7,7 @@ import { isPublishedSiteOwner } from './_lib/store.js';
 import { normalizeDomainName } from './_lib/publish-policy.js';
 import { guardPclSideEffect, pclHumanConfirmation, recordPclExecutionEvidence } from './_lib/pcl-side-effect-guard.js';
 import inferenceHealth from './_lib/handlers/inference-health.js';
+import attachmentUpload from './_lib/handlers/attachment-upload.js';
 
 /** Google-maintained alias for the current Flash model. A pinned id rots. */
 const GEMINI_FLASH = "gemini-flash-latest";
@@ -19,10 +20,12 @@ export default async function handler(req: any, res: any) {
    * /api/inference-health rides on this function, NOT on pipeline: the health
    * probe must stay alive when the pipeline mega-function is the thing that is
    * down. This function is the lightest TS hub, so it is the shelter.
-   * The handler does its own CORS, method check, and rate limit.
+   * The attachment token route shares this existing function for the same
+   * twelve-function-budget reason; its handler owns its own auth/rate limit.
    */
   const routed = typeof req.query?.route === 'string' ? req.query.route : '';
   if (routed === 'inference-health') return inferenceHealth(req, res);
+  if (routed === 'attachment-upload') return attachmentUpload(req, res);
 
   applyCors(req, res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
