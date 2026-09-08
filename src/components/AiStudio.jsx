@@ -1001,6 +1001,44 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (!codingDeskOpen && deskFullscreen) setDeskFullscreen(false);
   }, [codingDeskOpen, deskFullscreen]);
 
+  /*
+   * The page the person chose for Preview, when the desk holds more than one.
+   * Null means "use the convention", which is every ordinary build.
+   *
+   * Held as a path rather than an index, and validated against the live VFS on
+   * every read (resolvePreviewEntryPath), so a build that replaces the product
+   * drops the pinned file and the pin dies with it. There is no invalidation
+   * event to wire, and therefore none to forget.
+   */
+  const [previewEntryPin, setPreviewEntryPin] = useState(null);
+  /*
+   * A pin belongs to the desk it was chosen on. This state outlives any one
+   * chat, so switching sessions used to carry the choice across: pin
+   * hello.html here, open a different project that also has a hello.html, and
+   * it opens on the non-default page for no reason the person can see.
+   * Validating the path against the live VFS does not catch that — the file
+   * exists, it is just a different file. Cleared on the session boundary,
+   * where the desk itself changes.
+   */
+  useEffect(() => { setPreviewEntryPin(null); }, [activeSessionId]);
+  /*
+   * DECLARED HERE, ABOVE ITS FIRST USE, AND THAT PLACEMENT IS THE FIX.
+   *
+   * This block sat ~950 lines lower, next to the memos that read it. But
+   * handleHealedPreview below closes over the pin and lists it in a useCallback
+   * dependency array, which is EVALUATED DURING RENDER — so the component threw
+   *
+   *   ReferenceError: Cannot access 'previewEntryPin' before initialization
+   *
+   * on its first render, the desk never mounted, and every browser gate timed
+   * out waiting for a composer that would never appear. `tsc` does not see a
+   * temporal dead zone, and the unit test for this feature asserted the SOURCE
+   * TEXT of the call site — which was correct the whole time, while the app was
+   * dead. Only a gate that renders the desk could catch it, and one did.
+   *
+   * Keep state above every hook that closes over it.
+   */
+
   const handleHealedPreview = useCallback((healedHtml) => {
     /*
      * The pin travels with the repair. Without it, healing and Improve wrote
@@ -1934,26 +1972,6 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [commitDeskVfs]);
 
-  /*
-   * The page the person chose for Preview, when the desk holds more than one.
-   * Null means "use the convention", which is every ordinary build.
-   *
-   * Held as a path rather than an index, and validated against the live VFS on
-   * every read (resolvePreviewEntryPath), so a build that replaces the product
-   * drops the pinned file and the pin dies with it. There is no invalidation
-   * event to wire, and therefore none to forget.
-   */
-  const [previewEntryPin, setPreviewEntryPin] = useState(null);
-  /*
-   * A pin belongs to the desk it was chosen on. This state outlives any one
-   * chat, so switching sessions used to carry the choice across: pin
-   * hello.html here, open a different project that also has a hello.html, and
-   * it opens on the non-default page for no reason the person can see.
-   * Validating the path against the live VFS does not catch that — the file
-   * exists, it is just a different file. Cleared on the session boundary,
-   * where the desk itself changes.
-   */
-  useEffect(() => { setPreviewEntryPin(null); }, [activeSessionId]);
   const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
   const previewActiveEntry = useMemo(
     () => resolvePreviewEntryPath(vfs, previewEntryPin) || '',

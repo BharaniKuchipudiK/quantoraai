@@ -230,3 +230,70 @@ test('[codex-p2] no selector where the project runtime owns the entry', () => {
   // ...and a plain two-page site is unaffected by that carve-out.
   assert.deepEqual(previewEntryChoices(TWO_PAGES), ['index.html', 'hello.html']);
 });
+
+/*
+ * THE CRASH THIS FEATURE SHIPPED, AND THE CHECK THAT WOULD HAVE CAUGHT IT.
+ *
+ * The review fixes above put `previewEntryPin` in handleHealedPreview's
+ * useCallback dependency array at line 1017 while the useState declaring it sat
+ * at line 1946. A dependency array is evaluated DURING RENDER, so the component
+ * threw on its first render:
+ *
+ *   ReferenceError: Cannot access 'previewEntryPin' before initialization
+ *
+ * The desk never mounted. Every browser gate timed out waiting for a composer
+ * that would never appear, and the whole release was blocked by one line's
+ * placement.
+ *
+ * What made it slip: `npm run lint` is tsc, and tsc does not see a temporal
+ * dead zone. The unit tests above assert the SOURCE TEXT of the call site,
+ * which was correct the entire time the application was dead — a check that
+ * passes while the thing it guards is broken (§4). Only a gate that renders
+ * the desk could see it, and one did. The lesson is mine, not the gates':
+ * lint and unit tests are not a substitute for driving the app after touching
+ * a component.
+ *
+ * This closes the class deterministically, in seconds instead of a CI cycle.
+ * Scoped tightly on purpose (§5): a dependency array is unambiguously
+ * evaluated at render, and a useState declared later is unambiguously in the
+ * dead zone. The looser "any use before declaration" version was written first
+ * and rejected — it reported eight hits on correct code (module-scope helpers
+ * taking `vfs` as a parameter, an import named `attachments`), and a gate that
+ * cries wolf on working code is one the next person mutes.
+ */
+test('[was-red] no hook dependency array reads state declared later in the same file', () => {
+  const files = [
+    '../components/AiStudio.jsx',
+    '../components/LivePreviewCanvas.jsx',
+    '../components/StudioPreviewControls.jsx',
+    '../hooks/useChatStream.js',
+  ];
+  const problems = [];
+
+  for (const rel of files) {
+    const raw = readFileSync(new URL(rel, import.meta.url), 'utf8');
+    // Blank out comments so prose mentioning a name is not read as a use,
+    // preserving newlines so reported line numbers stay true.
+    const code = raw
+      .replace(/\/\*[^]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/\/\/[^\n]*/g, '');
+    const lineOf = (index) => code.slice(0, index).split('\n').length;
+
+    const declAt = new Map();
+    for (const d of code.matchAll(/const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*set[\w$]*\s*\]\s*=\s*useState/g)) {
+      if (!declAt.has(d[1])) declAt.set(d[1], d.index);
+    }
+    for (const dep of code.matchAll(/\}\s*,\s*\[([^\]]*)\]\s*\)\s*;/g)) {
+      for (const raw2 of dep[1].split(',')) {
+        const name = raw2.trim();
+        if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
+        const declIndex = declAt.get(name);
+        if (declIndex !== undefined && declIndex > dep.index) {
+          problems.push(`${rel}: dependency array on line ${lineOf(dep.index)} reads "${name}", declared on line ${lineOf(declIndex)}`);
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(problems, [], `state read before it exists — this crashes the component on first render:\n  ${problems.join('\n  ')}`);
+});
