@@ -508,6 +508,25 @@ export const JOURNEYS = Object.freeze([
       + 'older hooks, and no browser gate drives the switcher.',
   }),
   journey({
+    id: 'turn-failure-offers-nothing',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'A turn that produced nothing offers no next steps',
+    entry: 'src/lib/outcome-gap-detection.js',
+    gates: {
+      deterministic: ['src/lib/outcome-gap-on-failure.test.js'],
+    },
+    note: 'detectOutcomeGaps reads intent from the USER PROMPT, so it fires whether or not the turn ran. '
+      + 'On 2026-09-08 a boutique request refused at HTTP 429 -- declined before any engine started, nothing '
+      + 'built -- rendered "Add real product photos | Add a payment gateway | Domestic or international?" under '
+      + 'a message that had just said the turn was paused. Follow-ups to work that does not exist. Worse than '
+      + 'incoherent: every chip sends another turn, so on a provider failure they spend real budget refining an '
+      + 'artifact that is not there, and on a budget refusal they fail again -- the most expensive buttons on '
+      + 'the screen for a student on a daily allowance. The message already carried isError; three call sites '
+      + 'never read it, and guarding two of three would have put the chips back by the third route. The gate '
+      + 'COUNTS call sites against guards, so a fourth chip surface added later without one fails here.',
+  }),
+  journey({
     id: 'desk-review-probes',
     area: 'coding desk',
     name: 'Review the build against probed criteria and patch what fails',
@@ -967,9 +986,9 @@ export const JOURNEYS = Object.freeze([
     entry: 'src/components/AdminDashboard.jsx',
     serves: ['api/admin.ts'],
     gates: {
-      deterministic: ['src/lib/model-dashboard-ranking.test.js', 'api/_lib/model-lifecycle.test.js', 'api/_lib/model-store.test.js'],
+      deterministic: ['src/lib/model-dashboard-ranking.test.js', 'api/_lib/model-lifecycle.test.js', 'api/_lib/model-store.test.js', 'api/_lib/turn-failure-digest.test.ts', 'src/components/turn-failure-panel.test.tsx'],
     },
-    note: 'Ranking and lifecycle are tested; the metrics and feedback handlers, and every admin screen, are not.',
+    note: 'Ranking and lifecycle are tested. One admin screen is now proved end to end: until 2026-09-08 a failed turn was legible only to whoever held its reference id, which people learn from a screenshot, after the fact, one at a time -- so the owner could not answer "what is breaking today" at all. The failed-turn digest reads the boundary events the platform already wrote and ranks them by reach, and turn-failure-digest.test.ts holds every hop from the store query to the dashboard prop, because a summariser nothing calls is the shape this repo shipped twice in one week. It also holds the filter that makes the count mean anything: chat-handler traces an inference.provider failure BEFORE deciding to fall back, so reading state=failed alone counted attempts rather than turns -- a recovered failover, which the user saw succeed, was reported as a fault, and a turn that really failed was counted twice. Only the terminal api.chat row is a failed turn. Found by review on this PR, along with a headline that measured a fault\'s reach with everyone who hit anything, refusals included: one broken turn beside twenty budget refusals read as 1 fault across 21 users, in the same sentence claiming refusals were counted separately. turn-failure-panel.test.tsx is the first RENDER test here: a component is only proved to render by rendering it, and on 2026-09-07 a useState declared below a useCallback that named it passed lint and every unit test while the desk failed to mount for everyone. It also holds the distinction the digest exists for -- a spent budget is Quantora declining by design, a 500 is Quantora broken -- because drawn the same, a real outage hides inside a busy day of honest limits. Its first version proved nothing about the case that mattered: the fixture paired source \'not_configured\' with a real failure row, which cannot happen, and hid that the caveat was gated on there being failures to caveat -- suppressed in exactly the two states it existed for, so a dead store rendered as the best day the platform ever had. Every zero in it is now built the way production builds one, from an empty read. The other admin screens, and the feedback handler, still have nothing, and no admin screen has ever been driven in a browser.',
   }),
   journey({
     id: 'isolated-desk-route',
@@ -1104,6 +1123,21 @@ export const JOURNEYS = Object.freeze([
     gates: { browser: ['scripts/platform-experience-browser-gate.mjs'] },
   }),
   journey({
+    id: 'turn-allowance-visible',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'A person can see their turn allowance and when it comes back, before being refused',
+    entry: 'api/_lib/user-turn-budget.ts',
+    gates: {
+      deterministic: [
+        'api/_lib/user-turn-budget.test.ts',
+        'shared/turn-budget-view.test.js',
+        'src/components/turn-budget-meter.test.tsx',
+      ],
+    },
+    note: 'A limit nobody can see is indistinguishable from a broken product. Until 2026-09-08 Quantora showed a person nothing about their own allowance -- no count, no bar, no reset -- so the only way to learn where you stood was to be refused, and the refusal said the turns \'reset within 24 hours\', which is the same sentence one minute before the reset and twenty-three hours before it. A student on a borrowed key could not tell whether to wait for lunch or come back tomorrow; the platform\'s own owner hit it on his own product and had to be told the answer by reading the SQL. hit_rate_limit had returned hits and resets_at since migration 0003 and turnBudgetVerdict threw both away. The window is FIXED, not rolling: now() is floored to the window size, so a 24h budget resets at midnight UTC and the whole allowance returns at once -- the first reading of this was wrong in the more expensive direction, because someone told the turns trickle back retries every ten minutes for half a day. turn-budget-view.js is shared by the server that writes the sentence and the desk that draws the bar, so the two cannot disagree about what a number means. Its load-bearing property is that an unknown count draws NOTHING: hits is null when the durable store did not answer, and a bar drawn from that null shows a full untouched allowance -- the most reassuring picture on the screen, produced by measuring nothing, the same class as a dead telemetry store reading as a quiet day. The wiring gate holds every hop from the verdict to the rendered element, because a meter nothing places is the orphan this repo has shipped twice, and importing is not rendering. TURN_BUDGET_EXEMPT_EMAILS lifts the per-user allowance for named accounts and deliberately does NOT reach the platform ceiling: the two budgets guard different things, the first keeping one student from draining a shared key and the second guarding the money itself, and an account that silently ignored the second could spend a whole borrowed balance without anyone choosing to. Exempt turns are still counted, because an owner who cannot see their own spend drains the key quietly. Unset must exempt nobody, which is the protection deleting itself on a deployment where someone forgot the variable; that property survives two redundant guards and only fails when both are removed, which is how it was verified.',
+  }),
+  journey({
     id: 'models-governed',
     kind: 'platform',
     area: 'platform invariants',
@@ -1231,7 +1265,7 @@ export function claimedGates(journeys = JOURNEYS) {
   return { files, golden };
 }
 
-const GATE_PATH = /^(?:api|src|shared|scripts|desktop)\/[\w./-]+\.(?:mjs|cjs|js|ts)$/;
+const GATE_PATH = /^(?:api|src|shared|scripts|desktop)\/[\w./-]+\.(?:mjs|cjs|js|ts|tsx)$/;
 
 export function validateInventoryShape(journeys = JOURNEYS) {
   const problems = [];
@@ -1388,6 +1422,18 @@ export function wiringOf(script, runBy, importers, seen = new Set()) {
 
 export function runnerRoots(runnerSource) {
   const match = /const ROOTS = \[([^\]]*)\]/.exec(String(runnerSource || ''));
+  return match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
+}
+
+/*
+ * Which filenames a runner's scan actually collects, read from the runner
+ * rather than copied here. A runner that learns a new suffix and a checker
+ * that still believes the old list is two truths about the same scan, and the
+ * disagreement is silent in the direction that matters: the checker reports a
+ * real, running test as registered by nothing.
+ */
+export function runnerSuffixes(runnerSource) {
+  const match = /const TEST_SUFFIXES = \[([^\]]*)\]/.exec(String(runnerSource || ''));
   return match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
 }
 

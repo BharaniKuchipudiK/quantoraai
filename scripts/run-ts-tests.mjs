@@ -5,19 +5,25 @@
  * a forgotten append meant a test silently never ran — thirteen of them had
  * accumulated by the time the list was replaced with this scan. A test file
  * on disk IS the registration; there is nothing to keep in sync.
+ *
+ * .test.tsx counts too. A React component can only be proved to render by
+ * rendering it, and the first such test was written as .tsx and collected by
+ * nothing — the same silent-no-op this scan was written to end, one suffix
+ * over.
  */
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { runTestsWithFailureSummary } from './lib/run-tests-with-summary.mjs';
 
 const ROOTS = ['api', 'src', 'shared', 'desktop'];
+const TEST_SUFFIXES = ['.test.ts', '.test.tsx'];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git']);
 
 function collect(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (!SKIP_DIRS.has(entry.name)) collect(join(dir, entry.name), out);
-    } else if (entry.name.endsWith('.test.ts')) {
+    } else if (TEST_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) {
       out.push(join(dir, entry.name));
     }
   }
@@ -28,7 +34,7 @@ for (const root of ROOTS) collect(root, files);
 files.sort();
 
 if (!files.length) {
-  console.error('run-ts-tests: found no *.test.ts files — that cannot be right.');
+  console.error('run-ts-tests: found no *.test.ts/.tsx files — that cannot be right.');
   process.exit(1);
 }
 

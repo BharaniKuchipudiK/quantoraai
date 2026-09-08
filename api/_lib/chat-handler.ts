@@ -752,7 +752,15 @@ export default async function handler(req: any, res: any) {
      * golden's own per-event transaction limit.
      */
     if (usingServerOwnedModelAccess && !goldenCanary) {
-      const budget = await turnBudgetVerdict(activeSessionUser?.sub || null);
+      /*
+       * The email decides the exemption, so it has to travel. Passing only the
+       * sub made the allowance unliftable for anyone -- the owner included,
+       * who is the one account that must never be locked out of a demo by a
+       * limit written to protect a shared key from students.
+       */
+      const budget = await turnBudgetVerdict(activeSessionUser?.sub || null, {
+        email: activeSessionUser?.email || null,
+      });
       if (!budget.allowed) {
         trace({
           correlationId,
@@ -775,9 +783,23 @@ export default async function handler(req: any, res: any) {
            */
           detailCode: budget.exhausted === 'platform' ? 'platform-budget' : 'turn-budget',
         });
+        /*
+         * The standing, not just the refusal. Until now the only way to learn
+         * where you were was to be stopped, and being stopped told you
+         * nothing about when you could work again -- so the desk had nothing
+         * to draw and the person had nothing to plan around. Nulls are passed
+         * through as nulls: unknown must never render as zero.
+         */
         return res.status(429).json({
           error: describeTurnBudget(budget),
           turnBudgetExhausted: budget.exhausted,
+          turnBudget: {
+            scope: budget.exhausted,
+            used: budget.used,
+            remaining: budget.remaining,
+            limit: budget.exhausted === 'platform' ? budget.platformLimit : budget.userLimit,
+            resetsAt: budget.resetsAt,
+          },
           ...(budget.degraded ? { degraded: true } : {}),
         });
       }

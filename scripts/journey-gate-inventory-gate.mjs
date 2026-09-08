@@ -44,6 +44,7 @@ import {
   parseWorkflowSteps,
   renderInventoryMarkdown,
   runnerRoots,
+  runnerSuffixes,
   scriptImports,
   summarizeJourneys,
   validateInventoryShape,
@@ -113,13 +114,24 @@ for (const script of scriptFiles) {
 const nodeRoots = runnerRoots(read(NODE_RUNNER));
 const tsRoots = runnerRoots(read(TS_RUNNER));
 if (!nodeRoots.length || !tsRoots.length) fail(`could not read ROOTS out of ${NODE_RUNNER} / ${TS_RUNNER} — the runner shape changed; update runnerRoots()`);
+/*
+ * Both halves of each scan — where it looks and what it collects — are read
+ * from the runner. The suffix list used to be a copy living here, which is
+ * only ever right until a runner learns a new one: on 2026-09-08 run-ts-tests
+ * started collecting .test.tsx and this gate went on reporting a test that
+ * genuinely runs in CI as registered by nothing.
+ */
+const nodeSuffixes = runnerSuffixes(read(NODE_RUNNER));
+const tsSuffixes = runnerSuffixes(read(TS_RUNNER));
+if (!nodeSuffixes.length || !tsSuffixes.length) fail(`could not read TEST_SUFFIXES out of ${NODE_RUNNER} / ${TS_RUNNER} — the runner shape changed; update runnerSuffixes()`);
 const discoveredBy = (file) => {
   const root = file.split('/')[0];
-  if ((file.endsWith('.test.js') || file.endsWith('.test.mjs')) && nodeRoots.includes(root)) return NODE_RUNNER;
-  if (file.endsWith('.test.ts') && tsRoots.includes(root)) return TS_RUNNER;
+  if (nodeSuffixes.some((suffix) => file.endsWith(suffix)) && nodeRoots.includes(root)) return NODE_RUNNER;
+  if (tsSuffixes.some((suffix) => file.endsWith(suffix)) && tsRoots.includes(root)) return TS_RUNNER;
   return null;
 };
-const isTestFile = (file) => /\.test\.(?:js|mjs|ts)$/.test(file);
+const ALL_SUFFIXES = [...new Set([...nodeSuffixes, ...tsSuffixes])];
+const isTestFile = (file) => ALL_SUFFIXES.some((suffix) => file.endsWith(suffix));
 
 /* The deployed roster. */
 const goldenSource = read(GOLDEN);
