@@ -8,6 +8,7 @@ import {
   normalizeCorrelationId,
   publicTraceEvents,
   traceBoundary,
+  traceBoundarySettled,
 } from './transaction-trace.js';
 
 test('correlation IDs accept bounded opaque values and reject injected text', () => {
@@ -118,4 +119,67 @@ test('the lookup response never carries the owner', () => {
   const out = publicTraceEvents([{ correlationId: 'studio-12345678', boundary: 'api.chat', state: 'started', userSub: 'owner-1' }] as any[]);
   assert.equal('userSub' in out[0], false);
   assert.equal(out[0].boundary, 'api.chat');
+});
+
+test('[was-red] the terminal event is WAITED FOR, not fired into a freezing instance', async () => {
+  /*
+   * traceBoundary is fire-and-forget, which is right mid-turn: the function
+   * keeps running for seconds and the write lands long before it ends. It is
+   * exactly wrong for the last event of a turn -- a serverless instance is
+   * frozen the moment the handler returns, so a POST started microseconds
+   * earlier never completes.
+   *
+   * The event lost that way is the one that says what finally happened. Seen
+   * in production 2026-09-08: an engine failure recorded at +114.7s and
+   * nothing after it, on a turn whose catch writes an api.chat failed row on
+   * ANY throw. The row was written. It was never delivered.
+   */
+  let settled = false;
+  const slowSink = () => new Promise((resolve) => setTimeout(() => { settled = true; resolve(undefined); }, 20));
+
+  /* The fire-and-forget path returns before the write finishes — by design. */
+  traceBoundary({ correlationId: 'studio-fireforget', boundary: 'api.chat', state: 'failed' }, slowSink);
+  assert.equal(settled, false, 'traceBoundary must stay non-blocking for mid-turn events');
+
+  settled = false;
+  const ok = await traceBoundarySettled({ correlationId: 'studio-settled', boundary: 'api.chat', state: 'failed' }, slowSink);
+  assert.equal(ok, true);
+  assert.equal(settled, true, 'the settled form must not resolve until the store has actually taken the row');
+});
+
+test('a store that refuses the terminal row still never fails the turn', async () => {
+  /* Bookkeeping may not break a response. It may only stop disappearing. */
+  const thrower = () => { throw new Error('store down'); };
+  assert.equal(await traceBoundarySettled({ correlationId: 'studio-throws', boundary: 'api.chat', state: 'failed' }, thrower), true);
+
+  const rejecter = () => Promise.reject(new Error('store unreachable'));
+  assert.equal(await traceBoundarySettled({ correlationId: 'studio-rejects', boundary: 'api.chat', state: 'failed' }, rejecter), true);
+});
+
+test('[was-red] every trace whose next statement ends the response is awaited', async () => {
+  /*
+   * Scoped to the four sites where the handler answers and returns: the two
+   * rate-limit refusals, the budget refusal, and the terminal catch. A
+   * fire-and-forget trace at any of them is a failed turn with no record that
+   * it failed -- invisible to the failure digest, and to its own reference
+   * lookup.
+   */
+  const { readFileSync } = await import('node:fs');
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+
+  assert.match(handler, /const traceFinal = \(input: Partial<TransactionBoundaryEvent>\) =>\s*\n\s*traceBoundarySettled\(/,
+    'the handler needs a settled companion to trace');
+
+  const awaited = handler.match(/await traceFinal\(\{/g) || [];
+  assert.equal(awaited.length, 4,
+    `expected 4 awaited terminal traces (two rate-limit refusals, the budget refusal, the catch), found ${awaited.length}`);
+
+  /* The catch is the one that matters most: it fires on ANY throw. */
+  assert.match(handler, /\} catch \(err: any\) \{\s*\n\s*console\.error\("Error in \/api\/chat:", err\);\s*\n\s*await traceFinal\(\{/,
+    'the terminal catch must wait for its row — it is the record of every unhandled failure');
+
+  /* And recordBoundaryEvent has to actually be waitable, or awaiting is theatre. */
+  const store = readFileSync(new URL('./store.ts', import.meta.url), 'utf8');
+  assert.match(store, /export function recordBoundaryEvent\(event: BoundaryEventRecord\): Promise<void> \{\s*\n\s*return request\(/,
+    'the sink must return its write, or every await above resolves instantly on a void');
 });

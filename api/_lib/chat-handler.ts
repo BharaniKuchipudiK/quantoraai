@@ -77,6 +77,7 @@ import {
   correlationIdForRequest,
   isGoldenCanaryRequest,
   traceBoundary,
+  traceBoundarySettled,
   type TransactionBoundaryEvent,
 } from './transaction-trace.js';
 import { SseWriter, assertBudget, readWithIdleTimeout, remainingBudgetMs } from './sse-writer.js';
@@ -491,6 +492,14 @@ export default async function handler(req: any, res: any) {
   // Every boundary of this turn is kept under the signed-in owner, so the
   // reference id the desk shows on a failure resolves for the person who saw it.
   const trace = (input: Partial<TransactionBoundaryEvent>) => traceBoundary({ ...input, userSub: sessionUser?.sub || null });
+  /*
+   * For the LAST event of a turn only. The instance is frozen the moment this
+   * handler returns, so an unawaited write started just before that never
+   * lands — and it is the terminal event, the one saying what finally
+   * happened, that gets written there.
+   */
+  const traceFinal = (input: Partial<TransactionBoundaryEvent>) =>
+    traceBoundarySettled({ ...input, userSub: sessionUser?.sub || null });
   trace({ correlationId, boundary: 'api.chat', state: 'started', transaction, route: '/api/chat' });
 
   const limitKey = goldenCanary
@@ -509,7 +518,7 @@ export default async function handler(req: any, res: any) {
      * exists to close: an account that names a cause the record does not
      * prove. The refusal is a fact we hold at the moment we refuse; write it.
      */
-    trace({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
+    await traceFinal({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
     return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
   }
 
@@ -517,7 +526,7 @@ export default async function handler(req: any, res: any) {
   const durableGuard = applyDurableCostBearingGuard(limitKey, RATE_LIMIT_PER_MINUTE, durable);
   if (durableGuard.limited) {
     if (durableGuard.resetsAt) res.setHeader('Retry-After', Math.max(1, Math.ceil((new Date(durableGuard.resetsAt).getTime() - Date.now()) / 1000)));
-    trace({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
+    await traceFinal({ correlationId, boundary: 'api.chat', state: 'failed', transaction, route: '/api/chat', statusCode: 429, detailCode: 'rate-limited' });
     return res.status(429).json({
       error: 'Too many requests. Please wait a minute and try again.',
       resetsAt: durableGuard.resetsAt,
@@ -761,8 +770,29 @@ export default async function handler(req: any, res: any) {
       const budget = await turnBudgetVerdict(activeSessionUser?.sub || null, {
         email: activeSessionUser?.email || null,
       });
+      /*
+       * THE STANDING TRAVELS ON EVERY TURN, NOT ONLY THE REFUSED ONE.
+       *
+       * A meter that appears when you are already stopped is the same defect
+       * it was built to fix, in a nicer font: the moment the number is worth
+       * knowing is at turn 45, not at 61. A header rather than a stream event
+       * because this handler answers with SSE for a build and with JSON for a
+       * repair, and committing to a stream here would break the second.
+       */
+      const standing = {
+        scope: budget.exhausted,
+        used: budget.used,
+        remaining: budget.remaining,
+        limit: budget.exhausted === 'platform' ? budget.platformLimit : budget.userLimit,
+        resetsAt: budget.resetsAt,
+        exempt: budget.exempt,
+      };
+      try {
+        res.setHeader('X-Quantora-Turn-Budget', JSON.stringify(standing));
+        res.setHeader('Access-Control-Expose-Headers', 'X-Quantora-Turn-Budget');
+      } catch { /* a meter is never worth failing a turn over */ }
       if (!budget.allowed) {
-        trace({
+        await traceFinal({
           correlationId,
           boundary: 'api.chat',
           state: 'failed',
@@ -2378,7 +2408,7 @@ export default async function handler(req: any, res: any) {
     return;
   } catch (err: any) {
     console.error("Error in /api/chat:", err);
-    trace({
+    await traceFinal({
       correlationId,
       boundary: 'api.chat',
       state: 'failed',

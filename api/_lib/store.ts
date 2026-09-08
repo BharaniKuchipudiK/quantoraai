@@ -834,6 +834,63 @@ function mapBoundaryRow(row: any): BoundaryEventRecord {
   };
 }
 
+export type UsageRow = {
+  userSub: string | null;
+  modelId: string | null;
+  provider: string | null;
+  studioMode: string | null;
+  tokensEst: number | null;
+  latencyMs: number | null;
+  usedServerKey: boolean;
+  at: string | null;
+};
+
+/** The newest turns read in one window. Fetched +1 to detect a cut. */
+export const USAGE_ROW_LIMIT = 5000;
+
+/*
+ * EVERY TURN IN A WINDOW, FOR THE QUESTIONS ONLY THE SHAPE OF USE ANSWERS.
+ *
+ * The usage table has carried model, provider, workspace mode, tokens and
+ * whether the deployment's own key paid since migration 0001, and the admin
+ * screen queried none of it: which models people actually reach for, what a
+ * workspace costs, whether one account is burning the shared key. All of it
+ * was a GROUP BY away and nobody had written it.
+ *
+ * Null when the store did not answer -- same rule as readRecentFailures, and
+ * for the same reason: an empty list and a dead store are indistinguishable
+ * from the outside, and the one that looks like a quiet day is the wrong
+ * guess.
+ */
+export async function readRecentUsage(
+  sinceIso: string,
+  limit = USAGE_ROW_LIMIT,
+): Promise<{ rows: UsageRow[]; truncated: boolean } | null> {
+  const since = encodeURIComponent(String(sinceIso || ""));
+  const cap = Math.max(1, Math.min(USAGE_ROW_LIMIT, Number(limit) || USAGE_ROW_LIMIT));
+  const response = await request(
+    `usage?select=user_sub,model_id,provider,studio_mode,tokens_est,latency_ms,used_server_key,created_at`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=${cap + 1}`,
+    { method: "GET" },
+  );
+  if (!response) return null;
+  const rows = await response.json().catch(() => null);
+  if (!Array.isArray(rows)) return null;
+  return {
+    rows: rows.slice(0, cap).map((row: any) => ({
+      userSub: row.user_sub ?? null,
+      modelId: row.model_id ?? null,
+      provider: row.provider ?? null,
+      studioMode: row.studio_mode ?? null,
+      tokensEst: row.tokens_est ?? null,
+      latencyMs: row.latency_ms ?? null,
+      usedServerKey: row.used_server_key === true,
+      at: row.created_at ?? null,
+    })),
+    truncated: rows.length > cap,
+  };
+}
+
 /** The newest failed turns read in one window. Fetched +1 to detect a cut. */
 export const FAILURE_ROW_LIMIT = 2000;
 
@@ -929,8 +986,25 @@ export type BoundaryEventRecord = {
 
 const BOUNDARY_EVENT_COLUMNS = "id,correlation_id,boundary,state,transaction,route,model_id,gateway,upstream_provider,failure_domain,quota_domain,cost_class,health,circuit,duration_ms,budget_ms,status_code,file_count,detail_code,user_sub,created_at";
 
-export function recordBoundaryEvent(event: BoundaryEventRecord): void {
-  void request("transaction_boundary_events", {
+/*
+ * Returns the write, so a caller that is about to END THE RESPONSE can wait
+ * for it.
+ *
+ * This was `void request(...)` returning void, and the second half of a
+ * fire-and-forget chain that silently lost the most important event of every
+ * failed turn. Mid-turn events land because the function keeps running for
+ * seconds afterwards; the TERMINAL one is written microseconds before the
+ * handler returns, and a serverless instance is frozen the moment it does --
+ * with that POST still in flight. Seen in production 2026-09-08: an engine
+ * failure recorded at +114.7s and then nothing, on a turn whose catch writes
+ * an api.chat failed row on any throw.
+ *
+ * Bounded by REST_TIMEOUT_MS, so awaiting it can delay a response by at most
+ * that and normally by a network hop. Callers still mid-turn should NOT wait:
+ * see traceBoundary, which keeps the fire-and-forget path for them.
+ */
+export function recordBoundaryEvent(event: BoundaryEventRecord): Promise<void> {
+  return request("transaction_boundary_events", {
     method: "POST",
     headers: { Prefer: "return=minimal" },
     body: JSON.stringify([{
@@ -954,7 +1028,7 @@ export function recordBoundaryEvent(event: BoundaryEventRecord): void {
       detail_code: event.detailCode ?? null,
       user_sub: event.userSub ?? null,
     }]),
-  });
+  }).then(() => undefined, () => undefined);
 }
 
 /**
