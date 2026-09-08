@@ -90,6 +90,32 @@ function positiveIntFrom(raw: string | undefined, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
+/**
+ * ACCOUNTS THE PER-USER ALLOWANCE DOES NOT STOP.
+ *
+ * Comma-separated emails in TURN_BUDGET_EXEMPT_EMAILS, matched
+ * case-insensitively. Keyed on email rather than the Google sub so it can be
+ * set from Vercel by someone who knows their own address and not their
+ * OAuth subject id.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT LIFT: the platform ceiling. The per-user
+ * budget exists so one pilot student cannot drain a shared key; the platform
+ * total is the guard on the money itself, and an account that silently
+ * ignored it could spend the whole borrowed balance without anyone choosing
+ * to. Raising PLATFORM_DAILY_TURN_BUDGET is that decision, made on purpose.
+ *
+ * Exempt turns are still COUNTED. The meter must keep showing real usage, and
+ * a limit that stops enforcing is not a reason to stop measuring — an owner
+ * who cannot see what they are spending is how the shared key dies quietly.
+ */
+export function isTurnBudgetExempt(email: string | null | undefined, env: Record<string, string | undefined> = process.env): boolean {
+  const list = String(env.TURN_BUDGET_EXEMPT_EMAILS || "").trim();
+  if (!list) return false;
+  const target = String(email || "").trim().toLowerCase();
+  if (!target) return false;
+  return list.split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean).includes(target);
+}
+
 export function userDailyTurnBudget(env: Record<string, string | undefined> = process.env): number {
   return positiveIntFrom(env.USER_DAILY_TURN_BUDGET, DEFAULT_USER_DAILY_TURNS);
 }
@@ -108,6 +134,31 @@ export interface TurnBudgetVerdict {
   platformLimit: number;
   /** True when the durable counter was unreachable and a stricter bound decided. */
   degraded: boolean;
+  /*
+   * WHAT THE PERSON HAS SPENT, AND WHEN IT COMES BACK.
+   *
+   * hit_rate_limit has always returned both; this verdict threw them away, so
+   * the only way to learn your standing was to be refused — and the refusal
+   * then said "within 24 hours", which is not a time anyone can plan around.
+   * A student on a borrowed key needs to know whether to wait twenty minutes
+   * or come back tomorrow.
+   *
+   * Null when there is no identity to charge, or the durable store did not
+   * answer. Null means UNKNOWN and must never be rendered as zero.
+   */
+  used: number | null;
+  remaining: number | null;
+  /** True when this account's own allowance does not stop it. Never lifts the platform ceiling. */
+  exempt: boolean;
+  /**
+   * The exact instant the window rolls over, ISO-8601, from the store itself.
+   *
+   * The window is FIXED, not rolling: hit_rate_limit floors now() to the
+   * window size, so a 24h budget resets at midnight UTC and the whole
+   * allowance returns at once. Nothing drips back before then, and saying it
+   * does sends someone away to retry every ten minutes for half a day.
+   */
+  resetsAt: string | null;
 }
 
 /**
@@ -126,10 +177,12 @@ export interface TurnBudgetVerdict {
 export async function turnBudgetVerdict(
   userSub: string | null | undefined,
   {
+    email = null,
     env = process.env,
     checkDurable = isRateLimitedDurable,
     applyGuard = applyDurableCostBearingGuard,
   }: {
+    email?: string | null;
     env?: Record<string, string | undefined>;
     checkDurable?: (key: string, limit: number, windowSeconds: number) => Promise<DurableRateResult>;
     applyGuard?: typeof applyDurableCostBearingGuard;
@@ -137,7 +190,7 @@ export async function turnBudgetVerdict(
 ): Promise<TurnBudgetVerdict> {
   const userLimit = userDailyTurnBudget(env);
   const platformLimit = platformDailyTurnBudget(env);
-  const base = { userLimit, platformLimit };
+  const base = { userLimit, platformLimit, used: null, remaining: null, resetsAt: null, exempt: false };
 
   /*
    * The platform's own total is checked FIRST, and for a reason worth stating:
@@ -148,24 +201,47 @@ export async function turnBudgetVerdict(
   const platform = await checkDurable(PLATFORM_TURN_KEY, platformLimit, WINDOW_SECONDS);
   const platformGuard = applyGuard(PLATFORM_TURN_KEY, platformLimit, platform, WINDOW_MS);
   if (platformGuard.limited) {
-    return { ...base, allowed: false, exhausted: "platform", degraded: platformGuard.degraded };
+    return {
+      ...base,
+      allowed: false,
+      exhausted: "platform",
+      degraded: platformGuard.degraded,
+      resetsAt: platform.resetsAt,
+    };
   }
 
   const sub = String(userSub || "").trim();
   if (!sub) {
     // No identity to charge: the platform total above is the only bound, and it
     // has already been counted, so this turn is paid for.
-    return { ...base, allowed: true, exhausted: null, degraded: platformGuard.degraded };
+    return { ...base, allowed: true, exhausted: null, degraded: platformGuard.degraded, resetsAt: platform.resetsAt };
   }
 
   const key = userTurnKey(sub);
   const user = await checkDurable(key, userLimit, WINDOW_SECONDS);
   const userGuard = applyGuard(key, userLimit, user, WINDOW_MS);
-  if (userGuard.limited) {
-    return { ...base, allowed: false, exhausted: "user", degraded: userGuard.degraded };
+  /*
+   * Taken from the durable row, not from the guard: the guard reports resetsAt
+   * only on the path where it refuses, and someone at 58 of 60 needs the meter
+   * more than someone already stopped.
+   */
+  const standing = {
+    used: user.hits,
+    remaining: user.hits === null ? null : Math.max(0, userLimit - user.hits),
+    resetsAt: user.resetsAt,
+  };
+  /*
+   * Counted above, enforced here. The owner testing their own product is
+   * exactly the case this budget should never stop -- it exists to keep one
+   * student from draining a shared key, and it locked the platform's owner
+   * out of a demo on the day it was set to 60.
+   */
+  const exempt = isTurnBudgetExempt(email, env);
+  if (userGuard.limited && !exempt) {
+    return { ...base, ...standing, allowed: false, exhausted: "user", degraded: userGuard.degraded };
   }
 
-  return { ...base, allowed: true, exhausted: null, degraded: platformGuard.degraded || userGuard.degraded };
+  return { ...base, ...standing, exempt, allowed: true, exhausted: null, degraded: platformGuard.degraded || userGuard.degraded };
 }
 
 /**
@@ -176,15 +252,45 @@ export async function turnBudgetVerdict(
  * back, and what they can do meanwhile — a bare "quota exceeded" reads as the
  * platform being broken, and the person who hits it does not come back.
  */
+/**
+ * "in 14h 2m", "in 12m", "shortly" — never a bare timestamp.
+ *
+ * A person deciding whether to wait or come back tomorrow needs a duration,
+ * not an instant in a timezone they may not be in. Returns null when the
+ * store gave no reset time, so callers say nothing rather than invent one.
+ */
+export function describeResetIn(resetsAt: string | null | undefined, now: number = Date.now()): string | null {
+  const at = Date.parse(String(resetsAt || ""));
+  if (!Number.isFinite(at)) return null;
+  const ms = at - now;
+  /* Already past, or within a minute: promising "0m" reads as broken. */
+  if (ms <= 60_000) return "shortly";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `in ${hours}h ${rest}m` : `in ${hours}h`;
+}
+
 export function describeTurnBudget(verdict: TurnBudgetVerdict): string {
   if (verdict.allowed) return "";
   if (verdict.exhausted === "platform") {
+    const sharedWhen = describeResetIn(verdict.resetsAt);
     return "Quantora has reached its shared daily limit for AI work, so new turns are paused for "
-      + "everyone until it resets in the next 24 hours. Nothing you did caused this and nothing "
+      + (sharedWhen ? `everyone until it resets ${sharedWhen}. ` : "everyone until it resets in the next 24 hours. ")
+      + "Nothing you did caused this and nothing "
       + "you have built is lost — your projects and files are exactly where you left them. "
       + "Adding your own API key in Settings lifts this immediately, because your key has its own allowance.";
   }
-  return `You have used your ${verdict.userLimit} AI turns for today. They reset within 24 hours, and `
-    + "everything you have built is saved — you can still open, read and edit your projects meanwhile. "
+  /*
+   * "within 24 hours" was true and useless: it is the same sentence one minute
+   * before the reset and twenty-three hours before it. The store has always
+   * returned the exact instant; saying it is the difference between waiting
+   * and giving up on the platform for the day.
+   */
+  const when = describeResetIn(verdict.resetsAt);
+  return `You have used your ${verdict.userLimit} AI turns for today. `
+    + (when ? `They all come back at once ${when}. ` : "They reset within 24 hours. ")
+    + "Everything you have built is saved — you can still open, read and edit your projects meanwhile. "
     + "Adding your own API key in Settings removes this limit, because your key has its own allowance.";
 }

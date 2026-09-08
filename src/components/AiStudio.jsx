@@ -117,6 +117,7 @@ const StudioFileTree = lazy(() => import('./StudioFileTree.jsx'));
 const StudioTerminal = lazy(() => import('./StudioTerminal.jsx'));
 const StudioGit = lazy(() => import('./StudioGit.jsx'));
 import ChatRowMenu from './ChatRowMenu.jsx';
+import TurnBudgetMeter from './TurnBudgetMeter.jsx';
 import { archivedChats, visibleChats } from '../lib/chat-organization.js';
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
@@ -2655,6 +2656,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           </ReactMarkdown>
                         )}
                       </div>
+                      {/*
+                        * Where the person stands, on the message that stopped
+                        * them. Before this the refusal said only that the turns
+                        * "reset within 24 hours" -- the same sentence at every
+                        * hour of the day -- so nobody could tell whether to
+                        * wait or come back tomorrow. Renders nothing when the
+                        * server reported no counter.
+                        */}
+                      {msg.sender === 'ai' && msg.isError && msg.turnBudget ? (
+                        <div style={{ marginTop: '8px' }}>
+                          <TurnBudgetMeter budget={msg.turnBudget} isLight={isLight} />
+                        </div>
+                      ) : null}
                       {/*
                         * A failed turn's reference id resolves to what happened
                         * (2026-09-05). The control carries the reference itself,

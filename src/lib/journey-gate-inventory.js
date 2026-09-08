@@ -1123,6 +1123,21 @@ export const JOURNEYS = Object.freeze([
     gates: { browser: ['scripts/platform-experience-browser-gate.mjs'] },
   }),
   journey({
+    id: 'turn-allowance-visible',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'A person can see their turn allowance and when it comes back, before being refused',
+    entry: 'api/_lib/user-turn-budget.ts',
+    gates: {
+      deterministic: [
+        'api/_lib/user-turn-budget.test.ts',
+        'shared/turn-budget-view.test.js',
+        'src/components/turn-budget-meter.test.tsx',
+      ],
+    },
+    note: 'A limit nobody can see is indistinguishable from a broken product. Until 2026-09-08 Quantora showed a person nothing about their own allowance -- no count, no bar, no reset -- so the only way to learn where you stood was to be refused, and the refusal said the turns \'reset within 24 hours\', which is the same sentence one minute before the reset and twenty-three hours before it. A student on a borrowed key could not tell whether to wait for lunch or come back tomorrow; the platform\'s own owner hit it on his own product and had to be told the answer by reading the SQL. hit_rate_limit had returned hits and resets_at since migration 0003 and turnBudgetVerdict threw both away. The window is FIXED, not rolling: now() is floored to the window size, so a 24h budget resets at midnight UTC and the whole allowance returns at once -- the first reading of this was wrong in the more expensive direction, because someone told the turns trickle back retries every ten minutes for half a day. turn-budget-view.js is shared by the server that writes the sentence and the desk that draws the bar, so the two cannot disagree about what a number means. Its load-bearing property is that an unknown count draws NOTHING: hits is null when the durable store did not answer, and a bar drawn from that null shows a full untouched allowance -- the most reassuring picture on the screen, produced by measuring nothing, the same class as a dead telemetry store reading as a quiet day. The wiring gate holds every hop from the verdict to the rendered element, because a meter nothing places is the orphan this repo has shipped twice, and importing is not rendering. TURN_BUDGET_EXEMPT_EMAILS lifts the per-user allowance for named accounts and deliberately does NOT reach the platform ceiling: the two budgets guard different things, the first keeping one student from draining a shared key and the second guarding the money itself, and an account that silently ignored the second could spend a whole borrowed balance without anyone choosing to. Exempt turns are still counted, because an owner who cannot see their own spend drains the key quietly. Unset must exempt nobody, which is the protection deleting itself on a deployment where someone forgot the variable; that property survives two redundant guards and only fails when both are removed, which is how it was verified.',
+  }),
+  journey({
     id: 'models-governed',
     kind: 'platform',
     area: 'platform invariants',

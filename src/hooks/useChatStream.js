@@ -1706,6 +1706,15 @@ export function useChatStream({
                   : `⚠️ **Request failed:** ${message}`,
               isAuthPrompt: res.status === 401 && errData.requiresAuth,
               isError: true,
+              /*
+               * The standing, carried on the message that reports the refusal.
+               * Until now a student learned only that they were stopped, never
+               * where they stood or when the allowance returns, so there was
+               * nothing to draw and nothing to plan around. Null when the
+               * server had no counter to report -- the meter renders nothing
+               * rather than an empty bar, which reads as a full allowance.
+               */
+              turnBudget: errData.turnBudget || null,
               executionStatus: null,
             } : m));
             return;
