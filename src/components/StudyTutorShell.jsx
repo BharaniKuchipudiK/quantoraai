@@ -322,6 +322,25 @@ export default function StudyTutorShell({
     onRemediation?.(kind);
   }, [mission.conceptKey, mission.label, mission.phase, mission.repairRequired, mission.status, onRemediation, requestMissionCheck]);
 
+  const missionPrimaryCheckReady = mission.status === 'active'
+    && mission.topicAligned
+    && (mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE
+      || mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK);
+
+  const handlePrimaryCheck = useCallback(() => {
+    if (mission.status === 'active') {
+      if (missionPrimaryCheckReady) {
+        void requestMissionCheck({
+          targetLabel: mission.label,
+          targetConceptKey: mission.conceptKey,
+          explicitRetry: completedCheck,
+        });
+      }
+      return;
+    }
+    void requestCheck({ explicitRetry: completedCheck });
+  }, [completedCheck, mission.conceptKey, mission.label, mission.status, missionPrimaryCheckReady, requestCheck, requestMissionCheck]);
+
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult
     ? (verifiedResult.correct ? 'Question complete' : 'Ready to repair')
@@ -387,8 +406,11 @@ export default function StudyTutorShell({
           <button
             type="button"
             aria-label="Test me on this"
-            disabled={assessment?.status === 'loading' || assessment?.status === 'grading' || verifiedResult?.correct}
-            onClick={() => requestCheck({ explicitRetry: completedCheck })}
+            disabled={assessment?.status === 'loading'
+              || assessment?.status === 'grading'
+              || verifiedResult?.correct
+              || (mission.status === 'active' && !missionPrimaryCheckReady)}
+            onClick={handlePrimaryCheck}
             className="study-h1-action study-h1-action--primary"
           >
             {assessment?.status === 'loading'
