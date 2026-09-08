@@ -986,8 +986,25 @@ export type BoundaryEventRecord = {
 
 const BOUNDARY_EVENT_COLUMNS = "id,correlation_id,boundary,state,transaction,route,model_id,gateway,upstream_provider,failure_domain,quota_domain,cost_class,health,circuit,duration_ms,budget_ms,status_code,file_count,detail_code,user_sub,created_at";
 
-export function recordBoundaryEvent(event: BoundaryEventRecord): void {
-  void request("transaction_boundary_events", {
+/*
+ * Returns the write, so a caller that is about to END THE RESPONSE can wait
+ * for it.
+ *
+ * This was `void request(...)` returning void, and the second half of a
+ * fire-and-forget chain that silently lost the most important event of every
+ * failed turn. Mid-turn events land because the function keeps running for
+ * seconds afterwards; the TERMINAL one is written microseconds before the
+ * handler returns, and a serverless instance is frozen the moment it does --
+ * with that POST still in flight. Seen in production 2026-09-08: an engine
+ * failure recorded at +114.7s and then nothing, on a turn whose catch writes
+ * an api.chat failed row on any throw.
+ *
+ * Bounded by REST_TIMEOUT_MS, so awaiting it can delay a response by at most
+ * that and normally by a network hop. Callers still mid-turn should NOT wait:
+ * see traceBoundary, which keeps the fire-and-forget path for them.
+ */
+export function recordBoundaryEvent(event: BoundaryEventRecord): Promise<void> {
+  return request("transaction_boundary_events", {
     method: "POST",
     headers: { Prefer: "return=minimal" },
     body: JSON.stringify([{
@@ -1011,7 +1028,7 @@ export function recordBoundaryEvent(event: BoundaryEventRecord): void {
       detail_code: event.detailCode ?? null,
       user_sub: event.userSub ?? null,
     }]),
-  });
+  }).then(() => undefined, () => undefined);
 }
 
 /**

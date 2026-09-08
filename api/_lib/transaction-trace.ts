@@ -126,6 +126,47 @@ export function traceBoundary(
   return true;
 }
 
+/**
+ * The same record, but WAITED FOR.
+ *
+ * traceBoundary above is fire-and-forget, which is right for an event written
+ * in the middle of a turn: the function keeps running for seconds afterwards
+ * and the write lands long before it ends. It is exactly wrong for the last
+ * event of a turn. A serverless instance is frozen the moment the handler
+ * returns, so a POST started microseconds earlier never completes -- and the
+ * event lost that way is the one that says what finally happened.
+ *
+ * Seen in production on 2026-09-08: an engine failure recorded at +114.7s and
+ * nothing after it, on a turn whose catch writes an api.chat failed row on any
+ * throw. The row was written. It was never delivered.
+ *
+ * Use this wherever the next statement ends the response. The write is bounded
+ * by the store's own request timeout, so the cost is a network hop and the
+ * ceiling is that timeout.
+ */
+export async function traceBoundarySettled(
+  input: Partial<TransactionBoundaryEvent>,
+  persist: BoundaryEventSink | null = recordBoundaryEvent,
+): Promise<boolean> {
+  const event = normalizeBoundaryEvent(input);
+  if (!event) return false;
+  const { userSub: _owner, ...logged } = event;
+  console.log(JSON.stringify({
+    type: 'quantora.transaction.boundary',
+    at: new Date().toISOString(),
+    ...logged,
+  }));
+  if (persist) {
+    try {
+      await persist(event);
+    } catch {
+      /* bookkeeping never fails the turn — but it is no longer allowed to
+       * disappear silently either: the caller waited, and that is the point. */
+    }
+  }
+  return true;
+}
+
 export type TraceLookupUser = { sub: string; isAdmin?: boolean } | null | undefined;
 
 /**
