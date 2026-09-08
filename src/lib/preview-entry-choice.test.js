@@ -138,3 +138,95 @@ test('choosing a page costs no model call', () => {
   const body = fn.slice(0, fn.indexOf('\n}') + 2);
   assert.doesNotMatch(body, /await|fetch\(|async/, 'repointing the preview must stay a local, free operation');
 });
+
+/*
+ * WHAT THE FIRST VERSION OF THIS GATE MISSED (review, 2026-09-08).
+ *
+ * It asserted the property I had reasoned about — a pin dies when its file
+ * disappears — and none of the three it turned out I had not:
+ *
+ *   P1  a repair written while a pin is active landed on the CONVENTIONAL
+ *       entry, silently overwriting a file the person was not watching and
+ *       leaving the one they were unchanged;
+ *   P2  the pin outlived the chat it was chosen in, so a different project
+ *       with the same filename opened on the non-default page;
+ *   P2  a project-runtime VFS got a selector that could relabel itself but
+ *       change nothing on screen — this control's own defect, one layer down.
+ *
+ * Each is pinned below. "The pin cannot go stale" was true and insufficient:
+ * a file existing is not the same as it being the same file.
+ */
+
+test('[codex-p1] a repair lands on the page being watched, not the conventional one', async () => {
+  const { writeHealedPreviewToVfs } = await import('./studio-preview-helpers.js');
+  const before = { 'hello.html': page('Hello / Goodbye'), 'index.html': page('FlatSplit') };
+  const healed = '<!DOCTYPE html><html><head><title>Hello / Goodbye</title></head><body><h1>Repaired</h1></body></html>';
+
+  const pinned = writeHealedPreviewToVfs(before, healed, null, 'hello.html');
+  assert.equal(pinned.path, 'hello.html', 'the repair must target the pinned page');
+  assert.match(pinned.vfs['hello.html'].content, /Repaired/);
+  assert.equal(
+    pinned.vfs['index.html'].content,
+    before['index.html'].content,
+    'a file nobody was looking at must not be rewritten',
+  );
+
+  const unpinned = writeHealedPreviewToVfs(before, healed, null, null);
+  assert.equal(unpinned.path, 'index.html', 'unpinned behaviour is unchanged');
+});
+
+test('[codex-p1] the repair path is actually given the pin by the desk', () => {
+  /*
+   * The helper accepting a pin proves nothing if the caller never passes one —
+   * this repo has shipped exactly that shape twice. Asserted on the source
+   * because handleHealedPreview closes over component state.
+   */
+  const studio = readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(
+    studio,
+    /writeHealedPreviewToVfs\(vfs, healedHtml, deskJob, previewEntryPin\)/,
+    'healing and Improve must write to the page the person is watching',
+  );
+  assert.match(
+    studio,
+    /setWorkspaceCode\(runningPreviewCode\(next\.vfs, healedHtml, previewEntryPin\)\)/,
+    'and the desk must keep showing that page afterwards',
+  );
+});
+
+test('[codex-p2] a pin belongs to the desk it was chosen on', () => {
+  /*
+   * Validating the path against the live VFS does not cover this: switching to
+   * another project that also has a hello.html finds a real file, just not the
+   * same one. The pin has to end at the session boundary.
+   */
+  const studio = readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  assert.match(
+    studio,
+    /useEffect\(\(\) => \{ setPreviewEntryPin\(null\); \}, \[activeSessionId\]\);/,
+    'the pin must be cleared when the desk changes',
+  );
+});
+
+test('[codex-p2] no selector where the project runtime owns the entry', () => {
+  /*
+   * LivePreviewCanvas hands a Vite/React VFS to ProjectRuntimePreview with the
+   * files and no entry override. A selector there would relabel itself and
+   * change nothing on screen — precisely the claim-versus-behaviour split this
+   * control exists to close.
+   */
+  const viteWithTwoPages = {
+    'package.json': { content: '{"name":"app"}' },
+    'src/main.jsx': { content: "import App from './App.jsx';" },
+    'index.html': page('Shell'),
+    'about.html': page('About'),
+  };
+  assert.deepEqual(
+    previewEntryChoices(viteWithTwoPages),
+    [],
+    'a runtime that resolves its own root must not be offered a chooser it ignores',
+  );
+
+  // ...and a plain two-page site is unaffected by that carve-out.
+  assert.deepEqual(previewEntryChoices(TWO_PAGES), ['index.html', 'hello.html']);
+});

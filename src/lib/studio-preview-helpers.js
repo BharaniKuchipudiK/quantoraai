@@ -490,11 +490,22 @@ export function runningPreviewCode(vfs = {}, fallback = '', pinned = null) {
  * A healed Preview is the product. Write it into the project files so Review
  * and reload match what is running. React source is not overwritten with HTML.
  */
-export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
+export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null, pinned = null) {
   const html = String(healed || '').trim();
   if (!html) return { vfs: { ...(vfs || {}) }, wrote: false, path: null };
   const asHtml = isHtmlDocument(html);
-  let path = pickPreviewEntryPath(vfs);
+  /*
+   * A REPAIR MUST LAND ON THE PAGE THE PERSON IS WATCHING.
+   *
+   * This wrote to the conventional entry unconditionally. Once Preview can be
+   * pointed at a second page, that meant: view hello.html, hit Improve, and the
+   * healed HTML is written into index.html — a file the person was not looking
+   * at, silently overwritten, while the page they WERE watching is unchanged
+   * and appears to have ignored them. Damage to an untouched file plus a repair
+   * that visibly did nothing. Found by review on the PR that introduced the
+   * pin; the pin now travels with the write.
+   */
+  let path = resolvePreviewEntryPath(vfs, pinned);
   if (!path || (asHtml && /\.(jsx|tsx|js|ts)$/i.test(path))) {
     path = 'index.html';
   }
@@ -504,8 +515,10 @@ export function writeHealedPreviewToVfs(vfs = {}, healed = '', job = null) {
     language: asHtml || /\.html$/i.test(path) ? 'html' : (next[path]?.language || ''),
   };
   const withDesk = ensureShopDeskInVfs(next, job);
-  const before = probeRunningDesk({ html: pickPreviewEntry(vfs), vfs, job });
-  const after = probeRunningDesk({ html: pickPreviewEntry(withDesk.vfs), vfs: withDesk.vfs, job });
+  // Like for like: both sides of the regression check read the page that was
+  // written, or a pinned repair would be judged against a page it never touched.
+  const before = probeRunningDesk({ html: vfsText(vfs, path) || pickPreviewEntry(vfs), vfs, job });
+  const after = probeRunningDesk({ html: vfsText(withDesk.vfs, path) || pickPreviewEntry(withDesk.vfs), vfs: withDesk.vfs, job });
   if (deskChecksRegressed(before.checks, after.checks)) {
     return { vfs: { ...(vfs || {}) }, wrote: false, path: null, rejected: true };
   }

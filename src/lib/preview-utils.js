@@ -1,3 +1,4 @@
+import { isProjectRuntimeVfs } from './project-runtime-preview.js';
 import { DESK_PROBE_FN_SOURCE } from './desk-probe-script.js';
 
 export const PREVIEW_EMBED_PATH = '/preview/embed.html';
@@ -574,6 +575,20 @@ export function pickPreviewEntry(vfs = {}) {
  * only where it means something.
  */
 export function previewEntryChoices(vfs = {}) {
+  /*
+   * A PROJECT RUNTIME OWNS ITS OWN ENTRY, SO THERE IS NOTHING HERE TO OFFER.
+   *
+   * LivePreviewCanvas hands a Vite/React VFS to ProjectRuntimePreview with the
+   * files and no entry override — the runtime resolves its own root. A Vite
+   * project that happens to carry two .html files would therefore have shown a
+   * selector that relabelled itself and changed nothing on screen: the exact
+   * claim-versus-behaviour split this control exists to close, recreated one
+   * layer down. Found by review before it shipped.
+   *
+   * Offering no control is the honest answer until the runtime can be told
+   * which entry to mount (§4: a control that cannot act is worse than none).
+   */
+  if (isProjectRuntimeVfs(vfs)) return [];
   const pages = Object.keys(vfs || {})
     .filter((key) => /\.html$/i.test(key) && vfsText(vfs, key));
   if (pages.length < 2) return [];

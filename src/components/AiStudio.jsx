@@ -1002,13 +1002,19 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [codingDeskOpen, deskFullscreen]);
 
   const handleHealedPreview = useCallback((healedHtml) => {
-    const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob);
+    /*
+     * The pin travels with the repair. Without it, healing and Improve wrote
+     * into the conventional entry while the person watched a pinned page —
+     * overwriting a file they were not looking at, and leaving the one they
+     * were unchanged.
+     */
+    const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob, previewEntryPin);
     if (!next.wrote) return false;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
-    setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
+    setWorkspaceCode(runningPreviewCode(next.vfs, healedHtml, previewEntryPin));
     return true;
-  }, [vfs, deskJob]);
+  }, [vfs, deskJob, previewEntryPin]);
 
   /*
    * Rewind bypasses commitDeskVfs on purpose: the regression guard exists to
@@ -1938,6 +1944,16 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * event to wire, and therefore none to forget.
    */
   const [previewEntryPin, setPreviewEntryPin] = useState(null);
+  /*
+   * A pin belongs to the desk it was chosen on. This state outlives any one
+   * chat, so switching sessions used to carry the choice across: pin
+   * hello.html here, open a different project that also has a hello.html, and
+   * it opens on the non-default page for no reason the person can see.
+   * Validating the path against the live VFS does not catch that — the file
+   * exists, it is just a different file. Cleared on the session boundary,
+   * where the desk itself changes.
+   */
+  useEffect(() => { setPreviewEntryPin(null); }, [activeSessionId]);
   const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
   const previewActiveEntry = useMemo(
     () => resolvePreviewEntryPath(vfs, previewEntryPin) || '',
