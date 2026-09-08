@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Monitor, Smartphone, Tablet, Wand2 } from 'lucide-react';
+import { Download, FileCode, Monitor, Smartphone, Tablet, Wand2 } from 'lucide-react';
 
 const VIEWPORTS = [
   ['mobile', Smartphone],
@@ -23,6 +23,14 @@ export default function StudioPreviewControls({
   onDownload,
   onImprove,
   onViewport,
+  /**
+   * The pages Preview could run, conventional entry first, and the one it is
+   * running. Empty unless the desk genuinely holds two or more HTML pages, so
+   * an ordinary single-page build gains no control it does not need.
+   */
+  entryChoices = [],
+  activeEntry = '',
+  onSelectEntry,
   isLight,
   textColor,
   subtextColor,
@@ -54,6 +62,58 @@ export default function StudioPreviewControls({
       data-quantora-desk-preview-controls="true"
       style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
     >
+      {/*
+       * WHICH PAGE AM I LOOKING AT.
+       *
+       * A desk holding two HTML pages renders one of them and used to say
+       * nothing about which. A build that shipped its new page as hello.html
+       * alongside an older index.html showed the OLD page, and the only route
+       * to the new one was asking the model in chat — a paid turn to repoint an
+       * iframe. Naming the running page is most of the fix; being able to
+       * change it is the rest, and it costs nothing.
+       *
+       * Absent entirely below two pages: a control that offers no choice is
+       * noise on every ordinary build.
+       */}
+      {entryChoices.length > 1 ? (
+        <label
+          data-quantora-desk-preview-entry={activeEntry || ''}
+          title="Which page Preview is running"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            height: '26px',
+            padding: '0 6px',
+            borderRadius: '7px',
+            background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.25)',
+            color: subtextColor,
+            fontSize: '0.71rem',
+            fontWeight: 700,
+          }}
+        >
+          <FileCode size={12} aria-hidden="true" />
+          <select
+            data-quantora-desk-preview-entry-select="true"
+            aria-label="Page Preview is running"
+            value={activeEntry || ''}
+            onChange={(event) => onSelectEntry?.(event.target.value)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: textColor,
+              font: 'inherit',
+              cursor: 'pointer',
+              maxWidth: compact ? '96px' : '150px',
+            }}
+          >
+            {entryChoices.map((path) => (
+              <option key={path} value={path}>{path}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
       {/* An Office artifact has one fixed page shape; a viewport switcher would lie about it. */}
       {isOfficeDoc ? null : (
         <div

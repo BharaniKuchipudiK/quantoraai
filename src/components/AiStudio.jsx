@@ -2,7 +2,7 @@ import { extractRunnableCode, assembleStudioPreview, applyWorkspaceFromChat, app
 import { shareNoticeText } from '../lib/share-notice.js';
 import { attachmentKindForFile, MAX_DOCUMENT_FILE_BYTES, MAX_IMAGE_FILE_BYTES } from '../lib/chat-attachments.js';
 import { deferredWriteStillValid, resolveDeskSaveTarget } from '../lib/desk-session-ownership.js';
-import { pickPreviewEntry } from '../lib/preview-utils.js';
+import { pickPreviewEntry, previewEntryChoices, resolvePreviewEntryPath } from '../lib/preview-utils.js';
 import { deskCommitRegressesPreview } from '../lib/desk-commit-guard.js';
 import { deskShellVfs } from '../lib/studio-workspace-tree.js';
 import { resolveMessageActions } from '../lib/message-actions.js';
@@ -1001,14 +1001,58 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     if (!codingDeskOpen && deskFullscreen) setDeskFullscreen(false);
   }, [codingDeskOpen, deskFullscreen]);
 
+  /*
+   * The page the person chose for Preview, when the desk holds more than one.
+   * Null means "use the convention", which is every ordinary build.
+   *
+   * Held as a path rather than an index, and validated against the live VFS on
+   * every read (resolvePreviewEntryPath), so a build that replaces the product
+   * drops the pinned file and the pin dies with it. There is no invalidation
+   * event to wire, and therefore none to forget.
+   */
+  const [previewEntryPin, setPreviewEntryPin] = useState(null);
+  /*
+   * A pin belongs to the desk it was chosen on. This state outlives any one
+   * chat, so switching sessions used to carry the choice across: pin
+   * hello.html here, open a different project that also has a hello.html, and
+   * it opens on the non-default page for no reason the person can see.
+   * Validating the path against the live VFS does not catch that — the file
+   * exists, it is just a different file. Cleared on the session boundary,
+   * where the desk itself changes.
+   */
+  useEffect(() => { setPreviewEntryPin(null); }, [activeSessionId]);
+  /*
+   * DECLARED HERE, ABOVE ITS FIRST USE, AND THAT PLACEMENT IS THE FIX.
+   *
+   * This block sat ~950 lines lower, next to the memos that read it. But
+   * handleHealedPreview below closes over the pin and lists it in a useCallback
+   * dependency array, which is EVALUATED DURING RENDER — so the component threw
+   *
+   *   ReferenceError: Cannot access 'previewEntryPin' before initialization
+   *
+   * on its first render, the desk never mounted, and every browser gate timed
+   * out waiting for a composer that would never appear. `tsc` does not see a
+   * temporal dead zone, and the unit test for this feature asserted the SOURCE
+   * TEXT of the call site — which was correct the whole time, while the app was
+   * dead. Only a gate that renders the desk could catch it, and one did.
+   *
+   * Keep state above every hook that closes over it.
+   */
+
   const handleHealedPreview = useCallback((healedHtml) => {
-    const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob);
+    /*
+     * The pin travels with the repair. Without it, healing and Improve wrote
+     * into the conventional entry while the person watched a pinned page —
+     * overwriting a file they were not looking at, and leaving the one they
+     * were unchanged.
+     */
+    const next = writeHealedPreviewToVfs(vfs, healedHtml, deskJob, previewEntryPin);
     if (!next.wrote) return false;
     setDeskReview(diffVfsReview(vfs, next.vfs));
     setVfs(next.vfs);
-    setWorkspaceCode(pickPreviewEntry(next.vfs) || healedHtml);
+    setWorkspaceCode(runningPreviewCode(next.vfs, healedHtml, previewEntryPin));
     return true;
-  }, [vfs, deskJob]);
+  }, [vfs, deskJob, previewEntryPin]);
 
   /*
    * Rewind bypasses commitDeskVfs on purpose: the regression guard exists to
@@ -1928,7 +1972,15 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
   }, [commitDeskVfs]);
 
-  const previewRunCode = useMemo(() => runningPreviewCode(vfs, workspaceCode), [vfs, workspaceCode]);
+  const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
+  const previewActiveEntry = useMemo(
+    () => resolvePreviewEntryPath(vfs, previewEntryPin) || '',
+    [vfs, previewEntryPin],
+  );
+  const previewRunCode = useMemo(
+    () => runningPreviewCode(vfs, workspaceCode, previewEntryPin),
+    [vfs, workspaceCode, previewEntryPin],
+  );
   const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
   const qirCoding = useQirCodingRun({
     enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
@@ -5985,6 +6037,9 @@ Paused — ${autoPauseRef.current}.`
                     onDownload={() => previewCanvasRef.current?.download?.()}
                     onImprove={() => previewCanvasRef.current?.improve?.()}
                     onViewport={(next) => previewCanvasRef.current?.setViewport?.(next)}
+                    entryChoices={previewEntryChoiceList}
+                    activeEntry={previewActiveEntry}
+                    onSelectEntry={setPreviewEntryPin}
                     isLight={isLight}
                     textColor={textColor}
                     subtextColor={subtextColor}

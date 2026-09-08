@@ -480,12 +480,32 @@ export const JOURNEYS = Object.freeze([
   journey({
     id: 'preview-controls',
     area: 'coding desk',
-    name: 'Switch the Preview device, download the build, or ask to Improve it',
+    name: 'Switch the Preview device or page, download the build, or ask to Improve it',
     entry: 'src/components/StudioPreviewControls.jsx',
-    hooks: ['data-quantora-desk-preview-controls', 'data-quantora-canvas-device-switcher', 'data-quantora-desk-improve', 'data-quantora-desk-download'],
+    hooks: [
+      'data-quantora-desk-preview-controls',
+      'data-quantora-canvas-device-switcher',
+      'data-quantora-desk-improve',
+      'data-quantora-desk-download',
+      'data-quantora-desk-preview-entry',
+      'data-quantora-desk-preview-entry-select',
+    ],
     modelTurn: true,
-    gates: {},
-    note: 'Four durable hooks and no gate reads any of them.',
+    gates: {
+      deterministic: ['src/lib/preview-entry-choice.test.js'],
+    },
+    note: 'Six durable hooks; one gate now reads the two newest. On 2026-09-08 a build shipped '
+      + 'the page the person asked for as hello.html beside an improved index.html, Preview '
+      + 'rendered the conventional entry, and nothing on screen said which file was running -- '
+      + 'reported as "I don\'t have preview to see the new changes". The reply\'s only route to '
+      + 'the new page was "say the word and I\'ll make it the Preview entry instead": a paid '
+      + 'model turn to repoint an iframe at a file already on disk. The fix is visibility, not a '
+      + 'cleverer default -- pickPreviewEntryPath decides every preview in the product from 14+ '
+      + 'call sites, and reordering it would risk previews for everyone to settle a confusion for '
+      + 'one person. preview-entry-choice.test.js pins that trade in both directions: it fails if '
+      + 'the pin stops reaching the running code, if the control stops being wired to the desk, '
+      + 'AND if someone later reorders the default heuristic instead. Still unproven: the four '
+      + 'older hooks, and no browser gate drives the switcher.',
   }),
   journey({
     id: 'desk-review-probes',
