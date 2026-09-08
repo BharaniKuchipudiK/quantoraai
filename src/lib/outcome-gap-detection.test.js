@@ -9,7 +9,14 @@ test('a boutique website reply without payments or shipping gets those follow-up
   );
   const labels = gaps.map((gap) => gap.label);
   assert.ok(labels.includes('Add a payment gateway'));
-  assert.ok(labels.includes('Domestic or international?'));
+  assert.ok(labels.includes('Where do you ship to?'));
+  /*
+   * Not "Domestic or international?" — that wording was reported twice as a
+   * travel chip turning up on a coding desk. The rule was always a SHIPPING
+   * question for a shop; only the words looked like flights.
+   */
+  assert.equal(labels.some((label) => /domestic or international/i.test(label)), false,
+    'a shipping question must not be phrased like a flight question');
   assert.ok(labels.includes('Add real product photos'));
   assert.equal(labels.includes('Publish this site'), false);
 });
@@ -21,7 +28,7 @@ test('commerce chips still appear when the model omitted quantora-continues', ()
   );
   const chips = injectGapContinues(null, gaps);
   assert.ok(chips.items.some((item) => /payment/i.test(item.label)));
-  assert.ok(chips.items.some((item) => /Domestic or international/i.test(item.label)));
+  assert.ok(chips.items.some((item) => /where do you ship to/i.test(item.label)));
 });
 
 test('a boutique with real product photos may offer Publish', () => {
@@ -138,7 +145,7 @@ test('an Office deck gets presentation chips, not Vercel publish', () => {
 
 test('a coffee shop is not offered a payment gateway or shipping', () => {
   // Reported: "a one-page site for a coffee shop" produced
-  // "Add real product photos | Add a payment gateway | Domestic or international?"
+  // "Add real product photos | Add a payment gateway | Where do you ship to?"
   const prompt = 'Build a one-page site for a coffee shop called "Ember & Oak" — hero, a 3-item menu with prices, and hours.';
   const ai = 'Here is Ember & Oak. Menu: Espresso $3.00, Latte $4.50, Cappuccino $4.00. Hours included.';
   const labels = detectOutcomeGaps(prompt, ai, {}).map((g) => g.label);
@@ -149,7 +156,7 @@ test('venue nouns do not trigger commerce chips', () => {
   for (const prompt of ['a barber shop website with opening hours', 'a landing page for a book store']) {
     const labels = detectOutcomeGaps(prompt, 'Here is your page.', {}).map((g) => g.label);
     assert.equal(labels.includes('Add a payment gateway'), false, `no gateway chip for: ${prompt}`);
-    assert.equal(labels.includes('Domestic or international?'), false, `no shipping chip for: ${prompt}`);
+    assert.equal(labels.includes('Where do you ship to?'), false, `no shipping chip for: ${prompt}`);
   }
 });
 

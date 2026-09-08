@@ -244,6 +244,98 @@ export function sessionHandoverLabel(contract) {
  * and the user never saw the packet, which is the opposite of keeping a human
  * in the loop on their own conversation.
  */
+/**
+ * WHAT A PERSON READS WHEN A CHAT IS HANDED OVER.
+ *
+ * describeSessionHandover below returns every carried line, and the new chat
+ * used to print all of them. On 2026-09-08 that was nineteen bullets, several
+ * of them near-duplicates of each other ("Services: Blouse stitching, Saree
+ * draping, Fall stitching, Mehndi" three times in slightly different words),
+ * opening a chat with a wall of receipts instead of the work.
+ *
+ * Nothing is lost by shortening it: the model does not read this text. It
+ * reads contract.summary, which is structured and stays whole. This is the
+ * human's two-line version of the same thing.
+ */
+export function handoverHeadline(contract, { maxDetail = 2 } = {}) {
+  const summary = contract?.summary || {};
+  const goal = String(summary.goal || '').trim();
+  const understanding = String(summary.understanding || '').trim();
+
+  /*
+   * Near-duplicates are collapsed before counting, or the tail reads "and 14
+   * more" when the same three facts were restated in four ways -- which makes
+   * the handover look lossier than it is.
+   */
+  const detail = dedupeFacts([
+    ...(Array.isArray(summary.facts) ? summary.facts : []),
+    ...(Array.isArray(summary.recentIntents) ? summary.recentIntents : []),
+  ]);
+
+  const shown = detail.slice(0, Math.max(0, maxDetail));
+  const hidden = Math.max(0, detail.length - shown.length);
+  return {
+    goal,
+    understanding,
+    shown,
+    hidden,
+    /* The full set still travels; this only says how much is not on screen. */
+    carried: detail.length + (goal ? 1 : 0) + (understanding ? 1 : 0),
+  };
+}
+
+/**
+ * Facts that say the same thing count once.
+ *
+ * Compared on letters and digits only, lowercased: "Services: Blouse
+ * stitching, Saree draping, Fall stitching, Mehndi" and "Services: Blouse
+ * stitching, Draping, Fall stitching, Mehndi" are the same fact restated, and
+ * a reader gains nothing from both. The longest wording of a group is kept,
+ * because it is the one carrying the most detail.
+ */
+export function dedupeFacts(facts = []) {
+  const kept = [];
+  for (const raw of Array.isArray(facts) ? facts : []) {
+    const text = String(raw || '').trim();
+    if (!text) continue;
+    const tokens = significantTokens(text);
+    if (!tokens.size) continue;
+    const twinIndex = kept.findIndex((entry) => overlap(entry.tokens, tokens) >= 0.8);
+    if (twinIndex === -1) {
+      kept.push({ text, tokens });
+      continue;
+    }
+    /* Keep the fuller wording of a restated fact: it carries the most. */
+    if (text.length > kept[twinIndex].text.length) kept[twinIndex] = { text, tokens };
+  }
+  return kept.map((entry) => entry.text);
+}
+
+/*
+ * 0.8 rather than exact, because the summariser restates facts in slightly
+ * different words -- "Saree draping" and "Draping" in the same list. Rather
+ * than a similarity score over whole strings, this compares the SMALLER set
+ * against the larger: a short restatement fully contained in a longer one is a
+ * duplicate, while two facts that merely share a subject are not.
+ */
+function overlap(a, b) {
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  if (!small.size) return 0;
+  let shared = 0;
+  for (const token of small) if (large.has(token)) shared += 1;
+  return shared / small.size;
+}
+
+/* Words that carry meaning: short filler matches everything and would collapse
+ * unrelated facts into one. */
+const FILLER = new Set(['the', 'and', 'for', 'with', 'are', 'was', 'you', 'your', 'that', 'this', 'all', 'its']);
+function significantTokens(text) {
+  return new Set(
+    String(text).toLowerCase().split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 2 && !FILLER.has(word)),
+  );
+}
+
 export function describeSessionHandover(contract) {
   const summary = contract?.summary || {};
   const lines = [];

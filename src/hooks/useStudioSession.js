@@ -15,7 +15,9 @@ import {
 import { compactOfficeMessages } from '../lib/office-session-state.js';
 import { compactSupersededBuilds } from '../lib/session-code-budget.js';
 import { newThreadLabel, resolveAdvisorSidebarClick } from '../lib/advisor-thread.js';
-import { describeSessionHandover } from '../lib/session-continuity.js';
+import { describeSessionHandover,
+  handoverHeadline,
+} from '../lib/session-continuity.js';
 import { CANNED_PROJECT_DESCRIPTION, deriveProjectResume, pickResumeSessionId, isCannedProjectDescription } from '../lib/studio-mission.js';
 
 import {
@@ -444,19 +446,36 @@ export function makeSession(projectId, defaultGreetingMsg, studioDomain = null, 
 /** The first message of a continued chat: where it came from and what came with it. */
 export function handoverNoteMessage({ contract, sourceSession = null, desk = null } = {}) {
   const fromTitle = String(sourceSession?.title || '').trim();
-  const lines = describeSessionHandover(contract).lines;
+  const head = handoverHeadline(contract);
   const fileCount = desk?.vfs && typeof desk.vfs === 'object' ? Object.keys(desk.vfs).length : 0;
-  const carried = [
-    ...lines,
-    fileCount
-      ? `The desk, with ${fileCount} file${fileCount === 1 ? '' : 's'} — Preview runs the same build.`
-      : 'No files were on that desk.',
-  ];
+
+  /*
+   * TWO LINES, NOT A RECEIPT.
+   *
+   * This used to print every carried line — nineteen bullets on 2026-09-08,
+   * several of them the same fact restated, opening a new chat with a wall of
+   * paperwork instead of the work. Nothing is lost by shortening it: the model
+   * never reads this text, it reads contract.summary, which stays whole. This
+   * is the human's version.
+   */
+  const parts = [];
+  if (head.goal) parts.push(`Picking up: ${head.goal}`);
+  if (head.understanding) parts.push(head.understanding);
+  /* The couple of details worth seeing. Computed and then NOT rendered in the
+   * first cut of this change, which dropped them from the screen while the
+   * count below still called them shown. */
+  if (head.shown.length) parts.push(head.shown.map((line) => `- ${line}`).join('\n'));
+  if (fileCount) parts.push(`Your desk came with it — ${fileCount} file${fileCount === 1 ? '' : 's'}, and Preview runs the same build.`);
+  else parts.push('No files were on that desk.');
+  /* Said, not shown: the person can see nothing was dropped without reading
+   * it all back. */
+  if (head.hidden > 0) parts.push(`${head.hidden} more detail${head.hidden === 1 ? '' : 's'} carried over quietly — just ask if you want them listed.`);
+
   return {
     id: `handover-note-${contract?.createdAt || Date.now()}`,
     sender: 'ai',
     handoverNote: true,
-    text: `Continued from ${fromTitle ? `"${fromTitle}"` : 'the previous chat'}, which stays exactly as it was.\n\nCarried over:\n${carried.map((line) => `- ${line}`).join('\n')}`,
+    text: `Continued from ${fromTitle ? `"${fromTitle}"` : 'the previous chat'}, which stays exactly as it was.\n\n${parts.join('\n\n')}`,
   };
 }
 
