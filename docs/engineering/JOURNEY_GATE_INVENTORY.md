@@ -101,7 +101,7 @@ Floors that may only rise: proven ≥ 41, on the deployment ≥ 13. The gate fai
 | `github-import-repo` | Import an existing repository into the desk | no | `github-import.test.js`, `github-checkout.test.ts`, `repository-preview.test.ts`, `github-intelligence.test.ts`, `repo-work-comprehension.test.js` | `repo-work-browser-gate.mjs` | — | proven |
 | `github-push` | Push the desk files to a new or existing repository | no | `github-push-payload.test.js`, `github-write-authorization.test.ts`, `github-write-seam-gate.mjs` | `desk-publish-browser-gate.mjs` | — | proven |
 | `github-pull-requests` | Open, review, comment on and merge pull requests from the desk | no | `github-write-authorization.test.ts`, `github-tool-promise.test.ts`, `github-write-seam-gate.mjs` | `desk-pull-requests-browser-gate.mjs` | — | proven |
-| `office-artifacts` | Generate and download a PowerPoint, Excel, Word or PDF file | yes | `office-artifact.test.js`, `office-generation-budget.test.js`, `office-output-schemas.test.js`, `office-briefing.test.js`, `office-export.test.js`, `office-failure-copy.test.js`, `office-intent.test.js`, `office-words.test.mjs` | — | `golden:office-document` | proven |
+| `office-artifacts` | Generate and download a PowerPoint, Excel, Word or PDF file | yes | `office-artifact.test.js`, `office-generation-budget.test.js`, `office-output-schemas.test.js`, `office-briefing.test.js`, `office-export.test.js`, `office-failure-copy.test.js`, `office-intent.test.js`, `office-words.test.mjs`, `image-parser-dos-gate.mjs` | — | `golden:office-document` | proven |
 
 ### advisor desks
 
@@ -143,6 +143,7 @@ Not journeys, and not counted above, but every journey stands on them.
 | `claims-backed` | No capability chip or tool description promises what nothing answers | `capability-claims-gate.mjs` | — | — |
 | `dead-wires` | Nothing tested is reachable by nothing, and hooks are declared in dependency order | `wiring-gate.mjs`, `hook-dependency-order-gate.mjs` | — | — |
 | `hostile-reply-safety` | A hostile or malformed model reply cannot destroy the build | `pipeline-stress.mjs`, `never-discard-model-output.test.js`, `chat-turn-safety.test.js` | — | — |
+| `dependency-advisories-accepted` | Every high-severity dependency advisory is either fixed or accepted, by cause, with a reason | `dependency-advisory-gate.mjs` | — | — |
 | `experience-budget` | The shell, a workspace switch and the input stay inside their time budgets | — | `platform-experience-browser-gate.mjs` | — |
 | `turn-allowance-visible` | A person can see their turn allowance and when it comes back, before being refused | `user-turn-budget.test.ts`, `turn-budget-view.test.js`, `turn-budget-meter.test.tsx`, `turn-budget-ring.test.tsx` | — | — |
 | `preview-updates-itself` | A page the model wrote appears without being asked, or says why it did not | `preview-autocommit.test.js` | — | — |

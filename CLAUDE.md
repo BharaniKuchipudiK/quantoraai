@@ -206,6 +206,8 @@ becomes safely more autonomous.
 | `node --test shared/trace-story.test.js` | a reference id whose account invents a cause the record does not prove — or blames the server for a request it never saw |
 | `node scripts/trace-lookup-browser-gate.mjs` | a failed turn whose reference is not the id the request carried, so no lookup could ever find it — or a "What happened?" that renders nothing |
 | `node --test api/_lib/preview-compiler.test.js` | a project the artifact contract accepts and the preview runtime refuses — a React 17 mount (`ReactDOM.render`) that dies on the React 19 runtime as "render is not a function", which a fallback engine shipped to production on 2026-09-05 |
+| `npm run test:image-parsers` | a picture a stranger supplied that hangs the function embedding it — a zero-length section in an ICNS, HEIF, JXL or ASF header, in a library with no patched release |
+| `npm run test:advisories` | a high-severity dependency advisory nobody decided to accept, an acceptance whose reason has expired, and a NEW advisory on a package an old name-based allowlist was already silencing |
 | `npm run test:journeys` | a user journey no gate exercises, printed as a number that may only rise — and a ledger that lies: a gate it names that does not exist or does not run, a muted CI step whose outcome nobody reads, a gate on disk that no journey claims |
 
 ### A tool description is a promise, and the model passes it on

@@ -819,10 +819,19 @@ export const JOURNEYS = Object.freeze([
         'src/lib/office-failure-copy.test.js',
         'src/lib/office-intent.test.js',
         'scripts/office-words.test.mjs',
+        /*
+         * The pictures a deck names are bytes a stranger chose — a data: URL or
+         * any https: URL, up to 5 MB — and they are parsed inside the function.
+         * This gate drives crafted ICNS, HEIF and JXL files through the real
+         * embed path and requires it to return, in a child process, because the
+         * failure it guards is a hang rather than an error and a test that meets
+         * it takes its own runner down.
+         */
+        'scripts/image-parser-dos-gate.mjs',
       ],
       deployed: ['golden:office-document'],
     },
-    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). Its first run found the generator resolving server keys from the environment alone while chat also reads the gateway, so a preview with a gateway-held Gemini generated with no Gemini; the generator now resolves as chat does, its 502 names every provider asked, and the desk shows that detail. A deck and a workbook are still unopened.',
+    note: 'The deployed golden asks for a Word file, clicks Download, and opens what the browser received: word/document.xml must carry the title (2026-09-06). Its first run found the generator resolving server keys from the environment alone while chat also reads the gateway, so a preview with a gateway-held Gemini generated with no Gemini; the generator now resolves as chat does, its 502 names every provider asked, and the desk shows that detail. A deck and a workbook are still unopened. Picture embedding was found to hang the whole function on 2026-09-08, TWICE. image-size, which sizes anything Jimp cannot decode, spins forever on an ICNS, HEIF or JXL file declaring a zero-length section — sixteen bytes. Switching those three parsers off was not enough: Jimp.read sniffs the format with file-type first, whose ASF reader rewinds its tokenizer exactly as far as it just advanced when a sub-header declares size 0, so 128 bytes still hung the function one line EARLIER than the fix. The second guard is a five-header allowlist (png, jpeg, gif, bmp, tiff — all @jimp/types bundles) in front of the decoder, so bytes that were always destined for the fallback stop being sniffed on the way. The gate proves every payload still hangs its library unguarded, so it cannot quietly start measuring nothing.',
   }),
 
   // ── advisor desks ───────────────────────────────────────────────────────
@@ -1140,6 +1149,17 @@ export const JOURNEYS = Object.freeze([
     gates: {
       deterministic: ['scripts/stress/pipeline-stress.mjs', 'src/lib/never-discard-model-output.test.js', 'src/lib/chat-turn-safety.test.js'],
     },
+  }),
+  journey({
+    id: 'dependency-advisories-accepted',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'Every high-severity dependency advisory is either fixed or accepted, by cause, with a reason',
+    entry: 'scripts/dependency-advisory-gate.mjs',
+    gates: {
+      deterministic: ['scripts/dependency-advisory-gate.mjs'],
+    },
+    note: 'Replaces a one-line allowlist that suppressed by package name and printed "allowlisted unreachable transitives: image-size, pptxgenjs" on every green run (2026-09-08). image-size is neither unreachable nor a transitive — it is a direct production dependency that api/generate-office.ts feeds attacker-supplied bytes, and the suppression is why nobody looked for two months. Acceptance is now per cause, so a NEW advisory on an already-listed package fails instead of being swallowed by the old name, and an accepted cause npm audit stops reporting fails as a silencer left armed over nothing. All four failure modes were run before this shipped.',
   }),
   journey({
     id: 'experience-budget',
