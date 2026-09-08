@@ -135,6 +135,7 @@ Not journeys, and not counted above, but every journey stands on them.
 
 | invariant | what must hold | deterministic | browser | deployed |
 |---|---|---|---|---|
+| `turn-failure-offers-nothing` | A turn that produced nothing offers no next steps | `outcome-gap-on-failure.test.js` | — | — |
 | `desk-eval-corpus` | A real build turn is measured against what was asked for, on a corpus, not in a screenshot | `desk-eval.test.js` | — | — |
 | `functions-boot` | Every deployed function boots before its handler runs, and every import resolves in production | `runtime-import-gate.mjs` | — | `deployed-readiness-gate.mjs` |
 | `routes-served-and-called` | Every route the desk calls is served, and every served route is called | `platform-dead-control-gate.mjs`, `served-route-gate.mjs`, `route-reachability.test.js` | — | — |

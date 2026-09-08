@@ -2902,7 +2902,25 @@ Paused — ${autoPauseRef.current}.`
                         const latestAiId = [...messages].reverse().find((item) => item.sender === 'ai' && item.text)?.id;
                         const priorUser = [...messages].slice(0, messages.findIndex((item) => item.id === msg.id) + 1).reverse().find((item) => item.sender === 'user')?.text || '';
                         const officeKindForChips = detectOfficeIntent({ messages }) || activeOfficeArtifact(messages)?.kind;
-                        const advisorContinues = msg.id === latestAiId && dismissedContinueId !== msg.id
+                        /*
+                         * A FAILED TURN HAS NO OUTCOME, SO IT CANNOT HAVE GAPS.
+                         *
+                         * detectOutcomeGaps reads intent out of the USER'S PROMPT and
+                         * emits next-step chips; nothing told it whether the turn ran.
+                         * A boutique request refused at HTTP 429 -- declined before any
+                         * engine started, nothing built -- still offered "Add real
+                         * product photos", "Add a payment gateway" and "Domestic or
+                         * international?": three follow-ups to work that does not exist,
+                         * on a build that was never made. Reported from production on
+                         * 2026-09-08.
+                         *
+                         * Worse than incoherent. Each chip sends another turn, so on a
+                         * provider failure they spend real budget refining an artifact
+                         * that is not there; and on a budget refusal they simply fail
+                         * again. The message already carries isError -- it was just
+                         * never read here.
+                         */
+                        const advisorContinues = msg.id === latestAiId && dismissedContinueId !== msg.id && !msg.isError
                           ? filterContinuesForAdvisor(
                             filterContinuesForOffice(
                               injectGapContinues(msg.continueSet, detectOutcomeGaps(priorUser, msg.text, {
@@ -3531,7 +3549,9 @@ Paused — ${autoPauseRef.current}.`
 
   const hasUserTurn = messages.some((message) => message.sender === 'user');
   const generatingStatus = lastAiMessage?.executionStatus?.label;
-  const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text
+  // Same guard as the rendered chips above: the mission card must not name a
+  // next step for a turn that produced nothing.
+  const partnerContinueLabel = lastAiMessage?.text && lastUserMessage?.text && !lastAiMessage?.isError
     ? (filterContinuesForAdvisor(
       filterContinuesForOffice(
         injectGapContinues(lastAiMessage.continueSet, detectOutcomeGaps(lastUserMessage.text, lastAiMessage.text, {
@@ -3556,6 +3576,10 @@ Paused — ${autoPauseRef.current}.`
    */
   const visibleContinueLabels = useMemo(() => {
     if (!lastAiMessage?.text || !lastUserMessage?.text) return [];
+    // Third of three: a failed turn offers no next steps anywhere, including
+    // the mission card. Two of these guarded and one missed would have put the
+    // chips back on screen by another route.
+    if (lastAiMessage.isError) return [];
     if (dismissedContinueId === lastAiMessage.id) return [];
     const set = studySyllabusSet || filterContinuesForAdvisor(
       filterContinuesForOffice(

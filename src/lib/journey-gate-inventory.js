@@ -508,6 +508,25 @@ export const JOURNEYS = Object.freeze([
       + 'older hooks, and no browser gate drives the switcher.',
   }),
   journey({
+    id: 'turn-failure-offers-nothing',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'A turn that produced nothing offers no next steps',
+    entry: 'src/lib/outcome-gap-detection.js',
+    gates: {
+      deterministic: ['src/lib/outcome-gap-on-failure.test.js'],
+    },
+    note: 'detectOutcomeGaps reads intent from the USER PROMPT, so it fires whether or not the turn ran. '
+      + 'On 2026-09-08 a boutique request refused at HTTP 429 -- declined before any engine started, nothing '
+      + 'built -- rendered "Add real product photos | Add a payment gateway | Domestic or international?" under '
+      + 'a message that had just said the turn was paused. Follow-ups to work that does not exist. Worse than '
+      + 'incoherent: every chip sends another turn, so on a provider failure they spend real budget refining an '
+      + 'artifact that is not there, and on a budget refusal they fail again -- the most expensive buttons on '
+      + 'the screen for a student on a daily allowance. The message already carried isError; three call sites '
+      + 'never read it, and guarding two of three would have put the chips back by the third route. The gate '
+      + 'COUNTS call sites against guards, so a fourth chip surface added later without one fails here.',
+  }),
+  journey({
     id: 'desk-review-probes',
     area: 'coding desk',
     name: 'Review the build against probed criteria and patch what fails',
