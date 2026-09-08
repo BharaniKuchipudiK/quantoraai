@@ -762,7 +762,18 @@ export default async function handler(req: any, res: any) {
           route: '/api/chat',
           durationMs: Date.now() - startTime,
           statusCode: 429,
-          detailCode: 'turn-budget',
+          /*
+           * WHICH budget refused decides what the person is told, so the record
+           * has to carry it. describeTurnBudget already says two different
+           * things — "your N turns for today" vs "Quantora's shared limit …
+           * nothing you did caused this" — and a single detail code here made
+           * "What happened?" contradict the reply the same person just read,
+           * telling someone caught by the platform ceiling it was their own
+           * account's limit. Found by review on this PR, which is the same
+           * class the PR closes: an account naming a cause the record does not
+           * prove.
+           */
+          detailCode: budget.exhausted === 'platform' ? 'platform-budget' : 'turn-budget',
         });
         return res.status(429).json({
           error: describeTurnBudget(budget),

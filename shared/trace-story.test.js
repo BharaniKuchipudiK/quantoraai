@@ -176,20 +176,63 @@ test('[was-red] the handler records the refusal it makes, at every 429 it can re
   /* Each refusal must record BOTH halves: the status the caller sees and the
    * reason describeTrace keys on. A detailCode without its 429 renders as an
    * error again; a 429 without its detailCode falls into the provider-quota
-   * branch and blames the deployment for the user's own limit. */
-  const paired = handler.match(/statusCode: 429,\s*(?:\n\s*)?detailCode: '(?:rate-limited|turn-budget)'/g) || [];
-  const reasons = handler.match(/detailCode: '(?:rate-limited|turn-budget)'/g) || [];
-  assert.equal(reasons.length, 3, `expected three traced refusals in /api/chat, found ${reasons.length}`);
-  assert.equal(
-    paired.length,
-    reasons.length,
-    `every traced refusal must carry statusCode 429: ${reasons.length} reasons, ${paired.length} paired with a status`,
-  );
+   * branch and blames the deployment for the user's own limit.
+   *
+   * Counted on `statusCode: 429`, not on a literal detail code: the turn-budget
+   * refusal now COMPUTES its code from budget.exhausted, and an assertion that
+   * only matched string literals would have quietly stopped counting it. */
+  const traced = handler.match(/statusCode: 429,/g) || [];
+  assert.equal(traced.length, 3, `expected three traced refusals in /api/chat, found ${traced.length}`);
 
   const chatReturns429 = (handler.match(/return res\.status\(429\)/g) || []).length;
   assert.equal(
     chatReturns429,
-    reasons.length,
-    `every 429 /api/chat returns must be recorded: ${chatReturns429} returned, ${reasons.length} traced`,
+    traced.length,
+    `every 429 /api/chat returns must be recorded: ${chatReturns429} returned, ${traced.length} traced`,
   );
+
+  /* And the budget refusal must distinguish WHOSE budget ran out — the finding
+   * Codex raised on this PR. One code for both meant a student caught by the
+   * shared ceiling read "a limit on your account" under a reply that had just
+   * told them "nothing you did caused this". */
+  assert.match(
+    handler,
+    /detailCode: budget\.exhausted === 'platform' \? 'platform-budget' : 'turn-budget'/,
+    'the platform ceiling and a personal budget must not record the same reason',
+  );
+});
+
+test('[codex-p2] the shared platform ceiling is never told as the reader’s own limit', () => {
+  /*
+   * turnBudgetVerdict refuses for two different reasons and describeTurnBudget
+   * says two different things: "you have used your N turns" versus "Quantora
+   * has reached its shared daily limit … nothing you did caused this". The
+   * trace recorded one code for both, so "What happened?" contradicted the
+   * reply the same person had just read.
+   *
+   * This matters most exactly when it is worst: a shared ceiling pauses every
+   * student at once, and each of them would have been told it was personal.
+   */
+  const story = describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode: 'platform-budget', durationMs: 40, at: at(40) },
+  ]);
+  assert.equal(story.outcome, 'server-refused');
+  assert.match(story.headline, /paused new turns for everyone — a shared limit/);
+  assert.doesNotMatch(story.headline, /your account/i, 'a shared ceiling is not the reader’s allowance');
+  assert.match(story.detail, /shared daily limit for AI work was already spent/);
+  assert.match(story.detail, /not your allowance/i);
+  assert.doesNotMatch(story.detail, /crash/i);
+});
+
+test('the two budget refusals never collapse into one account', () => {
+  const of = (detailCode) => describeTrace([
+    { correlationId: ID, boundary: 'api.chat', state: 'started', at: at(0) },
+    { correlationId: ID, boundary: 'api.chat', state: 'failed', statusCode: 429, detailCode, at: at(40) },
+  ]);
+  const mine = of('turn-budget');
+  const shared = of('platform-budget');
+  assert.notEqual(mine.headline, shared.headline, 'the two refusals must not read identically');
+  assert.match(mine.headline, /your account/i);
+  assert.match(shared.headline, /everyone/i);
 });
