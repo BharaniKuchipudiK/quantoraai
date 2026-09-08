@@ -71,6 +71,8 @@ test('mission check wiring fails closed instead of converting unavailable verifi
   assert.match(missionCheck, /CHECK_UNAVAILABLE/);
   assert.doesNotMatch(missionCheck, /studyQuizAsk|askOrSend/);
   assert.match(missionCheck, /sameStudyMissionLabel\(topic, label\)/);
+  assert.match(missionCheck, /returned no attempt identity/,
+    'a governed issue without a stable attempt identity must fail closed');
 });
 
 test('cross-concept Compass handoff preserves the mission and cannot reuse the old concept assessment', () => {
@@ -95,6 +97,25 @@ test('cross-concept Compass handoff preserves the mission and cannot reuse the o
   assert.match(alignmentEffect, /TOPIC_ALIGNED/);
   assert.doesNotMatch(alignmentEffect, /requestMissionCheck/, 'focus alignment must settle before a new governed attempt is requested');
   assert.match(shell, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.VERIFIED_CHECK[\s\S]*mission\.topicAligned[\s\S]*!assessment\?\.item[\s\S]*Open verified check/);
+});
+
+test('transfer missions consume the exact governed issued attempt instead of assuming the public item concept is the evidence concept', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
+  const resultGate = shell.slice(
+    shell.indexOf('// A mission consumes only the exact governed attempt'),
+    shell.indexOf('const runMissionPractice'),
+  );
+
+  assert.match(shell, /const missionCheckAttemptRef = useRef\(''\)/);
+  assert.match(missionCheck, /outcome\?\.issued\?\.attemptId/,
+    'new governed checks must bind to the attempt identity returned by the assessment owner');
+  assert.match(missionCheck, /missionCheckAttemptRef\.current = issuedAttemptId/);
+  assert.match(missionCheck, /missionCheckAttemptRef\.current = String\(assessment\.attemptId\)/,
+    'deliberately reused same-concept attempts must bind to that exact attempt too');
+  assert.match(resultGate, /String\(assessment\.attemptId\) === missionCheckAttemptRef\.current/);
+  assert.doesNotMatch(resultGate, /assessment\?\.item\?\.conceptKey/,
+    'result consumption must not reject transfer evidence because the public item names the transfer target');
 });
 
 test('mission review visible text cannot be parsed as a replacement Study topic', () => {
