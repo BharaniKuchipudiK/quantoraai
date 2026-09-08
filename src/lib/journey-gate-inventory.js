@@ -198,8 +198,22 @@ export const JOURNEYS = Object.freeze([
     name: 'Export my data, or delete my account',
     entry: 'src/components/Header.jsx',
     serves: ['api/_lib/handlers/account.ts'],
-    gates: {},
-    note: 'No test opens the account handler. A deletion that fails silently, or lands on the wrong account, would be found by a user.',
+    gates: { deterministic: ['api/_lib/handlers/account.test.ts'] },
+    /*
+     * This row read `gates: {}` and "a deletion that fails silently, or lands
+     * on the wrong account, would be found by a user" — on the most
+     * destructive operation the platform offers, over ten students' personal
+     * data. The handler takes its dependencies now, so the four one-line
+     * properties that make it safe are each held by a test that was watched
+     * failing with that line broken: the sub comes from the session and never
+     * from the body, confirm is required, a failed delete never reports
+     * success, a successful one ends the session.
+     *
+     * Still NOT proven: nothing drives the button in a browser, and no gate
+     * has ever watched a real row leave a real database. The handler's
+     * decisions are held; the round trip is not.
+     */
+    note: 'The handler is held: session-scoped sub, required confirmation, loud failure, session ended on success. The button and the real database round trip are still undriven.',
   }),
   journey({
     id: 'profile-picture',
@@ -456,7 +470,20 @@ export const JOURNEYS = Object.freeze([
     hooks: ['data-quantora-real-project-preview', 'data-quantora-preview-error', 'data-quantora-preview-contract-error'],
     serves: ['api/preview-compile.js'],
     gates: {
-      deterministic: ['api/_lib/preview-compiler.test.js', 'src/lib/preview-compile-client.test.js', 'scripts/golden-page-state.test.mjs'],
+      deterministic: [
+        'api/_lib/preview-compiler.test.js',
+        'src/lib/preview-compile-client.test.js',
+        'scripts/golden-page-state.test.mjs',
+        /*
+         * The headers that decide whether the iframe is allowed to exist at
+         * all. checkFramedDocumentContract knew all three ways they break
+         * Preview, had tests proving it, and sat in wiring-baseline.json as an
+         * accepted orphan — never once run against vercel.json. Every one of
+         * those failures is invisible from the browser (onLoad fires on the
+         * block page), so the only symptom is Preview never finishing.
+         */
+        'scripts/framed-preview-headers-gate.mjs',
+      ],
       browser: [
         'scripts/preview-ready-not-stuck-gate.mjs',
         'scripts/project-runtime-failure-browser-gate.mjs',
@@ -1171,8 +1198,8 @@ export const JOURNEYS = Object.freeze([
     area: 'platform invariants',
     name: 'A route that produces no content is abandoned in seconds, not at the end of the turn',
     entry: 'shared/stream-liveness.js',
-    gates: { deterministic: ['shared/stream-liveness.test.js'] },
-    note: 'A route is alive when it produces CONTENT, not when it produces bytes. On 2026-09-08 a build turn burned 176 seconds and returned nothing, with one attempt running 89.7s against a 90s budget on a route that had a 20-SECOND idle guard the whole time. Both were true because the guard measured the wrong thing: OpenRouter keeps a queued request warm by streaming \': OPENROUTER PROCESSING\' comment lines, the parser skips them (if (!line.startsWith(\'data: \')) continue) but they arrive as bytes, and every byte reset the idle timer. A route producing nothing at all looked continuously healthy, ran its whole budget, and left the fallback 45s of a 165s turn. The fallback failed too, and by then turn-escalation computed affordable = 0, so resolveTurnRecovery returned budget-spent and the self-healing built over seven phases could not fire -- the healing budget and the attempt budget are the same budget, so a failure that fails SLOWLY guarantees there is nothing left to heal with. The platform\'s own measured average turn is ~28s, on the dashboard the whole time, while the first attempt was allowed 110s. Gemini carried the identical byte-based guard one function away and is fixed with it, because repairing only the gateway that happened to fail is how the same defect returns wearing another name. The rule is pure and shared so it can be tested without a provider, a network or a model call -- the three reasons nothing tested it before. Its two directions are both gated: a silent route is abandoned at 25s, and a route that is genuinely streaming is never cut off, which is the regression this change could otherwise cause.',
+    gates: { deterministic: ['shared/stream-liveness.test.js', 'api/_lib/stream-liveness-contract.test.ts'] },
+    note: 'A route is alive when it produces CONTENT, not when it produces bytes. On 2026-09-08 a build turn burned 176 seconds and returned nothing, with one attempt running 89.7s against a 90s budget on a route that had a 20-SECOND idle guard the whole time. Both were true because the guard measured the wrong thing: OpenRouter keeps a queued request warm by streaming \': OPENROUTER PROCESSING\' comment lines, the parser skips them (if (!line.startsWith(\'data: \')) continue) but they arrive as bytes, and every byte reset the idle timer. A route producing nothing at all looked continuously healthy, ran its whole budget, and left the fallback 45s of a 165s turn. The fallback failed too, and by then turn-escalation computed affordable = 0, so resolveTurnRecovery returned budget-spent and the self-healing built over seven phases could not fire -- the healing budget and the attempt budget are the same budget, so a failure that fails SLOWLY guarantees there is nothing left to heal with. The platform\'s own measured average turn is ~28s, on the dashboard the whole time, while the first attempt was allowed 110s. Gemini carried the identical byte-based guard one function away and is fixed with it, because repairing only the gateway that happened to fail is how the same defect returns wearing another name. The rule is pure and shared so it can be tested without a provider, a network or a model call -- the three reasons nothing tested it before. Its two directions are both gated: a silent route is abandoned at 25s, and a route that is genuinely streaming is never cut off, which is the regression this change could otherwise cause. THE FIRST FIX CLOSED HALF THE CLASS. This note already said that repairing only the gateway that happened to fail is how the same defect returns wearing another name -- and then did exactly that, two scopes further down the same file. chat-handler.ts has FOUR provider stream reads, not two: the production trace named the streaming pair, so the Gemini TOOL-CALLING turn and the OpenRouter REFINE pass kept the bare PROVIDER_STREAM_IDLE_MS and the identical startsWith(\'data: \') skip beside it, bounded only by the whole 165s turn. A dead route in either phase still burned the turn producing nothing -- the same 176-second failure, on a path nobody had looked at because no screenshot pointed there. Both are content-bounded now, each with its own clock because they sit in scopes where lastContentAt does not reach. stream-liveness-contract.test.ts is the class closer rather than a third instance fix: it finds every call site of readWithIdleTimeout and nextAsyncIteratorWithIdleTimeout, requires each to take a budget derived from nextReadBudgetMs, and then follows each budget to the variable IT reads to check something advances it -- because a budget measured from a timestamp nobody moves is a fixed deadline wearing the name of a liveness check, and would cut off a stream that is answering perfectly well. It was written BEFORE the fix and watched naming both real sites by file and line.',
   }),
   journey({
     id: 'turn-fits-its-function',

@@ -10,6 +10,5 @@
   "api/_lib/provider-resilience.ts::resetProviderResilienceState",
   "api/_lib/rate-limit.ts::resetRateLimitBuckets",
   "src/lib/office-artifact-cache.js::clearOfficeArtifactCache",
-  "src/lib/studio-git.js::resetDeskGitRepos",
-  "src/lib/vercel-headers.js::checkFramedDocumentContract"
+  "src/lib/studio-git.js::resetDeskGitRepos"
 ]

@@ -3,14 +3,6 @@ import { latestVerifiedOfficeArtifact, sessionOutcomeKind } from './office-sessi
 const OFFICE_PREVIEW_FILE = /^(presentation|document|workbook)\.html$/i;
 const WEBSITE_FILE = /(^|\/)(index\.html|App\.jsx)$/i;
 
-export function userConfirmedWebsitePublish(conversationContext = {}) {
-  const facts = Array.isArray(conversationContext?.facts) ? conversationContext.facts : [];
-  return facts.some((fact) => (
-    /publish the website to vercel/i.test(fact)
-    || /chose "publish this site"/i.test(fact)
-  ));
-}
-
 /**
  * Vercel publish is a website outcome. Office files never get the button.
  * A running index.html / App.jsx on the coding desk is enough — do not hide

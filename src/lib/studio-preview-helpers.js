@@ -304,7 +304,6 @@ export function vfsLooksLikeShop(vfs = {}, job = null) {
   return looksLikeShopDesk({ html: pickPreviewEntry(vfs), vfs, job });
 }
 
-
 /** Live boutique markup on the Preview entry — not a leftover products.json alone. */
 const LIVE_SHOP_ENTRY_RE = /\b(add[\s-]?to[\s-]?(?:bag|cart)|boutique|saree|sari|kanjeevaram|atelier|priceCents|storefront|e-?commerce|product-card)\b/i;
 
@@ -337,7 +336,6 @@ export function purgeStaleShopArtifacts(vfs = {}, job = null) {
   }
   return { vfs: next, changed };
 }
-
 
 export function userAskedForPreviewPhotos(text = '') {
   return /\b(no images|images?|photos?|pictures?|visuals?)\b/i.test(String(text || ''));
@@ -562,30 +560,3 @@ export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
   return vfsHasBrowserPreview(assembled.vfs);
 }
 
-export function hasPreviewableContent(rawText) {
-  return canOpenStudioPreviewPane(rawText);
-}
-
-export function getLivePreviewButtonMeta(msg, { isGenerating, streamingMessageId }) {
-  if (!hasPreviewableContent(msg.text)) return null;
-  if (isGenerating && msg.id === streamingMessageId) {
-    return { disabled: true, label: 'Building…', title: 'Still generating the response' };
-  }
-  const status = msg.previewStatus;
-  if (!status) {
-    return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
-  }
-  if (status === 'running' || status === 'verifying' || status === 'healing') {
-    return { disabled: true, label: 'Verifying preview…', title: 'Running sandbox checks before preview opens' };
-  }
-  if (status === 'clean') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Verified — runs clean' };
-  }
-  if (status === 'degraded') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Preview ready — styling may be incomplete' };
-  }
-  if (status === 'failed') {
-    return { disabled: false, label: 'Open Live Preview', title: 'Preview may have runtime errors' };
-  }
-  return { disabled: false, label: 'Open Live Preview', title: 'Open the sandbox preview' };
-}

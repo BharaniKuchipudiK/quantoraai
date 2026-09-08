@@ -15,21 +15,55 @@ import { exportProjectData } from "../project-store.js";
  * Unlike the fire-and-forget bookkeeping in store.ts, these fail loud: a
  * privacy action that silently no-ops is worse than an honest error.
  */
-export default async function handler(req: any, res: any) {
-  applyCors(req, res, "POST,OPTIONS");
+/*
+ * The dependencies, injectable — the same shape transaction-trace.ts and
+ * user-paid-quota.ts already use for their store calls.
+ *
+ * Not a testing affectation. Until this existed, the ledger's own note on this
+ * journey read: "No test opens the account handler. A deletion that fails
+ * silently, or lands on the wrong account, would be found by a user." Every
+ * safety property below is one line of code, and every one of them was
+ * unguarded: the session-scoped sub, the confirm, the loud failure, the
+ * cleared cookie. A handler that cannot be called without a live Postgres and
+ * a real OAuth session is a handler nobody tests.
+ */
+export type AccountHandlerDeps = {
+  requireSession: typeof requireActiveSession;
+  storeConfigured: typeof isStoreConfigured;
+  exportUser: typeof exportUserData;
+  exportProjects: typeof exportProjectData;
+  deleteUser: typeof deleteUserData;
+  clearSession: typeof clearSessionCookie;
+  rateLimited: typeof isRateLimited;
+  cors: typeof applyCors;
+};
+
+const LIVE: AccountHandlerDeps = {
+  requireSession: requireActiveSession,
+  storeConfigured: isStoreConfigured,
+  exportUser: exportUserData,
+  exportProjects: exportProjectData,
+  deleteUser: deleteUserData,
+  clearSession: clearSessionCookie,
+  rateLimited: isRateLimited,
+  cors: applyCors,
+};
+
+export default async function handler(req: any, res: any, deps: AccountHandlerDeps = LIVE) {
+  deps.cors(req, res, "POST,OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
   // Tight limit — these are deliberate, low-frequency actions.
-  if (isRateLimited(`account:${clientIp(req)}`, 20, 60_000)) {
+  if (deps.rateLimited(`account:${clientIp(req)}`, 20, 60_000)) {
     return res.status(429).json({ error: "Too many requests. Please wait a minute and try again." });
   }
 
-  const auth = await requireActiveSession(req, res);
+  const auth = await deps.requireSession(req, res);
   if (!auth.ok) return;
   const { sessionUser } = auth.value;
 
-  if (!isStoreConfigured()) {
+  if (!deps.storeConfigured()) {
     return res.status(503).json({ error: "Data controls are unavailable right now. Please try again later." });
   }
 
@@ -37,8 +71,8 @@ export default async function handler(req: any, res: any) {
 
   if (action === "export") {
     const [data, projectData] = await Promise.all([
-      exportUserData(sessionUser.sub),
-      exportProjectData(sessionUser.sub),
+      deps.exportUser(sessionUser.sub),
+      deps.exportProjects(sessionUser.sub),
     ]);
     if (!data || !projectData) {
       return res.status(503).json({ error: "Could not assemble your data export. Please try again." });
@@ -52,12 +86,12 @@ export default async function handler(req: any, res: any) {
     if (req.body?.confirm !== true) {
       return res.status(400).json({ error: "Deletion must be explicitly confirmed." });
     }
-    const ok = await deleteUserData(sessionUser.sub);
+    const ok = await deps.deleteUser(sessionUser.sub);
     if (!ok) {
       return res.status(503).json({ error: "Could not delete your data. Nothing was changed — please try again." });
     }
     // The account no longer exists; end the session so nothing keeps using it.
-    clearSessionCookie(res);
+    deps.clearSession(res);
     return res.status(200).json({ deleted: true });
   }
 
