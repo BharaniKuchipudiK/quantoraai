@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
     return res.status(authFailure.status).json({ error: authFailure.error });
   }
 
-  const [growth, series, suggestionAcceptance, turnPlanRows, failureRows] = await Promise.all([
+  const [growth, series, suggestionAcceptance, turnPlanRows, failureRead] = await Promise.all([
     getGrowthSummary(),
     getDailySeries(14),
     getSuggestionAcceptance(),
@@ -55,8 +55,8 @@ export default async function handler(req: any, res: any) {
     if (rows === null) return 'unavailable';
     return rows.length ? 'measured' : 'no-rows';
   };
-  const failures = summarizeTurnFailures(failureRows ?? [], FAILURE_WINDOW_HOURS);
-  const failureSource = sourceOf(failureRows);
+  const failures = summarizeTurnFailures(failureRead?.rows ?? [], FAILURE_WINDOW_HOURS, failureRead?.truncated ?? false);
+  const failureSource = sourceOf(failureRead ? failureRead.rows : null);
   const turnPlanSummary = summarizeTurnPlans(turnPlanRows ?? []);
   const turnPlanSource = sourceOf(turnPlanRows);
   const product = await getProductInsights(growth);

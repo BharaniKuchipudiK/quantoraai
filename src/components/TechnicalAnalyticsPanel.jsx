@@ -224,7 +224,21 @@ function TurnPlannerSection({ turnPlans, isLight }) {
 function TurnFailureSection({ turnFailures, isLight }) {
   if (!turnFailures) return null;
   const groups = Array.isArray(turnFailures.groups) ? turnFailures.groups : [];
-  const clean = turnFailures.total === 0;
+  /*
+   * BLIND IS NOT QUIET, AND THE ZERO LOOKS IDENTICAL.
+   *
+   * When the store is unconfigured or did not answer, the handler summarises
+   * an empty list, so the digest reads total 0 and its headline says "No
+   * failed turns" -- the healthiest sentence on the screen, produced by
+   * measuring nothing. The first version of this caveat was gated on
+   * `!clean`, which suppressed it in exactly the two states it existed for
+   * and let a dead store render as the best day the platform ever had.
+   *
+   * Named states, not `!== 'measured'`: 'no-rows' means the store answered and
+   * there was genuinely nothing, which is a real quiet day and must not be
+   * caveated, or the warning becomes noise and gets ignored when it is true.
+   */
+  const blind = turnFailures.source === 'unavailable' || turnFailures.source === 'not_configured';
   return (
     <section
       data-quantora-turn-failures={turnFailures.source || 'unknown'}
@@ -240,13 +254,16 @@ function TurnFailureSection({ turnFailures, isLight }) {
       <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '8px' }}>
         Failed turns · last {turnFailures.windowHours || 24}h
       </div>
-      <div style={{ fontSize: '0.86rem', color: isLight ? '#0f172a' : '#f1f5f9', lineHeight: 1.5 }}>{turnFailures.headline}</div>
-      {turnFailures.source !== 'measured' && !clean && (
-        <div data-quantora-failure-source-warning={turnFailures.source || 'unknown'} style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: '8px' }}>
-          Source: {turnFailures.source} — this is not a measured zero.
+      {blind ? (
+        <div data-quantora-failure-source-warning={turnFailures.source} style={{ fontSize: '0.86rem', color: '#f59e0b', lineHeight: 1.5 }}>
+          {turnFailures.source === 'not_configured'
+            ? 'The store is not configured, so failures are not being read. Nothing here is a measurement.'
+            : 'The store did not answer, so failures could not be read. Nothing here is a measurement — this is not a quiet day.'}
         </div>
+      ) : (
+        <div style={{ fontSize: '0.86rem', color: isLight ? '#0f172a' : '#f1f5f9', lineHeight: 1.5 }}>{turnFailures.headline}</div>
       )}
-      {groups.length > 0 && (
+      {!blind && groups.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
           {groups.map((group) => {
             const fault = group.kind === 'fault';
@@ -271,7 +288,6 @@ function TurnFailureSection({ turnFailures, isLight }) {
                 <span style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
                   {group.count}x · {group.users} user(s)
                   {group.statuses?.length ? ` · ${group.statuses.join('/')}` : ''}
-                  {group.engines?.length ? ` · ${group.engines.join(', ')}` : ''}
                 </span>
                 {group.sampleReferences?.length > 0 && (
                   <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontFamily: 'monospace' }}>

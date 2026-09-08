@@ -81,7 +81,6 @@ export type FailureGroup = {
   count: number;
   users: number;
   statuses: number[];
-  engines: string[];
   latestAt: string | null;
   sampleReferences: string[];
 };
@@ -91,7 +90,18 @@ export type FailureDigest = {
   total: number;
   refusals: number;
   faults: number;
+  /** Everyone who hit anything, refusals included. */
   usersAffected: number;
+  /**
+   * Everyone who hit a FAULT. Kept apart from usersAffected because the
+   * headline speaks about the faults' reach: with one broken turn for one
+   * person and twenty budget refusals for twenty others, the total reads
+   * "1 fault across 21 users" and overstates a real outage by twentyfold
+   * while the same sentence claims refusals are counted separately.
+   */
+  faultUsers: number;
+  /** The window was cut at the row cap, so every count here is a floor. */
+  truncated: boolean;
   groups: FailureGroup[];
   headline: string;
 };
@@ -103,29 +113,33 @@ export type FailureDigest = {
  * that fired twenty times for the same person, because the first is a platform
  * problem and the second is one person having a bad afternoon.
  */
-export function summarizeTurnFailures(rows: FailureRow[] = [], windowHours = FAILURE_WINDOW_HOURS): FailureDigest {
+export function summarizeTurnFailures(rows: FailureRow[] = [], windowHours = FAILURE_WINDOW_HOURS, truncated = false): FailureDigest {
   const list = Array.isArray(rows) ? rows : [];
   const byReason = new Map<string, {
-    users: Set<string>; statuses: Set<number>; engines: Set<string>;
+    users: Set<string>; statuses: Set<number>;
     count: number; latestAt: string | null; refs: string[];
   }>();
   const allUsers = new Set<string>();
+  const faultUsers = new Set<string>();
   let refusals = 0;
 
   for (const row of list) {
     const detailCode = String(row?.detailCode || "").trim();
-    if (REFUSAL_DETAIL.has(detailCode)) refusals += 1;
+    const isRefusalRow = REFUSAL_DETAIL.has(detailCode);
+    if (isRefusalRow) refusals += 1;
     const bucket = byReason.get(detailCode) || {
-      users: new Set<string>(), statuses: new Set<number>(), engines: new Set<string>(),
+      users: new Set<string>(), statuses: new Set<number>(),
       count: 0, latestAt: null as string | null, refs: [] as string[],
     };
     bucket.count += 1;
     const sub = String(row?.userSub || "").trim();
-    if (sub) { bucket.users.add(sub); allUsers.add(sub); }
+    if (sub) {
+      bucket.users.add(sub);
+      allUsers.add(sub);
+      if (!isRefusalRow) faultUsers.add(sub);
+    }
     const status = Number(row?.statusCode);
     if (Number.isFinite(status) && status > 0) bucket.statuses.add(status);
-    const engine = String(row?.modelId || "").trim();
-    if (engine) bucket.engines.add(engine);
     const at = String(row?.at || "").trim();
     if (at && (!bucket.latestAt || at > bucket.latestAt)) bucket.latestAt = at;
     // A handful of reference ids per reason: enough to pull the full trace for
@@ -143,7 +157,6 @@ export function summarizeTurnFailures(rows: FailureRow[] = [], windowHours = FAI
     count: bucket.count,
     users: bucket.users.size,
     statuses: [...bucket.statuses].sort((a, b) => a - b),
-    engines: [...bucket.engines].sort(),
     latestAt: bucket.latestAt,
     sampleReferences: bucket.refs,
   }));
@@ -161,9 +174,19 @@ export function summarizeTurnFailures(rows: FailureRow[] = [], windowHours = FAI
     ? `No failed turns in the last ${windowHours}h.`
     : faults === 0
       ? `${refusals} refused turn(s) in ${windowHours}h and no faults — the budgets did their job.`
-      : `${faults} fault(s) across ${allUsers.size} user(s) in ${windowHours}h`
+      : `${faults} fault(s) across ${faultUsers.size} user(s) in ${windowHours}h`
         + (worst ? `; worst: ${worst.words} (${worst.count}x, ${worst.users} user(s))` : "")
         + (refusals ? `. ${refusals} refusal(s) counted separately.` : ".");
 
-  return { windowHours, total: list.length, refusals, faults, usersAffected: allUsers.size, groups, headline };
+  return {
+    windowHours,
+    total: list.length,
+    refusals,
+    faults,
+    usersAffected: allUsers.size,
+    faultUsers: faultUsers.size,
+    truncated: Boolean(truncated) && list.length > 0,
+    groups,
+    headline: truncated && list.length > 0 ? `${headline} (window cut at the row cap — these are floors.)` : headline,
+  };
 }

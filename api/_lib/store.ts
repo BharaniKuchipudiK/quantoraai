@@ -834,6 +834,9 @@ function mapBoundaryRow(row: any): BoundaryEventRecord {
   };
 }
 
+/** The newest failed turns read in one window. Fetched +1 to detect a cut. */
+export const FAILURE_ROW_LIMIT = 2000;
+
 /*
  * FAILED TURNS ACROSS A WINDOW, NOT UNDER ONE REFERENCE.
  *
@@ -842,17 +845,43 @@ function mapBoundaryRow(row: any): BoundaryEventRecord {
  * whoever had been sent one — in practice, the owner receiving a screenshot,
  * hours later, one at a time.
  *
- * This is the other question: what failed lately, to anyone. Same table, same
- * operational-only columns, filtered to failures. Read-only and additive: it
- * introduces no new serverless function (the admin entrypoint is shared for
- * the Hobby function budget) and changes no path a turn takes.
+ * This is the other question: what failed lately, to anyone. Read-only and
+ * additive: it introduces no new serverless function (the admin entrypoint is
+ * shared for the Hobby function budget) and changes no path a turn takes.
+ *
+ * `boundary=api.chat` IS THE FIX, NOT A NARROWING.
+ *
+ * Filtering on state alone counted attempts, not turns, and got both
+ * directions wrong. chat-handler records an `inference.provider` failure for
+ * each attempt BEFORE deciding whether to fall back — and when the next route
+ * succeeds the turn completes normally, so an ordinary recovered failover
+ * looked like a fault nobody experienced. A turn that really did fail wrote
+ * two rows, its provider attempt and its api.chat, and was counted twice.
+ *
+ * `api.chat` + `failed` is the terminal, user-visible outcome: exactly one row
+ * per turn that a person actually saw fail, written by every terminal path
+ * (both budget refusals, the rate limiter, and the catch-all). A turn that
+ * recovered writes none.
+ *
+ * The cost, stated: these rows carry no model id, so the digest can no longer
+ * name the engine. Which engine was tried is in the correlation's own trace,
+ * one lookup away; a fault count that invents outages is not recoverable.
  */
-export async function readRecentFailures(sinceIso: string, limit = 500): Promise<BoundaryEventRecord[] | null> {
+export async function readRecentFailures(
+  sinceIso: string,
+  limit = FAILURE_ROW_LIMIT,
+): Promise<{ rows: BoundaryEventRecord[]; truncated: boolean } | null> {
   const since = encodeURIComponent(String(sinceIso || ""));
+  const cap = Math.max(1, Math.min(FAILURE_ROW_LIMIT, Number(limit) || FAILURE_ROW_LIMIT));
   const response = await request(
     `transaction_boundary_events?select=${BOUNDARY_EVENT_COLUMNS}`
-    + `&state=eq.failed&created_at=gte.${since}`
-    + `&order=created_at.desc&limit=${Math.max(1, Math.min(2000, Number(limit) || 500))}`,
+    + `&boundary=eq.api.chat&state=eq.failed&created_at=gte.${since}`
+    /* One past the cap: the extra row is never shown, it only proves the
+     * window was cut. A truncated read that reports itself as a total is the
+     * same lie as an unanswered one, and the digest ranks faults first — so a
+     * flood of refusals evicting the outage underneath them has to be
+     * something the operator is told, not something they infer. */
+    + `&order=created_at.desc&limit=${cap + 1}`,
     { method: "GET" },
   );
   /*
@@ -865,7 +894,8 @@ export async function readRecentFailures(sinceIso: string, limit = 500): Promise
    */
   if (!response) return null;
   const rows = await response.json().catch(() => null);
-  return Array.isArray(rows) ? rows.map(mapBoundaryRow) : null;
+  if (!Array.isArray(rows)) return null;
+  return { rows: rows.slice(0, cap).map(mapBoundaryRow), truncated: rows.length > cap };
 }
 
 /*

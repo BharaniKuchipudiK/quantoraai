@@ -84,26 +84,41 @@ test("[was-red] a fault is drawn differently from a refusal", () => {
   assert.notEqual(stripe(faultRow), stripe(refusalRow), "and it must not be the colour worn by an honest refusal");
 });
 
-test("[was-red] an unmeasured zero does not render as a quiet day", () => {
+test("[was-red] a store that did not answer never renders as a quiet day", () => {
   /*
-   * Zero failures and a store that never answered are the same empty list and
-   * mean opposite things. Reading the first when it is the second is how a
-   * total outage looks like the best day the platform ever had.
+   * THE FIXTURE THAT COULD NOT FAIL.
+   *
+   * The first version of this test built a digest from a real row and then
+   * labelled it source 'not_configured' -- a pair that cannot occur. When the
+   * store is unconfigured or silent the handler has NO rows, so the digest
+   * reads total 0 and its headline is "No failed turns in the last 24h": the
+   * most reassuring sentence on the screen, produced by measuring nothing.
+   * The caveat was gated on there being failures to caveat, so it was
+   * suppressed in exactly the two states it existed for, and the impossible
+   * fixture hid that. Found by review.
+   *
+   * Every case below is built the way production builds it -- an empty read --
+   * so the three zeroes are distinguished on their own evidence.
    */
   const WARNING = "data-quantora-failure-source-warning";
+  const empty = summarizeTurnFailures([], FAILURE_WINDOW_HOURS);
 
-  const quiet = render({ ...summarizeTurnFailures([], FAILURE_WINDOW_HOURS), source: "measured" });
-  assert.ok(!quiet.includes(WARNING), "a measured zero is reported plainly, with nothing to caveat");
+  const unavailable = render({ ...empty, source: "unavailable" });
+  assert.ok(unavailable.includes(`${WARNING}="unavailable"`), "a store that did not answer must say so");
+  assert.ok(!unavailable.includes("No failed turns"), "and must never claim there were no failed turns");
 
-  const blind = render({ ...summarizeTurnFailures([{ correlationId: "r", userSub: "u", detailCode: "upstream-5xx", statusCode: 500, engine: "e", createdAt: at(1) }] as never, FAILURE_WINDOW_HOURS), source: "not_configured" });
-  assert.ok(blind.includes(`${WARNING}="not_configured"`), "an unconfigured store must be caveated on the screen, naming which source it was");
+  const unconfigured = render({ ...empty, source: "not_configured" });
+  assert.ok(unconfigured.includes(`${WARNING}="not_configured"`), "an unconfigured store must say so");
+  assert.ok(!unconfigured.includes("No failed turns"), "and must never claim there were no failed turns");
 
   /*
-   * Anchored on the hook, not the sentence. This gate says a caveat SURFACE
-   * exists and is conditional on the source; it does not police the wording,
-   * because a test that matches prose is the one that went permanently red
-   * when a button's copy changed and got three endpoints muted with it.
+   * 'no-rows' is the opposite case and must NOT be caveated: the store
+   * answered and there was genuinely nothing. A warning that fires on a real
+   * quiet day is the one that gets ignored on the day it is true.
    */
+  const quiet = render({ ...empty, source: "no-rows" });
+  assert.ok(!quiet.includes(WARNING), "a measured quiet day carries no caveat");
+  assert.ok(quiet.includes("No failed turns"), "and is reported plainly");
 });
 
 test("no user identifier reaches the rendered panel", () => {
