@@ -145,6 +145,7 @@ Not journeys, and not counted above, but every journey stands on them.
 | `hostile-reply-safety` | A hostile or malformed model reply cannot destroy the build | `pipeline-stress.mjs`, `never-discard-model-output.test.js`, `chat-turn-safety.test.js` | — | — |
 | `experience-budget` | The shell, a workspace switch and the input stay inside their time budgets | — | `platform-experience-browser-gate.mjs` | — |
 | `turn-allowance-visible` | A person can see their turn allowance and when it comes back, before being refused | `user-turn-budget.test.ts`, `turn-budget-view.test.js`, `turn-budget-meter.test.tsx`, `turn-budget-ring.test.tsx` | — | — |
+| `no-orphan-turns` | A turn stops calling engines once nobody is waiting for it | `client-gone.test.ts` | — | — |
 | `handover-opens-with-work` | A continued chat opens with the work, and carries everything it does not show | `handover-headline.test.js` | — | — |
 | `dead-route-abandoned-fast` | A route that produces no content is abandoned in seconds, not at the end of the turn | `stream-liveness.test.js` | — | — |
 | `turn-fits-its-function` | A turn cannot plan more time than the function running it is allowed | `turn-budget-fits-function.test.ts`, `transaction-trace.test.ts` | — | — |

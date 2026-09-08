@@ -1581,6 +1581,42 @@ export default async function handler(req: any, res: any) {
           });
           continue;
         }
+        /*
+         * NOBODY IS LISTENING ANY MORE.
+         *
+         * The client aborts its fetch when its own attempt times out and then
+         * starts a new request. Aborting a fetch does NOT stop a serverless
+         * function: this handler kept working for a browser that had walked
+         * away, calling engine after engine and spending real money on a reply
+         * no one would ever read.
+         *
+         * Seen in production 2026-09-08: one reference id carrying TWO
+         * "Quantora received the request" events 62s apart and TWO "the server
+         * ended the turn" events, with four engine failures interleaved from
+         * two ladders running at once. The 176 seconds the person waited was
+         * two overlapping turns, and they were charged for both.
+         *
+         * Checked between attempts rather than mid-stream on purpose: a turn
+         * already streaming tokens may finish, because the desk can still use
+         * what it produced. What must not happen is STARTING another engine
+         * for a connection that is gone.
+         */
+        if (sse.isFinished && index > 0) {
+          trace({
+            correlationId,
+            boundary: 'inference.provider',
+            state: 'abandoned',
+            transaction,
+            modelId: route.id,
+            gateway: route.gateway,
+            detailCode: 'client-gone',
+            durationMs: Date.now() - startTime,
+          });
+          throw Object.assign(new Error('The client disconnected before this attempt began.'), {
+            status: 499,
+            code: 'CLIENT_GONE',
+          });
+        }
         const attemptStartedAt = Date.now();
         /*
          * When this route last produced CONTENT — not bytes. Starts at the
