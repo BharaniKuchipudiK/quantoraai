@@ -46,7 +46,32 @@ test('refine / probe-failure turns STAY on fast Gemini rather than a slow unprov
   });
   assert.equal(refine.modelId, 'gemini-flash-latest');
   assert.equal(refine.escalated, false);
-  assert.equal(refine.reason, 'stay_gemini_unproven_free');
+  /*
+   * REASON CHANGED 2026-09-08, outcome did not. This used to read
+   * 'stay_gemini_unproven_free': the turn escalated, then came back to Gemini
+   * because no acceptable stronger model existed under allowPaid:false. It now
+   * reads 'default_gemini' because a short refine on a small project no longer
+   * escalates at all. Same route, and the reason finally names the real cause.
+   */
+  assert.equal(refine.reason, 'default_gemini');
+
+  /*
+   * AND THE CASE THIS TEST NEVER EXERCISED, which is why production broke.
+   * Every assertion above passes allowPaid:false. A signed-in session with a
+   * paid credential runs allowPaid:TRUE — and there the identical turn used to
+   * reach anthropic/claude-opus-5, whose slow attempt consumed the wall clock
+   * so no fallback could run. A fixture asserting a configuration production
+   * does not use proves nothing about production.
+   */
+  const refinePaid = resolveCodingDeskModel({
+    task: 'coding',
+    message: 'Fix the preview',
+    refineMode: true,
+    availableModels: ACTIVE,
+    allowPaid: true,
+  });
+  assert.equal(refinePaid.modelId, 'gemini-flash-latest', 'a paid credential must not make a small refine expensive');
+  assert.equal(refinePaid.escalated, false);
 
   const probe = resolveCodingDeskModel({
     task: 'coding',
@@ -298,4 +323,95 @@ test('ordinary small builds still stay on the fast Gemini default', () => {
   ]) {
     assert.equal(shouldEscalateCodingDeskModel({ message }), false, message);
   }
+});
+
+/*
+ * A SMALL EDIT IS NOT A HARD BUILD (2026-09-08).
+ *
+ * Reported from production. A user asked "Can you add descriptions as a
+ * drop-down list" on a one-file app they had just built on the fast default.
+ * `if (refineMode) return true` escalated it, the paid credential made Opus
+ * eligible, and the turn ended with the last-resort "this turn ended without a
+ * reply" — because the slow route ate the whole wall clock, planTurnEscalation
+ * found less than MIN_VIABLE_ATTEMPT_MS left, and NO FALLBACK RAN.
+ *
+ * So this is a reliability rule before it is a cost one: escalating a trivial
+ * ask to a slow route spends the budget that recovery needs.
+ */
+const REFINE_CATALOGUE = [
+  { id: 'gemini-flash-latest', name: 'Gemini Flash', available: true, pricingKind: 'free-tier' },
+  { id: 'anthropic/claude-opus-5', name: 'Claude Opus 5', available: true, pricingKind: 'paid' },
+];
+const refineOn = (message, qualityHints = { fileCount: 1 }) => resolveCodingDeskModel({
+  task: 'coding',
+  message,
+  refineMode: true,
+  hasVFS: true,
+  qualityHints,
+  availableModels: REFINE_CATALOGUE,
+  allowPaid: true,
+});
+
+test('INVARIANT: a small refine stays on the fast default that built the artifact', () => {
+  for (const ask of [
+    'Can you add descriptions as a drop-down list',  // the reported case, verbatim
+    'make the header blue',
+    'shorter please',
+    'can you center the title',
+    'rename the button to Save',
+  ]) {
+    assert.equal(
+      shouldEscalateCodingDeskModel({ message: ask, refineMode: true, hasVFS: true, qualityHints: { fileCount: 1 } }),
+      false,
+      `"${ask}" must not escalate`,
+    );
+    assert.equal(refineOn(ask).modelId, 'gemini-flash-latest', ask);
+  }
+});
+
+test('INVARIANT: a substantial refine still escalates, so this cannot become "never escalate"', () => {
+  // The other direction. Each of these reaches the stronger coder by a DIFFERENT
+  // rule below the refine check, which is why the narrow rule is safe.
+  const substantial = [
+    ['refactor the entire codebase into modules', { fileCount: 1 }],        // COMPLEX_ASK
+    ['apply this across all files', { fileCount: 1 }],                      // MULTI_FILE_ASK
+    ['turn it into a storefront with a cart', { fileCount: 1 }],            // SHOP_BUILD_ASK
+    ['connect it to the Google Drive API', { fileCount: 1 }],               // AGENT_OR_INTEGRATION_ASK
+    ['tidy this up', { fileCount: 9 }],                                     // large VFS
+    [`please adjust the spacing ${'and the padding '.repeat(20)}`, { fileCount: 1 }], // long ask
+  ];
+  for (const [ask, hints] of substantial) {
+    assert.equal(
+      shouldEscalateCodingDeskModel({ message: ask, refineMode: true, hasVFS: true, qualityHints: hints }),
+      true,
+      `"${ask.slice(0, 40)}" must still escalate`,
+    );
+  }
+});
+
+test('INVARIANT: a small refine that is a REPAIR still escalates', () => {
+  /*
+   * Ordering matters and is easy to get wrong: the refine check now returns
+   * conditionally, so a small repair must fall THROUGH to the probeFailure /
+   * repair rule rather than short-circuiting to false. A build that already
+   * failed is exactly when the stronger coder is worth paying for.
+   */
+  for (const hints of [
+    { fileCount: 1, probeFailure: true },
+    { fileCount: 1, repair: true },
+    { fileCount: 1, shopImageOversize: true },
+  ]) {
+    assert.equal(
+      shouldEscalateCodingDeskModel({ message: 'fix it', refineMode: true, hasVFS: true, qualityHints: hints }),
+      true,
+      JSON.stringify(hints),
+    );
+  }
+});
+
+test('a first build is unaffected — it never took the refine path', () => {
+  assert.equal(
+    shouldEscalateCodingDeskModel({ message: 'build me an expense splitter', refineMode: false, hasVFS: false }),
+    false,
+  );
 });

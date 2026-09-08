@@ -1288,9 +1288,25 @@ export function useChatStream({
       // every follow-up on a big build would re-plan instead of advancing.
       buildJobActive: Boolean(buildJob && !buildJobIsComplete(buildJob)),
       ...(isCodingRequest ? {
+        /*
+         * NO `repair: refineDesk` HERE (2026-09-08). A REFINE IS NOT A REPAIR.
+         *
+         * It used to send exactly that, and it silently defeated the
+         * small-refine rule in shouldEscalateCodingDeskModel. The client picks
+         * a model for the LABEL, but `autoTarget` sends `id: 'auto'`, so the
+         * SERVER re-resolves — and there `qualityHints.repair` was true on
+         * every refine, hitting the escalation on the line straight after the
+         * small-refine check. "make the header blue" reached the paid flagship
+         * however small the ask was.
+         *
+         * Refine-ness already travels as `refineDesk` / `refineMode`. A real
+         * repair still sets this: chat-handler derives it as
+         * `qualityHints.repair === true || task === "repair"`, and the repair
+         * path (api/_lib/repair.ts) sends that task. So genuine repairs still
+         * escalate, and an ordinary edit no longer pretends to be one.
+         */
         qualityHints: {
           fileCount: vfsFileCountForHints,
-          repair: refineDesk,
           shopImageOversize: shopIntakeAsk.oversize,
         },
       } : {}),
