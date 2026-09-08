@@ -1,0 +1,101 @@
+# DESK EVAL — drive real prompts at the deployment and record what breaks.
+#
+# WHY THIS EXISTS. All 36 browser release gates stub the model, so they prove
+# the platform and not the product; the deployed golden runs real turns but a
+# fixed handful. Between them, nothing drove a SPREAD of prompts and checked
+# whether the desk built what was asked for — so the platform's defects were
+# being found by its owner, one screenshot at a time.
+#
+# COST IS THE WHOLE DESIGN CONSTRAINT. Every case is a live model turn against
+# a real deployment and spends real provider credit. So:
+#   - the schedule runs only `smoke` (4 turns, roughly $0.12)
+#   - anything larger is a deliberate manual dispatch
+#   - the script prints the case count, turn count and dollar estimate BEFORE
+#     it runs anything
+# This repo lost about six dollars in twelve hours to a gate whose spend nobody
+# had counted. A number you have to read is the cheapest guard there is.
+#
+# The run uses the golden canary token, which is exempt from the daily turn
+# budget — an eval must never consume a student's day.
+name: Desk Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'smoke (4 turns) | standard (8) | full (18) | adversarial (7)'
+        required: true
+        default: smoke
+        type: choice
+        options: [smoke, standard, full, adversarial]
+      target:
+        description: 'Deployment URL to drive. Blank = production.'
+        required: false
+        type: string
+      floor:
+        description: 'Correctness floor (0 records findings without failing the run).'
+        required: false
+        default: '0'
+        type: string
+  schedule:
+    # 06:10 UTC daily. Smoke only. Delete this block to stop the nightly spend.
+    - cron: '10 6 * * *'
+
+concurrency:
+  group: desk-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install browser binary
+        run: npx playwright install chromium
+
+      - name: Resolve the target deployment
+        id: target
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+          PRODUCTION_URL: ${{ secrets.QUANTORA_PRODUCTION_URL }}
+        run: |
+          url="${INPUT_TARGET:-$PRODUCTION_URL}"
+          if [ -z "$url" ]; then
+            echo "No target: pass one to the dispatch, or set the QUANTORA_PRODUCTION_URL secret." >&2
+            exit 1
+          fi
+          echo "url=${url%/}" >> "$GITHUB_OUTPUT"
+
+      - name: Run the desk eval
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/desk-eval.mjs --tier "${{ inputs.tier || 'smoke' }}" --floor "${{ inputs.floor || '0' }}"
+
+      # Always: a run that failed is exactly the run whose evidence is wanted.
+      - name: Upload the report and failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desk-eval-${{ inputs.tier || 'smoke' }}
+          path: artifacts/desk-eval
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # The report is the deliverable. Putting it in the job summary means the
+      # findings are readable from the run page without downloading a zip --
+      # an unread report is a gate nobody is running (§8).
+      - name: Put the report in the job summary
+        if: always()
+        run: cat artifacts/desk-eval/report.md >> "$GITHUB_STEP_SUMMARY" || true

@@ -1018,6 +1018,29 @@ export const JOURNEYS = Object.freeze([
 
   // ── platform invariants: not journeys, but every journey stands on them ──
   journey({
+    id: 'desk-eval-corpus',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'A real build turn is measured against what was asked for, on a corpus, not in a screenshot',
+    entry: 'scripts/desk-eval.mjs',
+    gates: {
+      deterministic: ['src/lib/desk-eval.test.js'],
+    },
+    note: 'All 36 browser release gates stub the model, so they prove the platform and not the product; '
+      + 'the deployed golden runs real turns but a fixed roster of eight. Nothing drove a SPREAD of prompts '
+      + 'and asked whether the desk built what it was told to, so this platform\'s defects were found by its '
+      + 'owner one screenshot at a time -- a 429 retry storm, a Preview rendering the wrong file, a trace that '
+      + 'called a refusal a crash. desk-eval.mjs drives a corpus whose every case is MECHANICALLY CHECKABLE '
+      + '(drive the button, re-read the heading) because an LLM judge is a second thing that can be '
+      + 'confidently wrong, and a confidently wrong answer raises no error anywhere. Its own gate holds the '
+      + 'two properties that make it survivable: a model wobble is recorded and never reddens the run, and a '
+      + 'platform outage can never report a score -- correctness is null, not 1, when nothing was answered. '
+      + 'NOT PROVEN BY THIS ROW: the deterministic gate covers the corpus rules and the outcome classifier. '
+      + 'The driver itself is exercised only when someone dispatches Desk Eval against a deployment, which '
+      + 'costs live model turns; the nightly schedule runs the smoke tier (4 turns) and nothing larger runs '
+      + 'unless a person asks for it.',
+  }),
+  journey({
     id: 'functions-boot',
     kind: 'platform',
     area: 'platform invariants',
