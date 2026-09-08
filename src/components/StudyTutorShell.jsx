@@ -61,10 +61,19 @@ export default function StudyTutorShell({
   );
 
   const topic = brief?.label || 'this topic';
+  const conceptId = brief?.conceptId || '';
   const gaps = brief?.gaps || [];
   const verifiedResult = assessment?.result || null;
   const learnerModel = verifiedResult?.learnerModel || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
+
+  // StudyTutorWorkspace deliberately keeps this shell mounted across concept
+  // changes so an Adaptive Mission can survive a Compass prerequisite handoff.
+  // Preserve only mission state; the old concept's transient UI should reset.
+  useEffect(() => {
+    setDismissed(false);
+    setActivity(null);
+  }, [conceptId]);
 
   const askOrSend = useCallback((text, action) => {
     const adaptiveText = studyAdaptiveTutorAsk(text, learnerModel);
@@ -202,8 +211,8 @@ export default function StudyTutorShell({
   }, [mission.label, mission.status, mission.topicAligned, topic]);
 
   // Once a mission has aligned, a later explicit topic change supersedes it.
-  // Session changes already unmount this shell because StudyTutorWorkspace is
-  // keyed by activeSessionId.
+  // Session changes still unmount StudyTutorWorkspace, so mission state cannot
+  // leak across chats even though concept focus changes no longer remount here.
   useEffect(() => {
     if (mission.status === 'idle' || !mission.topicAligned || !mission.label) return;
     if (!String(topic || '').trim() || sameStudyMissionLabel(topic, mission.label)) return;
@@ -235,10 +244,25 @@ export default function StudyTutorShell({
     const label = mission.label || topic;
     sendMission(
       studyAdaptiveMissionReviewAsk(label, assessment?.result),
-      'Review what I proved and what I should retain',
+      `Recap the mission result for ${label}`,
     );
     dispatchMission({ type: 'REVIEW_SENT' });
   }, [assessment?.result, mission.label, sendMission, topic]);
+
+  const handleRemediationAction = useCallback((kind) => {
+    if (kind === 'retry'
+      && mission.status === 'active'
+      && mission.phase === STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE
+      && mission.repairRequired) {
+      void requestMissionCheck({
+        targetLabel: mission.label,
+        targetConceptKey: mission.conceptKey,
+        explicitRetry: true,
+      });
+      return;
+    }
+    onRemediation?.(kind);
+  }, [mission.conceptKey, mission.label, mission.phase, mission.repairRequired, mission.status, onRemediation, requestMissionCheck]);
 
   const adaptiveState = studyAdaptiveStateLabel(learnerModel);
   const stateLabel = adaptiveState || (verifiedResult
@@ -482,13 +506,13 @@ export default function StudyTutorShell({
                     </>
                   ) : (
                     <>
-                      <button type="button" onClick={() => onRemediation?.('retry')} className="study-h1-action study-h1-action--primary">
+                      <button type="button" onClick={() => handleRemediationAction('retry')} className="study-h1-action study-h1-action--primary">
                         <RotateCcw size={12} style={{ verticalAlign: '-2px' }} /> Retry
                       </button>
-                      <button type="button" onClick={() => onRemediation?.('example')} className="study-h1-action">
+                      <button type="button" onClick={() => handleRemediationAction('example')} className="study-h1-action">
                         Another example
                       </button>
-                      <button type="button" onClick={() => onRemediation?.('reference')} className="study-h1-action">
+                      <button type="button" onClick={() => handleRemediationAction('reference')} className="study-h1-action">
                         Useful reference
                       </button>
                     </>
