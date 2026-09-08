@@ -94,14 +94,38 @@ const productionPaths = Object.keys(files).filter((path) => !isTestPath(path));
 
 const isSubject = (path) => SUBJECT_DIRS.some((dir) => path.includes(dir));
 
-const exported = new Map();
+/*
+ * ONE ROW PER (module, name) — not per name.
+ *
+ * This was `if (!exported.has(name)) exported.set(name, path)`: a Map keyed by
+ * name alone, keeping whichever module happened to be walked first. Nineteen
+ * exported names in this repository are declared in more than one module —
+ * verdictFor is declared in THREE — and for every one of them the map kept one
+ * definition, dropped the others' rows entirely, and then counted those other
+ * modules' OWN declarations as callers of the survivor. openrouter-probe.ts was
+ * reported as a caller of gemini-probe.ts's local helper, and had no row of its
+ * own.
+ *
+ * That is the same confident false wiring claim this file has now produced
+ * three ways in one day: blind to scripts/, blind to dependency injection, and
+ * blind to its own key collisions. A report that invents a caller is worse than
+ * no report, because it is acted on.
+ */
+const definitionsByName = new Map();
 for (const path of productionPaths) {
   if (!isSubject(path)) continue;
-  for (const name of exportedNames(stripped.get(path))) if (!exported.has(name)) exported.set(name, path);
+  for (const name of exportedNames(stripped.get(path))) {
+    if (!definitionsByName.has(name)) definitionsByName.set(name, new Set());
+    definitionsByName.get(name).add(path);
+  }
 }
 
 const rows = [];
-for (const [name, home] of exported) {
+for (const [name, homes] of definitionsByName) {
+  /* A name declared in several modules cannot be attributed by name alone; the
+   * rows are still printed, marked, so nobody reads them as settled. */
+  const ambiguous = homes.size > 1;
+  for (const home of homes) {
   /*
    * A MENTION IS A WIRE. Not `name(`.
    *
@@ -131,6 +155,9 @@ for (const [name, home] of exported) {
   let invoked = false;
   for (const path of productionPaths) {
     if (path === home) continue;
+    /* Another module that DECLARES this same name is not calling this one —
+     * its mention is its own declaration and self-use. */
+    if (homes.has(path)) continue;
     const text = stripped.get(path);
     if (!mention.test(text)) continue;
     callers.push(path);
@@ -139,25 +166,28 @@ for (const [name, home] of exported) {
   /* Used inside its own module IS wiring — the wiring gate counts it that way
    * and so must this, or a module's own helpers read as abandoned. */
   const selfUses = (stripped.get(home).match(new RegExp(`\\b${name}\\b`, 'g')) || []).length - 1;
-  rows.push({ name, home, callers, selfUses, invoked });
+  rows.push({ name, home, callers, selfUses, invoked, ambiguous });
+  }
 }
 
 const orphans = rows.filter((row) => row.callers.length === 0 && row.selfUses <= 0);
 const internal = rows.filter((row) => row.callers.length === 0 && row.selfUses > 0);
 const lonely = rows.filter((row) => row.callers.length === 1);
 
-console.log(`Lonely capability audit — ${exported.size} exported symbol(s) in ${SUBJECT_DIRS.join(', ')}`);
+const ambiguousNames = [...definitionsByName.values()].filter((homes) => homes.size > 1).length;
+console.log(`Lonely capability audit — ${rows.length} exported symbol(s) in ${SUBJECT_DIRS.join(', ')}`);
 console.log(`callers read from ${SOURCE_DIRS.join(', ')} (tests never count as a caller)\n`);
 console.log(`  no caller anywhere, unused in its own file : ${orphans.length}`);
 console.log(`  no caller, but used inside its own file    : ${internal.length}  (exported without need)`);
-console.log(`  called from exactly one place              : ${lonely.length}\n`);
+console.log(`  called from exactly one place              : ${lonely.length}`);
+console.log(`  name declared in more than one module      : ${ambiguousNames}  (marked *, callers unattributable by name)\n`);
 
 const decisions = lonely.filter((row) => DECISION.test(row.name)).sort((a, b) => a.home.localeCompare(b.home));
 if (decisions.length) {
   console.log(`Decisions and guards wired into exactly one place — ${decisions.length} of them.`);
   console.log('Ask of each: is a SECOND path making this same call by hand, or not at all?\n');
   for (const row of decisions) {
-    console.log(`  ${row.name}`);
+    console.log(`  ${row.name}${row.ambiguous ? '  *' : ''}`);
     console.log(`      defined  ${row.home}`);
     console.log(`      called   ${row.callers[0]}`);
   }
