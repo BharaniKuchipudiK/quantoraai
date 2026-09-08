@@ -119,6 +119,7 @@ const StudioGit = lazy(() => import('./StudioGit.jsx'));
 import ChatRowMenu from './ChatRowMenu.jsx';
 import TurnBudgetMeter from './TurnBudgetMeter.jsx';
 import TurnBudgetRing from './TurnBudgetRing.jsx';
+import { decidePreviewCommit, describeHeldPreview } from '../lib/preview-autocommit.js';
 import { archivedChats, visibleChats } from '../lib/chat-organization.js';
 const GithubDestinationBar = lazy(() => import('./GithubDestinationBar.jsx'));
 const StudioModeToggle = lazy(() => import('./StudioModeToggle.jsx'));
@@ -1020,6 +1021,8 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * allowance.
    */
   const [turnBudget, setTurnBudget] = useState(null);
+  /* Why a page was NOT applied, when the guard declined it. */
+  const [previewHeldNotice, setPreviewHeldNotice] = useState(null);
   /*
    * A pin belongs to the desk it was chosen on. This state outlives any one
    * chat, so switching sessions used to carry the choice across: pin
@@ -2090,6 +2093,57 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     setCodingDeskOpen(true);
     setIsWorkspaceMode(true);
   }, [studioDomain, messages, vfs]);
+
+  /*
+   * THE PREVIEW UPDATES ITSELF.
+   *
+   * Quantora made the user press a button to see a page the model had already
+   * written. No other tool in this class does that, and the reason it existed
+   * was never the user's problem to solve: a snippet from a chat reply can
+   * overwrite a working build with a fragment, so SOMETHING had to decide
+   * whether this code was safe to apply.
+   *
+   * deskCommitRegressesPreview has been able to decide that the whole time —
+   * the desk's own build path has used it for months. Only the chat path
+   * asked a human instead. Now the machine answers its own question, and the
+   * button below remains only for the case it declines.
+   */
+  const autoPreviewedIdRef = useRef(null);
+  useEffect(() => {
+    const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
+    if (!lastAi || lastAi.isError) return;
+    /* Once per message: an effect that re-applies on every render would fight
+     * the user's own edits on the desk. */
+    if (autoPreviewedIdRef.current === lastAi.id) return;
+    if (isGenerating) return;
+    if (!canExplicitlyPreviewCode(studioDomain)) return;
+
+    const assembled = assembleStudioPreview(lastAi.text || '', vfsRef.current || {});
+    const html = assembled.code && /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code) ? assembled.code : '';
+    const candidateVfs = Object.keys(assembled.vfs).length > 0
+      ? assembled.vfs
+      : (html ? { 'index.html': { content: html, language: 'html' } } : {});
+
+    const decision = decidePreviewCommit({
+      before: vfsRef.current || {},
+      after: candidateVfs,
+      canPreview: true,
+      hasHtml: Boolean(html),
+    });
+    autoPreviewedIdRef.current = lastAi.id;
+    if (!decision.apply) {
+      /* Held back, and said so — silence here is what made the old button feel
+       * like the platform ignoring you. */
+      if (decision.tell) setPreviewHeldNotice(describeHeldPreview(decision.reason));
+      return;
+    }
+    setPreviewHeldNotice(null);
+    setDeskReview(diffVfsReview(vfsRef.current || {}, candidateVfs));
+    vfsRef.current = candidateVfs;
+    setVfs(candidateVfs);
+    setWorkspaceCode(html);
+    setWorkspaceActiveTab('preview');
+  }, [messages, isGenerating, studioDomain]);
 
   const handleTravelPlacePlay = useCallback((place) => {
     const html = travelPlacePreviewHtml({
