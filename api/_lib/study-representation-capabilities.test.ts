@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveStudyRepresentationCapability } from './study-representation-capabilities.js';
+import {
+  resolveStudyRepresentationCapability,
+  resolveStudyRepresentationCapabilityForConcept,
+} from './study-representation-capabilities.js';
 
 test('selects only existing subject-native renderer families', () => {
   assert.equal(resolveStudyRepresentationCapability('Newton second law and friction')?.rendererKind, 'physics-motion');
@@ -43,4 +46,42 @@ test('bare current is ordinary language, not enough evidence for an Electricity 
 
 test('does not turn arbitrary content into a decorative visual', () => {
   assert.equal(resolveStudyRepresentationCapability('Explain opportunity cost in simple terms'), null);
+});
+
+test('Newton third-law lab promotion requires a direct learner visual or animation request', () => {
+  assert.equal(
+    resolveStudyRepresentationCapability("Show me Newton's third law visually")?.rendererKind,
+    'newton-lab',
+  );
+  assert.equal(
+    resolveStudyRepresentationCapability("Animate Newton's third law of motion")?.rendererKind,
+    'newton-lab',
+  );
+
+  const ordinaryLessonPrompt = [
+    "Teach ONE idea about Newton's third law in this message — not a whole chapter.",
+    'For mechanics or physics, include a subject-specific picture caption that names the actual motion and forces.',
+    'Use one true visual only if it makes the idea easier to enter.',
+  ].join(' ');
+  assert.equal(resolveStudyRepresentationCapability(ordinaryLessonPrompt)?.rendererKind, 'physics-motion');
+});
+
+test('canonical Newton third-law identity survives control-only visual requests without transcript wording', () => {
+  assert.equal(
+    resolveStudyRepresentationCapabilityForConcept({
+      conceptKey: 'physics.forces.newtons-third-law',
+      conceptLabel: null,
+      fallbackText: 'Show it visually',
+    })?.rendererKind,
+    'newton-lab',
+  );
+
+  assert.equal(
+    resolveStudyRepresentationCapabilityForConcept({
+      conceptKey: 'physics.forces.newtons-third-law',
+      conceptLabel: null,
+      fallbackText: 'Explain it again',
+    })?.rendererKind,
+    'physics-motion',
+  );
 });
