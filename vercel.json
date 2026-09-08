@@ -2,14 +2,11 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/chat.ts": {
-      "maxDuration": 300
-    },
     "api/generate-office.ts": {
       "maxDuration": 300
     },
     "api/pipeline.ts": {
-      "maxDuration": 180,
+      "maxDuration": 300,
       "includeFiles": "node_modules/pdfjs-dist/{legacy/build/pdf.worker.mjs,cmaps/**,standard_fonts/**}"
     },
     "api/preview-compile.js": {
