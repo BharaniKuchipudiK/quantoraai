@@ -71,3 +71,19 @@ test('mission check wiring fails closed instead of converting unavailable verifi
   assert.doesNotMatch(missionCheck, /studyQuizAsk|askOrSend/);
   assert.match(missionCheck, /sameStudyMissionLabel\(topic, label\)/);
 });
+
+test('cross-concept Compass handoff cannot reuse the old concept assessment or race its reset', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
+  const alignmentEffect = shell.slice(
+    shell.indexOf('// A Compass recommendation can legitimately target a prerequisite'),
+    shell.indexOf('// Once a mission has aligned'),
+  );
+
+  assert.match(missionCheck, /assessment\?\.item\?\.conceptKey/);
+  assert.match(missionCheck, /activeAttemptMatchesTarget/);
+  assert.match(missionCheck, /activeItemKey === targetKey/);
+  assert.match(alignmentEffect, /TOPIC_ALIGNED/);
+  assert.doesNotMatch(alignmentEffect, /requestMissionCheck/, 'focus alignment must settle before a new governed attempt is requested');
+  assert.match(shell, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.VERIFIED_CHECK[\s\S]*mission\.topicAligned[\s\S]*!assessment\?\.item[\s\S]*Open verified check/);
+});
