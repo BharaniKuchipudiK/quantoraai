@@ -1720,11 +1720,22 @@ export default async function handler(req: any, res: any) {
                     ? inferenceNoContent(route, NO_CONTENT_MS)
                     : inferenceAttemptTimeout(route, attemptBudgetMs);
                 }
-                next = await nextAsyncIteratorWithIdleTimeout(
-                  iterator,
-                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
-                  'Gemini stream',
-                );
+                try {
+                  next = await nextAsyncIteratorWithIdleTimeout(
+                    iterator,
+                    nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                    'Gemini stream',
+                  );
+                } catch (error) {
+                  /* Same trap as the OpenRouter side: a bare idle rejection
+                   * carries no status, so the ladder would stop rather than
+                   * fall back. */
+                  if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                    || /idle for more than/i.test(String((error as any)?.message || ''))) {
+                    throw inferenceNoContent(route, NO_CONTENT_MS);
+                  }
+                  throw error;
+                }
               } catch (error) {
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   await iterator.return?.(undefined);
@@ -1798,9 +1809,26 @@ export default async function handler(req: any, res: any) {
                   'OpenRouter stream',
                 );
               } catch (error) {
+                await reader.cancel().catch(() => {});
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
-                  await reader.cancel().catch(() => {});
                   throw inferenceAttemptTimeout(route, attemptBudgetMs);
+                }
+                /*
+                 * THE READ EXPIRED BECAUSE THE ROUTE WENT QUIET.
+                 *
+                 * This read is now bounded by the no-content window, so it is
+                 * the window that usually expires — and readWithIdleTimeout
+                 * rejects with a bare Error carrying no status and the word
+                 * "idle". shouldFallbackBeforeStreaming recognises neither, so
+                 * it returned false and the whole ladder STOPPED instead of
+                 * trying the next route, leaving the upstream request open.
+                 * Shortening the read made that far more likely: the fix for a
+                 * 90-second silence would have become a turn that gives up
+                 * entirely. Found by review before it shipped.
+                 */
+                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                  || /idle for more than/i.test(String((error as any)?.message || ''))) {
+                  throw inferenceNoContent(route, NO_CONTENT_MS);
                 }
                 throw error;
               }

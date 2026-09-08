@@ -124,8 +124,14 @@ test('[was-red] both provider loops are bounded by content, and both count it', 
     'a route that never produces content must still have a deadline');
 
   /* Both loops stop on the rule, not on bytes. */
+  /*
+   * Four: each provider loop consults the rule twice — once BEFORE the read,
+   * to abandon a route that has already gone quiet, and once in the catch, to
+   * classify a read that expired on the window as no-content rather than as a
+   * bare idle error the fallback policy does not recognise.
+   */
   const stops = handler.match(/streamStopReason\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs \}\)/g) || [];
-  assert.equal(stops.length, 2, `both provider loops must consult the rule, found ${stops.length}`);
+  assert.equal(stops.length, 4, `both provider loops must consult the rule before the read and in the catch, found ${stops.length}`);
 
   const budgets = handler.match(/nextReadBudgetMs\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS \}\)/g) || [];
   assert.equal(budgets.length, 2, `both reads must be bounded by the window, found ${budgets.length}`);
@@ -144,4 +150,39 @@ test('[was-red] both provider loops are bounded by content, and both count it', 
     'the byte-based bound must not survive alongside the content-based one');
   assert.doesNotMatch(handler, /nextAsyncIteratorWithIdleTimeout\(iterator, Math\.min\(PROVIDER_STREAM_IDLE_MS/,
     'nor on the Gemini side');
+});
+
+
+test('[was-red] a read that expires on the window falls back instead of stopping the ladder', async () => {
+  /*
+   * THE FIX THAT WOULD HAVE MADE THINGS WORSE.
+   *
+   * Bounding the read by the no-content window means it is the WINDOW that
+   * usually expires — and readWithIdleTimeout rejects with a bare Error: no
+   * status, and the word "idle". shouldFallbackBeforeStreaming tests
+   * status against [404,408,...,504] and the message against a list that
+   * includes "timeout" but not "idle", so it returned false and the whole
+   * ladder STOPPED rather than trying the next route, leaving the upstream
+   * request open.
+   *
+   * Shortening the read made that far more likely. The repair for a
+   * 90-second silence would have become a turn that gives up entirely.
+   * Found by review before it shipped.
+   */
+  const { readFileSync } = await import('node:fs');
+  const handler = readFileSync(new URL('../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
+
+  const conversions = handler.match(/idle for more than\/i\.test\(String\(\(error as any\)\?\.message \|\| ''\)\)/g) || [];
+  assert.equal(conversions.length, 2,
+    `both provider loops must convert a bare idle rejection into a falling-back error, found ${conversions.length}`);
+
+  /* inferenceNoContent carries status 504, which shouldFallbackBeforeStreaming
+   * accepts — that is the whole point of converting it. */
+  assert.match(handler, /function inferenceNoContent\(route: InferenceRoute, silentMs: number\) \{[\s\S]{0,200}error\.status = 504;/,
+    'the no-content error must carry a status the fallback policy recognises');
+
+  /* And the reader is cancelled before throwing, or the upstream request
+   * stays open after the turn has moved on. */
+  assert.match(handler, /\} catch \(error\) \{\s*\n\s*await reader\.cancel\(\)\.catch\(\(\) => \{\}\);/,
+    'the reader must be cancelled on every exit from the read, not only on budget expiry');
 });

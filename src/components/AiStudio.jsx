@@ -2108,15 +2108,28 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
    * asked a human instead. Now the machine answers its own question, and the
    * button below remains only for the case it declines.
    */
-  const autoPreviewedIdRef = useRef(null);
+  /*
+   * Keyed by SESSION, not one ref for the whole component. A single ref held
+   * the last message id of whichever chat you were in; switch away, edit the
+   * desk by hand, come back, and that chat's historical reply read as new —
+   * reapplying an old page over your edits. Found by review before it shipped.
+   */
+  const autoPreviewedBySessionRef = useRef(new Map());
   useEffect(() => {
     const lastAi = [...messages].reverse().find((message) => message.sender === 'ai' && message.text);
     if (!lastAi || lastAi.isError) return;
-    /* Once per message: an effect that re-applies on every render would fight
-     * the user's own edits on the desk. */
-    if (autoPreviewedIdRef.current === lastAi.id) return;
     if (isGenerating) return;
+    if (!activeSessionId) return;
+    if (autoPreviewedBySessionRef.current.get(activeSessionId) === lastAi.id) return;
     if (!canExplicitlyPreviewCode(studioDomain)) return;
+
+    /*
+     * A page the proof pipeline REJECTED must never become the visible
+     * preview. The first cut wrote straight to setVfs, which skipped that
+     * check along with session ownership, checkpoints and the stale-tree
+     * guard that commitDeskVfs performs.
+     */
+    if (lastAi.codingProof && lastAi.codingProof.ok === false) return;
 
     const assembled = assembleStudioPreview(lastAi.text || '', vfsRef.current || {});
     const html = assembled.code && /<!DOCTYPE html>|<html[\s>]/i.test(assembled.code) ? assembled.code : '';
@@ -2130,20 +2143,21 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       canPreview: true,
       hasHtml: Boolean(html),
     });
-    autoPreviewedIdRef.current = lastAi.id;
+    autoPreviewedBySessionRef.current.set(activeSessionId, lastAi.id);
     if (!decision.apply) {
-      /* Held back, and said so — silence here is what made the old button feel
-       * like the platform ignoring you. */
-      if (decision.tell) setPreviewHeldNotice(describeHeldPreview(decision.reason));
+      if (decision.tell) setPreviewHeldNotice({ sessionId: activeSessionId, text: describeHeldPreview(decision.reason) });
+      return;
+    }
+    /* Through the verified path, so every guard the desk's own build honours
+     * applies here too. It returns false when it refuses. */
+    if (!commitDeskVfs(candidateVfs, activeSessionId)) {
+      setPreviewHeldNotice({ sessionId: activeSessionId, text: describeHeldPreview('incoming-entry-not-runnable') });
       return;
     }
     setPreviewHeldNotice(null);
-    setDeskReview(diffVfsReview(vfsRef.current || {}, candidateVfs));
-    vfsRef.current = candidateVfs;
-    setVfs(candidateVfs);
     setWorkspaceCode(html);
     setWorkspaceActiveTab('preview');
-  }, [messages, isGenerating, studioDomain]);
+  }, [messages, isGenerating, studioDomain, activeSessionId, commitDeskVfs]);
 
   const handleTravelPlacePlay = useCallback((place) => {
     const html = travelPlacePreviewHtml({
@@ -5366,6 +5380,23 @@ Paused — ${autoPauseRef.current}.`
 
               {/* What is left, where it is about to be spent. */}
               <TurnBudgetRing budget={turnBudget} isLight={isLight} />
+
+              {/*
+                * Why a page was NOT applied. Set but never rendered in the
+                * first cut, which meant the change delivered exactly the
+                * silent rejection it set out to remove — and the gate passed,
+                * because SETTING state is not SHOWING it. Scoped to the
+                * session that produced it so it cannot follow you into
+                * another chat.
+                */}
+              {previewHeldNotice && previewHeldNotice.sessionId === activeSessionId ? (
+                <span
+                  data-quantora-preview-held="true"
+                  style={{ fontSize: '0.68rem', color: '#f59e0b', maxWidth: '340px', lineHeight: 1.35 }}
+                >
+                  {previewHeldNotice.text}
+                </span>
+              ) : null}
 
               {/* Attachment Button */}
               <button

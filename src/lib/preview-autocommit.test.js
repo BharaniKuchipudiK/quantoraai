@@ -81,8 +81,8 @@ test('[was-red] the desk actually calls this — a rule nothing calls is the old
   assert.match(studio, /if \(decision\.apply\)|if \(!decision\.apply\)/, 'and act on the answer');
 
   /* Once per message, or the effect fights the user's own edits on the desk. */
-  assert.match(studio, /autoPreviewedIdRef\.current === lastAi\.id/,
-    'the auto-apply must run once per reply, not on every render');
+  assert.match(studio, /autoPreviewedBySessionRef\.current\.get\(activeSessionId\) === lastAi\.id/,
+    'processed replies must be tracked PER SESSION — one component-wide ref reapplied another chat\'s old reply over manual edits');
 
   /* Never on a failed turn — a refusal carries no page and must not disturb
    * a working desk. */
@@ -94,6 +94,26 @@ test('[was-red] the desk actually calls this — a rule nothing calls is the old
   assert.match(studio, /if \(isGenerating\) return;/, 'nothing is applied while a turn is still streaming');
 
   /* And when it declines, it says so. */
-  assert.match(studio, /setPreviewHeldNotice\(describeHeldPreview\(decision\.reason\)\)/,
+  assert.match(studio, /setPreviewHeldNotice\(\{ sessionId: activeSessionId, text: describeHeldPreview\(decision\.reason\) \}\)/,
     'a held page must be explained, not silently dropped');
+
+  /*
+   * SETTING STATE IS NOT SHOWING IT. The first cut set previewHeldNotice and
+   * rendered it nowhere, so the change delivered exactly the silent rejection
+   * it existed to remove — and this file passed, because it only asserted the
+   * setter was called. Found by review.
+   */
+  assert.match(studio, /\{previewHeldNotice && previewHeldNotice\.sessionId === activeSessionId \?/,
+    'the notice must be RENDERED, and scoped to the session that produced it');
+  assert.match(studio, /data-quantora-preview-held="true"/, 'and carry a durable hook');
+
+  /*
+   * Through the verified commit path. Writing straight to setVfs skipped the
+   * proof check, session ownership, checkpoints and the stale-tree guard, so a
+   * page the proof pipeline REJECTED could become the visible preview.
+   */
+  assert.match(studio, /if \(!commitDeskVfs\(candidateVfs, activeSessionId\)\)/,
+    'the auto-commit must go through commitDeskVfs, never setVfs directly');
+  assert.match(studio, /if \(lastAi\.codingProof && lastAi\.codingProof\.ok === false\) return;/,
+    'a reply whose proof failed must never reach the preview');
 });
