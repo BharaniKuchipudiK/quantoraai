@@ -58,6 +58,7 @@ test('Compass mission keeps only execution metadata and never copies priority/ma
   assert.equal(started.topicAligned, true);
   assert.equal(started.durationMinutes, 12);
   assert.equal(started.actionType, 'guided_repair');
+  assert.equal(started.verifiedAttemptId, '');
   assert.equal(Object.hasOwn(started, 'score'), false);
   assert.equal(Object.hasOwn(started, 'confidence'), false);
   assert.equal(Object.hasOwn(started, 'mastery'), false);
@@ -76,20 +77,41 @@ test('Adaptive Mission executes Explain -> Guided practice -> Verified check -> 
   state = transitionStudyAdaptiveMission(state, { type: 'CHECK_REQUESTED' });
   assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK);
 
-  state = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: false });
+  state = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: false, attemptId: 'attempt-1' });
   assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE);
   assert.equal(state.repairRequired, true);
   assert.equal(state.verifiedOutcome, 'incorrect');
+  assert.equal(state.verifiedAttemptId, 'attempt-1');
 
   state = transitionStudyAdaptiveMission(state, { type: 'CHECK_REQUESTED' });
-  state = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: true });
+  state = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: true, attemptId: 'attempt-2' });
   assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.REVIEW);
   assert.equal(state.repairRequired, false);
   assert.equal(state.verifiedOutcome, 'correct');
+  assert.equal(state.verifiedAttemptId, 'attempt-2');
 
   state = transitionStudyAdaptiveMission(state, { type: 'REVIEW_SENT' });
   assert.equal(state.status, 'completed');
   assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.COMPLETE);
+});
+
+test('a governed assessment result is consumed only once per attempt', () => {
+  let state = transitionStudyAdaptiveMission(createStudyAdaptiveMissionState(), {
+    type: 'START_GUIDED',
+    topic: 'Momentum',
+  });
+  state = transitionStudyAdaptiveMission(state, { type: 'CHECK_REQUESTED' });
+  state = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: false, attemptId: 'attempt-1' });
+  assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.GUIDED_PRACTICE);
+
+  state = transitionStudyAdaptiveMission(state, { type: 'CHECK_REQUESTED' });
+  assert.equal(state.phase, STUDY_ADAPTIVE_MISSION_PHASE.VERIFIED_CHECK);
+  const duplicate = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: false, attemptId: 'attempt-1' });
+  assert.strictEqual(duplicate, state, 'the old graded result must not bounce a retry back into repair');
+
+  const fresh = transitionStudyAdaptiveMission(state, { type: 'VERIFIED_RESULT', correct: true, attemptId: 'attempt-2' });
+  assert.equal(fresh.phase, STUDY_ADAPTIVE_MISSION_PHASE.REVIEW);
+  assert.equal(fresh.verifiedAttemptId, 'attempt-2');
 });
 
 test('the guided continuation chip starts inside Guided practice and is already aligned to the active topic', () => {
