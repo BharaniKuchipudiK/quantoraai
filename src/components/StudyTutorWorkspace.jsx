@@ -145,13 +145,14 @@ export default function StudyTutorWorkspace({
     setAssessmentWorkspaceOpen(false);
   }, [activeSessionId, brief?.conceptId]);
 
-  const handleRequestAssessment = useCallback(async ({ explicitRetry = false } = {}) => {
+  const handleRequestAssessment = useCallback(async ({ explicitRetry = false, conceptKey = '' } = {}) => {
     if (!brief?.conceptId || !activeSessionId) return { fallback: true, code: 'verified_assessment_unavailable' };
+    const assessmentConceptKey = String(conceptKey || '').trim() || brief.conceptId;
     const generation = assessmentGeneration.current;
     setAssessment({ ...EMPTY_ASSESSMENT, status: 'loading' });
     try {
       const issued = await requestStudyAssessment({
-        conceptId: brief.conceptId,
+        conceptId: assessmentConceptKey,
         conceptLabel: brief.label,
         sessionId: activeSessionId,
       });
