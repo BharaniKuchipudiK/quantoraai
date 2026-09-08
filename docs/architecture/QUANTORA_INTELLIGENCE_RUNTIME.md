@@ -669,9 +669,59 @@ Normalize provider adapters and route using capability + measured outcome + heal
 
 Add durable repository sandbox, shell, tests, browser, checkpoints, candidate patches, rollback, deployment verification, and end-to-end coding evals.
 
-**First cut (2026-09-06): the turn planner.** Before this phase the first decision of every turn — build, Office document, advisor desk, or chat — was made by regular expressions over the first few words, and a website brief that mentioned an "excel-like tracker" was sent to the workbook generator on the word alone. A coding agent does not work that way: the model reads the whole brief and decides. `POST /api/plan-turn` now does exactly that, through the same semantic router `classify-intent` uses, and answers with one plan per turn: the lane, the desk or Office kind, a confidence and a reason. `reconcileTurnPlan` keeps the plan honest against two invariants a model may not override — a pinned desk never moves, and a build the desk already owns is never vetoed — and the deterministic rules remain as the fallback, so a slow or dead planner changes nothing about how the turn ran yesterday. The plan travels on the user turn as `lanePlan`, which is how the desk (whose Office detection runs from the transcript) follows the same decision the request carried. Not in this cut: the durable sandbox and its shell, checkpoints and rollback, which are the rest of the phase.
+**First cut (2026-09-06): the turn planner.** Before this phase the first decision of every turn — build, Office document, advisor desk, or chat — was made by regular expressions over the first few words, and a website brief that mentioned an "excel-like tracker" was sent to the workbook generator on the word alone. A coding agent does not work that way: the model reads the whole brief and decides. `POST /api/plan-turn` now does exactly that, through the same semantic router `classify-intent` uses, and answers with one plan per turn: the lane, the desk or Office kind, a confidence and a reason. `reconcileTurnPlan` keeps the plan honest against two invariants a model may not override — a pinned desk never moves, and a build the desk already owns is never vetoed — and the deterministic rules remain as the fallback, so a slow or dead planner changes nothing about how the turn ran yesterday. The plan travels on the user turn as `lanePlan`, which is how the desk (whose Office detection runs from the transcript) follows the same decision the request carried. Not in this cut: the durable sandbox and its shell, checkpoints and rollback — of which checkpoints and rollback landed in the third cut below, and the sandbox has not.
 
 **Second cut (2026-09-06): the planner is measured.** Every plan is recorded as one row of `turn_plan_events` — lane, source (planner or fallback), agreement with the deterministic lane, confidence, planner latency and the error class, never the message — and `turn-plan-ledger.ts` turns the last 24 hours into the numbers the admin dashboard shows: how often the planner decided, how often it agreed with the rules it replaced, where it overruled them, and its median latency. An empty window reads as zero turns with null rates, never as a perfect planner. This is what decides, on evidence, whether the deterministic fallback can be demoted further.
+
+**Third cut (2026-09-06/07): the desk keeps its work, and a patch is reversible.**
+Checkpoints and rollback — named above as "the rest of the phase" — are in:
+
+- **A durable rewind history.** The desk's checkpoints are copied to
+  `desk_checkpoints`, stored as a delta chain, owned by one chat rather than one
+  account, and read back on demand. The save is a SECOND COPY, never a handover:
+  the in-memory history is not trimmed or trusted less because a save
+  succeeded, so a backup that fails can never cost somebody the work it was
+  backing up. The endpoint answers `503` rather than `saved` on a write that did
+  not land, because a desk told "saved" on the strength of nothing is worse
+  than one told the truth.
+- **Candidate patches that name the tree they were computed against.** A write
+  is refused when that tree is gone, so a patch cannot be applied to a state it
+  was never diffed from; applying is atomic and reverting is exact.
+- **Rewind is a proven journey** — a browser gate drives it, rather than only
+  its helpers being tested.
+
+**WHAT IS NOT IN PHASE 7, AND WHY (2026-09-08).** The execution surface: a
+durable repository sandbox, its shell, and running the project's own tests
+inside it. There is no `api/sandbox`, no shell endpoint, and no sandbox
+provider dependency in the tree — this is not partially built, it is not built.
+
+Deferred deliberately, and the reasoning belongs here rather than in a commit
+message nobody will find:
+
+- It is the largest single piece of the phase and needs infrastructure the
+  platform does not currently hold.
+- Nothing above it depends on it. The turn planner, the checkpoint chain and
+  candidate patches were built so that they do not: patches address a tree by
+  hash, not a live filesystem, and rewind is a client history with a durable
+  copy. A sandbox would give those a second place to run, not their first.
+- The desk's current proof path — VFS plus Preview plus the compile gate — is
+  what the platform's users actually exercise. Server-side execution buys
+  correctness for a class of work (running a repository's own test suite) that
+  no current journey reaches.
+
+So Phase 7 is CLOSED WITH ITS EXECUTION SURFACE OPEN, stated plainly rather
+than left to look finished. What that costs is worth naming too: without a
+sandbox the platform cannot run a user's tests, so "the build passes" continues
+to mean the artifact contract and the preview compiler agreed — not that the
+project's own suite was green. Every claim the desk makes about a build should
+stay inside that bound until this is built.
+
+**A NAMING COLLISION, recorded so it stops costing time.** `ROADMAP.md` also
+has a "Phase 7" — *The Generative Studio* (brand systems, launch-ready content,
+seed data, multi-modal input, generative variants), none of it started. It is
+a different phase of a different sequence. This one is the QIR runtime phase;
+they are unrelated, and neither number moves, so the only defence is knowing
+which document is being read.
 
 ### Phase 8 — Creative / 3D Runtime
 
