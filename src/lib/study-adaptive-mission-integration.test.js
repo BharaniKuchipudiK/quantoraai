@@ -103,7 +103,7 @@ test('mission review visible text cannot be parsed as a replacement Study topic'
   assert.equal(extractStudyTopicLabel("Recap the mission result for Newton's Third Law"), '');
   assert.equal(
     extractStudyTopicLabel('Review what I proved and what I should retain'),
-    'what I proved',
+    'what I proved and what I should retain',
     'the former copy demonstrates why leading Review was unsafe',
   );
 });
