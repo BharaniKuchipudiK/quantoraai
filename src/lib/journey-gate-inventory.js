@@ -456,7 +456,20 @@ export const JOURNEYS = Object.freeze([
     hooks: ['data-quantora-real-project-preview', 'data-quantora-preview-error', 'data-quantora-preview-contract-error'],
     serves: ['api/preview-compile.js'],
     gates: {
-      deterministic: ['api/_lib/preview-compiler.test.js', 'src/lib/preview-compile-client.test.js', 'scripts/golden-page-state.test.mjs'],
+      deterministic: [
+        'api/_lib/preview-compiler.test.js',
+        'src/lib/preview-compile-client.test.js',
+        'scripts/golden-page-state.test.mjs',
+        /*
+         * The headers that decide whether the iframe is allowed to exist at
+         * all. checkFramedDocumentContract knew all three ways they break
+         * Preview, had tests proving it, and sat in wiring-baseline.json as an
+         * accepted orphan — never once run against vercel.json. Every one of
+         * those failures is invisible from the browser (onLoad fires on the
+         * block page), so the only symptom is Preview never finishing.
+         */
+        'scripts/framed-preview-headers-gate.mjs',
+      ],
       browser: [
         'scripts/preview-ready-not-stuck-gate.mjs',
         'scripts/project-runtime-failure-browser-gate.mjs',
