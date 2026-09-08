@@ -5,6 +5,7 @@ import {
   STUDY_ADAPTIVE_MISSION_REQUEST_EVENT,
   requestStudyAdaptiveMission,
 } from './study-adaptive-mission-event.js';
+import { extractStudyTopicLabel } from './study-syllabus-overlay.js';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -72,7 +73,8 @@ test('mission check wiring fails closed instead of converting unavailable verifi
   assert.match(missionCheck, /sameStudyMissionLabel\(topic, label\)/);
 });
 
-test('cross-concept Compass handoff cannot reuse the old concept assessment or race its reset', () => {
+test('cross-concept Compass handoff preserves the mission and cannot reuse the old concept assessment', () => {
+  const workspace = read('components/StudyTutorWorkspace.jsx');
   const shell = read('components/StudyTutorShell.jsx');
   const missionCheck = shell.slice(shell.indexOf('const requestMissionCheck'), shell.indexOf('const beginCompassMission'));
   const alignmentEffect = shell.slice(
@@ -80,10 +82,38 @@ test('cross-concept Compass handoff cannot reuse the old concept assessment or r
     shell.indexOf('// Once a mission has aligned'),
   );
 
+  assert.doesNotMatch(
+    workspace,
+    /<StudyTutorShell[\s\S]{0,120}key=\{`\$\{activeSessionId\}:\$\{brief\.conceptId\}`\}/,
+    'concept changes must not remount the shell and erase the active mission',
+  );
+  assert.match(shell, /setDismissed\(false\);[\s\S]*setActivity\(null\);[\s\S]*\[conceptId\]/,
+    'concept changes should still reset transient shell UI');
   assert.match(missionCheck, /assessment\?\.item\?\.conceptKey/);
   assert.match(missionCheck, /activeAttemptMatchesTarget/);
   assert.match(missionCheck, /activeItemKey === targetKey/);
   assert.match(alignmentEffect, /TOPIC_ALIGNED/);
   assert.doesNotMatch(alignmentEffect, /requestMissionCheck/, 'focus alignment must settle before a new governed attempt is requested');
   assert.match(shell, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.VERIFIED_CHECK[\s\S]*mission\.topicAligned[\s\S]*!assessment\?\.item[\s\S]*Open verified check/);
+});
+
+test('mission review visible text cannot be parsed as a replacement Study topic', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  assert.match(shell, /`Recap the mission result for \$\{label\}`/);
+  assert.equal(extractStudyTopicLabel("Recap the mission result for Newton's Third Law"), '');
+  assert.equal(
+    extractStudyTopicLabel('Review what I proved and what I should retain'),
+    'what I proved',
+    'the former copy demonstrates why leading Review was unsafe',
+  );
+});
+
+test('an incorrect mission retry re-enters VERIFIED_CHECK before reserving the replacement attempt', () => {
+  const shell = read('components/StudyTutorShell.jsx');
+  const retry = shell.slice(shell.indexOf('const handleRemediationAction'), shell.indexOf('const adaptiveState'));
+  assert.match(retry, /mission\.phase === STUDY_ADAPTIVE_MISSION_PHASE\.GUIDED_PRACTICE/);
+  assert.match(retry, /mission\.repairRequired/);
+  assert.match(retry, /requestMissionCheck\(\{/);
+  assert.match(retry, /explicitRetry: true/);
+  assert.match(shell, /onClick=\{\(\) => handleRemediationAction\('retry'\)\}/);
 });
