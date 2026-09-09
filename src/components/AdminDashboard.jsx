@@ -214,6 +214,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
 
 import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
+import TechnicalCommandCenter from './TechnicalCommandCenter';
 import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
@@ -254,16 +255,42 @@ const TechnicalPredictiveTab = ({ metrics }) => {
 
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-      <TechnicalAnalyticsPanel
+      <TechnicalCommandCenter
         technical={metrics.technical}
-        studyRepresentationCoverage={metrics.studyRepresentationCoverage}
-        window={metrics.window}
-        daily={metrics.daily}
-        turnPlans={metrics.turnPlans}
         turnFailures={metrics.turnFailures}
-        workspaceUse={metrics.workspaceUse}
         isLight={isLight}
       />
+
+      <details style={{
+        marginTop: '18px',
+        border: isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(148,163,184,0.12)',
+        borderRadius: '14px',
+        background: isLight ? '#fff' : '#09090b',
+        overflow: 'hidden',
+      }}>
+        <summary style={{
+          cursor: 'pointer',
+          padding: '16px 18px',
+          color: isLight ? '#334155' : '#cbd5e1',
+          fontSize: '0.78rem',
+          fontWeight: 680,
+          userSelect: 'none',
+        }}>
+          Deep diagnostics · raw ledgers, request history, Study renderer coverage and communication decisions
+        </summary>
+        <div style={{ padding: '0 16px 16px' }}>
+          <TechnicalAnalyticsPanel
+            technical={metrics.technical}
+            studyRepresentationCoverage={metrics.studyRepresentationCoverage}
+            window={metrics.window}
+            daily={metrics.daily}
+            turnPlans={metrics.turnPlans}
+            turnFailures={metrics.turnFailures}
+            workspaceUse={metrics.workspaceUse}
+            isLight={isLight}
+          />
+        </div>
+      </details>
     </div>
   );
 };
