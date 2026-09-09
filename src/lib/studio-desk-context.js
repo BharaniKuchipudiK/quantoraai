@@ -445,7 +445,7 @@ export function mergeLiveDeskProbe(packet, live = null) {
       || (facts.photoCount || 0) >= 2;
     facts.hasDistinctPhotos = (facts.uniquePhotoCount || 0) >= 2 || !needsVariety;
   }
-  facts.bagIncremented = live.bagIncremented === true;
+  delete facts.bagIncremented;
   for (const key of DESK_PROBE_FACT_KEYS) {
     if (typeof live[key] === 'boolean') facts[key] = live[key];
   }
@@ -454,14 +454,11 @@ export function mergeLiveDeskProbe(packet, live = null) {
   /*
    * Carry the generic truth rows through from the packet rather than
    * recomputing them — the HTML is not in scope here. A row that FAILED stays
-   * failed; a row that merely found nothing is promoted from 'unverified' to
-   * 'ok' now that the running page has actually been probed.
+   * failed. Observing that the page rendered does not verify every control,
+   * link or total, so unverified rows stay unverified until their own check runs.
    */
   const carriedTruth = (packet.checks || [])
-    .filter((check) => String(check.id || '').startsWith('truth-'))
-    .map((check) => (check.sourceOk
-      ? { ...check, ok: true, state: 'ok', label: check.label.replace(/^Not checked on Preview yet: /, '').replace(/^./, (c) => c.toUpperCase()) }
-      : check));
+    .filter((check) => String(check.id || '').startsWith('truth-'));
   const checks = [...buildDeskChecks(facts, { includeCatalog, job: packet.job, live }), ...carriedTruth];
   /*
    * Only report the CLICK when there is a control to click. The old else-branch
@@ -473,7 +470,10 @@ export function mergeLiveDeskProbe(packet, live = null) {
     checks.push({
       id: 'cart-click',
       ok: live.bagIncremented === true,
-      label: live.bagIncremented === true
+      state: typeof live.bagIncremented === 'boolean' ? (live.bagIncremented ? 'ok' : 'fix') : 'unverified',
+      label: typeof live.bagIncremented !== 'boolean'
+        ? 'Not checked on Preview: Add to Cart increments the bag'
+        : live.bagIncremented === true
         ? 'Add to Cart increments the bag'
         : 'Add to Cart did not increment the bag',
     });
@@ -575,7 +575,6 @@ export function sanitizeDeskContext(raw) {
     hasCalculatorKey: raw.facts.hasCalculatorKey === true,
     hasScientificKeys: raw.facts.hasScientificKeys === true,
     wantsScientific: raw.facts.wantsScientific === true,
-    bagIncremented: raw.facts.bagIncremented === true,
     shop: raw.facts.shop === true,
     calculator: raw.facts.calculator === true,
     // Tri-state on purpose: an unobserved fact must not collapse into false.

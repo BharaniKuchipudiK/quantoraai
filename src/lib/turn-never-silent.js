@@ -74,8 +74,8 @@ export function turnIsSilent(message) {
  */
 export function describeSilentTurn(message) {
   const base = 'This turn ended without a reply — that is a fault on Quantora\'s side, not a refusal '
-    + 'and not a limit you hit. Nothing was recorded from the engine, so there is nothing to show; '
-    + 'your message is unchanged and nothing was lost. Retry to run it again.';
+    + 'and not a limit you hit. The desk could not confirm a completed response. '
+    + 'Your request remains in this chat. Check the current desk before using Retry.';
   const correlationId = String(message?.correlationId || '').trim();
   return correlationId ? `${base}\n\nReference: ${correlationId}` : base;
 }

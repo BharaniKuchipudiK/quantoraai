@@ -34,7 +34,19 @@
  * src/lib/turn-heal-contract.test.js is the gate on these properties.
  */
 
+import { mayRunAttempt } from './turn-escalation.js';
+
 export const MAX_TURN_ATTEMPTS = 2;
+
+// Decide at the failure boundary, using the clock NOW, not when the request
+// began. Otherwise we announce a retry, erase the answer, then cannot run it.
+export function resolveBudgetedTurnRecovery(input, escalation) {
+  const attempt = Number(input.attempt) || 1;
+  return resolveTurnRecovery({
+    ...input,
+    maxAttempts: mayRunAttempt(attempt + 1, escalation) ? escalation.maxAttempts : attempt,
+  });
+}
 
 const RETRYABLE_STATUS = new Set([408, 425, 500, 502, 503, 504]);
 const FATAL_STATUS = new Set([401, 402, 403]);
@@ -76,8 +88,15 @@ const REFUSED_STATUS = new Set([429]);
  * for "html/css/js files" and a model could satisfy those words with CSS alone;
  * the server then saw browser code while Coding Desk had no page to mount.
  */
-function buildContractRetryBrief(failureDetail) {
+function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
   const detail = String(failureDetail || '').trim();
+  if (hasExistingProject) {
+    return 'PREVIOUS ATTEMPT FAILED VERIFICATION'
+      + (detail ? `: ${detail}.` : '.')
+      + ' This is the ONE automatic artifact repair for this turn.'
+      + ' Apply the requested change to the current project. Return corrected file fences or search/replace patches against the provided current source.'
+      + ' Preserve unrelated files, behavior and project structure. Do not replace the application with a new self-contained page.';
+  }
   return (
     'PREVIOUS ATTEMPT FAILED VERIFICATION'
     + (detail ? `: ${detail}` : '.')
@@ -139,6 +158,7 @@ export function resolveTurnRecovery({
   /** Name of the engine the caller can switch to, when it has one. The notice
    *  claims an engine switch only when this is set. */
   fallbackEngineName = null,
+  hasExistingProject = false,
 } = {}) {
   const no = (reason) => ({ retry: false, resume: false, notice: '', reason });
 
@@ -179,8 +199,10 @@ export function resolveTurnRecovery({
     return {
       retry: true,
       switchModel: false,
-      retryBrief: buildContractRetryBrief(failureDetail),
-      notice: 'Those files could not run in Preview. Rebuilding once as a self-contained page…',
+      retryBrief: buildContractRetryBrief(failureDetail, hasExistingProject),
+      notice: hasExistingProject
+        ? 'That edit could not be applied. Repairing the change once while keeping the existing project…'
+        : 'Those files could not run in Preview. Rebuilding once as a self-contained page…',
       reason: 'build-contract',
     };
   }

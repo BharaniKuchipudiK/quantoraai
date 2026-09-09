@@ -285,38 +285,11 @@ export const PREVIEW_ERROR_HARNESS = `<script>(function(){
         }
         var currencyText = currencySel ? String(currencySel.textContent || '') : '';
         var hasCurrency = Boolean(currencySel && /USD/i.test(currencyText) && /INR/i.test(currencyText));
-        var bagIncremented = false;
-        if (cartBtn) {
-          var bagBefore = 0;
-          var nodes = document.querySelectorAll('a,button,span,div');
-          for (var j = 0; j < nodes.length; j++) {
-            var bagText = nodes[j].textContent || '';
-            if (/^\\s*Bag\\s*\\d+/i.test(bagText) && (nodes[j].children || []).length === 0) {
-              bagBefore = parseInt((bagText.match(/\\d+/) || ['0'])[0], 10) || 0;
-              break;
-            }
-          }
-          cartBtn.click();
-          var bagAfter = bagBefore;
-          nodes = document.querySelectorAll('a,button,span,div');
-          for (var k = 0; k < nodes.length; k++) {
-            var bagTextAfter = nodes[k].textContent || '';
-            if (/^\\s*Bag\\s*\\d+/i.test(bagTextAfter) && (nodes[k].children || []).length === 0) {
-              bagAfter = parseInt((bagTextAfter.match(/\\d+/) || ['0'])[0], 10) || 0;
-              break;
-            }
-          }
-          if (typeof window.__quantoraBagCount === 'number' && window.__quantoraBagCount > bagBefore) {
-            bagAfter = window.__quantoraBagCount;
-          }
-          bagIncremented = bagAfter > bagBefore;
-        }
         var catalogCount = document.querySelectorAll('.product-card, [data-product], [data-catalog-item], [data-testid*="product"]').length;
         if (!catalogCount) catalogCount = document.querySelectorAll('[data-quantora-price], .price, [class*="price"]').length;
         report({
           kind:'shop-probe',
           hasCart: Boolean(cartBtn),
-          bagIncremented: bagIncremented,
           hasCurrency: hasCurrency,
           photoCount: photoCount,
           uniquePhotoCount: uniquePhotoCount,
