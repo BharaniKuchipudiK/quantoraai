@@ -114,6 +114,8 @@ export function resolveTurnRecovery({
    * tried once. The bound stays; it just gets measured instead of assumed.
    */
   maxAttempts = MAX_TURN_ATTEMPTS,
+  /** Number of BUILD_ARTIFACT_CONTRACT repairs already started for this turn. */
+  artifactRepairCount = 0,
   status = 0,
   code = '',
   retryable = false,
@@ -155,11 +157,11 @@ export function resolveTurnRecovery({
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
   if (REFUSED_STATUS.has(Number(status))) return no('rate-limited');
 
-  // A build artifact gets exactly ONE automatic repair after the initial
-  // generation. Dynamic turn budgets may fund more transport attempts, but they
-  // must not turn one behavioral miss into a chain of identical paid rebuilds.
+  // A build artifact gets exactly ONE automatic repair per turn. Count that
+  // behavioral repair independently from transport/provider attempts: a dead
+  // route before the first artifact must not consume the one repair opportunity.
   if (code === 'BUILD_ARTIFACT_CONTRACT') {
-    if (Number(attempt) >= 2) return no('build-repair-exhausted');
+    if (Number(artifactRepairCount) >= 1) return no('build-repair-exhausted');
     return {
       retry: true,
       switchModel: false,
