@@ -34,9 +34,13 @@ function predictionFirstEligible(input: {
   if (input.intent !== 'explain' && input.intent !== 'worked_example') return false;
   if (input.intervention.state !== 'stable') return false;
   if (input.representation.requestedMode !== null) return false;
+  if (input.representation.reason === 'verified_learner_state') return false;
+  if (input.experiencePlan?.reasonCodes.includes('temporary_representation_preference')) return false;
   if (input.intervention.predictionEligible !== true) return false;
   const verification = input.experiencePlan?.verificationRequirement;
-  return verification !== 'fresh_independent' && verification !== 'defer_until_due';
+  return verification !== 'fresh_independent'
+    && verification !== 'governed_after_teaching'
+    && verification !== 'defer_until_due';
 }
 
 export function planStudyAdaptiveLessonLoop(input: {
