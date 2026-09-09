@@ -19,17 +19,17 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const sessionUser = getSessionUser(req);
+  const sideEffectFreeTelemetryProbe = req.query?.purpose === "product-telemetry";
 
   res.setHeader("Cache-Control", "no-store");
   if (!sessionUser) {
     /*
-     * The browser asks this endpoint once while bootstrapping the app. A null
-     * session therefore gives us the cleanest available definition of a
-     * signed-out Quantora page/app load. The recorder stores only an aggregate
-     * hourly counter and ignores previews/dev, so no identity or test traffic
-     * leaks into the executive metric.
+     * The browser's normal bootstrap request owns the signed-out site-hit
+     * counter. ProductTelemetry may make one additional read-only session probe
+     * to classify auth state; that probe must never increment the same page load
+     * a second time.
      */
-    if (shouldCountSignedOutBrowserHit(req.headers?.["user-agent"])) {
+    if (!sideEffectFreeTelemetryProbe && shouldCountSignedOutBrowserHit(req.headers?.["user-agent"])) {
       await recordSignedOutSiteHit();
     }
     return res.status(200).json({ user: null });
