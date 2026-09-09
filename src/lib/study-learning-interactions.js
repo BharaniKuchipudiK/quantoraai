@@ -1,6 +1,5 @@
 export const STUDY_LEARNING_INTERACTION_EVENT = 'quantora:study-learning-interaction';
 export const STUDY_LEARNING_INTERACTION_VERSION = 'study-learning-interaction-v1';
-export const STUDY_LEARNING_INTERACTION_LIMIT = 160;
 
 export const STUDY_LEARNING_INTERACTION = Object.freeze({
   RESPONSE_CORRECT: 'response_correct',
@@ -17,7 +16,6 @@ export const STUDY_LEARNING_INTERACTION = Object.freeze({
 });
 
 const ALLOWED_TYPES = new Set(Object.values(STUDY_LEARNING_INTERACTION));
-const events = [];
 let sequence = 0;
 
 function clean(value, max) {
@@ -85,10 +83,6 @@ export function recordStudyLearningInteraction(input = {}, options = {}) {
   const event = normalizeStudyLearningInteraction(input, options.now || Date.now);
   if (!event) return null;
   sequence = event.sequence;
-  events.push(event);
-  if (events.length > STUDY_LEARNING_INTERACTION_LIMIT) {
-    events.splice(0, events.length - STUDY_LEARNING_INTERACTION_LIMIT);
-  }
   browserDispatch(event);
   return event;
 }
@@ -150,19 +144,4 @@ export function recordStudyAssessmentOutcome({ attemptId = '', result = null, re
     }));
   }
   return recorded.filter(Boolean);
-}
-
-export function readStudyLearningInteractions({ conceptId = '', type = '', limit = STUDY_LEARNING_INTERACTION_LIMIT } = {}) {
-  const targetConcept = clean(conceptId, 160);
-  const targetType = clean(type, 64);
-  const take = Math.max(1, Math.min(STUDY_LEARNING_INTERACTION_LIMIT, Number.parseInt(String(limit || ''), 10) || STUDY_LEARNING_INTERACTION_LIMIT));
-  return events
-    .filter((event) => (!targetConcept || event.conceptId === targetConcept) && (!targetType || event.type === targetType))
-    .slice(-take)
-    .map((event) => ({ ...event }));
-}
-
-export function clearStudyLearningInteractions() {
-  events.splice(0, events.length);
-  sequence = 0;
 }
