@@ -1,4 +1,8 @@
 import React, { useId, useMemo, useState } from 'react';
+import {
+  STUDY_LEARNING_INTERACTION,
+  recordStudyLearningInteraction,
+} from '../lib/study-learning-interactions.js';
 
 const EXPERIMENTS = Object.freeze({
   slope: {
@@ -152,7 +156,28 @@ export default function StudyLinearFunctionLab({ isLight = false }) {
     setHasRun(false);
   };
 
+  const choosePrediction = (optionId) => {
+    setPrediction(optionId);
+    setHasRun(false);
+    recordStudyLearningInteraction({
+      type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
+      source: 'linear_function_lab',
+      labKind: 'linear-function',
+      control: experiment,
+      choiceId: optionId,
+    });
+  };
+
   const setExperimentValue = (nextValue) => {
+    if (nextValue !== values[experiment]) {
+      recordStudyLearningInteraction({
+        type: STUDY_LEARNING_INTERACTION.SIMULATION_MANIPULATED,
+        source: 'linear_function_lab',
+        labKind: 'linear-function',
+        control: experiment,
+        controlValue: String(nextValue),
+      });
+    }
     setValues((current) => ({ ...current, [experiment]: nextValue }));
     setHasRun(false);
   };
@@ -183,7 +208,7 @@ export default function StudyLinearFunctionLab({ isLight = false }) {
             <button
               key={option.id}
               type="button"
-              onClick={() => { setPrediction(option.id); setHasRun(false); }}
+              onClick={() => choosePrediction(option.id)}
               aria-pressed={prediction === option.id}
               style={controlChip(isLight, prediction === option.id)}
             >
