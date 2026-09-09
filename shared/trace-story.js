@@ -36,6 +36,9 @@ const DETAIL_WORDS = Object.freeze({
   'stream-truncated': 'the reply stream was cut off',
   'compile-failed': 'the preview could not compile the files',
   'iframe-failed': 'the preview page failed while running',
+  'patch-conflict': 'the proposed edit did not match the current files',
+  'artifact-accepted': 'the reply applied to the current project and has a preview entry',
+  'budget-spent': 'no viable recovery attempt fits the remaining time',
 });
 
 /* The refusals Quantora itself makes, as written by /api/chat. A provider's
@@ -109,6 +112,9 @@ export function describeTraceEvent(event = {}) {
       ? 'The desk read the stream to its end and found no reply in it.'
       : 'The desk received the reply and read it.';
   }
+  if (boundary === 'browser.artifact-validation') return `The desk ${state === 'succeeded' ? 'accepted' : 'rejected'} the generated files${detail ? `: ${detail}` : ''}.`;
+  if (boundary === 'browser.turn-attempt' && state === 'failed') return `The desk recorded an unsuccessful attempt${status ? ` (HTTP ${status})` : ''}${detail ? `: ${detail}` : ''}.`;
+  if (boundary === 'browser.turn-recovery') return `${state === 'attempting' ? 'Automatic recovery selected' : 'Automatic recovery stopped'}${detail ? `: ${detail}` : ''}${event.budgetMs != null ? `; ${ms(event.budgetMs)} remaining` : ''}.`;
   if (boundary === 'artifact.vfs' && state === 'parsed') return `${event.fileCount ?? 'The'} file(s) landed on the desk.`;
   if (boundary === 'browser.preview-response') {
     if (state === 'compiled') return 'The desk received the compiled preview.';

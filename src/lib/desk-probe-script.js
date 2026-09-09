@@ -49,7 +49,7 @@ export function collectLiveDeskFacts(payload = {}) {
   return live;
 }
 
-export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
+export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report, options){
   function visibleText(){ return ((document.body && document.body.innerText) || '').replace(/\\s+/g, ' ').trim(); }
   function countItems(){ return document.querySelectorAll('li, [role="listitem"], [data-testid*="item"], [data-item]').length; }
   function labelOf(node){ return ((node.textContent || '') + ' ' + (node.getAttribute('aria-label') || '')).trim(); }
@@ -188,6 +188,39 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
   facts.hasScientificKeys = hasScientificKeys();
   var cartBtn = findCart();
   facts.hasCart = Boolean(cartBtn);
+  // The user's running page is observational. Mutating checks are opt-in for
+  // disposable test fixtures only, never either production preview runtime.
+  if (!options || options.allowMutations !== true) {
+    try { report(facts); } catch (reportError) {}
+    // Observe actions that actually happen; never manufacture a click or type
+    // into the user's page. Window capture runs before document capture (the
+    // existing shop handler increments there), so the baseline is pre-click.
+    if (window.__quantoraDeskObserveClick) window.removeEventListener('click', window.__quantoraDeskObserveClick, true);
+    window.__quantoraDeskObserveClick = function(event){
+      var target = event.target && event.target.closest ? event.target.closest('button, a, [role="button"], input[type="submit"], input[type="button"]') : null;
+      if (!target) return;
+      var currentControls = controls();
+      var currentAdder = addControl(currentControls);
+      var currentCart = findCart();
+      var currentField = document.querySelector('input[type="text"], input[type="search"], input:not([type]), textarea');
+      var isCart = target === currentCart;
+      var isAdd = target === currentAdder && Boolean(currentField && currentField.value.trim());
+      if (!isCart && !isAdd && target !== neutralControl(currentControls)) return;
+      var beforeBag = readBag();
+      var beforeItems = countItems();
+      var beforeText = visibleText();
+      var entered = isAdd ? currentField.value.trim() : '';
+      setTimeout(function(){
+        var afterText = visibleText();
+        if (isCart) facts.bagIncremented = readBag() > beforeBag;
+        if (isAdd) facts.itemAdded = countItems() > beforeItems || (afterText.indexOf(entered) !== -1 && beforeText.indexOf(entered) === -1);
+        facts.controlResponded = afterText !== beforeText;
+        try { report(facts); } catch (reportError) {}
+      }, ${DESK_PROBE_SETTLE_MS});
+    };
+    window.addEventListener('click', window.__quantoraDeskObserveClick, true);
+    return;
+  }
   var bagBefore = readBag();
 
   var list = controls();

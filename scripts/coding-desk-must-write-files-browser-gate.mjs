@@ -18,6 +18,9 @@ const page = await context.newPage();
 
 let sawBuildMode = false;
 let chatCalls = 0;
+let nextReply = null;
+let exhaustNextAttempt = false;
+const traceEvents = [];
 
 function sseBody(text) {
   return [
@@ -62,6 +65,11 @@ await page.route('**/api/**', async (route) => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
 
+  if (path === '/api/trace') {
+    traceEvents.push(request.postDataJSON());
+    return route.fulfill({ status: 202, contentType: 'application/json', body: '{"recorded":true}' });
+  }
+
   if (path === '/api/auth/session') {
     return route.fulfill({
       status: 200,
@@ -98,9 +106,22 @@ await page.route('**/api/**', async (route) => {
   }
   if (path === '/api/chat') {
     chatCalls += 1;
+    if (exhaustNextAttempt) {
+      exhaustNextAttempt = false;
+      // Advance only the wall clock used by the budget; no real three-minute
+      // provider call and no changes to timer scheduling.
+      await page.evaluate(() => {
+        const realNow = Date.now.bind(Date);
+        Date.now = () => realNow() + 176000;
+      });
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: [
+        `data: ${JSON.stringify({ error: { code: 'INFERENCE_ATTEMPT_TIMEOUT', message: 'Injected provider timeout', retryable: true } })}`,
+        'data: [DONE]', '',
+      ].join('\n\n') });
+    }
     const body = request.postDataJSON?.() || {};
     if (body.buildMode === true) sawBuildMode = true;
-    const reply = chatCalls === 1 ? chatOnlyPlan : agentPreviewReply;
+    const reply = nextReply || (chatCalls === 1 ? chatOnlyPlan : agentPreviewReply);
     return route.fulfill({
       status: 200,
       headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
@@ -157,6 +178,53 @@ try {
       throw new Error(`Partner status treated chat-only as finished: ${partnerText}`);
     }
   }
+
+  await page.locator('button[title="Stop generating"]').waitFor({ state: 'hidden', timeout: 25000 });
+  let previousHeading = 'Drive Organize Agent';
+  for (let edit = 1; edit <= 10; edit += 1) {
+    const heading = `Drive Workspace Revision ${edit}`;
+    nextReply = `\`\`\`html filepath="index.html"\n<<<<\n<h1 data-testid="drive-agent-title">${previousHeading}</h1>\n====\n<h1 data-testid="drive-agent-title">${heading}</h1>\n>>>>\n\`\`\``;
+    const before = chatCalls;
+    await prompt.fill(`Change only the main heading to ${heading}; preserve the existing application.`);
+    await Promise.all([
+      page.waitForResponse((res) => new URL(res.url()).pathname === '/api/chat'),
+      prompt.press('Enter'),
+    ]);
+    await page.locator('button[title="Stop generating"]').waitFor({ state: 'hidden', timeout: 25000 });
+    if (chatCalls !== before + 1) throw new Error(`Edit ${edit} burned ${chatCalls - before} model calls for a valid targeted patch`);
+    const deadline = Date.now() + 15000;
+    let found = false;
+    while (Date.now() < deadline && !found) {
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        if (await frame.locator('[data-testid="drive-agent-title"]').filter({ hasText: heading }).count().catch(() => 0)) found = true;
+      }
+      if (!found) await page.waitForTimeout(100);
+    }
+    if (!found) throw new Error(`Edit ${edit} did not reach the running preview`);
+    previousHeading = heading;
+  }
+  if (!traceEvents.some((event) => event.boundary === 'browser.turn-recovery')) {
+    throw new Error('The initial automatic repair left no diagnostic event');
+  }
+  if (traceEvents.filter((event) => event.detailCode === 'artifact-accepted').length < 10) {
+    throw new Error('Repeated edit acceptance was not recorded in the trace');
+  }
+  const beforeFailure = chatCalls;
+  exhaustNextAttempt = true;
+  await prompt.fill('Change the heading again, keeping the application intact.');
+  await Promise.all([
+    page.waitForResponse((res) => new URL(res.url()).pathname === '/api/chat'),
+    prompt.press('Enter'),
+  ]);
+  await page.locator('button[title="Stop generating"]').waitFor({ state: 'hidden', timeout: 25000 });
+  await page.waitForTimeout(300);
+  if (chatCalls !== beforeFailure + 1) throw new Error('A timed-out turn started an unaffordable retry');
+  if (traceEvents.some((event) => event.detailCode === 'silent-turn')) throw new Error('An explicit provider failure was lost as a silent turn');
+  if (!traceEvents.some((event) => event.boundary === 'browser.turn-recovery' && event.state === 'skipped')) throw new Error('Recovery exhaustion left no reason in the trace');
+  if (!traceEvents.some((event) => event.detailCode === 'INFERENCE_ATTEMPT_TIMEOUT')) throw new Error('The provider timeout diagnosis was lost');
+  const transcript = await page.locator('[data-quantora-assistant-prose="true"]').last().innerText();
+  if (!transcript.trim() || /ended without a reply/.test(transcript)) throw new Error('Provider failure has no useful terminal response');
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/coding-desk-must-write-files.png', fullPage: true });

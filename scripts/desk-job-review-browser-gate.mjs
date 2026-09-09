@@ -352,6 +352,11 @@ try {
     throw new Error('The follow-up never reached Preview, so the desk was never re-probed.');
   }
 
+  // Exercise the control deliberately. Background observation must not type
+  // fake tasks into the user's list merely to populate a green check.
+  const observedBrokenFrame = await frameShowing('h1', 'My day');
+  await observedBrokenFrame.locator('input[type="text"]').first().fill('Observe broken add');
+  await observedBrokenFrame.locator('button').filter({ hasText: /^Add$/ }).first().click();
   const brokenRows = await settledRows({ id: 'job-add-item', state: 'fix' }, 'broken add button');
   assertGuardrailUnverified(brokenRows, 'broken add button');
   const brokenBeat = await nextBeat();
@@ -378,6 +383,9 @@ try {
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click();
   await page.waitForTimeout(600);
 
+  const observedFixedFrame = await frameShowing('h1', 'My day');
+  await observedFixedFrame.locator('input[type="text"]').first().fill('Observe working add');
+  await observedFixedFrame.locator('button').filter({ hasText: /^Add$/ }).first().click();
   const fixedRows = await settledRows({ id: 'job-add-item', state: 'ok' }, 'working add button');
   assertGuardrailUnverified(fixedRows, 'working add button');
   const fixedRow = fixedRows.find((row) => row.id === 'job-add-item');

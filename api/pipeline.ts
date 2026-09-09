@@ -43,7 +43,7 @@ import {
   normalizeBoundaryEvent,
   normalizeCorrelationId,
   publicTraceEvents,
-  traceBoundary,
+  traceBoundarySettled,
 } from './_lib/transaction-trace.js';
 import { describeTrace } from '../shared/trace-story.js';
 
@@ -199,7 +199,7 @@ export default async function handler(req: any, res: any) {
     // cannot claim another owner.
     const event = normalizeBoundaryEvent({ ...(req.body || {}), correlationId, userSub: traceUser?.sub || null });
     if (!event) return res.status(400).json({ error: 'Invalid boundary event.' });
-    traceBoundary(event);
+    await traceBoundarySettled(event);
     return res.status(202).json({ recorded: true, correlationId });
   }
 
