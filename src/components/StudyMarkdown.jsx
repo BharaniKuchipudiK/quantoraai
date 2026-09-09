@@ -5,7 +5,6 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import StudyFlashcards from './StudyFlashcards.jsx';
-import StudyMicroVisual from './StudyMicroVisual.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
@@ -24,6 +23,7 @@ import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presen
 // bundle each Coding-desk visitor downloads. The code payload gate caps that chunk
 // at 300 KB and it was within ~70 bytes of the cap, so each new renderer family
 // (H3.5.4 adds more) was spending budget every visitor paid for and few used.
+const StudyMicroVisual = React.lazy(() => import('./StudyMicroVisual.jsx'));
 const StudyPicture = React.lazy(() => import('./StudyPicture.jsx'));
 
 const STUDY_READING_FONT = 'Charter, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
@@ -83,7 +83,11 @@ export default function StudyMarkdown({ text = '', topic = '', isLight = false, 
           if (!studyPictureFitsTopic(segment.caption, activeTopic)) return null;
           const microKind = studyMicroVisualKind(segment.caption);
           if (microKind) {
-            return <StudyMicroVisual key={`micro-${index}-${segment.caption}`} kind={microKind} caption={segment.caption} isLight={isLight} />;
+            return (
+              <React.Suspense key={`micro-${index}-${segment.caption}`} fallback={null}>
+                <StudyMicroVisual kind={microKind} caption={segment.caption} isLight={isLight} />
+              </React.Suspense>
+            );
           }
           return (
             <React.Suspense key={`pic-${index}-${segment.caption}`} fallback={null}>
