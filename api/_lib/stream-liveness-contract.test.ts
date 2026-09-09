@@ -250,39 +250,79 @@ test("every bounded read converts AND cleans up in the catch that encloses it", 
   );
 });
 
-test("opening a provider stream is bounded by the content window too", () => {
+
+test("EVERY opener is bounded by the content window, counted not sampled", () => {
   /*
-   * THE HALF THIS FILE MISSED, FOUND IN PRODUCTION BY THE USER.
+   * THIS ASSERTION WAS ITSELF THE BUG, AND THAT IS THE WHOLE LESSON.
    *
-   * Every assertion above bounds a stream that EXISTS. Opening one was bounded
-   * by the attempt budget — for a non-build turn, the whole remaining turn —
-   * so a route that accepts the connection and never answers burned everything
-   * before any liveness guard ran.
+   * The first version ran .exec() for one openRemainingMs and asserted that it
+   * existed. .exec() returns the FIRST match. chat-handler.ts has THREE
+   * openGeminiStream call sites; exactly one carried the deadline, so the test
+   * found that one and went green while the other two — the entire tool-calling
+   * path, which is the common path — opened Gemini with no signal at all.
    *
-   * The trace that proved it, 2026-09-08: four engines, all 504, with single
-   * attempts of 30.4s, 25.3s, 65.7s and 27.5s against a 25-second no-content
-   * window. One of the four was the window working. The other three never
-   * reached it, and the person waited 159.6 seconds for no reply.
+   * A user's trace on 2026-09-09 measured what that cost: one of those openers
+   * held for 69.4 SECONDS against a 25-second content window, while the
+   * OpenRouter attempt beside it in the same turn stopped at 25.3s exactly. The
+   * contrast between those two numbers in one trace is what finally named it.
    *
-   * "Silent while connecting" is the same condition as "silent while
-   * streaming", so it gets the same deadline. This asserts both openers keep
-   * it: the abort timer on the Gemini opener, and the timeoutMs handed to the
-   * OpenRouter one — which its helper otherwise clamps to 55s.
+   * Same class, third occurrence, and the reason it survived twice is that the
+   * gate proved a bound EXISTED instead of proving every call site HAD one.
+   * That is CLAUDE.md §4 — a check that cannot fail — written by the person who
+   * had just quoted §4 while writing it.
+   *
+   * So this enumerates. It walks every opener, and it fails when it finds none,
+   * because a parse that matches nothing must never read as a clean run.
    */
   const unbounded: string[] = [];
 
-  /* Gemini: the abort timer that bounds opening the stream. */
-  const openRemaining = /const\s+openRemainingMs\s*=\s*([\s\S]{0,200}?);/.exec(SOURCE);
-  assert.ok(openRemaining, "expected the Gemini opener's deadline; the shape changed");
-  if (!/NO_CONTENT_MS/.test(openRemaining![1])) {
-    unbounded.push(
-      "  the Gemini opener's deadline is not derived from NO_CONTENT_MS — a route that "
-      + "never returns a stream holds the whole attempt budget.",
-    );
+  /*
+   * Gemini's opener can only be interrupted through the signal it is handed, so
+   * the property must be present AND the controller behind it must be armed by
+   * a timer derived from NO_CONTENT_MS. A signal nothing fires bounds nothing.
+   */
+  const geminiSites = callSites(SOURCE, "openGeminiStream");
+  assert.ok(
+    geminiSites.length > 0,
+    "found no openGeminiStream call sites — the parse broke, and a gate that matches nothing is not a clean run",
+  );
+
+  for (const site of geminiSites) {
+    const signal = /signal:\s*([A-Za-z0-9_.]+)/.exec(site.args);
+    if (!signal) {
+      unbounded.push(
+        `  line ${site.line}: openGeminiStream is called with no signal, so nothing can `
+        + `interrupt it. This is the exact shape that held a route for 69.4s.`,
+      );
+      continue;
+    }
+
+    // Follow the signal to its controller, and the controller to its timer.
+    const controller = signal[1].replace(/\.signal$/, "");
+    const armed = new RegExp(
+      `setTimeout\\(\\s*\\(\\)\\s*=>\\s*${controller}\\.abort\\(\\)\\s*,\\s*([A-Za-z0-9_]+)`,
+    ).exec(SOURCE);
+    if (!armed) {
+      unbounded.push(
+        `  line ${site.line}: its signal comes from ${controller}, which nothing aborts on a `
+        + `timer. An AbortSignal that never fires is decoration.`,
+      );
+      continue;
+    }
+
+    const deadline = new RegExp(`const\\s+${armed[1]}\\s*=\\s*([\\s\\S]{0,220}?);`).exec(SOURCE);
+    if (!deadline || !/NO_CONTENT_MS/.test(deadline[1])) {
+      unbounded.push(
+        `  line ${site.line}: its deadline ${armed[1]} is not derived from NO_CONTENT_MS, so a `
+        + `route that never returns a stream holds far more than the content window.`,
+      );
+    }
   }
 
-  /* OpenRouter: the timeout handed to openOpenRouterResponse. */
+  // OpenRouter: the timeout handed to its opener, which the helper otherwise clamps to 55s.
+  let openRouterBounds = 0;
   for (const match of SOURCE.matchAll(/timeoutMs:\s*([^,\n]+)/g)) {
+    openRouterBounds += 1;
     if (!/NO_CONTENT_MS/.test(match[1])) {
       unbounded.push(
         `  openOpenRouterResponse is given timeoutMs: ${match[1].trim()} — not the content `
@@ -290,13 +330,18 @@ test("opening a provider stream is bounded by the content window too", () => {
       );
     }
   }
+  assert.ok(
+    openRouterBounds > 0,
+    "found no timeoutMs handed to the OpenRouter opener — the parse broke",
+  );
 
   assert.deepEqual(
     unbounded,
     [],
-    `\n${unbounded.join("\n")}\n\n  Bound the OPEN with Math.min(NO_CONTENT_MS, remaining budget). A route that\n`
-    + "  has not produced a stream within the content window is dead by the same\n"
-    + "  definition as one that stopped producing tokens.\n",
+    `\n${unbounded.join("\n")}\n\n  ${geminiSites.length} Gemini openers and ${openRouterBounds} OpenRouter `
+    + "openers were checked. Bound the OPEN with Math.min(NO_CONTENT_MS, remaining\n"
+    + "  budget) at EVERY one of them. A route that has not produced a stream inside\n"
+    + "  the content window is dead by the same definition as one that stopped\n"
+    + "  producing tokens.\n",
   );
 });
-
