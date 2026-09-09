@@ -47,3 +47,19 @@ test('memory consent intent is explicit and supports revocation', () => {
   assert.equal(detectPclMemoryConsentIntent('Forget this conversation.'), 'revoke');
   assert.equal(detectPclMemoryConsentIntent('Please answer this normally.'), null);
 });
+
+test('PCL active identity and memory consent are account-scoped', () => {
+  const storage = memoryStorage({
+    'quantora_chat_sessions:account:account-a': JSON.stringify([{ id: 'session-a', projectId: 'project-a', memoryConsented: true }]),
+    'quantora_chat_sessions:account:account-b': JSON.stringify([{ id: 'session-b', projectId: 'project-b', memoryConsented: false }]),
+  });
+  rememberActivePclSession('session-a', storage, 'account-a');
+  rememberActivePclSession('session-b', storage, 'account-b');
+  assert.equal(readActivePclSessionId(storage, 'account-a'), 'session-a');
+  assert.equal(readActivePclSessionId(storage, 'account-b'), 'session-b');
+  assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-a' }).memoryConsented, true);
+  assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-b' }).memoryConsented, false);
+  assert.equal(setPclSessionMemoryConsent('session-b', true, storage, 'account-b'), true);
+  assert.equal(readPclConversationEnvelope({ sessionId: 'session-b', storage, accountScope: 'account-b' }).memoryConsented, true);
+  assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-a' }).memoryConsented, true);
+});

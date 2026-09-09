@@ -2040,6 +2040,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     onDeskRename,
     buildJob,
     studioModeChoice,
+    storageScope: user?.sub || user?.email || null,
   });
 
   const showStudySyllabus = shouldShowStudySyllabusChips({
@@ -4188,6 +4189,8 @@ Paused — ${autoPauseRef.current}.`
         >
           {storageFault.kind === 'evicted'
             ? `Browser storage was full. Your chats were kept, but ${storageFault.deskSnapshotsDropped || 1} saved Coding desk build${(storageFault.deskSnapshotsDropped || 1) === 1 ? ' was' : 's were'} dropped to make room — they will not survive a refresh. Publish or download anything you need.`
+            : storageFault.kind === 'legacy-isolated'
+              ? 'Older browser data was kept aside because its account owner cannot be verified. It was not uploaded or deleted. Your signed-in account now uses isolated local storage.'
             : storageFault.kind === 'corrupt'
               ? 'Saved chats could not be read, so a fresh session was started. The previous data was kept aside rather than overwritten.'
               : storageFault.kind === 'quota'
