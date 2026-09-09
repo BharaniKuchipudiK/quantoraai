@@ -114,8 +114,18 @@ export function resolveTurnRecovery({
    * tried once. The bound stays; it just gets measured instead of assumed.
    */
   maxAttempts = MAX_TURN_ATTEMPTS,
-  /** Number of BUILD_ARTIFACT_CONTRACT repairs already started for this turn. */
-  artifactRepairCount = 0,
+  /**
+   * Number of BUILD_ARTIFACT_CONTRACT repairs already started for this turn.
+   *
+   * Callers that own an explicit per-turn counter should pass it; that keeps a
+   * transport failure from consuming the one behavioral repair. The field used
+   * to default to 0, though, so an unwired production caller silently received a
+   * fresh repair budget on EVERY call. If the counter is omitted we now fail
+   * closed from the live attempt number: attempt 1 may repair, later attempts
+   * may not. That conservative fallback can withhold a repair after an earlier
+   * transport failure, but it can never create an unbounded billed repair loop.
+   */
+  artifactRepairCount = null,
   status = 0,
   code = '',
   retryable = false,
@@ -157,11 +167,15 @@ export function resolveTurnRecovery({
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
   if (REFUSED_STATUS.has(Number(status))) return no('rate-limited');
 
-  // A build artifact gets exactly ONE automatic repair per turn. Count that
-  // behavioral repair independently from transport/provider attempts: a dead
-  // route before the first artifact must not consume the one repair opportunity.
+  // A build artifact gets exactly ONE automatic repair per turn. An explicit
+  // counter is authoritative and remains independent from transport attempts.
+  // When the caller forgot to wire that state, the attempt number is the
+  // conservative backstop: never more than one behavioral repair.
   if (code === 'BUILD_ARTIFACT_CONTRACT') {
-    if (Number(artifactRepairCount) >= 1) return no('build-repair-exhausted');
+    const repairsStarted = artifactRepairCount == null
+      ? Math.max(0, Number(attempt) - 1)
+      : Math.max(0, Number(artifactRepairCount) || 0);
+    if (repairsStarted >= 1) return no('build-repair-exhausted');
     return {
       retry: true,
       switchModel: false,
