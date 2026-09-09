@@ -236,17 +236,15 @@ function BatchRunning({ session, onSubmit, topic }) {
   const complete = items.length > 0 && answered === items.length;
 
   const chooseAnswer = (entry, optionId) => {
-    setAnswers((current) => {
-      recordStudyAnswerChange({
-        previousChoiceId: current[entry.attemptId],
-        nextChoiceId: optionId,
-        source: 'assessment_batch',
-        conceptId: entry.item?.conceptKey,
-        conceptLabel: topic,
-        attemptId: entry.attemptId,
-      });
-      return { ...current, [entry.attemptId]: optionId };
+    recordStudyAnswerChange({
+      previousChoiceId: answers[entry.attemptId],
+      nextChoiceId: optionId,
+      source: 'assessment_batch',
+      conceptId: entry.item?.conceptKey,
+      conceptLabel: topic,
+      attemptId: entry.attemptId,
     });
+    setAnswers((current) => ({ ...current, [entry.attemptId]: optionId }));
   };
 
   return (
