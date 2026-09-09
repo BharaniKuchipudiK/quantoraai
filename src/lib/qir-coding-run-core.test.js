@@ -133,6 +133,10 @@ test('[was-red] real preview assemblies fit the API reference limit on start and
         await client.sync();
         assert.equal(posted.length, 2);
         assert.notEqual(posted[1].artifactRef, posted[0].artifactRef, 'hash the entire assembly, not a truncated prefix');
+        options.artifactRef += ' ';
+        await client.sync();
+        assert.equal(posted.length, 3, 'trailing source whitespace can be meaningful');
+        assert.notEqual(posted[2].artifactRef, posted[1].artifactRef);
       }
     }
     assert.equal(new Set(refs).size, 1, 'all write paths must derive the same identity');

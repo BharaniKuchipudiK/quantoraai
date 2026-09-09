@@ -176,11 +176,13 @@ page.on('pageerror', (error) => consoleErrors.push(error.message));
  */
 let activeTransactionName = null;
 const apiFailures = [];
+let rejectedCodingWriteCount = 0;
 page.on('response', (response) => {
   let url;
   try { url = new URL(response.url()); } catch { return; }
   if (url.origin !== BASE_ORIGIN || !url.pathname.startsWith('/api/') || response.status() < 400) return;
   const entry = { at: new Date().toISOString(), transaction: activeTransactionName, path: url.pathname, status: response.status() };
+  if (entry.path === '/api/qir-runs' && entry.status === 400) rejectedCodingWriteCount += 1;
   apiFailures.push(entry);
   if (apiFailures.length > 40) apiFailures.shift();
   response.text().then((body) => {
@@ -1185,9 +1187,9 @@ try {
   // A rendered page is not a successful handover if the durable Run rejected
   // its artifact. Keep this precise: unrelated fixture/storage 503s need their
   // own diagnosis, but a Coding request rejected as malformed is never green.
-  const rejectedCodingWrites = apiFailures.filter((entry) => entry.path === '/api/qir-runs' && entry.status === 400);
-  if (rejectedCodingWrites.length) {
-    throw new Error(`Coding artifact persistence rejected ${rejectedCodingWrites.length} request(s): ${rejectedCodingWrites.map((entry) => entry.error || 'HTTP 400').join('; ')}`);
+  const rejectedCodingWrites = rejectedCodingWriteCount;
+  if (rejectedCodingWrites) {
+    throw new Error(`Coding artifact persistence rejected ${rejectedCodingWrites} request(s): /api/qir-runs HTTP 400`);
   }
 
   evidence.completedAt = new Date().toISOString();

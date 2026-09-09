@@ -14,8 +14,8 @@ const POINTER_PREFIX = 'quantora_qir_coding_run:';
 // to the API's 1024-character field. Hash the WHOLE value so changes near the
 // end of a large assembly still produce a different candidate identity.
 async function boundedArtifactRef(value) {
-  const ref = typeof value === 'string' ? value.trim() : '';
-  if (ref.length <= 1024) return ref;
+  const ref = typeof value === 'string' ? value : '';
+  if (ref.length <= 1024) return ref.trim();
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(ref));
   const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return `coding-desk://assembly/sha256/${hex}`;
