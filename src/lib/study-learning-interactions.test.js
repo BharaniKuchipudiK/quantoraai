@@ -7,7 +7,6 @@ import {
   STUDY_LEARNING_INTERACTION,
   STUDY_LEARNING_INTERACTION_EVENT,
   STUDY_LEARNING_INTERACTION_VERSION,
-  normalizeStudyLearningInteraction,
   recordStudyAnswerChange,
   recordStudyAssessmentOutcome,
   recordStudyHintRequest,
@@ -19,7 +18,7 @@ const ROOT = path.resolve(HERE, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 test('interaction contract keeps only bounded observation fields', () => {
-  const event = normalizeStudyLearningInteraction({
+  const event = recordStudyLearningInteraction({
     type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
     source: 'linear_function_lab',
     conceptId: 'math.linear-functions',
@@ -28,7 +27,7 @@ test('interaction contract keeps only bounded observation fields', () => {
     choiceId: 'steeper',
     answer: 'raw learner answer must not be copied',
     prompt: 'raw prompt must not be copied',
-  }, () => Date.UTC(2026, 8, 9, 2, 0, 0));
+  }, { now: () => Date.UTC(2026, 8, 9, 2, 0, 0) });
 
   assert.equal(event.contractVersion, STUDY_LEARNING_INTERACTION_VERSION);
   assert.equal(event.observationOnly, true);
