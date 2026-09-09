@@ -1,4 +1,5 @@
 import { isStoreConfigured } from "./store.js";
+import { getOperationsInsights, type OperationsInsights } from "./operations-analytics.js";
 
 export type TechnicalKeyMix = {
   server_key_requests: number;
@@ -83,6 +84,7 @@ export type TechnicalInsights = {
   completion: ProductCompletionSummary | null;
   recentRequests: RecentUsageRow[];
   recentConversationInsights: RecentConversationInsightRow[];
+  operations: OperationsInsights;
   tracking: TechnicalTrackingHealth;
 };
 
@@ -159,13 +161,14 @@ export async function getTechnicalInsights(windowRequests7d = 0): Promise<Techni
   const configured = isStoreConfigured();
   if (!configured) return null;
 
-  const [keyMixResult, latencyResult, modelResult, completionResult, recentRequests, recentConversationInsights] = await Promise.all([
+  const [keyMixResult, latencyResult, modelResult, completionResult, recentRequests, recentConversationInsights, operations] = await Promise.all([
     fetchView<TechnicalKeyMix>("technical_key_mix_7d"),
     fetchView<TechnicalLatencySummary>("technical_latency_summary_7d"),
     fetchView<TechnicalModelLatencyRow>("technical_model_latency_7d"),
     fetchView<ProductCompletionSummary>("product_completion_7d"),
     fetchRecentUsage(),
     fetchRecentConversationInsights(),
+    getOperationsInsights(),
   ]);
 
   const viewsReachable = keyMixResult.reachable
@@ -192,6 +195,7 @@ export async function getTechnicalInsights(windowRequests7d = 0): Promise<Techni
     completion,
     recentRequests,
     recentConversationInsights,
+    operations,
     tracking,
   };
 }
