@@ -1,13 +1,18 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { currentStudyRequestWorkingState, type StudyWorkingStateSnapshot } from './study-adaptive-learning.js';
 import { buildStudyActiveLearningContext, type StudyActiveLearningContext } from './study-active-learning-context.js';
+import {
+  applyStudyAdaptiveDifficulty,
+  controlStudyAdaptiveDifficulty,
+  type StudyAdaptiveDifficultyPlan,
+} from './study-adaptive-difficulty-controller.js';
 import { directStudyLearningExperience, type StudyLearningExperiencePlan } from './study-learning-experience-director.js';
 import { planStudyAdaptiveHint, type StudyAdaptiveHintPlan } from './study-adaptive-hint-ladder.js';
 import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-09.3';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-09.4';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -24,6 +29,7 @@ export type StudyCognitiveInterpretation = {
   temperatureCeiling: number;
   activeLearningContext: StudyActiveLearningContext;
   experienceDirector: StudyLearningExperiencePlan;
+  difficultyControl: StudyAdaptiveDifficultyPlan;
   hintLadder: StudyAdaptiveHintPlan;
   representation: StudyTeachingRepresentationPlan;
   intervention: StudyLearningIntervention;
@@ -132,13 +138,24 @@ export function interpretStudyTurn(input: {
   const workingState = input.workingState === undefined
     ? currentStudyRequestWorkingState()
     : input.workingState;
-  const experienceDirector = directStudyLearningExperience({
+  const baseExperienceDirector = directStudyLearningExperience({
     intent,
     baseDifficulty,
     learnerModel: input.learnerModel,
     workingState,
     activeLearningContext,
     intervention,
+  });
+  const difficultyControl = controlStudyAdaptiveDifficulty({
+    learnerModel: input.learnerModel,
+    workingState,
+    intervention,
+  });
+  const experienceDirector = applyStudyAdaptiveDifficulty({
+    experiencePlan: baseExperienceDirector,
+    difficultyPlan: difficultyControl,
+    activeLearningContext,
+    workingState,
   });
   const hintLadder = planStudyAdaptiveHint({
     message,
@@ -176,6 +193,7 @@ export function interpretStudyTurn(input: {
     temperatureCeiling: requiresVerification ? 0.2 : difficulty === 'advanced' ? 0.3 : 0.5,
     activeLearningContext,
     experienceDirector,
+    difficultyControl,
     hintLadder,
     representation,
     intervention,
@@ -202,6 +220,7 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
     ? 'defer to the authoritative Study teaching-turn policy: choose the next useful SEE, EXPLAIN, TRY, or VERIFY beat for the established concept; do not restart the hook'
     : `${interpretation.lessonLoop.beats.join(' -> ')}. Do not continue into later beats.`;
   const experience = interpretation.experienceDirector;
+  const difficultyControl = interpretation.difficultyControl;
   const hint = interpretation.hintLadder;
   const hintInstruction = hint.requested
     ? `${hint.allowed ? `level ${hint.level} (${hint.kind})` : 'blocked'} — ${hint.instruction}`
@@ -223,6 +242,8 @@ This directive applies only because the active workspace is Study Tutor.
 - Hint policy: ${experience.hintPolicy}
 - Verification policy: ${experience.verificationRequirement}
 - Director reasons: ${experience.reasonCodes.join(', ') || 'none'}
+- Adaptive difficulty: ${difficultyControl.difficultyAction}; scaffolding: ${difficultyControl.scaffoldingAction}; representation: ${difficultyControl.representationAction}; practice mode: ${difficultyControl.practiceMode}
+- Difficulty reasons: ${difficultyControl.reasonCodes.join(', ') || 'none'}
 - Adaptive hint ladder: ${hintInstruction}
 - Teaching representation: ${interpretation.representation.primaryRepresentation}
 - Representation reason: ${interpretation.representation.reason}
@@ -233,7 +254,7 @@ This directive applies only because the active workspace is Study Tutor.
 - Teaching beats for THIS response only: ${teachingBeatsInstruction}
 - Wait boundary: ${waitInstruction}
 - Verification: ${interpretation.requiresVerification ? 'required — check the learner\'s reasoning before agreeing, distinguish verified facts from inference, and explain the first material error' : 'not mandatory — remain accurate and do not invent learner understanding'}
-Honor this route inside the existing Study teaching-turn policy. The Experience Director is deterministic policy, while the governed representation capability remains the authority on what native visual or lab can actually render. The Adaptive Hint Ladder may reveal only the authorized rung for this turn: never jump ahead, and never treat receiving a hint as learner truth. At rung 4, use a native visual only when the representation route above already authorizes it; otherwise use a compact partial textual scaffold and never invent a renderer. Temporary working-state reasons may alter scaffolding, density, hint posture, or a supported modality preference, but they are NOT learner truth and may never become a mastery claim or a diagnosed misconception. Only the verified learner model may supply an evidence-backed misconception or next-learning move. The LLM generates content inside this policy; it does not overrule it. The Active Learning Context remains the semantic control plane for the concept: do not re-infer a different concept from generated prose downstream. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, director, hint-rung, or beat labels to the learner.`;
+Honor this route inside the existing Study teaching-turn policy. The Experience Director is deterministic policy, while the Adaptive Difficulty Controller may adjust only difficulty, scaffolding, supported representation posture, and practice mode using governed learner truth or temporary downward-support signals. It may never manufacture mastery, promote a misconception, or weaken an independent verification boundary. The governed representation capability remains the authority on what native visual or lab can actually render. The Adaptive Hint Ladder may reveal only the authorized rung for this turn: never jump ahead, and never treat receiving a hint as learner truth. At rung 4, use a native visual only when the representation route above already authorizes it; otherwise use a compact partial textual scaffold and never invent a renderer. Temporary working-state reasons may alter scaffolding, density, hint posture, or a supported modality preference, but they are NOT learner truth and may never become a mastery claim or a diagnosed misconception. Only the verified learner model may supply an evidence-backed misconception or next-learning move. The LLM generates content inside this policy; it does not overrule it. The Active Learning Context remains the semantic control plane for the concept: do not re-infer a different concept from generated prose downstream. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, director, difficulty-control, hint-rung, or beat labels to the learner.`;
 }
 
 function isUnmeteredFreeEndpoint(model: ModelLike): boolean {
@@ -315,6 +336,14 @@ export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInter
       hintPolicy: interpretation.experienceDirector.hintPolicy,
       verificationRequirement: interpretation.experienceDirector.verificationRequirement,
       reasonCodes: interpretation.experienceDirector.reasonCodes,
+    },
+    difficultyControl: {
+      version: interpretation.difficultyControl.version,
+      difficultyAction: interpretation.difficultyControl.difficultyAction,
+      scaffoldingAction: interpretation.difficultyControl.scaffoldingAction,
+      representationAction: interpretation.difficultyControl.representationAction,
+      practiceMode: interpretation.difficultyControl.practiceMode,
+      reasonCodes: interpretation.difficultyControl.reasonCodes,
     },
     hintLadder: {
       version: interpretation.hintLadder.version,
