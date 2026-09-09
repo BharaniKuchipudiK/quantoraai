@@ -1791,6 +1791,7 @@ export function useChatStream({
           let streamedError = null;
           let travelPlaces = null;
           let travelDegraded = false;
+          let completedServerEngineId = '';
 
           while (true) {
             const { done, value } = await reader.read();
@@ -1859,6 +1860,7 @@ export function useChatStream({
                 } : m));
               }
               if (parsed.provider) {
+                if (parsed.modelId) completedServerEngineId = String(parsed.modelId);
                 if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
                   travelPlaces = parsed.travelPlaces;
                 }
@@ -2201,6 +2203,11 @@ export function useChatStream({
             const artifactFailureDetail = artifactAssessment.detailCode === 'patch-conflict'
               ? 'the proposed patch did not match the current project; some requested changes could not be applied'
               : unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply contained no runnable files for this project';
+            // The server accepted this engine's response, but the browser has
+            // now proved the artifact unusable. Mark the actual responder as
+            // spent before selecting a fresh engine; targetModel may still be
+            // the routing alias Auto and cannot identify what really ran.
+            absorbServerEngines(completedServerEngineId ? [completedServerEngineId] : []);
             const recovery = recoverTurn({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',

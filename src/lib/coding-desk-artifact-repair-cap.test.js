@@ -121,4 +121,8 @@ test('[was-red] Coding Desk is the sole artifact-repair owner and wires its repa
     'the live caller must pass explicit per-turn repair state');
   assert.match(hook, /recovery\.reason === 'build-contract'\) artifactRepairCount \+= 1/,
     'only the one same-engine behavioral repair consumes the repair allowance');
+  const markResponder = hook.indexOf('absorbServerEngines(completedServerEngineId ? [completedServerEngineId] : [])');
+  const assessRecovery = hook.indexOf("code: 'BUILD_ARTIFACT_CONTRACT'", markResponder);
+  assert.ok(markResponder >= 0 && assessRecovery > markResponder,
+    'a client-rejected response must mark the real server engine as spent before choosing its fallback');
 });
