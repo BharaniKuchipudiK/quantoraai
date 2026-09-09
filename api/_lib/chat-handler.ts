@@ -122,16 +122,6 @@ import {
   publicStudyAdaptiveMetadata,
 } from './study-adaptive-learning.js';
 
-const PREVIEW_HTML_RECOVERY = `
-
-PREVIEW RECOVERY
-The previous attempt did not emit a runnable web page — either a chat-only plan or native iOS/Android/Python source. Quantora Live Preview can only run HTML/CSS/JS (or a React VFS). Output a short explanation, then EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that demonstrates the product in the browser. For macOS/native/agent asks, ship a glossy web dashboard mock of the workflow. Do not emit .swift, .kt, .py, or Xcode/Android project files as the only artifact.`;
-
-const PREVIEW_REFINE_RECOVERY = `
-
-PREVIEW RECOVERY
-This turn must update the running page. The previous reply only talked. Output a short explanation, then EXACTLY one complete updated HTML document in a single \`\`\`html fence that implements the user's request. Do not claim the change unless those tags exist in the HTML.`;
-
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
 const RATE_LIMIT_PER_MINUTE = 25;
@@ -1585,8 +1575,6 @@ export default async function handler(req: any, res: any) {
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
-      let recoverHtmlPreview = false;
-      let htmlRecoveryTried = false;
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
@@ -1704,10 +1692,6 @@ export default async function handler(req: any, res: any) {
           const attemptSources: Array<{ uri: string; title: string }> = [];
           const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
-          const attemptSystemPrompt = recoverHtmlPreview
-            ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
-            : finalSystemPrompt;
-          formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
             stage: 'connecting',
             modelId: route.id,
@@ -1749,7 +1733,7 @@ export default async function handler(req: any, res: any) {
                 apiKey: effectiveGeminiKey as string,
                 model: route.id,
                 contents: geminiContents,
-                systemInstruction: attemptSystemPrompt,
+                systemInstruction: finalSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
                 // The non-travel text/build route offers no tools at all.
@@ -2039,13 +2023,8 @@ export default async function handler(req: any, res: any) {
           // user reads names it and not the model they asked for (Auto is
           // nobody's id). A plain string error has nowhere to carry it.
           if (error && typeof error === 'object' && !error.gateway) error.gateway = route.gateway;
-          // This rung ran and did not deliver. A Set because the HTML-recovery
-          // path below re-runs the same route.
+          // This rung ran and did not deliver.
           spentEngineIds.add(route.id);
-          const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
-            || error?.detailCode === 'code-fences-missing'
-            || (isRefine && error?.detailCode === 'code-fences-missing');
-          if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
@@ -2053,6 +2032,21 @@ export default async function handler(req: any, res: any) {
           // shared operational health circuit for unrelated users.
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
             await recordInferenceRouteFailure(providerCircuitStore, route, status, Date.now(), { billing: isBillingRefusal(error) });
+          }
+          // Quality and operational health answer different questions. A model
+          // that answers but ignores the file contract must not poison the
+          // provider circuit, but it DID fail this coding job and must be
+          // learned against by Auto routing. Record the route that actually
+          // ran, never the request alias "auto".
+          if (req.body?.task !== 'repair' && req.body?.task !== 'feedback') {
+            recordModelQualityEvent({
+              requestId,
+              modelId: route.id,
+              taskCategory,
+              outcome: 'failure',
+              latencyMs: Date.now() - attemptStartedAt,
+              fallbackFrom: route.reason === 'fallback' ? modelId : fallbackFrom,
+            });
           }
           trace({
             correlationId,
@@ -2073,11 +2067,6 @@ export default async function handler(req: any, res: any) {
                 : error?.code === 'INFERENCE_ATTEMPT_TIMEOUT' ? 'attempt-timeout'
                   : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'provider-timeout' : 'provider-failure',
           });
-          if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) {
-            htmlRecoveryTried = true;
-            index -= 1;
-            continue;
-          }
           const nextRoute = attempts[index + 1];
           if (
             sse.isCommitted
@@ -2785,7 +2774,13 @@ export default async function handler(req: any, res: any) {
       statusCode: Number(err?.status || 500),
       detailCode: Number(err?.status) === 429 ? 'quota-exhausted' : 'chat-failure',
     });
-    if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") {
+    if (
+      spentEngineIds.size === 0
+      && req.body?.task !== "repair"
+      && req.body?.task !== "feedback"
+      && typeof req.body?.modelId === "string"
+      && req.body.modelId !== 'auto'
+    ) {
       recordModelQualityEvent({
         requestId,
         modelId: req.body.modelId,

@@ -55,36 +55,42 @@ const SAME_ENGINE_REPAIR_RUNGS = 1;
  * @param {number} input.turnDeadlineMs   the whole turn's wall clock
  * @param {number} input.engineCount      engines available to this turn (the live
  *                                        catalogue, not a guess)
+ * @param {number} [input.attemptsStarted] attempts already started by this turn
  * @param {number} [input.minViableAttemptMs]
  */
 export function planTurnEscalation({
   elapsedMs = 0,
   turnDeadlineMs = 0,
   engineCount = 1,
+  attemptsStarted = 0,
   minViableAttemptMs = MIN_VIABLE_ATTEMPT_MS,
 } = {}) {
   const deadline = Number.isFinite(turnDeadlineMs) ? Math.max(0, turnDeadlineMs) : 0;
   const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
   const viableMs = Math.max(1, minViableAttemptMs);
   const remainingMs = Math.max(0, deadline - elapsed);
+  const started = Number.isFinite(attemptsStarted) ? Math.max(0, Math.floor(attemptsStarted)) : 0;
 
-  // The wall clock bound: how many viable attempts still fit in what is left.
+  // The wall clock bound: how many ADDITIONAL viable attempts still fit.
   const affordable = Math.floor(remainingMs / viableMs);
   // The catalogue bound: one shot per engine, plus the same-engine brief repair.
   const ladder = Math.max(1, Math.floor(engineCount)) + SAME_ENGINE_REPAIR_RUNGS;
+  const ladderRemaining = Math.max(0, ladder - started);
+  const additionalAttempts = Math.min(affordable, ladderRemaining);
+  const mayAttempt = remainingMs >= viableMs && ladderRemaining > 0;
 
   return {
     remainingMs,
     /** Whether a further attempt may START at all (Move 1: no doomed attempt). */
-    mayAttempt: remainingMs >= viableMs,
+    mayAttempt,
     /** The real budget for the next attempt — what is left, never a padded floor. */
-    attemptBudgetMs: remainingMs >= viableMs ? remainingMs : 0,
+    attemptBudgetMs: mayAttempt ? remainingMs : 0,
     /**
      * The evidence-derived attempt ceiling this turn. Replaces the constant 2.
      * Never below 1: a turn always gets its first attempt.
      */
-    maxAttempts: Math.max(1, Math.min(affordable, ladder)),
-    stopReason: remainingMs >= viableMs ? null : 'budget-spent',
+    maxAttempts: Math.max(1, started + additionalAttempts),
+    stopReason: mayAttempt ? null : (ladderRemaining === 0 ? 'catalogue-spent' : 'budget-spent'),
   };
 }
 

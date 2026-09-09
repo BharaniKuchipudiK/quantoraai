@@ -114,7 +114,7 @@ test('[was-red] the client sends the remainder from the planner that owns it', (
   const hook = fs.readFileSync(new URL("../../src/hooks/useChatStream.js", import.meta.url), "utf8");
   assert.match(
     hook,
-    /turnRemainingMs: escalationNow\(\)\.remainingMs/,
+    /turnRemainingMs: escalation\.remainingMs/,
     'the request must carry the escalation planner\'s own remainder, not a fresh subtraction',
   );
 });
