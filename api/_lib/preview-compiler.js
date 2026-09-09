@@ -162,8 +162,8 @@ function normalizeVfs(vfs = {}) {
     const filePath = normalizePath(rawPath);
     if (!filePath) continue;
     const content = fileContent(value);
-    if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(content)) {
-      throw new Error(`Preview project cannot use localStorage or sessionStorage inside the opaque-origin sandbox (${filePath}).`);
+    if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage|indexedDB)\b/i.test(content)) {
+      throw new Error(`Preview project cannot use localStorage, sessionStorage, or IndexedDB inside the opaque-origin sandbox (${filePath}).`);
     }
     totalBytes += Buffer.byteLength(content, 'utf8');
     if (totalBytes > MAX_SOURCE_BYTES) throw new Error('Preview project is too large to compile safely.');

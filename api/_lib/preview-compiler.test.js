@@ -95,7 +95,11 @@ test('preview compiler fails clearly for missing local modules', async () => {
 test('preview compiler rejects storage APIs unavailable to an opaque-origin iframe', async () => {
   await assert.rejects(
     () => compilePreviewVfs({ 'src/main.jsx': { content: "localStorage.getItem('theme')" } }),
-    /cannot use localStorage or sessionStorage/i,
+    /cannot use localStorage, sessionStorage, or IndexedDB/i,
+  );
+  await assert.rejects(
+    () => compilePreviewVfs({ 'src/main.jsx': { content: "indexedDB.open('jobs')" } }),
+    /cannot use localStorage, sessionStorage, or IndexedDB/i,
   );
 });
 

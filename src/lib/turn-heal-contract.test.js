@@ -509,6 +509,41 @@ test('[was-red] the desk absorbs the server’s rungs wherever they can arrive',
   );
 });
 
+test('[was-red] Auto does not count the browser’s provisional model guess as a real attempt', () => {
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  assert.match(
+    hook,
+    /if \(!serverChoosesEngine\) \{\s*if \(runningEngineId\) spentEngineIds\.add\(runningEngineId\)/,
+    'only a pinned engine is known before the server reports what Auto actually ran',
+  );
+  assert.match(
+    hook,
+    /modelUsed: autoMode \? 'Auto' : targetModel\.name/,
+    'the transcript must not name the browser guess while the authoritative route is still unknown',
+  );
+  assert.match(
+    hook,
+    /nextStatus\.activeEngineId[\s\S]{0,260}modelUsed:/,
+    'live server progress must replace Auto with the engine actually running',
+  );
+});
+
+test('[was-red] build progress names the real engine and advances through observable stages', () => {
+  const handler = readFileSync(new URL('../../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
+  for (const stage of ['connecting', 'generating', 'validating']) {
+    assert.match(handler, new RegExp(`stage: '${stage}'`), `missing ${stage} progress`);
+  }
+  assert.match(handler, /activeEngineId: modelId/, 'the browser needs the server-confirmed engine identity');
+  assert.match(handler, /receivedChars: attemptReply\.length/, 'generation progress must move with actual output');
+});
+
+test('[was-red] storage repair stays on the engine that produced the rejected artifact', () => {
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+  assert.match(hook, /recovery\.reason === 'build-contract' && spentEngineIds\.size/);
+  assert.match(hook, /const respondingEngineId = \[\.\.\.spentEngineIds\]\.at\(-1\)/);
+  assert.match(hook, /targetModel = \(availableModels \|\| \[\]\)\.find\(\(model\) => model\?\.id === respondingEngineId\)/);
+});
+
 test('[was-red] the durable journal is told every engine, once', () => {
   /*
    * `qirFail` reports what is NEW since the last call. Re-listing the whole

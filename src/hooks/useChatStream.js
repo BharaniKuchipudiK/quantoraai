@@ -1435,7 +1435,7 @@ export function useChatStream({
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',
-      modelUsed: autoMode ? (autoResolvedLabel || 'Auto') : targetModel.name,
+      modelUsed: autoMode ? 'Auto' : targetModel.name,
       autoRouted: autoMode,
       autoLadderReason,
       text: '',
@@ -1569,6 +1569,13 @@ export function useChatStream({
       if (recovery.switchModel) {
         const fallback = nextFallbackEngine();
         if (fallback) targetModel = fallback;
+      } else if (recovery.reason === 'build-contract' && spentEngineIds.size) {
+        // A behavioral repair stays on the engine that produced the rejected
+        // artifact. In Auto mode the browser's preliminary guess may differ
+        // from the server's route, so pin the last server-confirmed engine.
+        const respondingEngineId = [...spentEngineIds].at(-1);
+        targetModel = (availableModels || []).find((model) => model?.id === respondingEngineId)
+          || { id: respondingEngineId, name: engineDisplayName(respondingEngineId, availableModels) };
       }
     };
     const announceRecovery = (notice) => {
@@ -1597,7 +1604,8 @@ export function useChatStream({
           } : m));
           return;
         }
-        qirTurn.beginAttempt(visibleUserText || text, attemptEngineId(targetModel));
+        const serverChoosesEngine = autoMode && isCodingDeskAutoSelection(targetModel);
+        qirTurn.beginAttempt(visibleUserText || text, serverChoosesEngine ? '' : attemptEngineId(targetModel));
         /*
          * Charge the premium reserve only when the engine that is actually
          * starting is a paid one. Fire-and-forget for the same reason the
@@ -1617,9 +1625,11 @@ export function useChatStream({
          */
         const runningEngineId = attemptEngineId(targetModel);
         const runningEngineName = attemptEngineName(targetModel);
-        if (runningEngineId) spentEngineIds.add(runningEngineId);
-        if (runningEngineName && triedEngines[triedEngines.length - 1] !== runningEngineName) {
-          triedEngines.push(runningEngineName);
+        if (!serverChoosesEngine) {
+          if (runningEngineId) spentEngineIds.add(runningEngineId);
+          if (runningEngineName && triedEngines[triedEngines.length - 1] !== runningEngineName) {
+            triedEngines.push(runningEngineName);
+          }
         }
         const controller = new AbortController();
         abortControllersRef.current.set(owningSessionId, controller);
@@ -1817,9 +1827,13 @@ export function useChatStream({
                   intakeAccepted: Boolean(intakeAccept.expanded || shopIntakeAsk.oversize),
                   userAsked: intakeAccept.userAsked || shopIntakeAsk.userAsked || shopIntakeAsk.imageAskCount || 0,
                 });
+                const activeEngineName = nextStatus.activeEngineId
+                  ? engineDisplayName(nextStatus.activeEngineId, availableModels)
+                  : '';
                 updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
                   ...m,
                   executionStatus: nextStatus,
+                  modelUsed: activeEngineName || m.modelUsed,
                 } : m));
               }
               if (parsed.text) {
