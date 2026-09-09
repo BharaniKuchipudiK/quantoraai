@@ -105,8 +105,6 @@ export function describeTraceEvent(event = {}) {
     if (state === 'failed') return `The preview failed to compile${detail ? `: ${detail}` : ''}.`;
   }
   if (boundary === 'browser.response-parser' && state === 'parsed') {
-    // The desk records what it parsed even when that was nothing; "read the
-    // reply" would be a lie for an empty stream.
     return event.detailCode === 'assistant-response-empty'
       ? 'The desk read the stream to its end and found no reply in it.'
       : 'The desk received the reply and read it.';
@@ -194,17 +192,6 @@ export function describeTrace(events = []) {
       };
   }
 
-  /*
-   * A LIMIT IS NOT A BREAKAGE.
-   *
-   * Kept ahead of the generic failure branch and narrow on purpose (§5): the
-   * STATUS ALONE IS AMBIGUOUS EVIDENCE. /api/chat also records a failed
-   * boundary at 429 when every engine's provider quota died — the deployment's
-   * routing problem, and a real fault. The first draft of this branch keyed on
-   * 429 and told that user "a limit on your account, not a failure", which was
-   * false; the gate below caught it. Only the two detail codes the handler
-   * writes when IT declines are unambiguous, so only they qualify.
-   */
   if (apiState === 'failed' && REFUSAL_DETAIL.has(String(last.detailCode || ''))) {
     const shared = String(last.detailCode || '') === SHARED_REFUSAL_DETAIL;
     return {
@@ -254,11 +241,11 @@ export function describeTrace(events = []) {
   }
 
   /*
-   * The record stops before the server's final word. For an in-flight provider
-   * call or a recorded provider failure, absence tells us only that the terminal
-   * record is missing. The more specific language below names where the trace
-   * stopped, while retaining the legacy cut-off classification for callers that
-   * use it operationally.
+   * The record stops before the server's final word. That is the original
+   * cut-off incident shape: started, engine chosen, engine called — then nothing.
+   * Keep that diagnosis for an in-flight call / failed provider record. The
+   * provider-success case above is deliberately excluded because success is
+   * positive evidence that the engine DID finish.
    */
   const cutOffWhile = last.boundary === 'inference.provider' && (last.state === 'attempting')
     ? ` while waiting on ${engineWords(last)}`
@@ -269,9 +256,8 @@ export function describeTrace(events = []) {
         : ' before choosing an engine';
   return {
     outcome: 'server-cut-off',
-    headline: 'Quantora\'s server record stops before this turn has a terminal result.',
-    detail: `The last thing recorded was: ${lastWords} Nothing after it. The trace stopped${cutOffWhile}. `
-      + 'That can happen if execution was interrupted or if the terminal trace was not persisted; this record alone does not prove which.',
+    headline: 'Quantora\'s server was cut off before it finished this turn — a fault on our side.',
+    detail: `The last thing recorded was: ${lastWords} Nothing after it. The server function stopped${cutOffWhile}: a timeout or a crash on Quantora's side, not a refusal and not anything you did. Your message is unchanged.`,
     steps,
   };
 }
