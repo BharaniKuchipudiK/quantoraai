@@ -2,7 +2,7 @@ import React from 'react';
 import {
   studyBeforeAfterSpec,
   studyFractionSpec,
-} from '../lib/study-pictures.js';
+} from '../lib/study-micro-visuals.js';
 
 const STUDY_VISUAL_FONT = 'var(--font-study-body), Nunito, sans-serif';
 
