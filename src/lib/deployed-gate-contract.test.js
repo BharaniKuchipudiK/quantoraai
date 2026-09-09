@@ -465,10 +465,24 @@ test('the deployed golden refuses success when project or checkpoint persistence
   const start = gate.indexOf('  const failedOwnerWrites =');
   const end = gate.indexOf('  evidence.completedAt =', start);
   assert.ok(start >= 0 && end > start, 'persistence failures must be checked before the success verdict');
-  const check = new Function('apiFailures', gate.slice(start, end));
-  for (const path of ['/api/projects', '/api/desk-checkpoints']) {
-    assert.throws(() => check([{ path, status: 503 }]), /Project\/checkpoint persistence failed/);
+  const capture = gate.slice(gate.indexOf('let activeTransactionName ='), gate.indexOf('function lastApiFailure('));
+  const check = new Function('responses', `
+    const BASE_ORIGIN = 'https://gate.invalid';
+    const page = { on: (_event, listener) => responses.forEach(listener) };
+    ${capture}
+    ${gate.slice(start, end)}
+  `);
+  const response = (path, status, method = 'POST', action = 'save') => ({
+    url: () => `https://gate.invalid${path}`, status: () => status, text: async () => '{}',
+    request: () => ({ method: () => method, postDataJSON: () => ({ action }) }),
+  });
+  for (const status of [400, 409, 503]) {
+    for (const path of ['/api/projects', '/api/desk-checkpoints']) {
+      assert.throws(() => check([response(path, status)]), /Project\/checkpoint persistence failed/);
+    }
   }
+  assert.throws(() => check([response('/api/projects', 409), ...Array.from({ length: 45 }, () => response('/api/unrelated', 500))]), /Project\/checkpoint persistence failed/);
   assert.doesNotThrow(() => check([]));
-  assert.doesNotThrow(() => check([{ path: '/api/projects', status: 409 }]));
+  assert.doesNotThrow(() => check([response('/api/projects', 409, 'POST', 'list')]));
+  assert.doesNotThrow(() => check([response('/api/projects', 503, 'GET')]));
 });

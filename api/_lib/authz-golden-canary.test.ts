@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GOLDEN_CANARY_SUB, requireActiveSession } from "./authz.js";
+import signup from "./handlers/auth-signup.js";
 
 const TOKEN = "canary-token-for-tests-only-32-chars-long";
 
@@ -49,7 +50,7 @@ async function withCanaryStore(run: (state: { rows: any[]; writes: any[]; refuse
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only';
   const state = { rows: [] as any[], writes: [] as any[], refuseWrites: false };
   globalThis.fetch = async (url, init) => {
-    assert.ok(String(url).startsWith('https://canary-store.invalid/rest/v1/users?'));
+    assert.match(String(url), /^https:\/\/canary-store\.invalid\/rest\/v1\/users(?:\?|$)/);
     if (init?.method === 'POST') {
       const rows = JSON.parse(String(init.body));
       state.writes.push(...rows);
@@ -85,6 +86,24 @@ test('invalid canary requests never provision an owner', async () => {
     assert.equal((await requireActiveSession(req({ 'x-quantora-golden-canary': 'wrong' }), res())).ok, false);
     assert.equal(state.writes.length, 0);
   });
+});
+
+test('public signup cannot reserve the synthetic canary email', async () => {
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = 'canary-signup-test-secret-32-characters';
+  try {
+    await withCanaryStore(async (state) => {
+      for (const email of ['canary@quantora.invalid', ' CANARY@QUANTORA.INVALID ']) {
+        const response = res();
+        await signup({ method: 'POST', headers: {}, socket: {}, body: { email, password: 'valid-test-password' } }, response);
+        assert.equal(state.writes.length, 0, 'the unique email cannot be claimed through public signup');
+        assert.equal(response.sent.status, 400);
+      }
+    });
+  } finally {
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = previousSecret;
+  }
 });
 
 test('a blocked canary remains blocked and its stored row is not overwritten', async () => {

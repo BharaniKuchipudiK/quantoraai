@@ -23,7 +23,9 @@ export default async function handler(req: any, res: any) {
   const name = String(req.body?.name || "").trim();
   const password = String(req.body?.password || "");
 
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  // Reserved for server-provisioned synthetic identities. Public signup must
+  // not claim their unique email before the first verified canary request.
+  if (!email || email.endsWith('@quantora.invalid') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: "Enter a valid email address." });
   }
   if (!isStrongEnoughPassword(password)) {

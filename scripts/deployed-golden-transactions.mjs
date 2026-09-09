@@ -176,11 +176,20 @@ page.on('pageerror', (error) => consoleErrors.push(error.message));
  */
 let activeTransactionName = null;
 const apiFailures = [];
+let failedOwnerWriteCount = 0;
 page.on('response', (response) => {
   let url;
   try { url = new URL(response.url()); } catch { return; }
   if (url.origin !== BASE_ORIGIN || !url.pathname.startsWith('/api/') || response.status() < 400) return;
   const entry = { at: new Date().toISOString(), transaction: activeTransactionName, path: url.pathname, status: response.status() };
+  const request = response.request();
+  const method = request.method();
+  let action = null;
+  try { action = request.postDataJSON()?.action || null; } catch { /* no JSON body */ }
+  const ownerWrite = method === 'POST' && (entry.path === '/api/desk-checkpoints' || (entry.path === '/api/projects' && action === 'save'));
+  // The diagnostic tail may roll over; a failed save, including a conflict,
+  // must remain load-bearing for the whole run.
+  if (ownerWrite) failedOwnerWriteCount += 1;
   apiFailures.push(entry);
   if (apiFailures.length > 40) apiFailures.shift();
   response.text().then((body) => {
@@ -1184,9 +1193,9 @@ try {
 
   // Project and checkpoint persistence are part of the build handover, not
   // optional console noise. The token-verified canary now has a durable owner.
-  const failedOwnerWrites = apiFailures.filter((entry) => ['/api/projects', '/api/desk-checkpoints'].includes(entry.path) && entry.status >= 500);
-  if (failedOwnerWrites.length) {
-    throw new Error(`Project/checkpoint persistence failed: ${failedOwnerWrites.map((entry) => `${entry.path} HTTP ${entry.status}`).join('; ')}`);
+  const failedOwnerWrites = failedOwnerWriteCount;
+  if (failedOwnerWrites) {
+    throw new Error(`Project/checkpoint persistence failed: ${failedOwnerWrites} unsuccessful save request(s)`);
   }
 
   evidence.completedAt = new Date().toISOString();
