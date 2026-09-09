@@ -23,6 +23,7 @@ function res() {
   const sent: { status?: number; body?: any } = {};
   return {
     sent,
+    setHeader() { return this; },
     status(code: number) { sent.status = code; return this; },
     json(body: any) { sent.body = body; return this; },
   };
@@ -39,6 +40,72 @@ function withToken(value: string | undefined, run: () => Promise<void>) {
 }
 
 const req = (headers: Record<string, string> = {}) => ({ headers });
+
+async function withCanaryStore(run: (state: { rows: any[]; writes: any[]; refuseWrites: boolean }) => Promise<void>) {
+  const previousUrl = process.env.SUPABASE_URL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.SUPABASE_URL = 'https://canary-store.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only';
+  const state = { rows: [] as any[], writes: [] as any[], refuseWrites: false };
+  globalThis.fetch = async (url, init) => {
+    assert.ok(String(url).startsWith('https://canary-store.invalid/rest/v1/users?'));
+    if (init?.method === 'POST') {
+      const rows = JSON.parse(String(init.body));
+      state.writes.push(...rows);
+      if (state.refuseWrites) return new Response('fixture storage refused', { status: 503 });
+      state.rows = rows.map((row: any) => ({ ...row, blocked_at: null, blocked_reason: null }));
+    }
+    return new Response(JSON.stringify(state.rows), { status: 200 });
+  };
+  try { await withToken(TOKEN, () => run(state)); } finally {
+    globalThis.fetch = previousFetch;
+    if (previousUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
+}
+
+test('[was-red] the verified canary has a persisted owner before foreign-key-backed writes', async () => {
+  await withCanaryStore(async (state) => {
+    const request = { ...req({ 'x-quantora-golden-canary': TOKEN }), body: { sub: 'victim', email: 'victim@example.com' } };
+    const auth = await requireActiveSession(request, res());
+    assert.equal(auth.ok, true);
+    assert.equal(state.writes.length, 1, 'a synthetic session alone cannot satisfy the projects/checkpoints owner FK');
+    assert.equal(state.writes[0].google_sub, GOLDEN_CANARY_SUB);
+    assert.equal(state.writes[0].email, 'canary@quantora.invalid');
+    await requireActiveSession(request, res());
+    assert.equal(state.writes.length, 1, 'an existing fixture does not need another write');
+  });
+});
+
+test('invalid canary requests never provision an owner', async () => {
+  await withCanaryStore(async (state) => {
+    assert.equal((await requireActiveSession(req({ 'x-quantora-golden-canary': 'wrong' }), res())).ok, false);
+    assert.equal(state.writes.length, 0);
+  });
+});
+
+test('a blocked canary remains blocked and its stored row is not overwritten', async () => {
+  await withCanaryStore(async (state) => {
+    state.rows = [{ google_sub: GOLDEN_CANARY_SUB, blocked_at: '2026-09-09', blocked_reason: 'blocked fixture' }];
+    const response = res();
+    assert.equal((await requireActiveSession(req({ 'x-quantora-golden-canary': TOKEN }), response)).ok, false);
+    assert.equal(response.sent.status, 403);
+    assert.equal(state.writes.length, 0);
+  });
+});
+
+test('[was-red] a refused canary owner write is reported instead of pretending it exists', async () => {
+  await withCanaryStore(async (state) => {
+    state.refuseWrites = true;
+    const response = res();
+    assert.equal((await requireActiveSession(req({ 'x-quantora-golden-canary': TOKEN }), response)).ok, false);
+    assert.equal(response.sent.status, 503);
+    assert.equal(response.sent.body.reason, 'canary-owner-unavailable');
+  });
+});
 
 test("[was-red] a correct canary token authenticates as the synthetic user", async () => {
   await withToken(TOKEN, async () => {

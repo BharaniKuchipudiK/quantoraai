@@ -283,12 +283,15 @@ test("Office generation lets the golden canary use server keys, as chat does", a
   process.env.GEMINI_API_KEY = "sk-server-gemini";
   const originalFetch = global.fetch;
   const reached: string[] = [];
-  // Supabase answers empty (no stored canary user, nothing rate-limited);
+  // The fixture has a persisted canary owner; other store reads are empty.
   // every provider is offline, so the turn cannot succeed — the question is
   // only whether the canary got PAST the sign-in refusal to a provider at all.
   global.fetch = async (url: any) => {
     reached.push(String(url));
     if (String(url).startsWith(String(process.env.SUPABASE_URL))) {
+      if (String(url).includes('/rest/v1/users?')) {
+        return Response.json([{ google_sub: 'quantora-golden-canary', blocked_at: null }]);
+      }
       return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
     }
     throw new Error("offline: no provider is reachable in this test");
@@ -344,6 +347,9 @@ test("Office generation resolves Gemini through the gateway when the environment
     const target = String(url);
     reached.push(target);
     if (target.startsWith(String(process.env.SUPABASE_URL))) {
+      if (target.includes('/rest/v1/users?')) {
+        return Response.json([{ google_sub: 'quantora-golden-canary', blocked_at: null }]);
+      }
       if (target.includes("/rest/v1/api_gateway_keys?")) {
         gatewayReads.push(target);
         const rows = target.includes("provider=eq.GEMINI") ? [{ api_key: "gateway-held-gemini-key" }] : [];

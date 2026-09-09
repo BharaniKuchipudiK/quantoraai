@@ -87,6 +87,9 @@ test('a plan that is made is a plan that is recorded: the handler writes the row
   global.fetch = async (url: any, init: any = {}) => {
     const target = String(url);
     if (target.startsWith('https://example.supabase.co')) {
+      if (target.includes('/rest/v1/users?')) {
+        return Response.json([{ google_sub: 'quantora-golden-canary', blocked_at: null }]);
+      }
       if (init?.method === 'POST' && target.includes('/rest/v1/turn_plan_events')) {
         writes.push({ url: target, body: JSON.parse(String(init.body || '[]')) });
         return new Response('', { status: 201 });

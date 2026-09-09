@@ -1,6 +1,6 @@
 import { clearSessionCookie, getSessionUser, type SessionUser } from "./session.js";
 import { isGoldenCanaryRequest } from "./transaction-trace.js";
-import { readStoredUser, type StoredUser } from "./store.js";
+import { isStoreConfigured, readStoredUser, recordSignIn, type StoredUser } from "./store.js";
 
 export type AuthenticatedSession = {
   sessionUser: ReturnType<typeof getSessionUser>;
@@ -63,7 +63,23 @@ export async function requireActiveSession(req: any, res: any): Promise<
     return { ok: false, responseSent: true };
   }
 
-  const storedUser = await readStoredUser(sessionUser.sub);
+  let storedUser = await readStoredUser(sessionUser.sub);
+  // Unlike a real sign-in, the canary's synthetic session never passed through
+  // recordSignIn. Projects/checkpoints require the users row as their owner FK;
+  // authenticating only in memory made every golden save fail with HTTP 503.
+  // Provision only this fixed, token-verified identity, never a caller's sub.
+  if (!storedUser && sessionUser.sub === GOLDEN_CANARY_SUB && isGoldenCanaryRequest(req) && isStoreConfigured()) {
+    storedUser = await recordSignIn({
+      sub: GOLDEN_CANARY_SUB,
+      email: "canary@quantora.invalid",
+      name: "Golden Canary",
+      picture: "",
+    });
+    if (!storedUser) {
+      res.status(503).json({ error: "The golden test owner could not be stored.", reason: "canary-owner-unavailable" });
+      return { ok: false, responseSent: true };
+    }
+  }
   if (storedUser?.blocked_at) {
     clearSessionCookie(res);
     res.status(403).json({

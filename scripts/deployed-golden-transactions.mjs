@@ -1182,6 +1182,13 @@ try {
     );
   }
 
+  // Project and checkpoint persistence are part of the build handover, not
+  // optional console noise. The token-verified canary now has a durable owner.
+  const failedOwnerWrites = apiFailures.filter((entry) => ['/api/projects', '/api/desk-checkpoints'].includes(entry.path) && entry.status >= 500);
+  if (failedOwnerWrites.length) {
+    throw new Error(`Project/checkpoint persistence failed: ${failedOwnerWrites.map((entry) => `${entry.path} HTTP ${entry.status}`).join('; ')}`);
+  }
+
   evidence.completedAt = new Date().toISOString();
   evidence.consoleErrors = consoleErrors.slice(0, 20);
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);

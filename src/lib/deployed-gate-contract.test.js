@@ -460,3 +460,15 @@ test('a pull request golden plans two transactions, a production golden five, an
   const plan = read('scripts/lib/golden-plan.mjs');
   assert.match(plan, /parsed >= 1 \? Math\.min\(all\.length, Math\.floor\(parsed\)\) : all\.length/, 'anything but a positive number means the whole roster');
 });
+test('the deployed golden refuses success when project or checkpoint persistence is unavailable', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const start = gate.indexOf('  const failedOwnerWrites =');
+  const end = gate.indexOf('  evidence.completedAt =', start);
+  assert.ok(start >= 0 && end > start, 'persistence failures must be checked before the success verdict');
+  const check = new Function('apiFailures', gate.slice(start, end));
+  for (const path of ['/api/projects', '/api/desk-checkpoints']) {
+    assert.throws(() => check([{ path, status: 503 }]), /Project\/checkpoint persistence failed/);
+  }
+  assert.doesNotThrow(() => check([]));
+  assert.doesNotThrow(() => check([{ path: '/api/projects', status: 409 }]));
+});
