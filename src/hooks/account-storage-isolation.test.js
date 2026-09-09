@@ -44,3 +44,14 @@ test('switching authenticated accounts remounts the Studio before rendering anot
   const app = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
   assert.match(app, /<AiStudio\s+key=\{`studio-account-\$\{user\?\.sub \|\| user\?\.email \|\| 'signed-out'\}`\}/);
 });
+
+test('[was-red] PCL session scope reaches continuity and every production preview action', () => {
+  const chat = readFileSync(new URL('./useChatStream.js', import.meta.url), 'utf8');
+  const studio = readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
+  const preview = readFileSync(new URL('../components/LivePreviewCanvas.jsx', import.meta.url), 'utf8');
+
+  assert.match(chat, /updatePclSessionOutcomeVersion\(sessionId, record\.version, undefined, storageScope\)/);
+  assert.equal((studio.match(/storageScope=\{user\?\.sub \|\| user\?\.email \|\| null\}/g) || []).length, 2);
+  assert.equal((preview.match(/readActivePclSessionId\(undefined, storageScope\)/g) || []).length, 4);
+  assert.doesNotMatch(preview, /readActivePclSessionId\(\)/);
+});

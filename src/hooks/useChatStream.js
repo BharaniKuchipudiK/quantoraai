@@ -163,6 +163,7 @@ async function persistPclContinuity({
   assistantContext,
   confirmedUserFact,
   sourceTurn,
+  storageScope,
 }) {
   if (!sessionId || memoryConsented !== true || (!assistantContext && !confirmedUserFact)) return null;
 
@@ -188,7 +189,9 @@ async function persistPclContinuity({
       if (!error?.conflict) throw error;
       record = await saveAgainst(await loadOutcomeState(sessionId));
     }
-    if (Number.isInteger(record?.version)) updatePclSessionOutcomeVersion(sessionId, record.version);
+    if (Number.isInteger(record?.version)) {
+      updatePclSessionOutcomeVersion(sessionId, record.version, undefined, storageScope);
+    }
     return record;
   } catch (error) {
     console.warn('Outcome State continuity sync failed:', error?.message || error);
@@ -2396,6 +2399,7 @@ export function useChatStream({
             assistantContext: normalized.contextUpdate,
             confirmedUserFact,
             sourceTurn: String(userMsg.id),
+            storageScope,
           });
           return;
         } catch (error) {

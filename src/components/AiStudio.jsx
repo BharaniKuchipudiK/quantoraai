@@ -5984,6 +5984,7 @@ Paused — ${autoPauseRef.current}.`
                 isLight={isLight}
                 onClose={() => setCanvasOpen(false)}
                 user={user}
+                storageScope={user?.sub || user?.email || null}
                 onRequireAuth={onOpenAuth}
                 turnBusy={isGenerating}
                 isPresentationIntent={detectSlideDeck(messages)}
@@ -6333,6 +6334,7 @@ Paused — ${autoPauseRef.current}.`
                       onClose={closeStudioWorkspace}
                       hideHeader
                       user={user}
+                      storageScope={user?.sub || user?.email || null}
                       onRequireAuth={onOpenAuth}
                       onShareComplete={(result) => setDeskShareNotice(result)}
                       vfs={vfs}

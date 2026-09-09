@@ -60,6 +60,9 @@ test('PCL active identity and memory consent are account-scoped', () => {
   assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-a' }).memoryConsented, true);
   assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-b' }).memoryConsented, false);
   assert.equal(setPclSessionMemoryConsent('session-b', true, storage, 'account-b'), true);
+  assert.equal(updatePclSessionOutcomeVersion('session-b', 7, storage, 'account-b'), true);
   assert.equal(readPclConversationEnvelope({ sessionId: 'session-b', storage, accountScope: 'account-b' }).memoryConsented, true);
+  assert.equal(JSON.parse(storage.getItem('quantora_chat_sessions:account:account-b'))[0].outcomeVersion, 7);
+  assert.equal(storage.getItem('quantora_chat_sessions'), null);
   assert.equal(readPclConversationEnvelope({ sessionId: 'session-a', storage, accountScope: 'account-a' }).memoryConsented, true);
 });
