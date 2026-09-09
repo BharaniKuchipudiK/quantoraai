@@ -6,11 +6,8 @@ import { fileURLToPath } from 'node:url';
 import {
   STUDY_LEARNING_INTERACTION,
   STUDY_LEARNING_INTERACTION_EVENT,
-  STUDY_LEARNING_INTERACTION_LIMIT,
   STUDY_LEARNING_INTERACTION_VERSION,
-  clearStudyLearningInteractions,
   normalizeStudyLearningInteraction,
-  readStudyLearningInteractions,
   recordStudyAnswerChange,
   recordStudyAssessmentOutcome,
   recordStudyHintRequest,
@@ -22,7 +19,6 @@ const ROOT = path.resolve(HERE, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 test('interaction contract keeps only bounded observation fields', () => {
-  clearStudyLearningInteractions();
   const event = normalizeStudyLearningInteraction({
     type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
     source: 'linear_function_lab',
@@ -46,13 +42,10 @@ test('interaction contract keeps only bounded observation fields', () => {
 });
 
 test('unknown interaction kinds fail closed', () => {
-  clearStudyLearningInteractions();
   assert.equal(recordStudyLearningInteraction({ type: 'learner_is_bad_at_math' }), null);
-  assert.deepEqual(readStudyLearningInteractions(), []);
 });
 
 test('answer changed is emitted only after a real pre-submit change', () => {
-  clearStudyLearningInteractions();
   assert.equal(recordStudyAnswerChange({ previousChoiceId: '', nextChoiceId: 'b' }), null);
   assert.equal(recordStudyAnswerChange({ previousChoiceId: 'b', nextChoiceId: 'b' }), null);
   const changed = recordStudyAnswerChange({
@@ -63,11 +56,9 @@ test('answer changed is emitted only after a real pre-submit change', () => {
   });
   assert.equal(changed.type, STUDY_LEARNING_INTERACTION.ANSWER_CHANGED);
   assert.equal(changed.choiceId, 'c');
-  assert.equal(readStudyLearningInteractions().length, 1);
 });
 
 test('hint request records request and bounded depth without copying hint text', () => {
-  clearStudyLearningInteractions();
   const recorded = recordStudyHintRequest({ source: 'guided_chip', hintDepth: 99, conceptId: 'physics.motion' });
   assert.equal(recorded.length, 2);
   assert.deepEqual(recorded.map((event) => event.type), ['hint_requested', 'hint_depth_used']);
@@ -75,7 +66,6 @@ test('hint request records request and bounded depth without copying hint text',
 });
 
 test('verified outcome stays observational and emits retrieval success only for correct retrieval', () => {
-  clearStudyLearningInteractions();
   const recorded = recordStudyAssessmentOutcome({
     attemptId: 'attempt-1',
     result: {
@@ -94,7 +84,6 @@ test('verified outcome stays observational and emits retrieval success only for 
 });
 
 test('retry success requires explicit retry context rather than inferring from a later correct answer', () => {
-  clearStudyLearningInteractions();
   const ordinary = recordStudyAssessmentOutcome({
     attemptId: 'attempt-2',
     result: { correct: true, evidenceKind: 'assessment_item', evidenceConcept: { key: 'math.linear-functions' } },
@@ -109,21 +98,7 @@ test('retry success requires explicit retry context rather than inferring from a
   assert.equal(retry.some((event) => event.type === STUDY_LEARNING_INTERACTION.RETRY_SUCCESS), true);
 });
 
-test('journal is bounded and queryable by concept', () => {
-  clearStudyLearningInteractions();
-  for (let index = 0; index < STUDY_LEARNING_INTERACTION_LIMIT + 20; index += 1) {
-    recordStudyLearningInteraction({
-      type: STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED,
-      source: 'study_hub',
-      conceptId: index % 2 ? 'a' : 'b',
-    });
-  }
-  assert.equal(readStudyLearningInteractions().length, STUDY_LEARNING_INTERACTION_LIMIT);
-  assert.ok(readStudyLearningInteractions({ conceptId: 'a' }).every((event) => event.conceptId === 'a'));
-});
-
-test('browser event is same observation appended to journal', () => {
-  clearStudyLearningInteractions();
+test('browser event carries the exact frozen observation without storing a second copy', () => {
   const previousWindow = globalThis.window;
   const dispatched = [];
   globalThis.window = {
@@ -136,13 +111,14 @@ test('browser event is same observation appended to journal', () => {
     const recorded = recordStudyLearningInteraction({ type: STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED, source: 'study_hub' });
     assert.equal(dispatched.length, 1);
     assert.equal(dispatched[0].type, STUDY_LEARNING_INTERACTION_EVENT);
-    assert.equal(dispatched[0].detail.id, recorded.id);
+    assert.equal(dispatched[0].detail, recorded);
+    assert.equal(Object.isFrozen(dispatched[0].detail), true);
   } finally {
     globalThis.window = previousWindow;
   }
 });
 
-test('PR4 signal wiring covers real Study actions without a persistence or mastery writer', () => {
+test('PR4 signal wiring covers real Study actions without persistence or a mastery writer', () => {
   const contract = read('src/lib/study-learning-interactions.js');
   const evidenceClient = read('src/lib/study-evidence-client.js');
   const hub = read('src/components/StudyHubLauncher.jsx');
@@ -151,7 +127,7 @@ test('PR4 signal wiring covers real Study actions without a persistence or maste
   const lab = read('src/components/StudyLinearFunctionLab.jsx');
 
   assert.doesNotMatch(contract, /fetch\s*\(/);
-  assert.doesNotMatch(contract, /localStorage|sessionStorage|study_mastery_events|masteryUpdated/);
+  assert.doesNotMatch(contract, /localStorage|sessionStorage|study_mastery_events|masteryUpdated|const events\s*=|events\.push/);
   assert.match(evidenceClient, /recordStudyAssessmentOutcome/);
   assert.match(hub, /REPEATED_EXPLANATION_REQUESTED/);
   assert.match(hub, /VISUAL_REQUESTED/);
