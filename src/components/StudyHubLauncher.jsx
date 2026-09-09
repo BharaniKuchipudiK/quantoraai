@@ -17,6 +17,10 @@ import {
 import { studyAdaptiveTutorAsk } from '../lib/study-adaptive-tutor.js';
 import { studyCompassSchedulePrefill } from '../lib/study-compass-schedule.js';
 import { requestStudyAdaptiveMission } from '../lib/study-adaptive-mission-event.js';
+import {
+  STUDY_LEARNING_INTERACTION,
+  recordStudyLearningInteraction,
+} from '../lib/study-learning-interactions.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
 import StudyLearningCompass from './StudyLearningCompass.jsx';
@@ -150,6 +154,21 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
     if (action.id === 'where-next') {
       setSurface('compass');
       return;
+    }
+    if (action.id === 'different') {
+      recordStudyLearningInteraction({
+        type: STUDY_LEARNING_INTERACTION.REPEATED_EXPLANATION_REQUESTED,
+        source: 'study_hub',
+        conceptId: topicKey,
+        conceptLabel: label,
+      });
+    } else if (action.id === 'visual') {
+      recordStudyLearningInteraction({
+        type: STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED,
+        source: 'study_hub',
+        conceptId: topicKey,
+        conceptLabel: label,
+      });
     }
     const text = studyAdaptiveTutorAsk(action.ask(label), learnerModel);
     if (onSend) {
