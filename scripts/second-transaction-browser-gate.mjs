@@ -18,10 +18,17 @@
  * reproducible in seconds instead of a twelve-minute deploy. The model reply is
  * identical in both turns; only the session differs. If the second preview does
  * not mount, the defect is ours and not the model's.
+ *
+ * It also proves the Preview rail is a real return path, not merely a selected
+ * button. A rendered second project is switched to Terminal and then back to
+ * Preview; the same preview correlation and the same DOM marker must still be
+ * running. That is the user-visible contract the rail smoke gate cannot prove
+ * by checking `data-active` alone.
  */
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
@@ -101,6 +108,19 @@ await page.route('**/api/**', async (route) => {
       { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
     ] }) });
   }
+  if (path === '/api/preview-compile') {
+    const body = request.postDataJSON?.() || {};
+    try {
+      const compiled = await compilePreviewVfs(body.vfs || {}, { correlationId: body.correlationId });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(compiled) });
+    } catch (error) {
+      return route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: error?.errors?.[0]?.text || error?.message || 'Preview compilation failed.' }),
+      });
+    }
+  }
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
     if (body.task === 'verify-build') {
@@ -152,6 +172,17 @@ async function previewCorrelationId(previous, label, timeoutMs = 45_000) {
   );
 }
 
+async function visibleFrame(selector, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (await frame.locator(selector).first().isVisible().catch(() => false)) return frame;
+    }
+    await page.waitForTimeout(200);
+  }
+  return null;
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   const { composer } = await enterSignedInStudio(page);
@@ -177,9 +208,48 @@ try {
   const second = await previewCorrelationId(first, 'SECOND build (after New Chat)');
   if (second === first) throw new Error('The second build reused the first preview correlation id.');
 
+  /*
+   * PREVIEW IS A RETURN PATH, NOT A HIGHLIGHTED BUTTON.
+   *
+   * The rail smoke gate proves Preview becomes/stays active. That would still
+   * pass if the click selected the tab while its iframe had lost the project's
+   * VFS/run state. Prove the exact user journey instead: a known rendered page,
+   * switch away, click Preview, then observe the same project again.
+   */
+  const renderedBeforeSwitch = await visibleFrame('[data-testid="website-cta"]', 20_000);
+  if (!renderedBeforeSwitch) throw new Error('SECOND build mounted a Preview shell, but Sunrise Bakery never rendered inside it.');
+  const markerBeforeSwitch = await renderedBeforeSwitch.locator('[data-testid="website-cta"]').first().innerText();
+  if (!/today.?s menu/i.test(markerBeforeSwitch)) {
+    throw new Error(`SECOND build rendered the wrong marker before the rail switch: ${JSON.stringify(markerBeforeSwitch)}`);
+  }
+
+  const terminalRail = page.locator('[data-quantora-desk-rail="terminal"]').first();
+  await terminalRail.waitFor({ state: 'visible', timeout: 10_000 });
+  await terminalRail.click();
+  const terminal = page.locator('[data-quantora-studio-terminal="true"]').first();
+  await terminal.waitFor({ state: 'visible', timeout: 10_000 });
+  if (!(await terminal.isVisible().catch(() => false))) throw new Error('Terminal rail did not switch away from the running Preview.');
+
+  const previewRail = page.locator('[data-quantora-desk-rail="preview"]').first();
+  await previewRail.waitFor({ state: 'visible', timeout: 10_000 });
+  await previewRail.click();
+  await preview().waitFor({ state: 'visible', timeout: 10_000 });
+  if (!(await preview().isVisible().catch(() => false))) throw new Error('Preview rail became clickable but did not restore the Preview pane.');
+
+  const returnedCorrelation = await preview().getAttribute('data-quantora-correlation-id').catch(() => null);
+  if (returnedCorrelation !== second) {
+    throw new Error(`Preview rail restored the wrong run (${returnedCorrelation || 'none'} instead of ${second}).`);
+  }
+  const renderedAfterSwitch = await visibleFrame('[data-testid="website-cta"]', 20_000);
+  if (!renderedAfterSwitch) throw new Error('Preview rail restored the pane, but the Sunrise Bakery iframe content was gone.');
+  const markerAfterSwitch = await renderedAfterSwitch.locator('[data-testid="website-cta"]').first().innerText();
+  if (markerAfterSwitch !== markerBeforeSwitch) {
+    throw new Error(`Preview rail changed the rendered project (${JSON.stringify(markerBeforeSwitch)} -> ${JSON.stringify(markerAfterSwitch)}).`);
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/second-transaction.png', fullPage: true });
-  console.log(`Second-transaction gate passed — two builds in one session mounted distinct previews (${first} -> ${second}), ${chatTurns} model turns.`);
+  console.log(`Second-transaction gate passed — two builds mounted distinct previews (${first} -> ${second}); Preview survived Terminal -> Preview with the same correlation and rendered marker; ${chatTurns} model turns.`);
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/second-transaction-failure.png', fullPage: true }).catch(() => {});
