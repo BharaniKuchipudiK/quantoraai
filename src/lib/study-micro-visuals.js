@@ -1,4 +1,6 @@
 const FRACTION_CAP = 12;
+const FRACTION_CONTEXT = /\b(?:fraction|fractions|fractional|numerator|denominator|proportion|proportions)\b/i;
+const EQUIVALENCE_CONTEXT = /\b(?:equivalent|equals?|equal to|same (?:value|amount|fraction)|proportion)\b|=/i;
 
 function wholeNumber(value) {
   const parsed = Number(value);
@@ -14,26 +16,31 @@ function fractionPart(numeratorRaw, denominatorRaw) {
   return { numerator, denominator };
 }
 
+function fractionsIn(text = '') {
+  return [...String(text || '').matchAll(/\b(\d+)\s*\/\s*(\d+)\b/g)]
+    .map((match) => fractionPart(match[1], match[2]));
+}
+
 /**
- * Intentionally narrow grammar for one-whole fraction bars.
+ * Parse one-whole fraction bars from an explicit fraction caption.
  *
- * Supported forms:
+ * Preferred forms:
  * - Fraction model: 3/4
  * - Proportion model: 2/3 = 4/6
  *
- * Equivalent-fraction pairs are checked mathematically before they earn an
- * equals sign. Invalid or oversized inputs fail closed instead of drawing a
- * confident but false teaching visual.
+ * Natural captions are accepted only when they explicitly say this is about
+ * fractions/proportion. A two-fraction caption must also claim equivalence, and
+ * that claim is checked mathematically before an equals sign is rendered.
  */
 export function studyFractionSpec(caption = '') {
   const text = String(caption || '').replace(/\s+/g, ' ').trim();
-  const match = /^(?:fraction|fraction model|proportion|proportion model)\s*:\s*(\d+)\s*\/\s*(\d+)(?:\s*=\s*(\d+)\s*\/\s*(\d+))?\s*[.;]?$/i.exec(text);
-  if (!match) return null;
-  const left = fractionPart(match[1], match[2]);
-  if (!left) return null;
-  if (!match[3] && !match[4]) return { left, right: null };
-  const right = fractionPart(match[3], match[4]);
-  if (!right) return null;
+  if (!text || !FRACTION_CONTEXT.test(text)) return null;
+  const fractions = fractionsIn(text);
+  if (fractions.length < 1 || fractions.some((part) => !part)) return null;
+  const left = fractions[0];
+  if (fractions.length === 1) return { left, right: null };
+  if (fractions.length !== 2 || !EQUIVALENCE_CONTEXT.test(text)) return null;
+  const right = fractions[1];
   if ((left.numerator * right.denominator) !== (right.numerator * left.denominator)) return null;
   return { left, right };
 }
