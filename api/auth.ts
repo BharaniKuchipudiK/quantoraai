@@ -23,7 +23,7 @@ import releaseFlags from "./_lib/handlers/auth-release-flags.js";
 /*
  * WHY THIS FUNCTION MAY NEVER THROW (2026-09-07).
  *
- * Fourteen auth routes are collapsed behind this one function to fit the Hobby
+ * Fifteen auth/release routes are collapsed behind this one function to fit the
  * function budget, and it is the first thing every new person touches: the
  * frontend calls `?route=session` on page load before anything else renders.
  *
