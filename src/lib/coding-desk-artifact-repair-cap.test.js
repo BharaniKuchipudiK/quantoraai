@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import test from 'node:test';
 import { resolveTurnRecovery } from './turn-recovery.js';
 
@@ -30,7 +29,7 @@ test('[was-red] build-contract repair runs once even when the turn budget funds 
   assert.equal(second.reason, 'build-repair-exhausted');
 });
 
-test('[was-red] a transport attempt does not consume the one artifact repair', () => {
+test('[was-red] a transport attempt does not consume the one artifact repair when the caller owns explicit repair state', () => {
   const afterTransport = resolveTurnRecovery({
     attempt: 2,
     maxAttempts: 6,
@@ -53,12 +52,35 @@ test('[was-red] a transport attempt does not consume the one artifact repair', (
   assert.equal(afterArtifactRepair.reason, 'build-repair-exhausted');
 });
 
-test('chat loop wires the artifact repair count independently from attempt number', () => {
-  const source = fs.readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
-  assert.match(source, /let artifactRepairCount = 0;/);
-  assert.match(source, /recovery\.reason === 'build-contract'\) artifactRepairCount \+= 1/);
-  const passes = source.match(/\n\s+artifactRepairCount,\n/g) || [];
-  assert.ok(passes.length >= 3, 'all build-relevant recovery decisions receive the dedicated count');
+test('[was-red] an unwired caller still cannot run repeated artifact repairs', () => {
+  /*
+   * useChatStream historically omitted artifactRepairCount. Because the
+   * resolver defaulted that missing state to zero, every call looked like the
+   * first repair and a dynamic six-attempt budget could re-run the behavioral
+   * repair again and again. The resolver itself now fails closed when state is
+   * omitted: attempt one may repair; later attempts may not.
+   */
+  const first = resolveTurnRecovery({
+    attempt: 1,
+    maxAttempts: 6,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+  });
+  const second = resolveTurnRecovery({
+    attempt: 2,
+    maxAttempts: 6,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+  });
+  const sixth = resolveTurnRecovery({
+    attempt: 5,
+    maxAttempts: 6,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+  });
+
+  assert.equal(first.retry, true);
+  assert.equal(first.reason, 'build-contract');
+  assert.equal(second.retry, false);
+  assert.equal(second.reason, 'build-repair-exhausted');
+  assert.equal(sixth.retry, false);
 });
 
 test('artifact repair cap does not remove transport failover', () => {

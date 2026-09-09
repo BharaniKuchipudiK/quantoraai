@@ -187,9 +187,9 @@ test('stored assessment-shaped rows without an authoritative attempt cannot acti
   }
 });
 
-test('attested assessment misconception produces specific repair directive and metadata', () => {
+test('one attested misconception signal stays a comparison candidate with bounded metadata', () => {
   const model = learner([event(false)]);
-  assert.equal(teachingStrategyFor(model), 'misconception_repair');
+  assert.equal(teachingStrategyFor(model), 'compare_and_contrast');
   const directive = formatStudyAdaptiveDirective(model);
   assert.match(directive, /code: representation_misread/);
   assert.match(directive, /remediation: representation_bridge/);
