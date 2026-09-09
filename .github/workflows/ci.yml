@@ -112,6 +112,9 @@ jobs:
       - name: Build production artifacts
         run: npm run build
 
+      - name: Start built self-host server and verify routes
+        run: node scripts/self-host-smoke.mjs
+
       # Was a one-liner allowlisting image-size and pptxgenjs BY NAME, printing
       # "allowlisted unreachable transitives" on every green run. image-size is
       # neither: it is a direct production dependency and api/generate-office.ts
