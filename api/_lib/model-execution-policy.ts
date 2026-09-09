@@ -182,6 +182,17 @@ export function shouldFallbackBeforeStreaming(error: unknown, context?: Fallback
   const message = String((error as any)?.message || error || '');
   const status = Number((error as any)?.status || 0);
   const crossGateway = Boolean(context?.nextGateway && context.nextGateway !== context.currentGateway);
+
+  /*
+   * A BUILD_ARTIFACT_CONTRACT miss is behavioral evidence about the RESPONSE,
+   * not evidence that the provider route is unhealthy. Its status is 502 only
+   * because the request cannot be accepted as a successful build. Treating that
+   * number as transport failure makes the server spend the model ladder trying
+   * the same malformed artifact on different engines. The Coding Desk owns the
+   * one strengthened artifact repair; provider fallback must stay out of it.
+   */
+  if ((error as any)?.code === 'BUILD_ARTIFACT_CONTRACT') return false;
+
   // Auth and billing failures are fatal for this credential/quota domain, but
   // they must not strand the turn when a different gateway is still planned.
   if ([401, 402, 403].includes(status)) return crossGateway;
