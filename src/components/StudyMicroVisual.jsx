@@ -11,15 +11,23 @@ function splitLabel(value = '', max = 22) {
   if (!text || text.length <= max) return [text];
   const words = text.split(/\s+/);
   if (words.length === 1) return [text.slice(0, max), `${text.slice(max, (max * 2) - 1)}…`];
-  const lines = ['', ''];
+  let first = '';
+  let second = '';
   for (const word of words) {
-    const target = lines[0].length < max ? 0 : 1;
-    const candidate = `${lines[target]} ${word}`.trim();
-    if (candidate.length <= max || !lines[target]) lines[target] = candidate;
-    else if (target === 0) lines[1] = word;
-    else lines[1] = `${lines[1].slice(0, Math.max(0, max - 1))}…`;
+    const firstCandidate = `${first} ${word}`.trim();
+    if (!first || firstCandidate.length <= max) {
+      first = firstCandidate;
+      continue;
+    }
+    const secondCandidate = `${second} ${word}`.trim();
+    if (!second || secondCandidate.length <= max) {
+      second = secondCandidate;
+      continue;
+    }
+    second = `${second.slice(0, Math.max(0, max - 1)).trim()}…`;
+    break;
   }
-  return lines.filter(Boolean).slice(0, 2);
+  return [first, second].filter(Boolean);
 }
 
 export function StudyMicroFrame({ isLight = false, label, kind, children }) {
@@ -73,7 +81,8 @@ export function StudyMicroArrow({ x1, y1, x2, y2, isLight = false }) {
 export function StudyFractionBar({ fraction, x, y, width = 116, isLight = false }) {
   const denominator = Number(fraction?.denominator || 0);
   const numerator = Number(fraction?.numerator || 0);
-  if (!Number.isInteger(denominator) || denominator < 1) return null;
+  if (!Number.isInteger(denominator) || denominator < 1 || denominator > 12) return null;
+  if (!Number.isInteger(numerator) || numerator < 0 || numerator > denominator) return null;
   const cellWidth = width / denominator;
   const ink = isLight ? '#334155' : '#e2e8f0';
   const empty = isLight ? '#e2e8f0' : '#334155';
@@ -141,13 +150,13 @@ function BeforeAfter({ caption, isLight }) {
       <text x="78" y="28" textAnchor="middle" fill={muted} fontSize="10" fontWeight="800">BEFORE</text>
       <rect x="18" y="38" width="120" height="58" rx="12" fill={isLight ? '#fff7ed' : '#431407'} stroke="#f97316" />
       {beforeLines.map((line, index) => (
-        <text key={line} x="78" y={68 + (index * 16)} textAnchor="middle" fill={ink} fontSize="12" fontWeight="700">{line}</text>
+        <text key={`before-${index}-${line}`} x="78" y={68 + (index * 16)} textAnchor="middle" fill={ink} fontSize="12" fontWeight="700">{line}</text>
       ))}
       <StudyMicroArrow x1={150} y1={67} x2={207} y2={67} isLight={isLight} />
       <text x="282" y="28" textAnchor="middle" fill={muted} fontSize="10" fontWeight="800">AFTER</text>
       <rect x="222" y="38" width="120" height="58" rx="12" fill={isLight ? '#eff6ff' : '#172554'} stroke="#0ea5e9" />
       {afterLines.map((line, index) => (
-        <text key={line} x="282" y={68 + (index * 16)} textAnchor="middle" fill={ink} fontSize="12" fontWeight="700">{line}</text>
+        <text key={`after-${index}-${line}`} x="282" y={68 + (index * 16)} textAnchor="middle" fill={ink} fontSize="12" fontWeight="700">{line}</text>
       ))}
       <text x="180" y="116" textAnchor="middle" fill={muted} fontSize="11">One meaningful state change, shown inline with the explanation.</text>
     </StudyMicroFrame>
