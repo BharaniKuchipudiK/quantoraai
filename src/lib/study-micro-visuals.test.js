@@ -36,8 +36,16 @@ test('fraction micro visual refuses false, ambiguous, improper, or oversized mod
   assert.equal(studyFractionSpec('The probability is 3/4'), null);
 });
 
-test('before-after primitive requires one explicit state transition', () => {
+test('before-after primitive requires two explicit states and accepts narrow natural phrasing', () => {
   assert.deepEqual(studyBeforeAfterSpec('Before/after: ice -> liquid water'), {
+    before: 'ice',
+    after: 'liquid water',
+  });
+  assert.deepEqual(studyBeforeAfterSpec('Before and after: ice changes to liquid water'), {
+    before: 'ice',
+    after: 'liquid water',
+  });
+  assert.deepEqual(studyBeforeAfterSpec('Before: ice; after: liquid water'), {
     before: 'ice',
     after: 'liquid water',
   });
@@ -52,6 +60,7 @@ test('micro visuals stay inside the governed Study picture authority', () => {
   assert.equal(studyPictureFitsTopic('Before/after: seed -> seedling', 'Plant growth'), true);
   assert.match(markdownSource, /studyPictureFitsTopic\(segment\.caption, activeTopic\)/);
   assert.match(markdownSource, /studyMicroVisualKind\(segment\.caption\)/);
+  assert.match(markdownSource, /React\.lazy\(\(\) => import\('\.\/StudyMicroVisual\.jsx'\)\)/);
   assert.match(markdownSource, /<StudyMicroVisual/);
 });
 
