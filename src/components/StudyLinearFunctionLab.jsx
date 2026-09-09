@@ -157,15 +157,17 @@ export default function StudyLinearFunctionLab({ isLight = false }) {
   };
 
   const choosePrediction = (optionId) => {
+    if (optionId !== prediction) {
+      recordStudyLearningInteraction({
+        type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
+        source: 'linear_function_lab',
+        labKind: 'linear-function',
+        control: experiment,
+        choiceId: optionId,
+      });
+    }
     setPrediction(optionId);
     setHasRun(false);
-    recordStudyLearningInteraction({
-      type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
-      source: 'linear_function_lab',
-      labKind: 'linear-function',
-      control: experiment,
-      choiceId: optionId,
-    });
   };
 
   const setExperimentValue = (nextValue) => {
