@@ -12,6 +12,14 @@ import { recordSignedOutSiteHit } from "../site-traffic.js";
  * could edit at will.
  */
 
+function isBrowserSessionProbe(req: any): boolean {
+  const userAgent = String(req.headers?.["user-agent"] || "");
+  // The desktop renderer reaches this API through the Node/Electron main-process
+  // proxy, which does not forward the browser User-Agent. Keep desktop/curl/API
+  // probes out of a metric explicitly labelled as signed-out website loads.
+  return /Mozilla\//i.test(userAgent) && !/Electron|QuantoraDesktop/i.test(userAgent);
+}
+
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
 
@@ -29,7 +37,7 @@ export default async function handler(req: any, res: any) {
      * hourly counter and ignores previews/dev, so no identity or test traffic
      * leaks into the executive metric.
      */
-    recordSignedOutSiteHit();
+    if (isBrowserSessionProbe(req)) recordSignedOutSiteHit();
     return res.status(200).json({ user: null });
   }
 
