@@ -3,6 +3,10 @@ import test from 'node:test';
 import {
   STUDY_WORKING_STATE_TTL_MS,
   deriveStudyWorkingState,
+  observeStudyWorkingInteraction,
+  readStudyWorkingState,
+  resetStudyWorkingStateForTests,
+  setStudyWorkingConcept,
 } from './study-working-state.js';
 import {
   STUDY_LEARNING_INTERACTION,
@@ -99,4 +103,28 @@ test('working state is bounded to the latest observation window', () => {
   const state = derive(events);
   assert.equal(state.observedSignals, 12);
   assert.ok(state.reasonCodes.length <= 6);
+});
+
+test('runtime ignores forged contracts and observations from another active concept', () => {
+  resetStudyWorkingStateForTests();
+  setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
+  assert.equal(observeStudyWorkingInteraction({
+    ...observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED),
+    contractVersion: 'forged-v9',
+  }), false);
+  assert.equal(observeStudyWorkingInteraction(observation(
+    STUDY_LEARNING_INTERACTION.HINT_REQUESTED,
+    0,
+    { conceptId: 'physics.newton-2' },
+  )), false);
+  assert.equal(readStudyWorkingState({ now: () => NOW }), null);
+});
+
+test('changing the active concept discards temporary observations', () => {
+  resetStudyWorkingStateForTests();
+  setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
+  assert.equal(observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED)), true);
+  assert.equal(readStudyWorkingState({ now: () => NOW })?.representationPreference, 'visual');
+  setStudyWorkingConcept({ conceptKey: 'physics.newton-2', conceptLabel: "Newton's second law" });
+  assert.equal(readStudyWorkingState({ now: () => NOW }), null);
 });
