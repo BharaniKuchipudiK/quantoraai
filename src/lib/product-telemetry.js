@@ -11,7 +11,10 @@ export const PRODUCT_TELEMETRY_STORAGE = Object.freeze({
 });
 
 export function shouldCollectProductTelemetry(locationLike) {
-  const hostname = String(locationLike?.hostname || '').trim().toLowerCase();
+  const rawHostname = String(locationLike?.hostname || '').trim().toLowerCase();
+  // URL.hostname keeps brackets around IPv6 literals in browsers. Normalize
+  // them so http://[::1] is treated exactly like the ordinary ::1 loopback.
+  const hostname = rawHostname.replace(/^\[|\]$/g, '');
   return Boolean(hostname) && !LOCAL_HOSTS.has(hostname);
 }
 
@@ -50,7 +53,14 @@ export function claimFirstWorkspaceOpen(storage) {
 
 export function productTelemetrySurface(pathname) {
   const path = String(pathname || '/').toLowerCase();
-  if (path === '/studio' || path.startsWith('/studio/')) return 'studio';
+  // /desk is the real isolated Studio route. Keep /studio recognized as a
+  // harmless legacy/forward-compatible alias so telemetry remains bounded.
+  if (
+    path === '/desk'
+    || path.startsWith('/desk/')
+    || path === '/studio'
+    || path.startsWith('/studio/')
+  ) return 'studio';
   return 'app';
 }
 

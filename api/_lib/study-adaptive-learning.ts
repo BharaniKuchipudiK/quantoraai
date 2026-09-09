@@ -10,10 +10,62 @@ import { resolveActiveStudyConcept } from './store.js';
 
 export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.9';
 
-export type StudyRequestContext = { conceptKey: string; conceptLabel: string };
+export type StudyWorkingStateSnapshot = {
+  version: 'study-working-state-v1';
+  temporary: true;
+  conceptKey: string;
+  conceptLabel: string;
+  misconceptionCandidate: 'none' | 'possible';
+  hintDependence: 'none' | 'emerging' | 'high';
+  representationPreference: 'visual' | 'interactive' | null;
+  recentPattern: 'neutral' | 'struggle' | 'mixed' | 'success';
+  scaffoldingNeed: 'low' | 'moderate' | 'high';
+  observedSignals: number;
+  reasonCodes: string[];
+};
+
+export type StudyRequestContext = {
+  conceptKey: string;
+  conceptLabel: string;
+  workingState?: StudyWorkingStateSnapshot;
+};
 
 function clean(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === 'string' && allowed.includes(value as T) ? value as T : fallback;
+}
+
+function normalizeWorkingState(value: unknown, conceptKey: string, conceptLabel: string): StudyWorkingStateSnapshot | undefined {
+  const input = value && typeof value === 'object' ? value as Record<string, unknown> : null;
+  if (!input || input.version !== 'study-working-state-v1' || input.temporary !== true) return undefined;
+  const stateConceptKey = clean(input.conceptKey, 160).toLowerCase();
+  if (stateConceptKey && conceptKey && stateConceptKey !== conceptKey) return undefined;
+  const observedSignals = Number.isFinite(Number(input.observedSignals))
+    ? Math.max(0, Math.min(12, Math.trunc(Number(input.observedSignals))))
+    : 0;
+  const reasonCodes = Array.isArray(input.reasonCodes)
+    ? input.reasonCodes.map((value) => clean(value, 64)).filter(Boolean).slice(0, 6)
+    : [];
+  const representation = input.representationPreference === 'visual' || input.representationPreference === 'interactive'
+    ? input.representationPreference
+    : null;
+
+  return {
+    version: 'study-working-state-v1',
+    temporary: true,
+    conceptKey: stateConceptKey || conceptKey,
+    conceptLabel: clean(input.conceptLabel, 300) || conceptLabel,
+    misconceptionCandidate: oneOf(input.misconceptionCandidate, ['none', 'possible'] as const, 'none'),
+    hintDependence: oneOf(input.hintDependence, ['none', 'emerging', 'high'] as const, 'none'),
+    representationPreference: representation,
+    recentPattern: oneOf(input.recentPattern, ['neutral', 'struggle', 'mixed', 'success'] as const, 'neutral'),
+    scaffoldingNeed: oneOf(input.scaffoldingNeed, ['low', 'moderate', 'high'] as const, 'low'),
+    observedSignals,
+    reasonCodes,
+  };
 }
 
 /** Server repeats the Study guard; a forged payload cannot activate elsewhere. */
@@ -23,7 +75,8 @@ export function normalizeStudyRequestContext(value: unknown, studioDomain: strin
   const conceptKey = clean(input.conceptKey, 160).toLowerCase();
   const conceptLabel = clean(input.conceptLabel, 300);
   if (!conceptLabel) return null;
-  return { conceptKey, conceptLabel };
+  const workingState = normalizeWorkingState(input.workingState, conceptKey, conceptLabel);
+  return { conceptKey, conceptLabel, ...(workingState ? { workingState } : {}) };
 }
 
 export type StudyTeachingStrategy =

@@ -1,3 +1,8 @@
+import {
+  readStudyWorkingState,
+  setStudyWorkingConcept,
+} from './study-working-state.js';
+
 function clean(value, max) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
 }
@@ -8,5 +13,14 @@ export function buildStudyAdaptiveRequestContext({ studioDomain, brief } = {}) {
   const conceptLabel = clean(brief?.label, 300);
   const conceptKey = clean(brief?.conceptId, 160).toLowerCase();
   if (!conceptLabel) return {};
-  return { studyContext: { conceptKey, conceptLabel } };
+
+  setStudyWorkingConcept({ conceptKey, conceptLabel });
+  const workingState = readStudyWorkingState();
+  return {
+    studyContext: {
+      conceptKey,
+      conceptLabel,
+      ...(workingState ? { workingState } : {}),
+    },
+  };
 }
