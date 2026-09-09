@@ -4,8 +4,8 @@ import { hasBrowserPreviewArtifact, validateBuildArtifactResponse } from './buil
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { pickPreviewEntryPath } from '../../src/lib/preview-utils.js';
 
-function browserEntryFor(reply: string): string | null {
-  const parsed = parseVFSWithReport(reply, {});
+function browserEntryFor(reply: string, currentVfs: Record<string, string> = {}): string | null {
+  const parsed = parseVFSWithReport(reply, currentVfs);
   return pickPreviewEntryPath(parsed.vfs);
 }
 
@@ -17,6 +17,21 @@ test('[was-red] CSS-only output is not a runnable Coding Desk build', () => {
   assert.deepEqual(validateBuildArtifactResponse(reply, null), {
     ok: false,
     detailCode: 'browser-preview-missing',
+  });
+});
+
+test('[was-red] an existing-file patch is not mistaken for a fresh non-runnable reply', () => {
+  const currentVfs = {
+    'index.html': '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head><body>Works</body></html>',
+    'styles.css': 'body { color: black; }',
+  };
+  const reply = '```css filepath="styles.css"\n<<<<\nbody { color: black; }\n====\nbody { color: navy; }\n>>>>\n```';
+
+  assert.equal(browserEntryFor(reply, currentVfs), 'index.html', 'Coding Desk applies the patch to its existing runnable VFS');
+  assert.equal(hasBrowserPreviewArtifact(reply), true, 'server preserves a governed patch it cannot apply without currentVfs');
+  assert.deepEqual(validateBuildArtifactResponse(reply, null), {
+    ok: true,
+    detailCode: 'build-artifact-valid',
   });
 });
 
