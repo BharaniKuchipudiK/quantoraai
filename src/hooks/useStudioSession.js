@@ -95,7 +95,7 @@ function dedupeStrings(values, limit = MAX_PROJECT_CONTEXT_FACTS) {
   return result;
 }
 
-function loadProjects() {
+function loadProjects(includeDefault = true) {
   try {
     const saved = localStorage.getItem(PROJECTS_STORAGE_KEY);
     if (saved) {
@@ -108,7 +108,7 @@ function loadProjects() {
   } catch (e) {
     console.error(e);
   }
-  return [createDefaultProject()];
+  return includeDefault ? [createDefaultProject()] : [];
 }
 
 function persistProjects(projects) {
@@ -692,7 +692,12 @@ export function useStudioSession({ user, selectedModel }) {
         const remoteProjects = Array.isArray(response.projects)
           ? response.projects.flatMap((project) => normalizeLocalProject(project) || [])
           : [];
-        const localProjects = loadProjects();
+        // A freshly generated UI fallback has today's timestamp, but is not an
+        // edit. Never upload it over an existing workspace on a new browser.
+        const localProjects = loadProjects(false);
+        if (localProjects.length === 0 && remoteProjects.length === 0) {
+          localProjects.push(createDefaultProject());
+        }
         const remoteById = new Map(remoteProjects.map((project) => [project.id, project]));
         const reconciled = [];
 
