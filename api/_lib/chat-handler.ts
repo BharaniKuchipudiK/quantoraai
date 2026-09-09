@@ -103,7 +103,11 @@ import { describeUserQuotaHold, userPaidQuotaAllowed } from "./user-paid-quota.j
 import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
-import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
+import {
+  buildArtifactContractError,
+  recoverInterruptedBuildArtifactResponse,
+  validateBuildArtifactResponse,
+} from './build-artifact-contract.js';
 import {
   applyFinanceStabilityRouting,
   formatFinanceDirective,
@@ -1680,8 +1684,12 @@ export default async function handler(req: any, res: any) {
           detailCode: effectiveBuildMode ? 'build' : 'conversation',
         });
 
+        // Kept outside the try block because its catch can safely recover a
+        // completed artifact when the provider's terminal event misses the
+        // attempt deadline.
+        let attemptReply = '';
+        const attemptSources: Array<{ uri: string; title: string }> = [];
         try {
-          let attemptReply = '';
           // Why the model stopped, from the provider's last event. Read on
           // every consumer below; judged once at acceptance.
           let attemptFinishReason: string | null = null;
@@ -1689,7 +1697,6 @@ export default async function handler(req: any, res: any) {
           // per attempt and committed with it: a failed attempt's citations
           // appended to a fallback attempt's answer would be forged
           // provenance — a Sources block backing prose its model never saw.
-          const attemptSources: Array<{ uri: string; title: string }> = [];
           const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
@@ -1748,12 +1755,12 @@ export default async function handler(req: any, res: any) {
             }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await iterator.return?.(undefined);
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               /*
                * ONE catch, cleanup FIRST, then classify — the same shape as the
                * other three reads.
@@ -1858,12 +1865,12 @@ export default async function handler(req: any, res: any) {
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await reader.cancel().catch(() => {});
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               let chunkResult;
               try {
                 /*
@@ -2018,6 +2025,56 @@ export default async function handler(req: any, res: any) {
           if (effectiveBuildMode) sse.text(attemptReply);
           break;
         } catch (error: any) {
+          /*
+           * THE MODEL WROTE THE FILES; THE TERMINAL EVENT MISSED THE CLOCK.
+           *
+           * Production reference studio-0e8fb615-75ec-4f05-9b02-38b589674fa1
+           * received about 63 KB from Gemini, then threw all of it away when
+           * the attempt deadline arrived before the provider's final event.
+           * The person saw "No files yet" because build output is deliberately
+           * buffered until it passes the artifact contract.
+           *
+           * Preserve that safety rule while closing the data-loss path: only a
+           * timeout/no-content interruption may enter here, only CLOSED file
+           * fences are retained, and the exact normal build contract must pass.
+           * Unknown prose and genuinely partial projects still fail over.
+           */
+          const recoveredArtifact = effectiveBuildMode
+            && (error?.code === 'INFERENCE_ATTEMPT_TIMEOUT' || error?.code === 'INFERENCE_NO_CONTENT')
+            ? recoverInterruptedBuildArtifactResponse(
+                attemptReply,
+                goldenCanary ? transaction : null,
+                { allowIntake: honorGuided },
+              )
+            : null;
+          if (recoveredArtifact) {
+            fullReply = recoveredArtifact;
+            // No provider terminal word arrived. Keep the quality ledger
+            // unmeasured rather than inventing either success or failure.
+            fullReplyFinish = { kind: 'unknown', reason: 'interrupted-artifact-recovered' };
+            sources = attemptSources;
+            usedRoute = route;
+            // At the attempt deadline there is no time left for a database
+            // round-trip before delivery. Put the artifact on the wire first;
+            // health bookkeeping is best-effort and may never hold the files.
+            sse.text(recoveredArtifact);
+            void recordInferenceRouteSuccess(providerCircuitStore, route).catch(() => {});
+            trace({
+              correlationId,
+              boundary: 'inference.provider',
+              state: 'succeeded',
+              transaction,
+              modelId: route.id,
+              gateway: route.gateway,
+              upstreamProvider: route.upstreamProvider,
+              failureDomain: route.failureDomain,
+              quotaDomain: route.quotaDomain,
+              costClass: route.costClass,
+              durationMs: Date.now() - attemptStartedAt,
+              detailCode: 'interrupted-artifact-recovered',
+            });
+            break;
+          }
           lastRouteError = error;
           // The engine that refused rides on the error, so the sentence the
           // user reads names it and not the model they asked for (Auto is
