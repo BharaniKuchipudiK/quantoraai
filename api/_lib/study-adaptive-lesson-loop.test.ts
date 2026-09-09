@@ -4,9 +4,9 @@ import { planStudyAdaptiveLessonLoop } from './study-adaptive-lesson-loop.js';
 import { evaluateStudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyTeachingRepresentation } from './study-teaching-representation.js';
 
-function plan(input: { message: string; contextText?: string; intent?: 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue' }) {
+function plan(input: { message: string; contextText?: string; intent?: 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue'; history?: Array<{ role: string; text: string }> }) {
   const contextText = input.contextText || '';
-  const history = contextText.split('\n').filter(Boolean).map((text) => ({ role: 'user', text }));
+  const history = input.history || contextText.split('\n').filter(Boolean).map((text) => ({ role: 'user', text }));
   const intervention = evaluateStudyLearningIntervention({
     message: input.message,
     history,
@@ -82,8 +82,34 @@ test('generic continuation defers to the authoritative Study teaching-turn polic
   assert.equal(result.reason, 'continuation_policy');
 });
 
-test('ordinary direct explanation is not forced into a fake scripted wait', () => {
-  const result = plan({ message: 'What is potential difference?' });
+test('suitable dynamic concept starts prediction-first before explanation', () => {
+  const result = plan({ message: 'What is terminal potential difference?' });
+  assert.deepEqual(result.beats, ['PREDICT']);
+  assert.equal(result.reason, 'prediction_first');
+  assert.equal(result.mustWaitForLearner, true);
+});
+
+test('response to prior prediction advances through observe confront explain verify without learner-truth claims', () => {
+  const result = plan({
+    message: 'I think it will increase',
+    history: [
+      { role: 'user', text: 'Explain terminal potential difference' },
+      { role: 'assistant', text: 'Prediction first — what do you think will happen to terminal voltage as current increases?' },
+    ],
+  });
+  assert.deepEqual(result.beats, ['SEE', 'CONFRONT', 'EXPLAIN', 'VERIFY']);
+  assert.equal(result.reason, 'prediction_first');
+  assert.equal(result.mustWaitForLearner, true);
+});
+
+test('explicit representation request remains authoritative and is not delayed by prediction-first policy', () => {
+  const result = plan({ message: 'Show me a diagram of a circuit and terminal potential difference' });
+  assert.equal(result.reason, 'explicit_representation');
+  assert.notDeepEqual(result.beats, ['PREDICT']);
+});
+
+test('ordinary direct explanation is not forced into prediction-first for unsupported concepts', () => {
+  const result = plan({ message: 'What is opportunity cost?' });
   assert.deepEqual(result.beats, ['EXPLAIN']);
   assert.equal(result.mustWaitForLearner, false);
   assert.equal(result.maxLearnerQuestions, 0);

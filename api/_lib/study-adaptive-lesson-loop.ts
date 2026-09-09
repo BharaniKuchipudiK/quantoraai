@@ -2,9 +2,9 @@ import type { StudyTeachingRepresentationPlan } from './study-teaching-represent
 import type { StudyLearningIntervention } from './study-learning-intervention.js';
 import type { StudyLearningExperiencePlan } from './study-learning-experience-director.js';
 
-export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-09.1';
+export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-09.2';
 
-export type StudyTeachingBeat = 'HOOK' | 'PREDICT' | 'SEE' | 'EXPLAIN' | 'TRY' | 'VERIFY' | 'EXAM_READY';
+export type StudyTeachingBeat = 'HOOK' | 'PREDICT' | 'SEE' | 'CONFRONT' | 'EXPLAIN' | 'TRY' | 'VERIFY' | 'EXAM_READY';
 
 export type StudyAdaptiveLessonLoopPlan = {
   version: typeof STUDY_ADAPTIVE_LESSON_LOOP_VERSION;
@@ -17,12 +17,27 @@ export type StudyAdaptiveLessonLoopPlan = {
     | 'first_struggle'
     | 'practice'
     | 'verification'
+    | 'prediction_first'
     | 'continuation_policy'
     | 'explicit_representation'
     | 'experience_director'
     | 'verified_learner_state'
     | 'direct_explanation';
 };
+
+function predictionFirstEligible(input: {
+  intent: string;
+  representation: StudyTeachingRepresentationPlan;
+  intervention: StudyLearningIntervention;
+  experiencePlan?: StudyLearningExperiencePlan | null;
+}): boolean {
+  if (input.intent !== 'explain' && input.intent !== 'worked_example') return false;
+  if (input.intervention.state !== 'stable') return false;
+  if (input.representation.requestedMode !== null) return false;
+  if (input.intervention.predictionEligible !== true) return false;
+  const verification = input.experiencePlan?.verificationRequirement;
+  return verification !== 'fresh_independent' && verification !== 'defer_until_due';
+}
 
 export function planStudyAdaptiveLessonLoop(input: {
   intent: 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
@@ -73,10 +88,6 @@ export function planStudyAdaptiveLessonLoop(input: {
   }
 
   if (intent === 'continue') {
-    // Generic continuation is already governed by study-teaching-policy.ts,
-    // which may advance to SEE, EXPLAIN, TRY, or VERIFY. The Experience
-    // Director supplies policy constraints but does not become a second turn
-    // planner here.
     return {
       version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
       beats: [],
@@ -93,6 +104,26 @@ export function planStudyAdaptiveLessonLoop(input: {
       mustWaitForLearner: true,
       maxLearnerQuestions: 1,
       reason: 'verification',
+    };
+  }
+
+  if (intervention.predictionPromptSeen && (intent === 'explain' || intent === 'worked_example')) {
+    return {
+      version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
+      beats: ['SEE', 'CONFRONT', 'EXPLAIN', 'VERIFY'],
+      mustWaitForLearner: true,
+      maxLearnerQuestions: 1,
+      reason: 'prediction_first',
+    };
+  }
+
+  if (predictionFirstEligible(input)) {
+    return {
+      version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
+      beats: ['PREDICT'],
+      mustWaitForLearner: true,
+      maxLearnerQuestions: 1,
+      reason: 'prediction_first',
     };
   }
 
