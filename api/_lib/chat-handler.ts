@@ -2178,27 +2178,61 @@ export default async function handler(req: any, res: any) {
         for (let index = 0; index < candidateAttempts.length; index += 1) {
           const attempt = candidateAttempts[index];
           try {
+            /*
+             * The tool-calling path opens Gemini streams too, and until 2026-09-09
+             * neither of these two calls carried a signal at all. A user's trace
+             * showed one of them held for 69.4 SECONDS against a 25s content window,
+             * while the OpenRouter attempt beside it in the same turn stopped at
+             * 25.3s exactly — the contrast is what named this.
+             *
+             * The bound belongs to the whole open, retry included: the grounding
+             * fallback below re-opens the stream, so a per-call timer would let a
+             * dead route spend the window twice.
+             */
+            const openRemainingMs = Math.min(
+              NO_CONTENT_MS,
+              remainingBudgetMs(startTime, turnBudgetMs),
+            );
+            if (openRemainingMs <= 0) {
+              throw inferenceAttemptTimeout({ gateway: 'gemini', id: attempt.id }, openRemainingMs);
+            }
+            const openController = new AbortController();
+            const openTimer = setTimeout(() => openController.abort(), openRemainingMs);
             try {
-              stream = await openGeminiStream({
-                apiKey: effectiveGeminiKey,
-                model: attempt.id,
-                contents,
-                systemInstruction: injectedSystemPrompt,
-                temperature: dynamicTemperature,
-                grounding,
-                toolContext: activeToolContext,
-              });
-            } catch (groundError) {
-              if (!grounding) throw groundError;
-              stream = await openGeminiStream({
-                apiKey: effectiveGeminiKey,
-                model: attempt.id,
-                contents,
-                systemInstruction: injectedSystemPrompt,
-                temperature: dynamicTemperature,
-                grounding: false,
-                toolContext: activeToolContext,
-              });
+              try {
+                stream = await openGeminiStream({
+                  apiKey: effectiveGeminiKey,
+                  model: attempt.id,
+                  contents,
+                  systemInstruction: injectedSystemPrompt,
+                  temperature: dynamicTemperature,
+                  grounding,
+                  toolContext: activeToolContext,
+                  signal: openController.signal,
+                });
+              } catch (groundError) {
+                if (openController.signal.aborted) {
+                  throw inferenceAttemptTimeout({ gateway: 'gemini', id: attempt.id }, openRemainingMs);
+                }
+                if (!grounding) throw groundError;
+                stream = await openGeminiStream({
+                  apiKey: effectiveGeminiKey,
+                  model: attempt.id,
+                  contents,
+                  systemInstruction: injectedSystemPrompt,
+                  temperature: dynamicTemperature,
+                  grounding: false,
+                  toolContext: activeToolContext,
+                  signal: openController.signal,
+                });
+              }
+            } catch (openError) {
+              if (openController.signal.aborted) {
+                throw inferenceAttemptTimeout({ gateway: 'gemini', id: attempt.id }, openRemainingMs);
+              }
+              throw openError;
+            } finally {
+              clearTimeout(openTimer);
             }
             currentModel = attempt.id;
             usedModel = attempt.id;
