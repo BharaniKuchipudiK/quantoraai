@@ -24,6 +24,10 @@ function normalizeConceptKey(value) {
   return clean(value, 160).toLowerCase();
 }
 
+function normalizeConceptLabel(value) {
+  return clean(value, 300).toLowerCase();
+}
+
 function eventTime(event) {
   const value = Date.parse(String(event?.occurredAt || ''));
   return Number.isFinite(value) ? value : null;
@@ -145,7 +149,11 @@ export function setStudyWorkingConcept({ conceptKey = '', conceptLabel = '' } = 
 export function observeStudyWorkingInteraction(event) {
   if (!admittedObservation(event)) return false;
   const eventConcept = normalizeConceptKey(event.conceptId);
-  if (eventConcept && activeConcept.conceptKey && eventConcept !== activeConcept.conceptKey) return false;
+  const eventLabel = normalizeConceptLabel(event.conceptLabel);
+  const activeLabel = normalizeConceptLabel(activeConcept.conceptLabel);
+  const sameKey = !eventConcept || !activeConcept.conceptKey || eventConcept === activeConcept.conceptKey;
+  const sameLabel = Boolean(eventLabel && activeLabel && eventLabel === activeLabel);
+  if (!sameKey && !sameLabel) return false;
   if (!activeConcept.conceptKey && eventConcept) {
     activeConcept = { ...activeConcept, conceptKey: eventConcept };
   }
