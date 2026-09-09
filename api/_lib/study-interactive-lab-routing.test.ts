@@ -63,7 +63,9 @@ test('unsupported interactive mathematics does not borrow the linear-function la
   assert.equal(interpretation.representation.rendererRequired, false);
   assert.equal(interpretation.representation.rendererKind, null);
   assert.equal(interpretation.representation.fallback, 'renderer_unavailable');
-  assert.doesNotMatch(formatStudyCognitiveDirective(interpretation), /quantora-study-lab/);
+  const directive = formatStudyCognitiveDirective(interpretation);
+  assert.doesNotMatch(directive, /<quantora-study-lab kind="linear-function" \/>/);
+  assert.match(directive, /do NOT emit <quantora-study-picture> or <quantora-study-lab> tags/);
 });
 
 test('operator representation coverage includes the linear-function lab', () => {
