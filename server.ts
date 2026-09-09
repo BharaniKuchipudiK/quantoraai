@@ -94,6 +94,12 @@ async function startServer() {
     });
   };
 
+  // Vercel exposes the consolidated api/auth.ts function directly as /api/auth
+  // in addition to the friendly rewrites below. Mirror that entrypoint locally
+  // so release-flag reads and every other query-routed auth call behave the same
+  // under npm start as they do on Vercel.
+  route("all", "/api/auth", auth);
+
   route("all", "/api/auth/verify", (req, res) => {
     req.query = { ...(req.query || {}), route: "verify" };
     return auth(req, res);
