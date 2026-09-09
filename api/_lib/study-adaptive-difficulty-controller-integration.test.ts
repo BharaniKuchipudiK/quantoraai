@@ -80,6 +80,25 @@ test('failed transfer never escalates the production route', () => {
   assert.equal(route?.requiresVerification, true);
 });
 
+test('failed transfer with visual support preserves the independent assessment boundary', () => {
+  const route = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'Explain linear functions.',
+    learnerModel: learner('transfer_task', {
+      transfer: { state: 'needs_support', evidenceCount: 1, latestObservedAt: '2026-09-09T00:00:00.000Z' },
+    }),
+    workingState: working({ recentPattern: 'struggle', scaffoldingNeed: 'high', representationPreference: 'visual' }),
+  });
+  assert.equal(route?.experienceDirector.verificationRequirement, 'fresh_independent');
+  assert.equal(route?.difficulty, 'foundational');
+  assert.equal(route?.representation.primaryRepresentation, 'governed_assessment');
+  assert.equal(route?.representation.rendererRequired, false);
+  assert.equal(route?.experienceDirector.hintPolicy, 'none');
+  assert.equal(route?.difficultyControl.scaffoldingAction, 'remove');
+  assert.equal(route?.difficultyControl.representationAction, 'maintain');
+  assert.deepEqual(route?.lessonLoop.beats, ['TRY']);
+});
+
 test('retention probe remains independent even when temporary working state says struggle', () => {
   const route = interpretStudyTurn({
     studioDomain: 'education',
