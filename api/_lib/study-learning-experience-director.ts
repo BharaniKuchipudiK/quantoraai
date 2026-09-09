@@ -2,8 +2,9 @@ import type { StudyWorkingStateSnapshot } from './study-adaptive-learning.js';
 import type { StudyActiveLearningContext } from './study-active-learning-context.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
 import type { StudyLearningIntervention } from './study-learning-intervention.js';
+import { planStudyMisconceptionRepair } from './study-misconception-repair-engine.js';
 
-export const STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION = 'study-learning-experience-director-2026-09-09.1';
+export const STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION = 'study-learning-experience-director-2026-09-09.2';
 
 export type StudyExperienceTeachingStrategy =
   | 'retrieval_practice'
@@ -71,7 +72,21 @@ function verifiedPlan(
     : struggling ? 'progressive' : 'withhold_until_attempt';
 
   switch (move) {
-    case 'diagnose_misconception':
+    case 'diagnose_misconception': {
+      const repair = planStudyMisconceptionRepair(learnerModel);
+      if (repair.stage !== 'confirmed') {
+        return {
+          version: STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION,
+          teachingStrategy: 'compare_and_contrast',
+          modality: 'governed_assessment',
+          explanationDensity: 'compressed',
+          interactionType: 'compare',
+          difficulty,
+          hintPolicy: 'none',
+          verificationRequirement: 'fresh_independent',
+          reasonCodes: [...reasons, repair.reasonCode],
+        };
+      }
       return {
         version: STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION,
         teachingStrategy: 'misconception_repair',
@@ -81,13 +96,14 @@ function verifiedPlan(
         difficulty,
         hintPolicy,
         verificationRequirement: 'governed_after_teaching',
-        reasonCodes: reasons,
+        reasonCodes: [...reasons, repair.reasonCode],
       };
+    }
     case 'confirm_misconception':
       return {
         version: STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION,
         teachingStrategy: 'compare_and_contrast',
-        modality: 'comparison',
+        modality: 'governed_assessment',
         explanationDensity: 'compressed',
         interactionType: 'compare',
         difficulty,
@@ -163,7 +179,7 @@ function verifiedPlan(
 
 export function teachingStrategyFromLearnerTruth(model: StudyLearnerModel): StudyExperienceTeachingStrategy {
   switch (model.nextLearningMove.type) {
-    case 'diagnose_misconception': return 'misconception_repair';
+    case 'diagnose_misconception': return planStudyMisconceptionRepair(model).stage === 'confirmed' ? 'misconception_repair' : 'compare_and_contrast';
     case 'confirm_misconception': return 'compare_and_contrast';
     case 'guided_repair': return 'scaffold_then_fade';
     case 'vary_evidence': return 'socratic_application';

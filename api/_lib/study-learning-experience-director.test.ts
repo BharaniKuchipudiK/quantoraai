@@ -74,6 +74,41 @@ test('verified learner truth remains the highest pedagogy authority', () => {
   assert.ok(plan.reasonCodes.includes('verified_move:transfer_task'));
 });
 
+test('one reviewed misconception signal remains a candidate and requests a discriminating probe', () => {
+  const plan = directStudyLearningExperience({
+    intent: 'continue',
+    baseDifficulty: 'standard',
+    learnerModel: learnerModel('diagnose_misconception', {
+      misconception: {
+        state: 'signal_observed', signalCount: 1, latestSignalAt: '2026-09-09T00:00:00.000Z',
+        code: 'representation_misread', confidence: 1, reasonCodes: ['reviewed_distractor_mapping'], remediation: null, lastResolvedCode: null,
+      },
+    }),
+  });
+  assert.equal(plan.teachingStrategy, 'compare_and_contrast');
+  assert.equal(plan.modality, 'governed_assessment');
+  assert.equal(plan.hintPolicy, 'none');
+  assert.equal(plan.verificationRequirement, 'fresh_independent');
+  assert.ok(plan.reasonCodes.includes('candidate_requires_discriminating_probe'));
+});
+
+test('repeated targeted evidence confirms a misconception before targeted repair begins', () => {
+  const plan = directStudyLearningExperience({
+    intent: 'continue',
+    baseDifficulty: 'standard',
+    learnerModel: learnerModel('diagnose_misconception', {
+      misconception: {
+        state: 'signal_observed', signalCount: 2, latestSignalAt: '2026-09-09T00:00:00.000Z',
+        code: 'representation_misread', confidence: 1, reasonCodes: ['reviewed_distractor_mapping'], remediation: null, lastResolvedCode: null,
+      },
+    }),
+  });
+  assert.equal(plan.teachingStrategy, 'misconception_repair');
+  assert.equal(plan.modality, 'comparison');
+  assert.equal(plan.verificationRequirement, 'governed_after_teaching');
+  assert.ok(plan.reasonCodes.includes('confirmed_by_repeated_targeted_evidence'));
+});
+
 test('temporary struggle can increase scaffolding but never becomes a misconception diagnosis', () => {
   const plan = directStudyLearningExperience({
     intent: 'explain',
