@@ -122,8 +122,6 @@ function persistProjects(projects, accountKey) {
   }
 }
 
-const CORRUPT_BACKUP_KEY = `${STORAGE_KEY}_corrupt`;
-
 /**
  * Storage faults were console-only, so losing your chats looked identical to
  * nothing happening. This holds the last fault so the UI can say so plainly.
