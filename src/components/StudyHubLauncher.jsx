@@ -21,6 +21,7 @@ import {
   STUDY_LEARNING_INTERACTION,
   recordStudyLearningInteraction,
 } from '../lib/study-learning-interactions.js';
+import { setStudyWorkingConcept } from '../lib/study-working-state.js';
 import { STUDY_SURFACE, STUDY_SURFACE_REQUEST_EVENT } from '../lib/study-surface-navigation.js';
 import StudyNotebook from './StudyNotebook.jsx';
 import StudyLearningCompass from './StudyLearningCompass.jsx';
@@ -77,6 +78,11 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
   const label = ready
     ? String(topic || 'this topic').trim()
     : 'Start a Study topic to unlock tutor tools.';
+
+  useEffect(() => {
+    if (!ready) return;
+    setStudyWorkingConcept({ conceptKey: topicKey, conceptLabel: label });
+  }, [label, ready, topicKey]);
 
   const registerSurfaceCloseGuard = useCallback((guard) => {
     surfaceCloseGuardRef.current = typeof guard === 'function' ? guard : null;
@@ -259,42 +265,30 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
           ) : (
             <>
               <div className="study-h1-hub__header">
-                <div style={{ minWidth: 0 }}>
-                  <div id="quantora-study-hub-title" className="study-h1-hub__title">Study AI</div>
-                  <div className="study-h1-hub__topic">{label}</div>
+                <div>
+                  <span className="study-h1-hub__eyebrow">Study tools</span>
+                  <h2 id="quantora-study-hub-title">Learn this another way</h2>
                 </div>
-                <button
-                  type="button"
-                  className="study-h1-icon-button"
-                  aria-label="Close Study AI"
-                  onClick={() => void closeHub()}
-                >
+                <button type="button" className="study-h1-hub__close" onClick={() => void closeHub()} aria-label="Close Study tools">
                   <X size={16} />
                 </button>
               </div>
-
               <div className="study-h1-hub__actions">
                 {HUB_ACTIONS.map((action, index) => {
                   const Icon = action.icon;
                   return (
                     <button
-                      ref={index === 0 ? firstActionRef : undefined}
                       key={action.id}
+                      ref={index === 0 ? firstActionRef : null}
                       type="button"
                       className="study-h1-hub__action"
-                      aria-label={action.label}
                       disabled={!ready}
-                      title={ready ? action.hint : 'Start a Study topic first.'}
-                      style={{
-                        opacity: ready ? 1 : 0.48,
-                        cursor: ready ? 'pointer' : 'not-allowed',
-                      }}
                       onClick={() => runAction(action)}
                     >
-                      <span className="study-h1-hub__action-icon" aria-hidden="true"><Icon size={16} /></span>
-                      <span className="study-h1-hub__action-copy">
+                      <span className="study-h1-hub__action-icon" aria-hidden="true"><Icon size={17} /></span>
+                      <span>
                         <strong>{action.label}</strong>
-                        <span>{action.hint}</span>
+                        <small>{action.hint}</small>
                       </span>
                     </button>
                   );
@@ -304,22 +298,17 @@ export default function StudyHubLauncher({ topicKey, topic, curriculumKey = null
           )}
         </section>
       ) : null}
-
       <button
         type="button"
-        className={[
-          'study-h1-hub__launcher',
-          surface === 'notebook' && notebookExpanded ? 'study-h1-hub__launcher--notebook-expanded' : '',
-        ].filter(Boolean).join(' ')}
-        aria-label={open ? 'Close Study AI' : 'Open Study AI'}
+        className="study-h1-hub__launcher"
+        aria-label="Open Study tools"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="quantora-study-hub-panel"
-        onClick={() => {
-          if (open) void closeHub();
-          else setOpen(true);
-        }}
+        onClick={() => setOpen((current) => !current)}
       >
-        {open ? <X size={19} /> : <BrainCircuit size={19} />}
+        <BrainCircuit size={18} aria-hidden="true" />
+        <span>Study tools</span>
       </button>
     </div>
   );
