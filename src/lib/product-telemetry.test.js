@@ -30,6 +30,7 @@ test('product telemetry is suppressed on local development hosts', () => {
   assert.equal(shouldCollectProductTelemetry({ hostname: 'localhost' }), false);
   assert.equal(shouldCollectProductTelemetry({ hostname: '127.0.0.1' }), false);
   assert.equal(shouldCollectProductTelemetry({ hostname: '::1' }), false);
+  assert.equal(shouldCollectProductTelemetry({ hostname: '[::1]' }), false);
   assert.equal(shouldCollectProductTelemetry({ hostname: 'quantoraai.app' }), true);
 });
 
@@ -55,6 +56,8 @@ test('session state and workspace surface fail closed to bounded aggregate label
   assert.equal(authStateFromSession({ user: { email: 'private@example.com' } }), 'signed_in');
   assert.equal(authStateFromSession({ user: null }), 'signed_out');
   assert.equal(authStateFromSession(null), 'unknown');
+  assert.equal(productTelemetrySurface('/desk'), 'studio');
+  assert.equal(productTelemetrySurface('/desk/project/123'), 'studio');
   assert.equal(productTelemetrySurface('/studio'), 'studio');
   assert.equal(productTelemetrySurface('/studio/project/123'), 'studio');
   assert.equal(productTelemetrySurface('/'), 'app');
