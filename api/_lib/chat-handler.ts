@@ -2104,16 +2104,6 @@ export default async function handler(req: any, res: any) {
         attachments: attachmentSummary,
         ...(travelDegraded ? { travelDegraded: true } : {}),
       });
-      trace({
-        correlationId,
-        boundary: 'api.chat',
-        state: 'succeeded',
-        transaction,
-        route: '/api/chat',
-        modelId: usedRoute.id,
-        gateway: usedRoute.gateway,
-        durationMs: latencyMs,
-      });
       return;
     }
 

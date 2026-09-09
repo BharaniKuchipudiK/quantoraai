@@ -68,6 +68,33 @@ test('done is idempotent', () => {
   assert.doesNotMatch(fixture.chunks.join(''), /Should not appear/);
 });
 
+test('[was-red] successful chat keeps the socket open until its terminal trace settles', async () => {
+  const fixture = fakeResponse();
+  let release!: (value: boolean) => void;
+  let sinkPayload: any = null;
+  const sink = (payload: unknown) => {
+    sinkPayload = payload;
+    return new Promise<boolean>((resolve) => { release = resolve; });
+  };
+  const stream = new SseWriter(fixture.response, sink);
+
+  stream.done({
+    provider: 'OpenRouter (anthropic/claude-opus-5)',
+    correlationId: 'studio-12345678',
+    modelId: 'anthropic/claude-opus-5',
+    latencyMs: 321,
+  });
+
+  assert.equal(stream.isFinished, true, 'no later write may race the terminal state');
+  assert.equal(fixture.counts().endCount, 0, 'the response must not end while the durable write is still pending');
+  assert.match(fixture.chunks.join(''), /\[DONE\]/, 'the client receives the terminal marker before the bookkeeping wait');
+  assert.equal(sinkPayload.correlationId, 'studio-12345678');
+
+  release(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(fixture.counts().endCount, 1, 'the socket closes as soon as the terminal row has settled');
+});
+
 test('idle timeout rejects a stalled reader', async () => {
   const reader = { read: () => new Promise<any>(() => {}) };
   await assert.rejects(() => readWithIdleTimeout(reader, 20, 'test stream'), /idle/i);
