@@ -3,7 +3,6 @@ import test from 'node:test';
 import { buildStudyAdaptiveRequestContext } from './study-adaptive-request.js';
 import {
   observeStudyWorkingInteraction,
-  resetStudyWorkingStateForTests,
   setStudyWorkingConcept,
 } from './study-working-state.js';
 import {
@@ -25,7 +24,7 @@ function observation(type, extra = {}) {
 }
 
 test('Study sends bounded concept context for server-side learner adaptation', () => {
-  resetStudyWorkingStateForTests();
+  setStudyWorkingConcept({ conceptKey: 'test.no-observations', conceptLabel: 'No observations' });
   assert.deepEqual(buildStudyAdaptiveRequestContext({
     studioDomain: 'education',
     brief: { conceptId: 'Session.Motion-Graphs', label: '  Motion   graphs  ' },
@@ -35,7 +34,6 @@ test('Study sends bounded concept context for server-side learner adaptation', (
 });
 
 test('Study includes the current temporary working state on the next turn', () => {
-  resetStudyWorkingStateForTests();
   setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
   observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED));
   const result = buildStudyAdaptiveRequestContext({
@@ -48,8 +46,7 @@ test('Study includes the current temporary working state on the next turn', () =
 });
 
 test('other workspaces are an exact adaptive-learning no-op', () => {
-  resetStudyWorkingStateForTests();
-  setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
+  setStudyWorkingConcept({ conceptKey: 'test.non-study', conceptLabel: 'Non Study' });
   observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED));
   for (const studioDomain of [null, 'finance', 'research', 'travel', 'coding', 'general']) {
     assert.deepEqual(buildStudyAdaptiveRequestContext({
