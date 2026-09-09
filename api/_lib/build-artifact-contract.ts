@@ -1,5 +1,6 @@
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { pickPreviewEntryPath } from '../../src/lib/preview-utils.js';
+import { posix as path } from 'node:path';
 
 export type BuildArtifactContractResult = {
   ok: boolean;
@@ -205,6 +206,60 @@ function hasGuidedIntakeMove(source: string) {
   return /<quantora-(modal|choices)>[\s\S]*?<\/quantora-\1>/.test(source);
 }
 
+function normalizedVfsPath(value: unknown): string | null {
+  const normalized = path.normalize(String(value || '').replace(/\\/g, '/').replace(/^\/+/, ''));
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')) return null;
+  return normalized;
+}
+
+function localDependencySpecifiers(source: unknown): string[] {
+  const text = String(source || '');
+  const specifiers: string[] = [];
+  const patterns = [
+    /\b(?:import|export)\s+(?:[^'";]*?\s+from\s*)?["']([^"']+)["']/g,
+    /\b(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /@import\s+(?:url\(\s*)?["']([^"']+)["']/g,
+    /<(?:script|link)\b[^>]*(?:src|href)\s*=\s*["']([^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match[1]?.startsWith('.') || match[1]?.startsWith('/')) specifiers.push(match[1]);
+    }
+  }
+  return specifiers;
+}
+
+function recoveredDependenciesAreClosed(source: string): boolean {
+  const parsed = parseVFSWithReport(source, {});
+  const files = new Set(
+    Object.keys(parsed.vfs || {})
+      .map(normalizedVfsPath)
+      .filter((file): file is string => Boolean(file)),
+  );
+  for (const [rawImporter, value] of Object.entries(parsed.vfs || {})) {
+    const importer = normalizedVfsPath(rawImporter);
+    if (!importer) return false;
+    const content = typeof value === 'string'
+      ? value
+      : String((value as { content?: unknown })?.content || '');
+    for (const rawSpecifier of localDependencySpecifiers(content)) {
+      const clean = rawSpecifier.split(/[?#]/)[0];
+      const base = normalizedVfsPath(
+        clean.startsWith('/') ? clean : path.join(path.dirname(importer), clean),
+      );
+      if (!base) return false;
+      const candidates = [
+        base,
+        `${base}.js`, `${base}.jsx`, `${base}.ts`, `${base}.tsx`, `${base}.json`, `${base}.css`,
+        `${base}/index.js`, `${base}/index.jsx`, `${base}/index.ts`, `${base}/index.tsx`, `${base}/index.css`,
+      ];
+      if (!candidates.some((candidate) => files.has(candidate))) return false;
+    }
+  }
+  return true;
+}
+
 export function validateBuildArtifactResponse(
   text: unknown,
   transaction: string | null = null,
@@ -300,6 +355,7 @@ export function recoverInterruptedBuildArtifactResponse(
 
   if (!candidate) return null;
   return validateBuildArtifactResponse(candidate, transaction, options).ok
+    && recoveredDependenciesAreClosed(candidate)
     ? candidate
     : null;
 }

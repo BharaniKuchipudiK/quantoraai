@@ -1755,12 +1755,12 @@ export default async function handler(req: any, res: any) {
             }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await iterator.return?.(undefined);
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               /*
                * ONE catch, cleanup FIRST, then classify — the same shape as the
                * other three reads.
@@ -1865,12 +1865,12 @@ export default async function handler(req: any, res: any) {
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await reader.cancel().catch(() => {});
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               let chunkResult;
               try {
                 /*

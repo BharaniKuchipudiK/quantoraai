@@ -54,6 +54,18 @@ test('an interrupted response without a complete runnable artifact is never salv
     null,
     'a closed fence is not enough when Preview has no runnable entry',
   );
+
+  const missingImportedFile = website
+    .replace(
+      'export default function App(){',
+      "import Card from './Card.jsx'; export default function App(){",
+    )
+    + '\n\n```jsx filepath="src/Card.jsx"\nexport default function Card(){';
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse(missingImportedFile, 'simple-website'),
+    null,
+    'a closed entry that imports the unfinished file is not a runnable recovered project',
+  );
 });
 
 test('a complete standalone HTML document survives a late provider disconnect', () => {
@@ -78,6 +90,15 @@ test('the live handler salvages only named stream interruptions and emits the re
     /error\?\.code === 'INFERENCE_ATTEMPT_TIMEOUT' \|\| error\?\.code === 'INFERENCE_NO_CONTENT'/,
     'ordinary provider and contract failures must not be waved through',
   );
+  for (const providerLoop of ['const iterator = stream[Symbol.asyncIterator]();', "let buffer = '';"]) {
+    const start = handler.indexOf(providerLoop);
+    const attemptDeadline = handler.indexOf('if (attemptRemainingMs <= 0)', start);
+    const turnDeadline = handler.indexOf("assertBudget(startTime, turnBudgetMs, 'chat turn')", start);
+    assert.ok(
+      start >= 0 && attemptDeadline > start && turnDeadline > attemptDeadline,
+      `${providerLoop} must classify the final shared deadline as a recoverable attempt timeout`,
+    );
+  }
   assert.match(handler, /recoverInterruptedBuildArtifactResponse\([\s\S]*?attemptReply/);
   assert.match(handler, /sse\.text\(recoveredArtifact\)/, 'the recovered files must reach Coding Desk');
   const recoveryStart = handler.indexOf('if (recoveredArtifact)');
