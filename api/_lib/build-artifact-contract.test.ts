@@ -38,6 +38,11 @@ test('rejects opaque-origin storage before committing a model route', () => {
   assert.deepEqual(result, { ok: false, detailCode: 'opaque-storage-access' });
 });
 
+test('rejects IndexedDB because opaque Preview cannot open an origin database either', () => {
+  const result = validateBuildArtifactResponse(website.replace('export default', 'indexedDB.open("jobs"); export default'), 'simple-website');
+  assert.deepEqual(result, { ok: false, detailCode: 'opaque-storage-access' });
+});
+
 test('rejects a golden artifact that omits its observable interaction contract', () => {
   const result = validateBuildArtifactResponse(website.replace('website-cta', 'generic-button'), 'simple-website');
   assert.deepEqual(result, { ok: false, detailCode: 'website-contract-missing' });

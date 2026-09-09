@@ -90,10 +90,15 @@ const REFUSED_STATUS = new Set([429]);
  */
 function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
   const detail = String(failureDetail || '').trim();
+  const storageFailure = /opaque-storage-access|localStorage|sessionStorage|indexedDB/i.test(detail);
+  const storageRepair = storageFailure
+    ? ' Remove every localStorage, sessionStorage, and IndexedDB access. Keep state in-memory for this Preview and state plainly that it cannot survive a refresh; do not claim persistence.'
+    : '';
   if (hasExistingProject) {
     return 'PREVIOUS ATTEMPT FAILED VERIFICATION'
       + (detail ? `: ${detail}.` : '.')
       + ' This is the ONE automatic artifact repair for this turn.'
+      + storageRepair
       + ' Apply the requested change to the current project. Return corrected file fences or search/replace patches against the provided current source.'
       + ' Preserve unrelated files, behavior and project structure. Do not replace the application with a new self-contained page.';
   }
@@ -101,6 +106,7 @@ function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
     'PREVIOUS ATTEMPT FAILED VERIFICATION'
     + (detail ? `: ${detail}` : '.')
     + ' This is the ONE automatic artifact repair for this turn.'
+    + storageRepair
     + ' Do not answer with prose, a plan, CSS-only, JS-only, or native source.'
     + ' Return EXACTLY one complete self-contained HTML document in a single ```html code fence.'
     + ' Inline the CSS and JavaScript needed for the page so Quantora Preview has one unambiguous runnable entrypoint.'

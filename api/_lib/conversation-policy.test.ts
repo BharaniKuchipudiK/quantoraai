@@ -114,6 +114,13 @@ test("build mode tells the model to ship working tools immediately", () => {
   assert.match(prompt, /domestic vs international shipping/);
 });
 
+test('[was-red] build mode never promises refresh persistence that Preview cannot provide', () => {
+  const prompt = buildConversationSystemPrompt({ buildMode: true });
+  assert.match(prompt, /PREVIEW STORAGE/);
+  assert.match(prompt, /localStorage, sessionStorage, and IndexedDB are unavailable/);
+  assert.match(prompt, /state plainly that refresh persistence is not available yet/);
+});
+
 test("a shop build must emit real proxied photos, not placeholder frames", () => {
   const prompt = buildConversationSystemPrompt({
     buildMode: true,

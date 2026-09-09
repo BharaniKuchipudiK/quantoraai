@@ -311,7 +311,7 @@ test("EVERY opener is bounded by the content window, counted not sampled", () =>
     }
 
     const deadline = new RegExp(`const\\s+${armed[1]}\\s*=\\s*([\\s\\S]{0,220}?);`).exec(SOURCE);
-    if (!deadline || !/NO_CONTENT_MS/.test(deadline[1])) {
+    if (!deadline || !/(?:NO_CONTENT_MS|noContentMs)/.test(deadline[1])) {
       unbounded.push(
         `  line ${site.line}: its deadline ${armed[1]} is not derived from NO_CONTENT_MS, so a `
         + `route that never returns a stream holds far more than the content window.`,
@@ -323,7 +323,7 @@ test("EVERY opener is bounded by the content window, counted not sampled", () =>
   let openRouterBounds = 0;
   for (const match of SOURCE.matchAll(/timeoutMs:\s*([^,\n]+)/g)) {
     openRouterBounds += 1;
-    if (!/NO_CONTENT_MS/.test(match[1])) {
+    if (!/(?:NO_CONTENT_MS|noContentMs)/.test(match[1])) {
       unbounded.push(
         `  openOpenRouterResponse is given timeoutMs: ${match[1].trim()} — not the content `
         + "window, so its helper clamps it to as much as 55s of silence.",
@@ -344,4 +344,17 @@ test("EVERY opener is bounded by the content window, counted not sampled", () =>
     + "  the content window is dead by the same definition as one that stopped\n"
     + "  producing tokens.\n",
   );
+});
+
+test('[was-red] complex OpenRouter builds prefer a responsive endpoint and retain routing evidence', () => {
+  assert.match(RAW, /"X-OpenRouter-Metadata": "enabled"/,
+    'the gateway must return the metadata needed for a post-mortem');
+  assert.match(RAW, /provider: \{ preferred_max_latency: 20, allow_fallbacks: true \}/,
+    'a complex build should keep price-first routing while deprioritizing endpoints too slow for the content window');
+  assert.match(RAW, /preferResponsiveProvider: effectiveBuildMode/,
+    'latency routing belongs to build work, not every ordinary chat');
+  assert.match(RAW, /response\.headers\.get\('x-generation-id'\)/,
+    'the provider generation must be recoverable without a screenshot');
+  assert.match(RAW, /boundary: 'inference\.upstream'[\s\S]{0,220}detailCode: 'openrouter-generation'/,
+    'the generation id must be kept under the turn correlation id');
 });

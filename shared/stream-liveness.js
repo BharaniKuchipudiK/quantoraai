@@ -25,6 +25,23 @@
 export const NO_CONTENT_MS = 25_000;
 
 /**
+ * A build asks for a much larger first answer than chat. Production showed the
+ * fixed 25s chat window cancelling a flagship build at 25.5s even though the
+ * route had a 110s attempt budget. Give builds ten more seconds, but keep the
+ * bound below the 45s minimum build rung so an independent fallback still has
+ * a viable slice inside the 165s server turn.
+ */
+export const BUILD_NO_CONTENT_MS = 35_000;
+
+/** The silence bound for this kind of work, never longer than the attempt. */
+export function contentSilenceWindowMs({ buildMode = false, attemptBudgetMs = Number.POSITIVE_INFINITY } = {}) {
+  const windowMs = buildMode ? BUILD_NO_CONTENT_MS : NO_CONTENT_MS;
+  const attemptMs = Number(attemptBudgetMs);
+  if (!Number.isFinite(attemptMs)) return windowMs;
+  return Math.max(0, Math.min(windowMs, attemptMs));
+}
+
+/**
  * How long the next read may block, given everything that bounds it.
  *
  * Returns 0 when the route has already been silent too long — the caller must
