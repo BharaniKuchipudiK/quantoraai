@@ -234,7 +234,7 @@ export function describeTrace(events = []) {
       headline: 'The model replied successfully, but Quantora has no terminal server record for this turn.',
       detail: `The last thing recorded was: ${lastWords} The provider completed its reply. `
         + 'The trace ends before api.chat recorded success or failure, so this record alone cannot distinguish '
-        + 'a lost terminal trace from a post-processing failure. It does not prove a provider timeout, crash, or refusal.'
+        + 'a lost terminal trace from a post-processing failure. It does not prove that the provider timed out, crashed, or refused the request.'
         + (deskSilent ? ' The desk later recorded that it still did not receive a usable reply.' : ''),
       steps,
     };
