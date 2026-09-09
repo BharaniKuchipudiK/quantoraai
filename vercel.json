@@ -1,5 +1,5 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "python3 scripts/reliability-execution-spine-surgical.py && npx tsx --test api/_lib/transaction-trace.test.ts && node --test src/lib/turn-recovery.test.js src/lib/coding-desk-artifact-repair-cap.test.js src/lib/execution-spine-recovery-wiring.test.js && npm run lint && vite build && python3 scripts/reliability-export-blobs.py",
   "outputDirectory": "dist",
   "functions": {
     "api/generate-office.ts": {
