@@ -104,7 +104,7 @@ test('working state is bounded to the latest observation window', () => {
   assert.ok(state.reasonCodes.length <= 6);
 });
 
-test('runtime ignores forged contracts and observations from another active concept', () => {
+test('runtime ignores forged contracts and generic observations from another active concept', () => {
   setStudyWorkingConcept({ conceptKey: 'test.runtime-isolation', conceptLabel: 'Runtime isolation' });
   assert.equal(observeStudyWorkingInteraction({
     ...observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED),
@@ -116,6 +116,32 @@ test('runtime ignores forged contracts and observations from another active conc
     { conceptId: 'physics.newton-2' },
   )), false);
   assert.equal(readStudyWorkingState({ now: () => NOW }), null);
+});
+
+test('first explicit Study Hub observation switches temporary concept and preserves that signal', () => {
+  setStudyWorkingConcept({ conceptKey: 'test.concept-a', conceptLabel: 'Concept A' });
+  assert.equal(observeStudyWorkingInteraction(observation(
+    STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED,
+    0,
+    {
+      source: 'study_hub',
+      conceptId: 'test.concept-b',
+      conceptLabel: 'Concept B',
+    },
+  )), true);
+
+  const state = readStudyWorkingState({ now: () => NOW });
+  assert.equal(state?.conceptKey, 'test.concept-b');
+  assert.equal(state?.conceptLabel, 'Concept B');
+  assert.equal(state?.representationPreference, 'visual');
+  assert.equal(state?.observedSignals, 1);
+
+  assert.equal(observeStudyWorkingInteraction(observation(
+    STUDY_LEARNING_INTERACTION.HINT_REQUESTED,
+    0,
+    { conceptId: 'test.concept-a', conceptLabel: 'Concept A' },
+  )), false);
+  assert.equal(readStudyWorkingState({ now: () => NOW })?.conceptKey, 'test.concept-b');
 });
 
 test('changing the active concept discards temporary observations', () => {
