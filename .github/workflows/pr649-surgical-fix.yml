@@ -1,46 +1,10 @@
-name: PR649 surgical blocker fix
+name: PR649 syntax probe
 
 on:
   push:
-    branches:
-      - fix/coding-desk-runnable-contract
-
-permissions:
-  contents: write
 
 jobs:
-  patch-and-verify:
+  smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Check out PR branch
-        uses: actions/checkout@v7
-        with:
-          ref: fix/coding-desk-runnable-contract
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply exact guarded source patches
-        run: python3 scripts/pr649-surgical-fix.py
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Verify lint and repository tests before committing
-        run: |
-          npm run lint
-          npm run test:ci
-
-      - name: Commit verified fixes and remove temporary patch machinery
-        run: |
-          rm .github/workflows/pr649-surgical-fix.yml scripts/pr649-surgical-fix.py
-          git config user.name "quantora-pr649-fix"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "fix: close PR 649 review blockers"
-          git push origin HEAD:fix/coding-desk-runnable-contract
+      - run: echo ok
