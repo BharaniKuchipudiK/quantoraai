@@ -6,7 +6,7 @@
 
 const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab|quantora-study-flashcard)\b([^>]*)\/?>/gi;
 
-export const STUDY_LAB_KINDS = Object.freeze(['newton', 'newton-third-law', 'fbd']);
+export const STUDY_LAB_KINDS = Object.freeze(['newton', 'newton-third-law', 'fbd', 'linear-function']);
 
 /*
  * A caption ABOUT THE INSTRUCTION rather than about an idea. The tutor prompt
@@ -167,6 +167,16 @@ function lessonAsksForMechanicsLab(hay = '') {
   return /\bnewton|\binertia\b|free-?body|\bfbd\b|kinematics|\bf\s*=\s*ma\b|first law of motion|third law/i.test(hay);
 }
 
+function lessonAsksForLinearFunctionLab(hay = '') {
+  return /\blinear function\b|\bslope[- ]intercept\b|\bgradient[- ]intercept\b|\bslope\b.{0,40}\b(?:y[- ]?intercept|intercept)\b|\by\s*=\s*m\s*\*?\s*x\s*(?:[+-]\s*b)?\b/i.test(String(hay || ''));
+}
+
+function labKindFitsLesson(kind = '', hay = '') {
+  if (kind === 'linear-function') return lessonAsksForLinearFunctionLab(hay);
+  if (kind === 'newton' || kind === 'newton-third-law' || kind === 'fbd') return lessonAsksForMechanicsLab(hay);
+  return false;
+}
+
 function lessonAsksForElectricity(hay = '') {
   return ELECTRICITY_VISUAL.test(String(hay || ''));
 }
@@ -198,10 +208,9 @@ export function rewriteStudyPictureTags(text = '', topic = '') {
       return `<quantora-study-flashcard front="${front}" back="${back}" />`;
     }
     if (String(tagName || '').toLowerCase() === 'quantora-study-lab') {
-      if (!lessonAsksForMechanicsLab(hay)) return '';
       const kindRaw = attr(attrs, 'kind').toLowerCase();
-      const kind = STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton';
-      return `<quantora-study-lab kind="${kind}" />`;
+      if (!STUDY_LAB_KINDS.includes(kindRaw) || !labKindFitsLesson(kindRaw, hay)) return '';
+      return `<quantora-study-lab kind="${kindRaw}" />`;
     }
     const caption = studyPictureCaption(attr(attrs, 'caption'), topic, source);
     if (!caption) return '';
@@ -224,7 +233,7 @@ export function splitStudySegments(text = '', topic = '') {
       if (front && back) segments.push({ type: 'flashcard', front, back });
     } else if (tag === 'quantora-study-lab') {
       const kindRaw = attr(match[2], 'kind').toLowerCase();
-      segments.push({ type: 'lab', kind: STUDY_LAB_KINDS.includes(kindRaw) ? kindRaw : 'newton' });
+      if (STUDY_LAB_KINDS.includes(kindRaw)) segments.push({ type: 'lab', kind: kindRaw });
     } else {
       const caption = attr(match[2], 'caption');
       if (caption) segments.push({ type: 'picture', caption });
@@ -249,6 +258,7 @@ export function studyPicturePromptHint(topic = '') {
   return [
     `If a picture helps ${label}, put this tag on its own line: <quantora-study-picture caption="one sentence about this idea" />`,
     'The caption must come from THIS conversation — the idea the learner just asked about.',
+    'If the governed representation route requires the linear-function interactive lab for slope/intercept or y = mx + b, use exactly <quantora-study-lab kind="linear-function" /> instead of a picture. Never use that lab for another mathematics topic.',
     'For an electric circuit, name the battery/cell, current, resistor/load, or the EMF/terminal-voltage relationship that the diagram should teach.',
     'For a process, make the caption explicit, for example: “Process: input -> change -> result”.',
     'For a timeline, include at least two real years, for example: “Timeline: 1914 -> 1918 -> 1939”.',

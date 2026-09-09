@@ -7,7 +7,7 @@ import {
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-07.1';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-09.1';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -146,7 +146,7 @@ export function planStudyTeachingRepresentation(input: {
   }
 
   if (requested === 'animation') {
-    const animationCapability = capability?.rendererKind === 'newton-lab' ? capability : null;
+    const animationCapability = capability?.representation === 'simulation_or_lab' ? capability : null;
     emitCoverage(Boolean(animationCapability), animationCapability?.rendererKind || null);
     return {
       version: STUDY_TEACHING_REPRESENTATION_VERSION,

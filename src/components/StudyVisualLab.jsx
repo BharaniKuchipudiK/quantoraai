@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
+const StudyLinearFunctionLab = React.lazy(() => import('./StudyLinearFunctionLab.jsx'));
+
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -209,6 +211,7 @@ function chip(isLight, on) {
 
 export default function StudyVisualLab({ kind = 'newton', isLight = false }) {
   const isThirdLaw = kind === 'newton-third-law';
+  const isLinearFunction = kind === 'linear-function';
   return (
     <section
       data-quantora-study-workspace="true"
@@ -223,9 +226,19 @@ export default function StudyVisualLab({ kind = 'newton', isLight = false }) {
       }}
     >
       <div style={{ fontFamily: "var(--font-story), serif", fontWeight: 600, marginBottom: '10px', fontSize: '1.05rem' }}>
-        {kind === 'fbd' ? 'Free-body diagram — on this page' : isThirdLaw ? 'Newton third-law animation — on this page' : 'Newton lab — on this page'}
+        {kind === 'fbd'
+          ? 'Free-body diagram — on this page'
+          : isThirdLaw
+            ? 'Newton third-law animation — on this page'
+            : isLinearFunction
+              ? 'Linear function lab — on this page'
+              : 'Newton lab — on this page'}
       </div>
-      {kind === 'fbd' ? <FbdLab isLight={isLight} /> : <NewtonLab isLight={isLight} initialLaw={isThirdLaw ? 3 : 1} />}
+      {isLinearFunction ? (
+        <React.Suspense fallback={null}>
+          <StudyLinearFunctionLab isLight={isLight} />
+        </React.Suspense>
+      ) : kind === 'fbd' ? <FbdLab isLight={isLight} /> : <NewtonLab isLight={isLight} initialLaw={isThirdLaw ? 3 : 1} />}
     </section>
   );
 }
