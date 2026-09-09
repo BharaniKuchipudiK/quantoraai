@@ -6,8 +6,12 @@ import {
   listGeminiModels,
   pickProbeModel,
   probeGemini,
+  PRODUCTION_FIRST_GEMINI,
   verdictFor,
 } from './gemini-probe.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /*
  * These run with no network and no credential, which is the point: the thing
@@ -334,4 +338,60 @@ test('a genuine rate limit with no cap wording is still reported as a rate limit
 
   assert.match(verdict, /rate limiting|over quota/i);
   assert.doesNotMatch(verdict, /billing cap|add credit/i, 'widening the cap matcher must not make every 429 read as billing');
+});
+
+/*
+ * THE PROBE MUST PROVE THE MODEL PRODUCTION ACTUALLY CALLS.
+ *
+ * On 2026-09-09 at 01:07 this probe reported gemini=ok(gemini-3.8-flash
+ * 1218ms) while a user's desk turn in the same minutes had gemini-flash-latest
+ * answer HTTP 504 twice. Both statements were true. The probe was simply
+ * answering about a model the platform never routes to, because its ranking
+ * deranked "-latest" on the stated grounds that such variants "are not what
+ * production would pick" — which was false for this repository.
+ *
+ * A watchdog that is green about the wrong model is worse than none: it is the
+ * 2026-08-31 shape from CLAUDE.md §1, where a passing check stopped anyone
+ * looking. So the two ends are tied here, read out of the source rather than
+ * restated, and this test fails the moment production changes its first rung
+ * without the probe following.
+ */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const readSource = (name: string) => readFileSync(join(HERE, name), 'utf8');
+
+test('the probe proves the Gemini id production routes to first', () => {
+  // chat-handler.ts: the first entry of FEATURED_SERVER_MODELS, "Rung 0".
+  const featured = readSource('chat-handler.ts');
+  const setBody = /const FEATURED_SERVER_MODELS = new Set\(\[([\s\S]*?)\]\)/.exec(featured);
+  assert.ok(setBody, 'FEATURED_SERVER_MODELS moved or changed shape; this contract cannot read it any more');
+  const firstRung = /"([^"]+)"/.exec(setBody[1]);
+  assert.ok(firstRung, 'FEATURED_SERVER_MODELS lists no quoted model id');
+  assert.equal(
+    firstRung[1],
+    PRODUCTION_FIRST_GEMINI,
+    'production now tries a different model first; point PRODUCTION_FIRST_GEMINI at it, or the probe goes back to '
+    + 'proving a model nobody calls',
+  );
+
+  // The same id is the platform's stable Gemini fallback in two more modules.
+  for (const [file, name] of [
+    ['inference-control-plane.ts', 'GEMINI_STABLE'],
+    ['model-execution-policy.ts', 'GEMINI_STABLE_FALLBACK'],
+  ] as const) {
+    const found = new RegExp(`const ${name} = '([^']+)'`).exec(readSource(file));
+    assert.ok(found, `${name} is gone from ${file}; this contract is reading a constant that no longer exists`);
+    assert.equal(found[1], PRODUCTION_FIRST_GEMINI, `${file}'s ${name} and the probe disagree about Gemini`);
+  }
+});
+
+test('pickProbeModel returns production first choice whenever the key can see it', () => {
+  // Exactly the shape that misled the operator: a newer plain id present too.
+  assert.equal(
+    pickProbeModel(['gemini-3.8-flash', 'gemini-3.7-pro', PRODUCTION_FIRST_GEMINI]),
+    PRODUCTION_FIRST_GEMINI,
+  );
+  // Falls back to the ranking only when this key cannot see it at all, because
+  // a hardcoded id that has outlived its model 404s and reads as a broken key.
+  assert.equal(pickProbeModel(['gemini-3.8-flash', 'gemini-3.7-pro']), 'gemini-3.8-flash');
+  assert.equal(pickProbeModel(['text-embedding-004']), null);
 });
