@@ -6,7 +6,7 @@ on:
       - .github/workflows/vercel-flags-lockfile-gen.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
@@ -21,12 +21,21 @@ jobs:
           cache: npm
       - name: Generate locked Vercel Flags dependency
         run: npm install @vercel/flags-core@1.8.0 --package-lock-only --ignore-scripts
-      - name: Upload generated manifests
-        uses: actions/upload-artifact@v4
-        with:
-          name: vercel-flags-manifests
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Apply exact manifests to feature branch
+        shell: bash
+        run: |
+          cp package.json /tmp/quantora-package.json
+          cp package-lock.json /tmp/quantora-package-lock.json
+          git fetch origin platform/vercel-flags-foundation
+          git checkout -B platform/vercel-flags-foundation origin/platform/vercel-flags-foundation
+          cp /tmp/quantora-package.json package.json
+          cp /tmp/quantora-package-lock.json package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "Generated manifests already match feature branch."
+            exit 0
+          fi
+          git commit -m "Add Vercel Flags core dependency"
+          git push origin HEAD:platform/vercel-flags-foundation
