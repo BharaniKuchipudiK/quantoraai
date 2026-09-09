@@ -6,6 +6,12 @@ import { describeTrace, describeTraceEvent } from './trace-story.js';
 const at = (offsetMs) => new Date(1_788_614_000_000 + offsetMs).toISOString();
 const ID = 'studio-719887e2-b5a4-4de5-b84a-f474192befa2';
 
+test('the trace identifies artifact rejection and the automatic recovery decision', () => {
+  assert.match(describeTraceEvent({ boundary: 'browser.artifact-validation', state: 'failed', detailCode: 'patch-conflict' }), /edit did not match the current files/);
+  assert.match(describeTraceEvent({ boundary: 'browser.turn-recovery', state: 'skipped', detailCode: 'budget-spent', budgetMs: 0 }), /recovery stopped.*remaining/);
+  assert.match(describeTraceEvent({ boundary: 'browser.turn-attempt', state: 'failed', statusCode: 504, detailCode: 'attempt-timeout' }), /504.*did not answer in time/);
+});
+
 test('no events: the account says there is no record, and does not invent a cause', () => {
   const story = describeTrace([]);
   assert.equal(story.outcome, 'no-record');

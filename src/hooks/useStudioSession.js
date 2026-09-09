@@ -714,7 +714,10 @@ export function useStudioSession({ user, selectedModel }) {
               const saved = await saveRemoteProject({ project: localProject, expectedVersion: remote.version || 0 });
               reconciled.push(normalizeLocalProject(saved.project) || remote);
             } catch {
-              reconciled.push(remote);
+              // The save did not land (or its outcome is unknown). This list
+              // is persisted back locally, so choosing remote would discard
+              // the newer edits the caller was trying to save.
+              reconciled.push(localProject);
             }
           } else {
             reconciled.push(remote);

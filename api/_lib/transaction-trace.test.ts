@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync as readTraceSource } from 'node:fs';
+
+test('the browser trace endpoint waits for persistence before its response ends', () => {
+  const pipeline = readTraceSource(new URL('../pipeline.ts', import.meta.url), 'utf8');
+  assert.match(pipeline, /await traceBoundarySettled\(event\);\s*return res.status\(202\)/);
+});
 import {
   authorizeTraceLookup,
   chatSuccessEventFromSsePayload,

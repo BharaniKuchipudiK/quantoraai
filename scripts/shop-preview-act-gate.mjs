@@ -284,10 +284,13 @@ export async function runShopPreviewActGate({ requireDeployed = false } = {}) {
       `need ≥1 painted img (naturalWidth>0); got ${JSON.stringify(imgStats.slice(0, 5))}`,
     );
 
+    // Let both automatic probes finish. Neither may perform a user action.
+    await page.waitForTimeout(2000);
     const bagBefore = await preview.locator('[data-quantora-bag="true"]').first()
       .innerText()
       .catch(() => 'Bag 0');
     const beforeCount = Number(String(bagBefore).replace(/[^0-9]/g, '')) || 0;
+    assert.equal(beforeCount, 0, 'automatic preview observation must leave the empty bag empty');
 
     await preview.locator('button, a').filter({ hasText: /add to (bag|cart)/i }).first().click();
     await preview.locator('[data-quantora-bag="true"]').first().waitFor({ state: 'visible', timeout: READY_MS });

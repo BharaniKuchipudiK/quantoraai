@@ -490,6 +490,7 @@ try {
   if (!boutiqueFrame) throw new Error('Boutique Preview never rendered.');
   const addToCart = boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first();
   await visible(addToCart, 'Boutique Preview is missing Add to Cart.', 15_000);
+  await visible(page.locator('[data-quantora-desk-probe="cart"][data-quantora-desk-probe-ok="true"]').first(), 'Cart observation is not ready.');
   await boutiqueFrame.waitForFunction(() => Boolean(document.querySelector('[data-quantora-bag="true"], [data-quantora-shop-ui="bar"]')), { timeout: 15_000 }).catch(() => {});
   await boutiqueFrame.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button, a')).find((node) => /add to (bag|cart)/i.test(node.textContent || ''));
