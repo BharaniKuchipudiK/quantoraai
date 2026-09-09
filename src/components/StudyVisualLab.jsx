@@ -1,6 +1,20 @@
 import React, { useEffect, useState } from 'react';
+import {
+  STUDY_LEARNING_INTERACTION,
+  recordStudyLearningInteraction,
+} from '../lib/study-learning-interactions.js';
 
 const StudyLinearFunctionLab = React.lazy(() => import('./StudyLinearFunctionLab.jsx'));
+
+function recordLabManipulation(labKind, control, controlValue) {
+  recordStudyLearningInteraction({
+    type: STUDY_LEARNING_INTERACTION.SIMULATION_MANIPULATED,
+    source: 'study_visual_lab',
+    labKind,
+    control,
+    controlValue: String(controlValue),
+  });
+}
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -42,6 +56,21 @@ function FbdLab({ isLight }) {
   const N = Math.round(W * Math.cos(rad));
   const ink = isLight ? '#9a3412' : '#fdba74';
 
+  const chooseRamp = (next) => {
+    if (next !== ramp) recordLabManipulation('fbd', 'surface', next ? 'ramp' : 'flat');
+    setRamp(next);
+  };
+
+  const toggleRough = () => {
+    recordLabManipulation('fbd', 'friction', rough ? 'smooth' : 'rough');
+    setRough((value) => !value);
+  };
+
+  const changePull = (next) => {
+    if (next !== pull) recordLabManipulation('fbd', 'pull', next);
+    setPull(next);
+  };
+
   return (
     <div data-quantora-study-lab="fbd">
       <svg viewBox="0 0 360 210" width="100%" height="210">
@@ -56,13 +85,13 @@ function FbdLab({ isLight }) {
         </g>
       </svg>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-        <button type="button" onClick={() => setRamp(false)} style={chip(isLight, !ramp)}>Flat table</button>
-        <button type="button" onClick={() => setRamp(true)} style={chip(isLight, ramp)}>30° ramp</button>
-        <button type="button" onClick={() => setRough((v) => !v)} style={chip(isLight, rough)}>{rough ? 'Rough floor' : 'Smooth floor'}</button>
+        <button type="button" onClick={() => chooseRamp(false)} style={chip(isLight, !ramp)}>Flat table</button>
+        <button type="button" onClick={() => chooseRamp(true)} style={chip(isLight, ramp)}>30° ramp</button>
+        <button type="button" onClick={toggleRough} style={chip(isLight, rough)}>{rough ? 'Rough floor' : 'Smooth floor'}</button>
       </div>
       <label style={{ display: 'block', marginTop: '10px', fontSize: '0.82rem', color: ink }}>
         Applied pull: {pull} N
-        <input type="range" min="0" max="20" value={pull} onChange={(e) => setPull(Number(e.target.value))} style={{ width: '100%' }} />
+        <input type="range" min="0" max="20" value={pull} onChange={(e) => changePull(Number(e.target.value))} style={{ width: '100%' }} />
       </label>
     </div>
   );
@@ -99,7 +128,28 @@ function NewtonLab({ isLight, initialLaw = 1 }) {
     if (law === 3) setThirdPositions({ a: 146, b: 214 });
   }, [law]);
 
+  const chooseLaw = (next) => {
+    if (next !== law) recordLabManipulation('newton', 'law', next);
+    setLaw(next);
+  };
+
+  const toggleRough = () => {
+    recordLabManipulation('newton', 'friction', rough ? 'smooth' : 'rough');
+    setRough((value) => !value);
+  };
+
+  const changeMass = (next) => {
+    if (next !== mass) recordLabManipulation('newton', 'mass', next);
+    setMass(next);
+  };
+
+  const changeForce = (next) => {
+    if (next !== force) recordLabManipulation('newton', 'force', next);
+    setForce(next);
+  };
+
   const push = () => {
+    recordLabManipulation('newton', 'push', 'run');
     setX(40);
     let v = 4.2;
     let pos = 40;
@@ -115,6 +165,7 @@ function NewtonLab({ isLight, initialLaw = 1 }) {
   };
 
   const playThirdLaw = () => {
+    recordLabManipulation('newton', 'third-law-push', 'run');
     const start = { a: 146, b: 214 };
     const end = { a: 78, b: 282 };
     setThirdPositions(start);
@@ -140,7 +191,7 @@ function NewtonLab({ isLight, initialLaw = 1 }) {
     <div data-quantora-study-lab="newton">
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
         {[1, 2, 3].map((n) => (
-          <button key={n} type="button" onClick={() => setLaw(n)} style={chip(isLight, law === n)}>Law {n}</button>
+          <button key={n} type="button" onClick={() => chooseLaw(n)} style={chip(isLight, law === n)}>Law {n}</button>
         ))}
       </div>
       {law === 1 ? (
@@ -152,7 +203,7 @@ function NewtonLab({ isLight, initialLaw = 1 }) {
           </svg>
           <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
             <button type="button" onClick={push} style={chip(isLight, true)}>Give one quick push</button>
-            <button type="button" onClick={() => setRough((v) => !v)} style={chip(isLight, rough)}>{rough ? 'Rough floor on' : 'Smooth ice'}</button>
+            <button type="button" onClick={toggleRough} style={chip(isLight, rough)}>{rough ? 'Rough floor on' : 'Smooth ice'}</button>
           </div>
         </>
       ) : null}
@@ -164,11 +215,11 @@ function NewtonLab({ isLight, initialLaw = 1 }) {
           </div>
           <label style={{ display: 'block', marginTop: '10px', fontSize: '0.82rem', color: ink }}>
             Mass {mass} kg
-            <input type="range" min="1" max="20" value={mass} onChange={(e) => setMass(Number(e.target.value))} style={{ width: '100%' }} />
+            <input type="range" min="1" max="20" value={mass} onChange={(e) => changeMass(Number(e.target.value))} style={{ width: '100%' }} />
           </label>
           <label style={{ display: 'block', fontSize: '0.82rem', color: ink }}>
             Force {force} N
-            <input type="range" min="1" max="40" value={force} onChange={(e) => setForce(Number(e.target.value))} style={{ width: '100%' }} />
+            <input type="range" min="1" max="40" value={force} onChange={(e) => changeForce(Number(e.target.value))} style={{ width: '100%' }} />
           </label>
         </>
       ) : null}
