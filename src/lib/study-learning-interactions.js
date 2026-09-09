@@ -106,6 +106,17 @@ export function recordStudyHintRequest({ hintDepth = 1, ...context } = {}) {
   return [requested, depth].filter(Boolean);
 }
 
+export function recordStudyAnswerChange({ previousChoiceId = '', nextChoiceId = '', ...context } = {}) {
+  const previous = clean(previousChoiceId, 80);
+  const next = clean(nextChoiceId, 80);
+  if (!previous || !next || previous === next) return null;
+  return recordStudyLearningInteraction({
+    ...context,
+    type: STUDY_LEARNING_INTERACTION.ANSWER_CHANGED,
+    choiceId: next,
+  });
+}
+
 export function recordStudyAssessmentOutcome({ attemptId = '', result = null, retry = false, source = 'verified_assessment' } = {}) {
   if (!result || typeof result.correct !== 'boolean') return [];
   const conceptId = clean(result?.evidenceConcept?.key, 160);
