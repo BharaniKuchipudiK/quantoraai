@@ -5,7 +5,6 @@ import {
   deriveStudyWorkingState,
   observeStudyWorkingInteraction,
   readStudyWorkingState,
-  resetStudyWorkingStateForTests,
   setStudyWorkingConcept,
 } from './study-working-state.js';
 import {
@@ -106,8 +105,7 @@ test('working state is bounded to the latest observation window', () => {
 });
 
 test('runtime ignores forged contracts and observations from another active concept', () => {
-  resetStudyWorkingStateForTests();
-  setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
+  setStudyWorkingConcept({ conceptKey: 'test.runtime-isolation', conceptLabel: 'Runtime isolation' });
   assert.equal(observeStudyWorkingInteraction({
     ...observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED),
     contractVersion: 'forged-v9',
@@ -121,10 +119,9 @@ test('runtime ignores forged contracts and observations from another active conc
 });
 
 test('changing the active concept discards temporary observations', () => {
-  resetStudyWorkingStateForTests();
-  setStudyWorkingConcept({ conceptKey: 'math.linear-functions', conceptLabel: 'Linear functions' });
+  setStudyWorkingConcept({ conceptKey: 'test.concept-a', conceptLabel: 'Concept A' });
   assert.equal(observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED)), true);
   assert.equal(readStudyWorkingState({ now: () => NOW })?.representationPreference, 'visual');
-  setStudyWorkingConcept({ conceptKey: 'physics.newton-2', conceptLabel: "Newton's second law" });
+  setStudyWorkingConcept({ conceptKey: 'test.concept-b', conceptLabel: 'Concept B' });
   assert.equal(readStudyWorkingState({ now: () => NOW }), null);
 });
