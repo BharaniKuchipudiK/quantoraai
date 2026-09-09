@@ -7,6 +7,10 @@ import {
   Rows3,
   X,
 } from 'lucide-react';
+import {
+  STUDY_LEARNING_INTERACTION,
+  recordStudyLearningInteraction,
+} from '../lib/study-learning-interactions.js';
 import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
 import './study-assessment-workspace.css';
 
@@ -228,11 +232,28 @@ function Running({ assessment, session, onAnswer, onNext }) {
   );
 }
 
-function BatchRunning({ session, onSubmit }) {
+function BatchRunning({ session, onSubmit, topic }) {
   const [answers, setAnswers] = useState({});
   const items = session.batchItems || [];
   const answered = Object.keys(answers).filter((attemptId) => answers[attemptId]).length;
   const complete = items.length > 0 && answered === items.length;
+
+  const chooseAnswer = (entry, optionId) => {
+    setAnswers((current) => {
+      const previous = current[entry.attemptId];
+      if (previous && previous !== optionId) {
+        recordStudyLearningInteraction({
+          type: STUDY_LEARNING_INTERACTION.ANSWER_CHANGED,
+          source: 'assessment_batch',
+          conceptId: entry.item?.conceptKey,
+          conceptLabel: topic,
+          attemptId: entry.attemptId,
+          choiceId: optionId,
+        });
+      }
+      return { ...current, [entry.attemptId]: optionId };
+    });
+  };
 
   return (
     <div data-quantora-study-assessment-running="all_at_once">
@@ -252,7 +273,7 @@ function BatchRunning({ session, onSubmit }) {
                   key={option.id}
                   disabled={session.submitting}
                   aria-pressed={answers[entry.attemptId] === option.id}
-                  onClick={() => setAnswers((current) => ({ ...current, [entry.attemptId]: option.id }))}
+                  onClick={() => chooseAnswer(entry, option.id)}
                 >
                   <span>{option.id.toUpperCase()}</span>
                   {option.text}
@@ -348,7 +369,7 @@ export default function StudyAssessmentWorkspace({
         ) : session.phase === 'setup' ? (
           <Setup topic={label} onStart={onStart} onHistory={() => setView('history')} />
         ) : session.phase === 'batch' ? (
-          <BatchRunning session={session} onSubmit={onSubmitBatch} />
+          <BatchRunning session={session} onSubmit={onSubmitBatch} topic={label} />
         ) : session.phase === 'running' || session.phase === 'loading' ? (
           <Running assessment={assessment} session={session} onAnswer={onAnswer} onNext={onNext} />
         ) : (
