@@ -4,7 +4,7 @@ import {
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-09.1';
+export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-09.2';
 
 export type StudyRepresentationCoverageOutcome = 'renderer_available' | 'renderer_unavailable';
 
@@ -22,6 +22,7 @@ export type StudyRepresentationCoverageRequestClass =
   | 'visual_timeline'
   | 'visual_number_line'
   | 'visual_fraction'
+  | 'visual_before_after'
   | 'visual_unsupported';
 
 export type StudyRepresentationCoverageRow = {
@@ -55,6 +56,7 @@ const COVERAGE_PROBES = Object.freeze([
   { requestClass: 'visual_timeline', context: 'timeline of events in 1914 and 1918' },
   { requestClass: 'visual_number_line', context: 'number line from -3 to 5, mark 2' },
   { requestClass: 'visual_fraction', context: 'show equivalent fractions 2/3 and 4/6 visually' },
+  { requestClass: 'visual_before_after', context: 'show the before/after state change from ice to liquid water' },
   { requestClass: 'visual_unsupported', context: 'Explain opportunity cost in simple terms' },
 ] as const satisfies ReadonlyArray<{ requestClass: StudyRepresentationCoverageRequestClass; context: string }>);
 
