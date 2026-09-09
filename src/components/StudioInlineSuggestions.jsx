@@ -46,6 +46,14 @@ export default function StudioInlineSuggestions({
   if (!items.length) return null;
 
   const selectContinue = (item) => {
+    if (item?.id === 'study-hint') {
+      // This component is shared by every workspace. Load Study observation
+      // code only when a Study hint is actually selected so non-Study desks do
+      // not pay for PR4 in their entry bundle.
+      void import('../lib/study-learning-interactions.js')
+        .then(({ recordStudyHintRequest }) => recordStudyHintRequest({ source: 'guided_chip', hintDepth: 1 }))
+        .catch(() => {});
+    }
     if (item?.id === 'study-work-together' && requestStudyAdaptiveMission({ source: 'guided_chip', item })) {
       return;
     }

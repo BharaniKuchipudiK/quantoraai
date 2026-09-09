@@ -1,3 +1,5 @@
+import { recordStudyAssessmentOutcome } from './study-learning-interactions.js';
+
 function clean(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
@@ -49,13 +51,20 @@ export async function requestStudyAssessment({ conceptId, conceptLabel, sessionI
 }
 
 export async function gradeStudyAssessment({ attemptId, optionId } = {}) {
+  const cleanAttemptId = clean(attemptId, 64);
   const data = await studyAssessmentRequest({
     action: 'grade',
-    attemptId: clean(attemptId, 64),
+    attemptId: cleanAttemptId,
     optionId: clean(optionId, 40),
   });
   if (typeof data?.correct !== 'boolean' || !GRADED_EVIDENCE_KINDS.has(data?.evidenceKind)) {
     throw new Error('The verified Study check returned an invalid grade.');
+  }
+  // This is deliberately an observation side-channel only. The server grade is
+  // still the sole owner of verified evidence/mastery. Duplicate idempotent
+  // grade receipts are not counted as a second learner interaction.
+  if (data.duplicate !== true) {
+    recordStudyAssessmentOutcome({ attemptId: cleanAttemptId, result: data });
   }
   return data;
 }
