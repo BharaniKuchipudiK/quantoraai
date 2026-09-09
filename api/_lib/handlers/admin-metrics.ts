@@ -10,6 +10,7 @@ import { TURN_PLAN_WINDOW_HOURS, describeTurnPlans, summarizeTurnPlans, type Led
 import { getProductInsights } from "../product-analytics.js";
 import { getTechnicalInsights } from "../technical-analytics.js";
 import { reportStudyRepresentationCoverage } from "../study-representation-coverage.js";
+import { getGrowthTraffic } from "../vercel-web-analytics.js";
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -71,8 +72,11 @@ export default async function handler(req: any, res: any) {
   const turnPlanSource = sourceOf(turnPlanRows);
   const workspaceUse = summarizeWorkspaceUse(usageRead?.rows ?? [], USAGE_WINDOW_HOURS, { truncated: usageRead?.truncated ?? false });
   const usageSource = sourceOf(usageRead ? usageRead.rows : null);
-  const product = await getProductInsights(growth);
-  const technical = await getTechnicalInsights(growth?.requests7d ?? 0);
+  const [product, technical, growthTraffic] = await Promise.all([
+    getProductInsights(growth),
+    getTechnicalInsights(growth?.requests7d ?? 0),
+    getGrowthTraffic(),
+  ]);
 
   const usageDays = series?.usage ?? [];
   const measured = {
@@ -103,6 +107,10 @@ export default async function handler(req: any, res: any) {
     daily: series ? { growth: series.growth, usage: series.usage } : null,
 
     product: product ?? null,
+
+    /* Seven-day production visitor and activation aggregates from the same
+     * Vercel Web Analytics stream emitted by ProductTelemetry. */
+    growthTraffic,
 
     technical: technical ?? null,
 

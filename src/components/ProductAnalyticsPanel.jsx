@@ -199,6 +199,45 @@ function AcquisitionCard({ traffic, growth }) {
   );
 }
 
+function GrowthTrafficPanel({ growthTraffic }) {
+  const available = sourceAvailable(growthTraffic?.source, growthTraffic);
+  const windowDays = growthTraffic?.windowDays || 7;
+  const rate = (value) => (value == null ? '—' : `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`);
+
+  const metrics = [
+    ['Total visitors', count(growthTraffic?.totalVisitors), 'Vercel unique visitors'],
+    ['Anonymous visitors', count(growthTraffic?.anonymousVisitors), 'signed-out browser segment'],
+    ['Signed-in visitors', count(growthTraffic?.signedInVisitors), 'signed-in browser segment'],
+    ['Returning visitors', count(growthTraffic?.returningVisitors), 'seen on an earlier local day'],
+    ['First-time visitors', count(growthTraffic?.firstTimeVisitors), 'first seen in this browser'],
+    ['Studio activations', count(growthTraffic?.studioActivations), 'first authenticated Studio open'],
+    ['Anonymous → signed-in', rate(growthTraffic?.anonymousToSignedInConversion), 'signed-in share of classified visitors'],
+    ['Signed-in → Studio', rate(growthTraffic?.signedInToStudioActivation), 'activations ÷ signed-in visitors'],
+  ];
+
+  return (
+    <section data-quantora-growth-traffic={growthTraffic?.source || 'unknown'} style={{ ...panelStyle, padding: '22px' }}>
+      <SectionHeader title="Growth / Traffic" subtitle={`Production Web Analytics visitor segments and activation signals · last ${windowDays} days`} />
+      {!available ? (
+        <EmptyState>
+          {growthTraffic?.source === 'not_configured'
+            ? 'Vercel Web Analytics API access is not configured for this deployment.'
+            : 'Vercel Web Analytics is temporarily unavailable. No missing value is reported as zero.'}
+        </EmptyState>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: '10px', marginTop: '18px' }}>
+            {metrics.map(([label, value, note]) => <MetricTile key={label} label={label} value={value} note={note} />)}
+          </div>
+          <div style={{ marginTop: '14px', color: '#64748b', fontSize: '0.62rem', lineHeight: 1.5 }}>
+            Visitor segments are privacy-safe browser aggregates and can overlap across days. Conversion figures are cohort proxies, not sequenced person-level funnels. “—” means a denominator is empty or telemetry is unavailable.
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function ProductPulseCard({ technical, growth }) {
   const completion = technical?.completion;
   const activeRate = percent(growth?.activeUsers7d, growth?.totalUsers);
@@ -405,7 +444,7 @@ const panelStyle = {
  * Executive usage view built only from measured admin telemetry.
  * Different source windows are labelled rather than blended into a fake common period.
  */
-export default function ProductAnalyticsPanel({ product, growth, workspaceUse, window, daily, technical, source }) {
+export default function ProductAnalyticsPanel({ product, growth, workspaceUse, window, daily, technical, growthTraffic, source }) {
   const growthAvailable = sourceAvailable(source, growth);
   const workspaceAvailable = sourceAvailable(workspaceUse?.source, workspaceUse);
   const trafficAvailable = sourceAvailable(product?.traffic?.source, product?.traffic?.summary);
@@ -437,6 +476,8 @@ export default function ProductAnalyticsPanel({ product, growth, workspaceUse, w
       </div>
 
       <UsageTrend daily={daily} windowDays={window?.days} />
+
+      <GrowthTrafficPanel growthTraffic={growthTraffic} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
         <AcquisitionCard traffic={product?.traffic} growth={growthAvailable ? growth : null} />

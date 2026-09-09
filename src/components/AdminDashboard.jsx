@@ -163,6 +163,7 @@ const getTelemetryStatus = (metrics) => {
   const source = metrics?.source;
   const workspaceSource = metrics?.workspaceUse?.source;
   const trafficSource = metrics?.product?.traffic?.source;
+  const growthTrafficSource = metrics?.growthTraffic?.source;
 
   if (source === 'not_configured' || workspaceSource === 'not_configured' || metrics?.isLiveConnected === false) {
     return {
@@ -173,7 +174,8 @@ const getTelemetryStatus = (metrics) => {
     };
   }
 
-  if (source === 'unavailable' || workspaceSource === 'unavailable' || trafficSource === 'unavailable') {
+  if (source === 'unavailable' || workspaceSource === 'unavailable' || trafficSource === 'unavailable'
+    || growthTrafficSource === 'not_configured' || growthTrafficSource === 'unavailable') {
     return {
       label: 'DEGRADED',
       color: '#f59e0b',
@@ -219,11 +221,15 @@ import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
   const notConfigured = metrics.source === 'not_configured' || metrics.workspaceUse?.source === 'not_configured';
+  const growthTrafficNotConfigured = metrics.growthTraffic?.source === 'not_configured';
   const unavailable = metrics.source === 'unavailable'
     || metrics.workspaceUse?.source === 'unavailable'
-    || metrics.product?.traffic?.source === 'unavailable';
+    || metrics.product?.traffic?.source === 'unavailable'
+    || metrics.growthTraffic?.source === 'unavailable';
   const warning = notConfigured
     ? 'Analytics storage is not configured. Unavailable metrics are shown as — rather than zero.'
+    : growthTrafficNotConfigured
+      ? 'Vercel Web Analytics API access is not configured. Growth / Traffic metrics are shown as — until its read credentials are added.'
     : unavailable
       ? 'Some analytics queries are unavailable. Missing telemetry is shown as — rather than being reported as zero usage.'
       : '';
@@ -244,6 +250,7 @@ const UserAnalyticsTab = ({ metrics }) => {
         window={metrics.window}
         daily={metrics.daily}
         technical={metrics.technical}
+        growthTraffic={metrics.growthTraffic}
         source={metrics.source}
       />
     </div>
