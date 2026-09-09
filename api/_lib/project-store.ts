@@ -77,6 +77,24 @@ export type ProjectSaveResult =
   | { status: "conflict" }
   | { status: "unavailable" };
 
+async function confirmProjectSave(userSub: string, project: ProjectRecord, expectedVersion: number): Promise<ProjectRecord | null> {
+  try {
+    const response = await requestRaw(
+      `projects?select=id,version,name,description,goal,status,color,created_at,updated_at&user_sub=eq.${encodeURIComponent(userSub)}&id=eq.${encodeURIComponent(project.id)}&limit=1`,
+      { method: 'GET' }, true,
+    );
+    if (!response?.ok) return null;
+    const rows = await response.json();
+    const record = projectRecord(Array.isArray(rows) && rows.length === 1 ? rows[0] : null);
+    if (!record || record.version !== expectedVersion + 1) return null;
+    const fields = ['id', 'name', 'description', 'goal', 'status', 'color'] as const;
+    return fields.every((field) => record[field] === project[field]) ? record : null;
+  } catch {
+    // A failed confirmation is still an unknown outcome, never a reason to write again.
+    return null;
+  }
+}
+
 export async function saveProject(entry: {
   userSub: string;
   expectedVersion: number;
@@ -91,7 +109,9 @@ export async function saveProject(entry: {
     failure: 'timeout' | 'transport' | 'decode' | null;
     headersMs: number | null;
     httpStatus: number | null;
-  } = { outcome: 'unavailable', phase: 'headers', failure: null, headersMs: null, httpStatus: null };
+    recovery: 'confirmed' | 'unconfirmed' | null;
+    confirmationMs: number | null;
+  } = { outcome: 'unavailable', phase: 'headers', failure: null, headersMs: null, httpStatus: null, recovery: null, confirmationMs: null };
   try {
     const response = await requestRaw("rpc/save_project", {
       method: "POST",
@@ -118,6 +138,18 @@ export async function saveProject(entry: {
         diagnostic.outcome = 'conflict';
         return { status: "conflict" };
       }
+      if (response.status >= 500) {
+        // A gateway can answer 5xx after the database committed. Confirm the
+        // exact next version once; never replay a mutation with an unknown outcome.
+        const confirmationStarted = performance.now();
+        const confirmed = await confirmProjectSave(entry.userSub, project, entry.expectedVersion);
+        diagnostic.confirmationMs = Math.round(performance.now() - confirmationStarted);
+        diagnostic.recovery = confirmed ? 'confirmed' : 'unconfirmed';
+        if (confirmed) {
+          diagnostic.outcome = 'saved';
+          return { status: 'saved', record: confirmed };
+        }
+      }
       return { status: "unavailable" };
     }
     const rows = await response.json();
@@ -128,12 +160,26 @@ export async function saveProject(entry: {
   } catch (error: any) {
     diagnostic.failure = error?.name === 'TimeoutError' || error?.name === 'AbortError'
       ? 'timeout' : error instanceof SyntaxError ? 'decode' : 'transport';
+    // The write may have committed even though its response was lost. One
+    // separately bounded read can establish the desired state without replaying
+    // a mutation or overwriting a concurrent edit. The common path is unchanged.
+    const confirmationStarted = performance.now();
+    const confirmed = await confirmProjectSave(entry.userSub, project, entry.expectedVersion);
+    diagnostic.confirmationMs = Math.round(performance.now() - confirmationStarted);
+    diagnostic.recovery = confirmed ? 'confirmed' : 'unconfirmed';
+    if (confirmed) {
+      diagnostic.outcome = 'saved';
+      return { status: 'saved', record: confirmed };
+    }
     return { status: "unavailable" };
   } finally {
     // One bounded event per attempt, including successful timings for a baseline.
     // Never log project contents, owner IDs, credentials, URLs, or raw DB errors.
     // A timeout is an unknown commit outcome; it must not replay the mutation.
-    const event = { ...diagnostic, elapsedMs: Math.round(performance.now() - startedAt), budgetMs: REST_TIMEOUT_MS };
+    const event = {
+      ...diagnostic, elapsedMs: Math.round(performance.now() - startedAt), budgetMs: REST_TIMEOUT_MS,
+      confirmationBudgetMs: diagnostic.recovery ? REST_TIMEOUT_MS : 0,
+    };
     if (diagnostic.outcome === 'unavailable') console.warn('[project-save]', event);
     else console.info('[project-save]', event);
   }
