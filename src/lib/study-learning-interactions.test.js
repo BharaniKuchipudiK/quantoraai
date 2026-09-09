@@ -17,6 +17,22 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
+test('PR4 contract declares every governed learning interaction family', () => {
+  assert.deepEqual(Object.values(STUDY_LEARNING_INTERACTION).sort(), [
+    'answer_changed',
+    'hint_depth_used',
+    'hint_requested',
+    'prediction_made',
+    'repeated_explanation_requested',
+    'response_correct',
+    'response_incorrect',
+    'retrieval_success',
+    'retry_success',
+    'simulation_manipulated',
+    'visual_requested',
+  ]);
+});
+
 test('interaction contract keeps only bounded observation fields', () => {
   const event = recordStudyLearningInteraction({
     type: STUDY_LEARNING_INTERACTION.PREDICTION_MADE,
@@ -123,15 +139,19 @@ test('PR4 signal wiring covers real Study actions without persistence or a maste
   const hub = read('src/components/StudyHubLauncher.jsx');
   const chips = read('src/components/StudioInlineSuggestions.jsx');
   const assessment = read('src/components/StudyAssessmentWorkspace.jsx');
-  const lab = read('src/components/StudyLinearFunctionLab.jsx');
+  const mathLab = read('src/components/StudyLinearFunctionLab.jsx');
+  const physicsLab = read('src/components/StudyVisualLab.jsx');
 
   assert.doesNotMatch(contract, /fetch\s*\(/);
   assert.doesNotMatch(contract, /localStorage|sessionStorage|study_mastery_events|masteryUpdated|const events\s*=|events\.push/);
   assert.match(evidenceClient, /recordStudyAssessmentOutcome/);
   assert.match(hub, /REPEATED_EXPLANATION_REQUESTED/);
   assert.match(hub, /VISUAL_REQUESTED/);
+  assert.match(chips, /import\('\.\.\/lib\/study-learning-interactions\.js'\)/);
   assert.match(chips, /recordStudyHintRequest/);
   assert.match(assessment, /recordStudyAnswerChange/);
-  assert.match(lab, /PREDICTION_MADE/);
-  assert.match(lab, /SIMULATION_MANIPULATED/);
+  assert.match(mathLab, /PREDICTION_MADE/);
+  assert.match(mathLab, /SIMULATION_MANIPULATED/);
+  assert.match(physicsLab, /recordLabManipulation/);
+  assert.match(physicsLab, /SIMULATION_MANIPULATED/);
 });
