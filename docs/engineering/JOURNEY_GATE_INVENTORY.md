@@ -144,6 +144,7 @@ Not journeys, and not counted above, but every journey stands on them.
 | `dead-wires` | Nothing tested is reachable by nothing, and hooks are declared in dependency order | `wiring-gate.mjs`, `hook-dependency-order-gate.mjs` | — | — |
 | `hostile-reply-safety` | A hostile or malformed model reply cannot destroy the build | `pipeline-stress.mjs`, `never-discard-model-output.test.js`, `chat-turn-safety.test.js` | — | — |
 | `dependency-advisories-accepted` | Every high-severity dependency advisory is either fixed or accepted, by cause, with a reason | `dependency-advisory-gate.mjs` | — | — |
+| `shell-uses-the-screen` | The application shell uses the screen it was given, and does not spill off it | — | `shell-width-browser-gate.mjs` | — |
 | `experience-budget` | The shell, a workspace switch and the input stay inside their time budgets | — | `platform-experience-browser-gate.mjs` | — |
 | `turn-allowance-visible` | A person can see their turn allowance and when it comes back, before being refused | `user-turn-budget.test.ts`, `turn-budget-view.test.js`, `turn-budget-meter.test.tsx`, `turn-budget-ring.test.tsx` | — | — |
 | `preview-updates-itself` | A page the model wrote appears without being asked, or says why it did not | `preview-autocommit.test.js` | — | — |

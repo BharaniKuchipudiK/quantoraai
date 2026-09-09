@@ -623,7 +623,33 @@ export default function App() {
             display: 'flex',
             flexDirection: 'column',
             minHeight: 0,
-            maxWidth: isStudioShell ? '1800px' : '1400px',
+            /* The shell must not be the thing that limits width. Measured on
+             * 2026-09-09 with scripts/shell-width-browser-gate.mjs: at a 2000px
+             * viewport the studio rendered 1800px (200px unused) and every other
+             * tab 1400px (600px unused, 30% of the screen); at 2560px the studio
+             * wasted 760px and the rest 1160px. The admin dashboard is the worst
+             * case and the one the user reported — its own grid is already fluid
+             * (auto-fit, minmax(200px, 1fr)), so it was the shell holding it in.
+             *
+             * Widening here is safe for reading: running text caps itself further
+             * down (.markdown-prose at 860px, chat bubbles at 640-720px), so a
+             * wider shell buys room for panels and grids, never a 2000px line of
+             * prose. The studio is an application shell like an editor, and takes
+             * the viewport; other tabs keep a ceiling so a single-column surface
+             * cannot stretch absurdly on an ultrawide.
+             *
+             * Width belongs to each surface, not to the shell. That is not a
+             * hypothetical: the hub already caps itself (.welcome-hub, 1120px) and the
+             * dashboard grid already reflows, so the only thing the shell cap achieved
+             * was overriding both. A first attempt kept a 2200px ceiling here for
+             * non-studio tabs; the gate measured it wasting 14.1% at 2560px and it was
+             * the same bandaid one size larger (.quantorarules rule 5). A surface that
+             * needs a narrower measure states it on itself, where it can be read.
+             *
+             * scripts/shell-width-browser-gate.mjs holds both halves: at least 98% of
+             * the viewport used, and no sideways scroll — so 'use the width' cannot be
+             * satisfied by letting content escape instead. */
+            maxWidth: 'none',
             width: '100%',
             margin: '0 auto',
             padding: isStudioShell

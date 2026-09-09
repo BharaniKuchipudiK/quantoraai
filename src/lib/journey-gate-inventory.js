@@ -1162,6 +1162,17 @@ export const JOURNEYS = Object.freeze([
     note: 'Replaces a one-line allowlist that suppressed by package name and printed "allowlisted unreachable transitives: image-size, pptxgenjs" on every green run (2026-09-08). image-size is neither unreachable nor a transitive — it is a direct production dependency that api/generate-office.ts feeds attacker-supplied bytes, and the suppression is why nobody looked for two months. Acceptance is now per cause, so a NEW advisory on an already-listed package fails instead of being swallowed by the old name, and an accepted cause npm audit stops reporting fails as a silencer left armed over nothing. All four failure modes were run before this shipped.',
   }),
   journey({
+    id: 'shell-uses-the-screen',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'The application shell uses the screen it was given, and does not spill off it',
+    entry: 'src/App.jsx',
+    gates: {
+      browser: ['scripts/shell-width-browser-gate.mjs'],
+    },
+    note: 'A user reported wasted space on a wide monitor and one inline style was the whole cause (2026-09-09): the <main> shell was capped at 1800px in the studio and 1400px everywhere else, the admin dashboard included. Measured before the fix — at 2000px the studio rendered 1800px and every other tab 1400px, so 30% of that screen was empty; at 2560px, 45%. Nothing could see it, because every layout gate in this repository asks whether a surface renders or overflows and none asked whether it used the space, and a shell that stops early overflows nothing. The dashboard grid was already fluid (auto-fit, minmax(200px, 1fr)), so no dashboard test could have found it either — the waste came from above. The cap is gone rather than raised: a first attempt kept a 2200px ceiling and the gate measured that wasting 14.1% at 2560px, which was the same bandaid one size larger. Width now belongs to each surface, where it can be read — the hub still states its own 1120px measure, and running text still caps itself at 860px, so a wider shell buys panels room and never a 2000px line of prose. The gate asserts both halves against each other: at least 98% of the viewport used, AND no sideways scroll, so \'use the width\' cannot be satisfied by letting content escape.',
+  }),
+  journey({
     id: 'experience-budget',
     kind: 'platform',
     area: 'platform invariants',
