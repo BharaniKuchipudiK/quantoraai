@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import { loadVerifiedStudyLearnerProjection } from './study-learner-projection-loader.js';
@@ -6,9 +7,10 @@ import {
   applyStudyPrerequisiteNextBestAction,
   STUDY_NEXT_BEST_ACTION_VERSION,
 } from './study-next-best-action.js';
+import { teachingStrategyFromLearnerTruth, type StudyExperienceTeachingStrategy } from './study-learning-experience-director.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-02.9';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-09.1';
 
 export type StudyWorkingStateSnapshot = {
   version: 'study-working-state-v1';
@@ -29,6 +31,8 @@ export type StudyRequestContext = {
   conceptLabel: string;
   workingState?: StudyWorkingStateSnapshot;
 };
+
+const requestWorkingStateStorage = new AsyncLocalStorage<StudyWorkingStateSnapshot | null>();
 
 function clean(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
@@ -70,35 +74,29 @@ function normalizeWorkingState(value: unknown, conceptKey: string, conceptLabel:
 
 /** Server repeats the Study guard; a forged payload cannot activate elsewhere. */
 export function normalizeStudyRequestContext(value: unknown, studioDomain: string | null): StudyRequestContext | null {
+  // Clear inherited state first. `enterWith` binds only this request's async
+  // execution chain; the snapshot is never placed in a process-global learner
+  // map and is replaced by null for every non-Study or invalid request.
+  requestWorkingStateStorage.enterWith(null);
   if (studioDomain !== 'education') return null;
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const conceptKey = clean(input.conceptKey, 160).toLowerCase();
   const conceptLabel = clean(input.conceptLabel, 300);
   if (!conceptLabel) return null;
   const workingState = normalizeWorkingState(input.workingState, conceptKey, conceptLabel);
+  if (workingState) requestWorkingStateStorage.enterWith(workingState);
   return { conceptKey, conceptLabel, ...(workingState ? { workingState } : {}) };
 }
 
-export type StudyTeachingStrategy =
-  | 'retrieval_practice'
-  | 'misconception_repair'
-  | 'compare_and_contrast'
-  | 'scaffold_then_fade'
-  | 'socratic_application'
-  | 'transfer_application';
+/** Read-only request-scoped access for the deterministic pedagogy director. */
+export function currentStudyRequestWorkingState(): StudyWorkingStateSnapshot | null {
+  return requestWorkingStateStorage.getStore() || null;
+}
+
+export type StudyTeachingStrategy = StudyExperienceTeachingStrategy;
 
 export function teachingStrategyFor(model: StudyLearnerModel): StudyTeachingStrategy {
-  switch (model.nextLearningMove.type) {
-    case 'diagnose_misconception': return 'misconception_repair';
-    case 'confirm_misconception': return 'compare_and_contrast';
-    case 'guided_repair': return 'scaffold_then_fade';
-    case 'vary_evidence': return 'socratic_application';
-    case 'transfer_task': return 'transfer_application';
-    case 'retention_probe':
-    case 'independent_retrieval':
-    default:
-      return 'retrieval_practice';
-  }
+  return teachingStrategyFromLearnerTruth(model);
 }
 
 function emitOperationalLearnerState(model: StudyLearnerModel): void {

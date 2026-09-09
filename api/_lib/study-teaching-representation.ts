@@ -1,5 +1,6 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
 import type { StudyActiveLearningContext } from './study-active-learning-context.js';
+import type { StudyLearningExperiencePlan } from './study-learning-experience-director.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { emitStudyLearningFlowMetric } from './study-learning-flow-telemetry.js';
 import {
@@ -7,7 +8,7 @@ import {
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-09.1';
+export const STUDY_TEACHING_REPRESENTATION_VERSION = 'study-teaching-representation-2026-09-09.2';
 
 export type StudyTeachingRepresentation =
   | 'concise_text'
@@ -48,7 +49,7 @@ export type StudyTeachingRepresentationPlan = {
   rendererRequired: boolean;
   rendererKind: StudyRepresentationRendererKind | null;
   fallback: StudyTeachingRepresentationFallback;
-  reason: 'explicit_request' | 'struggle_repair' | 'verified_learner_state' | 'default_teaching';
+  reason: 'explicit_request' | 'struggle_repair' | 'verified_learner_state' | 'experience_director' | 'default_teaching';
 };
 
 type HistoryItem = { role?: string; sender?: string; text?: string; content?: string };
@@ -106,6 +107,61 @@ function planForVerifiedLearnerState(
   }
 }
 
+function planForExperienceDirector(
+  experience: StudyLearningExperiencePlan,
+  capability: StudyRepresentationCapability | null,
+  reason: StudyTeachingRepresentationPlan['reason'],
+): StudyTeachingRepresentationPlan | null {
+  if (experience.modality === 'request_driven') return null;
+  const common = {
+    version: STUDY_TEACHING_REPRESENTATION_VERSION,
+    requestedMode: null,
+    fallback: 'none',
+    reason,
+    learnerAction: experience.interactionType,
+  } as const;
+
+  if (experience.modality === 'interactive') {
+    if (capability?.representation !== 'simulation_or_lab') return null;
+    return {
+      ...common,
+      primaryRepresentation: capability.representation,
+      rendererRequired: true,
+      rendererKind: capability.rendererKind,
+    };
+  }
+  if (experience.modality === 'visual') {
+    if (!capability) return null;
+    return {
+      ...common,
+      primaryRepresentation: capability.representation,
+      rendererRequired: true,
+      rendererKind: capability.rendererKind,
+    };
+  }
+  if (experience.modality === 'worked_example') {
+    return { ...common, primaryRepresentation: 'worked_example', rendererRequired: false, rendererKind: null };
+  }
+  if (experience.modality === 'comparison') {
+    return { ...common, primaryRepresentation: 'comparison', rendererRequired: false, rendererKind: null };
+  }
+  if (experience.modality === 'governed_assessment') {
+    return { ...common, primaryRepresentation: 'governed_assessment', rendererRequired: false, rendererKind: null };
+  }
+  if (experience.modality === 'reference') {
+    return { ...common, primaryRepresentation: 'reference', rendererRequired: false, rendererKind: null };
+  }
+  if (experience.modality === 'text') {
+    return {
+      ...common,
+      primaryRepresentation: experience.interactionType === 'retrieve' ? 'interactive_probe' : 'concise_text',
+      rendererRequired: false,
+      rendererKind: null,
+    };
+  }
+  return null;
+}
+
 export function planStudyTeachingRepresentation(input: {
   message?: string | null;
   contextText?: string | null;
@@ -113,6 +169,7 @@ export function planStudyTeachingRepresentation(input: {
   intervention?: StudyLearningIntervention | null;
   learnerModel?: StudyLearnerModel | null;
   activeLearningContext?: StudyActiveLearningContext | null;
+  experiencePlan?: StudyLearningExperiencePlan | null;
 }): StudyTeachingRepresentationPlan {
   const message = String(input.message || '').trim();
   const contextText = String(input.contextText || '').trim();
@@ -120,6 +177,10 @@ export function planStudyTeachingRepresentation(input: {
   const requested = requestedMode(message);
   const active = input.activeLearningContext || null;
   const capability = active?.representationCapability || resolveStudyRepresentationCapability(context);
+  const intervention = input.intervention || evaluateStudyLearningIntervention({
+    message,
+    history: Array.isArray(input.history) ? input.history : [],
+  });
   const emitCoverage = (available: boolean, rendererKind: StudyRepresentationRendererKind | null = null) => {
     emitStudyLearningFlowMetric({
       metric: 'representation_coverage',
@@ -204,10 +265,20 @@ export function planStudyTeachingRepresentation(input: {
     return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: requested, primaryRepresentation: 'concise_text', learnerAction: 'explain', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'explicit_request' };
   }
 
-  const intervention = input.intervention || evaluateStudyLearningIntervention({
-    message,
-    history: Array.isArray(input.history) ? input.history : [],
-  });
+  if (input.experiencePlan) {
+    const reason: StudyTeachingRepresentationPlan['reason'] = input.learnerModel
+      ? 'verified_learner_state'
+      : intervention.action !== 'continue'
+        ? 'struggle_repair'
+        : input.experiencePlan.reasonCodes[0] === 'default_teaching'
+          ? 'default_teaching'
+          : 'experience_director';
+    const directed = planForExperienceDirector(input.experiencePlan, capability, reason);
+    if (directed) {
+      if (directed.rendererRequired) emitCoverage(true, directed.rendererKind);
+      return directed;
+    }
+  }
 
   if (intervention.action === 'guided_reconstruction') {
     return { version: STUDY_TEACHING_REPRESENTATION_VERSION, requestedMode: null, primaryRepresentation: 'interactive_probe', learnerAction: 'predict', rendererRequired: false, rendererKind: null, fallback: 'none', reason: 'struggle_repair' };
