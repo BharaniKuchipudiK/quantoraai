@@ -1,4 +1,4 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-08.3';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-09.1';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
@@ -12,13 +12,14 @@ export type StudyRepresentationRendererKind =
   | 'graph'
   | 'process-flow'
   | 'timeline'
-  | 'number-line';
+  | 'number-line'
+  | 'fraction-model';
 
 export type StudyRepresentationCapability = {
   version: typeof STUDY_REPRESENTATION_CAPABILITY_VERSION;
   representation: 'annotated_diagram' | 'graph' | 'process_flow' | 'timeline' | 'number_line' | 'simulation_or_lab';
   rendererKind: StudyRepresentationRendererKind;
-  reason: 'mechanics' | 'newton_animation' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line';
+  reason: 'mechanics' | 'newton_animation' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line' | 'fraction';
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
@@ -36,6 +37,7 @@ const GRAPH = /\b(?:graph|slope|axis|axes|plot|trend|correlation|distribution|ve
 const PROCESS = /\b(?:process|cycle|flow|pathway|sequence|step|stage)\b/i;
 const TIMELINE = /\b(?:timeline|chronolog|year|era|history)\b/i;
 const NUMBER_LINE = /\bnumber line\b/i;
+const FRACTION = /\b(?:fraction|fractions|fractional|numerator|denominator|equivalent fractions?|proportion|proportions)\b/i;
 
 function capability(representation: StudyRepresentationCapability['representation'], rendererKind: StudyRepresentationRendererKind, reason: StudyRepresentationCapability['reason']): StudyRepresentationCapability {
   return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation, rendererKind, reason };
@@ -60,6 +62,7 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
 
   if (requestsNewtonThirdLawLab(context)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
   if (NUMBER_LINE.test(context)) return capability('number_line', 'number-line', 'number_line');
+  if (FRACTION.test(context)) return capability('annotated_diagram', 'fraction-model', 'fraction');
   if (GRAPH.test(context)) return capability('graph', 'graph', 'graph_semantics');
   if (MECHANICS.test(context)) return capability('annotated_diagram', 'physics-motion', 'mechanics');
   if (FIELD.test(context)) return capability('annotated_diagram', 'field-lines', 'field');
@@ -92,6 +95,7 @@ export function resolveStudyRepresentationCapabilityForConcept(input: {
 
   if (key) {
     if (/number[-_. ]?line|inequalit/.test(key)) return capability('number_line', 'number-line', 'number_line');
+    if (/fraction|proportion/.test(key)) return capability('annotated_diagram', 'fraction-model', 'fraction');
     if (/motion[-_. ]?graph|kinematics.*graph|coordinate|quadrant|trig|unit[-_. ]?circle|function[-_. ]?graph/.test(key)) return capability('graph', 'graph', 'graph_semantics');
     if (/electric[-_. ]?field|magnetic[-_. ]?field|electromagnet.*field/.test(key)) return capability('annotated_diagram', 'field-lines', 'field');
     if (/electric|circuit|emf|potential[-_. ]?difference|voltage|resistance/.test(key)) return capability('annotated_diagram', 'electricity-circuit', 'electricity');
