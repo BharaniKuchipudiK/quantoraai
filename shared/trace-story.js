@@ -235,10 +235,30 @@ export function describeTrace(events = []) {
   }
 
   /*
-   * The record stops before the server's final word. That is the incident's
-   * shape: started, engine chosen, engine called — then nothing. A function
-   * that timed out or crashed writes no "failed" event, so the absence IS the
-   * finding, and it is a fault on our side by definition.
+   * A provider SUCCESS followed by no terminal api.chat record is not evidence
+   * of a provider timeout, nor evidence that the server died "before choosing
+   * an engine". Production incident studio-f32ae5dd-4e01-4828-8896-c4c5e0add16b
+   * proved the opposite: Vercel's runtime log had api.chat succeeded, while the
+   * durable trace lost that last row. State exactly what survived and stop there.
+   */
+  if (last.boundary === 'inference.provider' && last.state === 'succeeded') {
+    return {
+      outcome: 'provider-finished-terminal-missing',
+      headline: 'The model replied successfully, but Quantora has no terminal server record for this turn.',
+      detail: `The last thing recorded was: ${lastWords} The provider completed its reply. `
+        + 'The trace ends before api.chat recorded success or failure, so this record alone cannot distinguish '
+        + 'a lost terminal trace from a post-processing failure. It does not prove a provider timeout, crash, or refusal.'
+        + (deskSilent ? ' The desk later recorded that it still did not receive a usable reply.' : ''),
+      steps,
+    };
+  }
+
+  /*
+   * The record stops before the server's final word. For an in-flight provider
+   * call or a recorded provider failure, absence tells us only that the terminal
+   * record is missing. The more specific language below names where the trace
+   * stopped, while retaining the legacy cut-off classification for callers that
+   * use it operationally.
    */
   const cutOffWhile = last.boundary === 'inference.provider' && (last.state === 'attempting')
     ? ` while waiting on ${engineWords(last)}`
@@ -249,8 +269,9 @@ export function describeTrace(events = []) {
         : ' before choosing an engine';
   return {
     outcome: 'server-cut-off',
-    headline: 'Quantora\'s server was cut off before it finished this turn — a fault on our side.',
-    detail: `The last thing recorded was: ${lastWords} Nothing after it. The server function stopped${cutOffWhile}: a timeout or a crash on Quantora's side, not a refusal and not anything you did. Your message is unchanged.`,
+    headline: 'Quantora\'s server record stops before this turn has a terminal result.',
+    detail: `The last thing recorded was: ${lastWords} Nothing after it. The trace stopped${cutOffWhile}. `
+      + 'That can happen if execution was interrupted or if the terminal trace was not persisted; this record alone does not prove which.',
     steps,
   };
 }
