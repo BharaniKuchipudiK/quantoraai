@@ -4,6 +4,41 @@ import { saveProject } from './project-store.js';
 
 const project = { id: 'private-project-id', version: 2, name: 'private name', description: 'private description', goal: 'private goal', status: 'active' as const, color: null };
 
+test('[was-red] an uncertain save is acknowledged only after an exact owned version is read back', async (t) => {
+  const oldFetch = globalThis.fetch;
+  const oldWarn = console.warn;
+  const oldInfo = console.info;
+  const oldUrl = process.env.SUPABASE_URL;
+  const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  t.after(() => {
+    globalThis.fetch = oldFetch; console.warn = oldWarn; console.info = oldInfo;
+    if (oldUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey;
+  });
+  process.env.SUPABASE_URL = 'https://test.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only';
+  console.warn = () => {}; console.info = () => {};
+  const matched = { ...project, version: 3 };
+  for (const [row, expected] of [
+    [matched, 'saved'], [null, 'unavailable'], [{ ...matched, version: 4 }, 'unavailable'],
+    [{ ...matched, goal: 'different edit' }, 'unavailable'], [{ ...matched, id: 'other-project' }, 'unavailable'],
+  ] as const) {
+    const calls: string[] = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push(init?.method || 'GET');
+      if (init?.method === 'POST') throw new DOMException('unknown commit outcome', 'TimeoutError');
+      const parsed = new URL(String(url));
+      assert.equal(parsed.searchParams.get('user_sub'), 'eq.owner:with@characters');
+      assert.equal(parsed.searchParams.get('id'), `eq.${project.id}`);
+      assert.equal(parsed.searchParams.get('limit'), '1');
+      return Response.json(row ? [row] : []);
+    };
+    const result = await saveProject({ userSub: 'owner:with@characters', expectedVersion: 2, project });
+    assert.equal(result.status, expected);
+    assert.deepEqual(calls, ['POST', 'GET'], 'confirm by reading; never replay an uncertain write');
+  }
+});
+
 function interruptedResponse(status: number) {
   return new Response(new ReadableStream({
     start(controller) { controller.error(new DOMException('private name', 'TimeoutError')); },
@@ -42,6 +77,7 @@ test('project save diagnostics distinguish outcomes without logging user data or
     console.warn = (...args: unknown[]) => { logs.push(args); };
     let calls = 0;
     globalThis.fetch = async (_input, init) => {
+      if (init?.method === 'GET') return Response.json({}, { status: 503 });
       calls++;
       assert.equal(init?.method, 'POST');
       assert.ok(init?.signal);
