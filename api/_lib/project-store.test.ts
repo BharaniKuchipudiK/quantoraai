@@ -39,6 +39,32 @@ test('[was-red] an uncertain save is acknowledged only after an exact owned vers
   }
 });
 
+test('[was-red] an ambiguous gateway 5xx is confirmed without replaying the write', async (t) => {
+  const oldFetch = globalThis.fetch;
+  const oldWarn = console.warn;
+  const oldInfo = console.info;
+  const oldUrl = process.env.SUPABASE_URL;
+  const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  t.after(() => {
+    globalThis.fetch = oldFetch; console.warn = oldWarn; console.info = oldInfo;
+    if (oldUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey;
+  });
+  process.env.SUPABASE_URL = 'https://test.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only';
+  console.warn = () => {}; console.info = () => {};
+  const methods: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    methods.push(init?.method || 'GET');
+    if (init?.method === 'POST') return Response.json({ message: 'gateway timeout' }, { status: 504 });
+    return Response.json([{ ...project, version: 3 }]);
+  };
+  const result = await saveProject({ userSub: 'private-owner', expectedVersion: 2, project });
+  assert.equal(result.status, 'saved');
+  assert.equal(result.status === 'saved' ? result.record.version : null, 3);
+  assert.deepEqual(methods, ['POST', 'GET']);
+});
+
 function interruptedResponse(status: number) {
   return new Response(new ReadableStream({
     start(controller) { controller.error(new DOMException('private name', 'TimeoutError')); },

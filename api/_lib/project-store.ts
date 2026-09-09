@@ -138,6 +138,18 @@ export async function saveProject(entry: {
         diagnostic.outcome = 'conflict';
         return { status: "conflict" };
       }
+      if (response.status >= 500) {
+        // A gateway can answer 5xx after the database committed. Confirm the
+        // exact next version once; never replay a mutation with an unknown outcome.
+        const confirmationStarted = performance.now();
+        const confirmed = await confirmProjectSave(entry.userSub, project, entry.expectedVersion);
+        diagnostic.confirmationMs = Math.round(performance.now() - confirmationStarted);
+        diagnostic.recovery = confirmed ? 'confirmed' : 'unconfirmed';
+        if (confirmed) {
+          diagnostic.outcome = 'saved';
+          return { status: 'saved', record: confirmed };
+        }
+      }
       return { status: "unavailable" };
     }
     const rows = await response.json();
