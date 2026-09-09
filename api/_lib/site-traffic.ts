@@ -16,6 +16,18 @@ function config() {
   return { url, key };
 }
 
+/**
+ * Keep the executive "signed-out website loads" number about normal browsers,
+ * not every client that happens to ask the session endpoint.
+ */
+export function shouldCountSignedOutBrowserHit(userAgent: unknown): boolean {
+  const value = String(userAgent || "");
+  if (!/Mozilla\//i.test(value)) return false;
+  if (/Electron|QuantoraDesktop/i.test(value)) return false;
+  if (/bot|crawler|spider|slurp|headless|lighthouse|monitor|uptime/i.test(value)) return false;
+  return true;
+}
+
 export async function recordSignedOutSiteHit(): Promise<void> {
   // Preview/dev/browser-gate traffic must never inflate the production metric.
   if (process.env.VERCEL_ENV !== "production") return;
