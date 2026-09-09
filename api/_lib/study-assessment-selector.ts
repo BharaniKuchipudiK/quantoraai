@@ -6,10 +6,11 @@ import type { StudyLearnerModel } from './study-learner-model.js';
 import type { StudyMisconceptionCode } from './study-misconception-taxonomy.js';
 import type { StudyEvidenceKind, StudyMasteryEvidenceEvent } from './study-truth-layer.js';
 
-export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-09-02.2';
+export const STUDY_ASSESSMENT_SELECTOR_VERSION = 'study-assessment-selector-2026-09-09.3';
 
-function coversMisconception(item: StudyAssessmentItem, code: StudyMisconceptionCode): boolean {
-  return Object.values(item.misconceptionByOptionId).includes(code);
+function discriminatesMisconception(item: StudyAssessmentItem, code: StudyMisconceptionCode): boolean {
+  const mapped = Object.values(item.misconceptionByOptionId).filter(Boolean);
+  return mapped.length > 0 && mapped.includes(code) && mapped.every((mappedCode) => mappedCode === code);
 }
 
 function isReleased(item: StudyAssessmentItem): boolean {
@@ -35,9 +36,9 @@ export function studyEvidenceKindForAssessmentItem(item: StudyAssessmentItem): E
  * - Unreleased candidates are never eligible.
  * - Freshness follows the grading RPC's learner-global item/version boundary,
  *   with concept-local admitted evidence retained as a second defensive source.
- * - An active diagnosis may receive only a fresh item that explicitly tests
- *   that misconception; an unrelated or repeated item cannot masquerade as a
- *   confirmation probe.
+ * - An active misconception candidate may receive only a fresh reviewed item
+ *   whose distractor mapping discriminates that same code. A mixed-code item
+ *   cannot promote the candidate merely because it mentions the code.
  * - During evidence variation, prefer a fresh reviewed item whose reviewed
  *   cognitive operation contributes a genuinely new evidence kind.
  * - Exhaustion returns null rather than issuing non-independent evidence as if
@@ -64,7 +65,7 @@ export function selectStudyAssessmentItem(input: {
   const activeCode = input.learnerModel?.misconception.code || null;
 
   if (activeCode) {
-    const confirmation = releasedItems.find((item) => isFresh(item) && coversMisconception(item, activeCode)) || null;
+    const confirmation = releasedItems.find((item) => isFresh(item) && discriminatesMisconception(item, activeCode)) || null;
     if (!confirmation) {
       emitStudyLearningFlowMetric({
         metric: 'assessment_availability',
