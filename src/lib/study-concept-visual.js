@@ -1,3 +1,4 @@
+import { studyMicroVisualKind } from './study-micro-visuals.js';
 import { studyVisualKind } from './study-pictures.js';
 
 const TOPIC_SELECTION_RE = /\b(?:suggest|recommend|choose|pick)\b[\s\S]{0,48}\b(?:topic|subject)\b|\bwhat should i study\b/i;
@@ -14,7 +15,7 @@ const BEYOND_F_RE = /\b(?:beyond|outside|past|farther than|further than|more tha
 const INSIDE_F_RE = /\b(?:inside|within|closer than|less than)\s+(?:the\s+)?(?:focus|focal point|focal distance|focal length|F)\b|\bbetween\b[\s\S]{0,32}\b(?:pole|mirror|P)\b[\s\S]{0,32}\b(?:focus|focal point|F)\b/i;
 const STUDY_FACT_RE = /^(?:Syllabus overlay|Syllabus node|Study subject|Competency tag|Check passed|Evidence verified|Check missed|Figure URL|Foundation|Flashcard):/i;
 const CONTINUATION_ONLY_RE = /^\s*(?:yes|yeah|yep|ok(?:ay)?|ready|go on|continue|next|why\??|how so\??|tell me more|show me|got it|i understand)\s*[.!?]*\s*$/i;
-const STRUCTURED_VISUAL_KINDS = new Set(['process-flow', 'timeline', 'number-line', 'concept-relationship']);
+const STRUCTURED_VISUAL_KINDS = new Set(['process-flow', 'timeline', 'number-line', 'concept-relationship', 'fraction-model', 'before-after']);
 const KIND_SUBJECT = Object.freeze({
   'physics-motion': 'mechanics',
   'algebra-balance': 'algebra',
@@ -117,7 +118,7 @@ export function studyTopicVisualFamily(topic = '') {
   if (subject === 'algebra') return 'algebra-balance';
   if (subject === 'biology') return 'biology-cell';
   if (subject === 'chemistry') return 'chemistry-bond';
-  return studyVisualKind(label);
+  return studyMicroVisualKind(label) || studyVisualKind(label);
 }
 
 /**
@@ -131,7 +132,7 @@ export function studyPictureFitsTopic(caption = '', topic = '') {
   const label = String(caption || '').trim();
   if (!label || isStudyTopicSelection(topic)) return false;
 
-  const captionKind = studyVisualKind(label);
+  const captionKind = studyMicroVisualKind(label) || studyVisualKind(label);
   if (!captionKind) return false;
   if (captionKind === 'graph' && !EXPLICIT_GRAPH_RE.test(label)) return false;
 
