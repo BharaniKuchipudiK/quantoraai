@@ -45,7 +45,7 @@ export default function ProductTelemetry() {
       }
     };
 
-    fetch('/api/release-flags', { credentials: 'same-origin' })
+    fetch('/api/auth?route=release-flags', { credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         if (payload?.flags?.productTelemetryV1 !== true) return;
