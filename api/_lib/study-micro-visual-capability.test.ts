@@ -20,16 +20,38 @@ test('fraction concepts route to the governed micro visual renderer', () => {
   assert.equal(canonical?.rendererKind, 'fraction-model');
 });
 
-test('fraction routing stays narrow rather than claiming generic ratio coverage', () => {
+test('explicit state-change concepts route to the before-after renderer', () => {
+  const direct = resolveStudyRepresentationCapability('Show the before/after state change from ice to liquid water');
+  assert.equal(direct?.rendererKind, 'before-after');
+  assert.equal(direct?.representation, 'annotated_diagram');
+  assert.equal(direct?.reason, 'state_change');
+
+  const canonical = resolveStudyRepresentationCapabilityForConcept({
+    conceptKey: 'science.states.phase-change',
+    conceptLabel: null,
+    fallbackText: 'Show it visually',
+  });
+  assert.equal(canonical?.rendererKind, 'before-after');
+});
+
+test('micro routing stays narrow rather than claiming generic ratio or change coverage', () => {
   assert.equal(resolveStudyRepresentationCapability('Explain the ratio of boys to girls'), null);
+  assert.equal(resolveStudyRepresentationCapability('Explain why practice can change performance'), null);
   assert.equal(resolveStudyRepresentationCapability('Explain opportunity cost in simple terms'), null);
 });
 
-test('operator coverage names the fraction renderer as available', () => {
-  const row = reportStudyRepresentationCoverage().rows.find((item) => item.requestClass === 'visual_fraction');
-  assert.deepEqual(row, {
+test('operator coverage names both micro renderers as available', () => {
+  const report = reportStudyRepresentationCoverage();
+  const fraction = report.rows.find((item) => item.requestClass === 'visual_fraction');
+  const beforeAfter = report.rows.find((item) => item.requestClass === 'visual_before_after');
+  assert.deepEqual(fraction, {
     requestClass: 'visual_fraction',
     rendererKind: 'fraction-model',
+    outcome: 'renderer_available',
+  });
+  assert.deepEqual(beforeAfter, {
+    requestClass: 'visual_before_after',
+    rendererKind: 'before-after',
     outcome: 'renderer_available',
   });
 });
