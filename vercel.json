@@ -1,6 +1,7 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "regions": ["hnd1"],
   "functions": {
     "api/generate-office.ts": {
       "maxDuration": 300
