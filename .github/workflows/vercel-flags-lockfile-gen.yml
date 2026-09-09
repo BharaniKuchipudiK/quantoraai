@@ -1,0 +1,32 @@
+name: Vercel Flags lockfile generator
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/vercel-flags-lockfile-gen.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Generate locked Vercel Flags dependency
+        run: npm install @vercel/flags-core@1.8.0 --package-lock-only --ignore-scripts
+      - name: Upload generated manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: vercel-flags-manifests
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 1
