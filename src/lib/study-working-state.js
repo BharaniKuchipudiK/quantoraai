@@ -13,6 +13,11 @@ const RESPONSE_TYPES = new Set([
   STUDY_LEARNING_INTERACTION.RESPONSE_INCORRECT,
 ]);
 
+const HUB_CONCEPT_SWITCH_TYPES = new Set([
+  STUDY_LEARNING_INTERACTION.REPEATED_EXPLANATION_REQUESTED,
+  STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED,
+]);
+
 let activeConcept = { conceptKey: '', conceptLabel: '' };
 let observations = [];
 
@@ -58,6 +63,14 @@ function consecutiveTail(events, type) {
     count += 1;
   }
   return count;
+}
+
+function canSwitchConceptFromHubObservation(event, eventConcept) {
+  return Boolean(
+    eventConcept
+    && event?.source === 'study_hub'
+    && HUB_CONCEPT_SWITCH_TYPES.has(event?.type),
+  );
 }
 
 export function deriveStudyWorkingState({
@@ -149,14 +162,26 @@ export function setStudyWorkingConcept({ conceptKey = '', conceptLabel = '' } = 
 export function observeStudyWorkingInteraction(event) {
   if (!admittedObservation(event)) return false;
   const eventConcept = normalizeConceptKey(event.conceptId);
-  const eventLabel = normalizeConceptLabel(event.conceptLabel);
+  const eventConceptLabel = clean(event.conceptLabel, 300);
+  const eventLabel = normalizeConceptLabel(eventConceptLabel);
   const activeLabel = normalizeConceptLabel(activeConcept.conceptLabel);
   const sameKey = !eventConcept || !activeConcept.conceptKey || eventConcept === activeConcept.conceptKey;
   const sameLabel = Boolean(eventLabel && activeLabel && eventLabel === activeLabel);
-  if (!sameKey && !sameLabel) return false;
-  if (!activeConcept.conceptKey && eventConcept) {
-    activeConcept = { ...activeConcept, conceptKey: eventConcept };
+
+  if (!sameKey && !sameLabel) {
+    if (!canSwitchConceptFromHubObservation(event, eventConcept)) return false;
+    observations = [];
+    activeConcept = {
+      conceptKey: eventConcept,
+      conceptLabel: eventConceptLabel,
+    };
+  } else if (!activeConcept.conceptKey && eventConcept) {
+    activeConcept = {
+      conceptKey: eventConcept,
+      conceptLabel: eventConceptLabel || activeConcept.conceptLabel,
+    };
   }
+
   observations = [...observations, event].slice(-STUDY_WORKING_STATE_MAX_EVENTS);
   return true;
 }
