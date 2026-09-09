@@ -28,6 +28,9 @@ import {
 
 const STORAGE_KEY = 'quantora_chat_sessions';
 const PROJECTS_STORAGE_KEY = 'quantora_projects_v1';
+const scopedStorageKey = (base, accountKey) => accountKey === undefined
+  ? base // Backward-compatible only for direct storage unit tests.
+  : `${base}:account:${encodeURIComponent(String(accountKey || 'signed-out'))}`;
 /*
  * Stable fallbacks. `|| {}` mints a fresh object every render, and these
  * values sit in downstream memo dependency arrays (AiStudio's chat feed) —
@@ -95,9 +98,9 @@ function dedupeStrings(values, limit = MAX_PROJECT_CONTEXT_FACTS) {
   return result;
 }
 
-function loadProjects(includeDefault = true) {
+function loadProjects(accountKey, includeDefault = true) {
   try {
-    const saved = localStorage.getItem(PROJECTS_STORAGE_KEY);
+    const saved = localStorage.getItem(scopedStorageKey(PROJECTS_STORAGE_KEY, accountKey));
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -111,15 +114,13 @@ function loadProjects(includeDefault = true) {
   return includeDefault ? [createDefaultProject()] : [];
 }
 
-function persistProjects(projects) {
+function persistProjects(projects, accountKey) {
   try {
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    localStorage.setItem(scopedStorageKey(PROJECTS_STORAGE_KEY, accountKey), JSON.stringify(projects));
   } catch (e) {
     console.error(e);
   }
 }
-
-const CORRUPT_BACKUP_KEY = `${STORAGE_KEY}_corrupt`;
 
 /**
  * Storage faults were console-only, so losing your chats looked identical to
@@ -149,7 +150,7 @@ function publishStorageFault() {
 
 function noteStorageFault(kind, error, extra = {}) {
   storageFault = { kind, at: Date.now(), message: String(error?.message || error || ''), ...extra };
-  if (kind !== 'evicted') console.error('Studio session storage fault:', kind, error);
+  if (kind !== 'evicted' && kind !== 'legacy-isolated') console.error('Studio session storage fault:', kind, error);
   publishStorageFault();
   return storageFault;
 }
@@ -162,7 +163,7 @@ function clearStorageFault() {
    * success would erase it a second later — before the user could read it. Only
    * live degradations ('quota', 'write', 'evicted') are cleared by a good write.
    */
-  if (storageFault.kind === 'corrupt') return;
+  if (storageFault.kind === 'corrupt' || storageFault.kind === 'legacy-isolated') return;
   storageFault = null;
   publishStorageFault();
 }
@@ -177,16 +178,17 @@ function isQuotaError(error) {
 }
 
 /** Copy an unparseable blob aside before anything overwrites it. */
-function preserveCorruptSessionBlob() {
+function preserveCorruptSessionBlob(accountKey) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) localStorage.setItem(CORRUPT_BACKUP_KEY, raw);
+    const key = scopedStorageKey(STORAGE_KEY, accountKey);
+    const raw = localStorage.getItem(key);
+    if (raw) localStorage.setItem(`${key}_corrupt`, raw);
   } catch { /* storage unavailable — nothing further to protect */ }
 }
 
-function loadSessions(defaultGreeting) {
+function loadSessions(defaultGreeting, accountKey) {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(scopedStorageKey(STORAGE_KEY, accountKey));
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -205,7 +207,7 @@ function loadSessions(defaultGreeting) {
      * the salvageable bytes. Keep the raw string under a backup key first so the
      * history is recoverable, and record the fault so it is not silent.
      */
-    preserveCorruptSessionBlob();
+    preserveCorruptSessionBlob(accountKey);
     noteStorageFault('corrupt', e);
   }
   return [{
@@ -230,7 +232,7 @@ function loadSessions(defaultGreeting) {
  * giving up: the builds can be rebuilt, the conversation cannot. Only when even
  * a desk-free write fails is the fault recorded for the UI to surface.
  */
-function persistSessions(sessions) {
+function persistSessions(sessions, accountKey) {
   const list = Array.isArray(sessions) ? sessions : [];
   /*
    * Fold superseded builds before writing, not after the quota throws.
@@ -252,7 +254,7 @@ function persistSessions(sessions) {
   }));
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
+    localStorage.setItem(scopedStorageKey(STORAGE_KEY, accountKey), JSON.stringify(compact));
     clearStorageFault();
     return true;
   } catch (e) {
@@ -275,7 +277,7 @@ function persistSessions(sessions) {
       delete trimmed[index].desk;
       shed += 1;
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+        localStorage.setItem(scopedStorageKey(STORAGE_KEY, accountKey), JSON.stringify(trimmed));
         noteStorageFault('evicted', null, { deskSnapshotsDropped: shed });
         return true;
       } catch (retryError) {
@@ -540,18 +542,42 @@ export function useStudioSession({ user, selectedModel }) {
     [user?.name, selectedModel?.name],
   );
 
-  const [projects, setProjects] = useState(() => loadProjects());
+  const accountKey = user?.sub || user?.email || null;
+  const hasIsolatedLegacyData = (() => {
+    if (!accountKey) return false;
+    try {
+      const scopedProjects = localStorage.getItem(scopedStorageKey(PROJECTS_STORAGE_KEY, accountKey));
+      const scopedSessions = localStorage.getItem(scopedStorageKey(STORAGE_KEY, accountKey));
+      return !scopedProjects && !scopedSessions
+        && Boolean(localStorage.getItem(PROJECTS_STORAGE_KEY) || localStorage.getItem(STORAGE_KEY));
+    } catch { return false; }
+  })();
+  if (hasIsolatedLegacyData && readStudioStorageFault()?.kind !== 'legacy-isolated') {
+    noteStorageFault('legacy-isolated', null);
+  }
+  const [projects, setProjects] = useState(() => loadProjects(accountKey));
   const [activeProjectId, setActiveProjectIdState] = useState(
-    () => loadProjects()[0]?.id || DEFAULT_PROJECT_ID,
+    () => loadProjects(accountKey)[0]?.id || DEFAULT_PROJECT_ID,
   );
-  const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg));
+  const [allChatSessions, setAllChatSessions] = useState(() => loadSessions(defaultGreetingMsg, accountKey));
   const allChatSessionsRef = useRef(allChatSessions);
   allChatSessionsRef.current = allChatSessions;
   const [storageFault, setStorageFault] = useState(() => readStudioStorageFault());
   useEffect(() => subscribeStudioStorageFault(setStorageFault), []);
   const [activeSessionId, setActiveSessionId] = useState(() => allChatSessions[0]?.id || 'session-1');
   const [remoteProjectContext, setRemoteProjectContext] = useState(null);
-  const accountKey = user?.sub || user?.email || null;
+  const previousAccountKeyRef = useRef(accountKey);
+  useEffect(() => {
+    if (previousAccountKeyRef.current === accountKey) return;
+    previousAccountKeyRef.current = accountKey;
+    const nextProjects = loadProjects(accountKey);
+    const nextSessions = loadSessions(defaultGreetingMsg, accountKey);
+    setProjects(nextProjects);
+    setActiveProjectIdState(nextProjects[0]?.id || DEFAULT_PROJECT_ID);
+    setAllChatSessions(nextSessions);
+    setActiveSessionId(nextSessions[0]?.id || 'session-1');
+    setRemoteProjectContext(null);
+  }, [accountKey, defaultGreetingMsg]);
 
   const activeProject = projects.find((project) => project.id === activeProjectId) || projects[0] || createDefaultProject();
   const projectSessions = useMemo(
@@ -694,7 +720,7 @@ export function useStudioSession({ user, selectedModel }) {
           : [];
         // A freshly generated UI fallback has today's timestamp, but is not an
         // edit. Never upload it over an existing workspace on a new browser.
-        const localProjects = loadProjects(false);
+        const localProjects = loadProjects(accountKey, false);
         if (localProjects.length === 0 && remoteProjects.length === 0) {
           localProjects.push(createDefaultProject());
         }
@@ -733,7 +759,7 @@ export function useStudioSession({ user, selectedModel }) {
         if (!cancelled && reconciled.length > 0) {
           const next = sortProjects(reconciled);
           setProjects(next);
-          persistProjects(next);
+          persistProjects(next, accountKey);
           if (!next.some((project) => project.id === activeProjectId)) {
             setActiveProjectIdState(next[0].id);
           }
@@ -757,7 +783,7 @@ export function useStudioSession({ user, selectedModel }) {
         const updated = prev.map((current) => (
           current.id === saved.id && current.updatedAt === localUpdatedAt ? saved : current
         ));
-        persistProjects(updated);
+        persistProjects(updated, accountKey);
         return updated;
       });
     }).catch(() => {
@@ -808,7 +834,7 @@ export function useStudioSession({ user, selectedModel }) {
   const updateActiveSession = useCallback((updates) => {
     setAllChatSessions((prevSessions) => {
       const updated = prevSessions.map((session) => session.id === activeSessionId ? { ...session, ...updates } : session);
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
   }, [activeSessionId]);
@@ -825,7 +851,7 @@ export function useStudioSession({ user, selectedModel }) {
         }
         return { ...session, title: newTitle, messages: newMsgs, updatedAt: Date.now() };
       });
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
   }, [activeSessionId]);
@@ -839,7 +865,7 @@ export function useStudioSession({ user, selectedModel }) {
   const recordListeningSignal = useCallback((type, payload) => {
     setAllChatSessions((prev) => {
       const updated = prev.map((session) => session.id === activeSessionId ? mergeSessionListeningSignals(session, type, payload) : session);
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
   }, [activeSessionId]);
@@ -850,7 +876,7 @@ export function useStudioSession({ user, selectedModel }) {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, normalizedDomain, { pinned: true });
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setActiveSessionId(newSession.id);
@@ -864,7 +890,7 @@ export function useStudioSession({ user, selectedModel }) {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, domain, { pinned: true });
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setActiveSessionId(newSession.id);
@@ -875,7 +901,7 @@ export function useStudioSession({ user, selectedModel }) {
     const newSession = makeSession(activeProject.id, defaultGreetingMsg, null);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setActiveSessionId(newSession.id);
@@ -918,7 +944,7 @@ export function useStudioSession({ user, selectedModel }) {
           }
           : item
       ))];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setActiveSessionId(newSession.id);
@@ -965,7 +991,7 @@ export function useStudioSession({ user, selectedModel }) {
       };
       forkedSessionId = fork.id;
       const updated = [fork, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     if (forkedSessionId) setActiveSessionId(forkedSessionId);
@@ -1005,7 +1031,7 @@ export function useStudioSession({ user, selectedModel }) {
     const newSession = makeSession(projectId, defaultGreetingMsg);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setActiveSessionId(newSession.id);
@@ -1044,7 +1070,7 @@ export function useStudioSession({ user, selectedModel }) {
     };
     setProjects((prev) => {
       const updated = [project, ...prev];
-      persistProjects(updated);
+      persistProjects(updated, accountKey);
       return updated;
     });
     persistProjectRemote(project, 0);
@@ -1052,7 +1078,7 @@ export function useStudioSession({ user, selectedModel }) {
     const newSession = makeSession(project.id, defaultGreetingMsg);
     setAllChatSessions((prev) => {
       const updated = [newSession, ...prev];
-      persistSessions(updated);
+      persistSessions(updated, accountKey);
       return updated;
     });
     setRemoteProjectContext(null);
@@ -1066,7 +1092,7 @@ export function useStudioSession({ user, selectedModel }) {
     if (!nextProject) return;
     setProjects((prev) => {
       const updated = prev.map((project) => project.id === activeProject.id ? nextProject : project);
-      persistProjects(updated);
+      persistProjects(updated, accountKey);
       return updated;
     });
     persistProjectRemote(nextProject, activeProject.version || 0);
@@ -1100,7 +1126,7 @@ export function useStudioSession({ user, selectedModel }) {
         const next = fallback.find((session) => (session.projectId || DEFAULT_PROJECT_ID) === activeProject.id);
         setActiveSessionId(next?.id || fallback[0]?.id);
       }
-      persistSessions(fallback);
+      persistSessions(fallback, accountKey);
       return fallback;
     });
   }, [activeProject.id, activeSessionId, defaultGreetingMsg]);
@@ -1121,7 +1147,7 @@ export function useStudioSession({ user, selectedModel }) {
       if (result.activeSessionId && result.activeSessionId !== activeSessionId) {
         setActiveSessionId(result.activeSessionId);
       }
-      persistSessions(result.sessions);
+      persistSessions(result.sessions, accountKey);
       return result.sessions;
     });
   }, [activeProject.id, activeSessionId, defaultGreetingMsg, projects]);
@@ -1137,7 +1163,7 @@ export function useStudioSession({ user, selectedModel }) {
     setAllChatSessions((prev) => {
       const result = renameChatSession({ sessions: prev, sessionId, title });
       if (!result.changed) return prev;
-      persistSessions(result.sessions);
+      persistSessions(result.sessions, accountKey);
       return result.sessions;
     });
   }, []);
@@ -1146,7 +1172,7 @@ export function useStudioSession({ user, selectedModel }) {
     setAllChatSessions((prev) => {
       const result = toggleChatPinnedInList({ sessions: prev, sessionId });
       if (!result.changed) return prev;
-      persistSessions(result.sessions);
+      persistSessions(result.sessions, accountKey);
       return result.sessions;
     });
   }, []);
@@ -1175,7 +1201,7 @@ export function useStudioSession({ user, selectedModel }) {
       } else if (result.nextActiveSessionId) {
         setActiveSessionId(result.nextActiveSessionId);
       }
-      persistSessions(next);
+      persistSessions(next, accountKey);
       return next;
     });
   }, [activeProject.id, activeSessionId, defaultGreetingMsg]);
@@ -1235,4 +1261,4 @@ export function useStudioSession({ user, selectedModel }) {
 }
 
 /** Test-only handle on the storage internals; not part of the hook's API. */
-export const __testables = { persistSessions, loadSessions };
+export const __testables = { persistSessions, loadSessions, persistProjects, loadProjects, scopedStorageKey };

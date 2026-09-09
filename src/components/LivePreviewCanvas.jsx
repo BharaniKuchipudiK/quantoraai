@@ -75,6 +75,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
   verifyOnly = false,
   hideHeader = false,
   user = null,
+  storageScope = null,
   onRequireAuth,
   suggestedProjectName = 'quantora-app',
   isPresentationIntent = false,
@@ -763,7 +764,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
           task: 'connect',
           domain,
           projectName: deployResult?.projectName,
-          sessionId: readActivePclSessionId() || undefined,
+          sessionId: readActivePclSessionId(undefined, storageScope) || undefined,
         })
       });
       const data = await res.json();
@@ -843,7 +844,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         body: JSON.stringify({
           code: currentCode,
           projectName: projectNameInput || 'quantora-app',
-          sessionId: readActivePclSessionId() || undefined,
+          sessionId: readActivePclSessionId(undefined, storageScope) || undefined,
         }),
       });
       const deployData = await deployRes.json();
@@ -903,7 +904,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         body: JSON.stringify({
           code: currentCode,
           projectName: previewName,
-          sessionId: readActivePclSessionId() || undefined,
+          sessionId: readActivePclSessionId(undefined, storageScope) || undefined,
         }),
       });
       const deployData = await deployRes.json();
@@ -1374,7 +1375,7 @@ const LivePreviewCanvas = forwardRef(function LivePreviewCanvas({
         body: JSON.stringify({
           vfs,
           projectName: suggestedProjectName || 'quantora-app',
-          sessionId: readActivePclSessionId() || undefined,
+          sessionId: readActivePclSessionId(undefined, storageScope) || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));

@@ -69,6 +69,7 @@ const evidence = {
   sessionReads: [],
   loginAttempts: [],
   logoutCalls: 0,
+  projectWrites: [],
 };
 
 const browser = await chromium.launch({
@@ -84,6 +85,8 @@ page.on('pageerror', (error) => consoleErrors.push(error.message));
 await page.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_user');
+  localStorage.setItem('quantora_projects_v1', JSON.stringify([{ id: 'legacy-unknown-owner', name: 'Unknown owner project', version: 1, updatedAt: 1 }]));
+  localStorage.setItem('quantora_chat_sessions', JSON.stringify([{ id: 'legacy-unknown-chat', messages: [{ sender: 'user', text: 'Unknown owner private history' }] }]));
 });
 
 async function hasSessionCookie() {
@@ -124,6 +127,13 @@ await page.route('**/api/**', async (route) => {
     return route.fulfill(json(200, { ok: true }, {
       'Set-Cookie': `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`,
     }));
+  }
+  if (path === '/api/projects' && request.method() === 'POST') {
+    let body = {};
+    try { body = JSON.parse(request.postData() || '{}'); } catch { body = {}; }
+    if (body.action === 'save') evidence.projectWrites.push({ projectId: body.project?.id || null });
+    if (body.action === 'list') return route.fulfill(json(200, { projects: [] }));
+    if (body.action === 'save') return route.fulfill(json(200, { project: { ...body.project, version: Number(body.expectedVersion || 0) + 1 } }));
   }
   return route.fulfill(json(200, { ok: true, projects: [], sessions: [] }));
 });
@@ -228,6 +238,14 @@ try {
     await page.waitForURL(/\/desk\/?(\?|$)/, { timeout: 20_000 }).catch(() => {});
     await visible(composer(), `The desk did not open after Try Quantora (url: ${page.url()}).`, 20_000);
     await visible(profileMenu(), 'The desk opened, but nothing showed the person: neither the header ([data-quantora-profile-menu]) nor the sidebar ([data-quantora-sidebar-profile]).');
+    await page.waitForTimeout(300);
+    if (evidence.projectWrites.some((write) => write.projectId === 'legacy-unknown-owner')) {
+      throw new Error('The newly signed-in account uploaded a legacy project whose owner is unknown.');
+    }
+    const legacyKept = await page.evaluate(() => localStorage.getItem('quantora_projects_v1'));
+    if (!legacyKept?.includes('legacy-unknown-owner')) throw new Error('Account isolation deleted the unidentified legacy project instead of preserving it.');
+    const leakedChat = await page.getByText('Unknown owner private history', { exact: true }).isVisible().catch(() => false);
+    if (leakedChat) throw new Error('The newly signed-in account rendered an unidentified legacy chat.');
   });
 
   await step('a reload comes back signed in from the cookie', async () => {

@@ -163,6 +163,7 @@ async function persistPclContinuity({
   assistantContext,
   confirmedUserFact,
   sourceTurn,
+  storageScope,
 }) {
   if (!sessionId || memoryConsented !== true || (!assistantContext && !confirmedUserFact)) return null;
 
@@ -188,7 +189,9 @@ async function persistPclContinuity({
       if (!error?.conflict) throw error;
       record = await saveAgainst(await loadOutcomeState(sessionId));
     }
-    if (Number.isInteger(record?.version)) updatePclSessionOutcomeVersion(sessionId, record.version);
+    if (Number.isInteger(record?.version)) {
+      updatePclSessionOutcomeVersion(sessionId, record.version, undefined, storageScope);
+    }
     return record;
   } catch (error) {
     console.warn('Outcome State continuity sync failed:', error?.message || error);
@@ -329,6 +332,7 @@ export function useChatStream({
   onDeskRename = null,
   buildJob = null,
   studioModeChoice = null,
+  storageScope = null,
 }) {
   /*
    * Through a ref: the stream closure outlives many renders, and a stale
@@ -532,15 +536,15 @@ export function useChatStream({
     const goldenTransaction = (() => {
       try { return sessionStorage.getItem('quantora_golden_transaction') || null; } catch { return null; }
     })();
-    rememberActivePclSession(activeSessionId);
+    rememberActivePclSession(activeSessionId, undefined, storageScope);
     const memoryIntent = detectPclMemoryConsentIntent(visibleUserText);
     if (memoryIntent === 'grant') {
-      setPclSessionMemoryConsent(activeSessionId, true);
+      setPclSessionMemoryConsent(activeSessionId, true, undefined, storageScope);
     } else if (memoryIntent === 'revoke') {
-      setPclSessionMemoryConsent(activeSessionId, false);
+      setPclSessionMemoryConsent(activeSessionId, false, undefined, storageScope);
       void forgetOutcomeState(activeSessionId).catch(() => {});
     }
-    const pclEnvelope = readPclConversationEnvelope({ sessionId: activeSessionId, sessionContext });
+    const pclEnvelope = readPclConversationEnvelope({ sessionId: activeSessionId, sessionContext, accountScope: storageScope });
     const confirmedUserFact = pclEnvelope.memoryConsented && !memoryIntent
       ? captureUserAnswerAsContext(visibleUserText, messages)
       : null;
@@ -2405,6 +2409,7 @@ export function useChatStream({
             assistantContext: normalized.contextUpdate,
             confirmedUserFact,
             sourceTurn: String(userMsg.id),
+            storageScope,
           });
           return;
         } catch (error) {
