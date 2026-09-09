@@ -6,7 +6,7 @@ import { planStudyAdaptiveHint } from './study-adaptive-hint-ladder.js';
 
 function experience(overrides: Partial<StudyLearningExperiencePlan> = {}): StudyLearningExperiencePlan {
   return {
-    version: 'study-learning-experience-director-2026-09-09.1',
+    version: 'study-learning-experience-director-2026-09-09.2',
     teachingStrategy: 'scaffold_then_fade',
     modality: 'text',
     explanationDensity: 'compressed',

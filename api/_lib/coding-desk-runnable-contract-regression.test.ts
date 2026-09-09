@@ -4,7 +4,10 @@ import { hasBrowserPreviewArtifact, validateBuildArtifactResponse } from './buil
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { pickPreviewEntryPath } from '../../src/lib/preview-utils.js';
 
-function browserEntryFor(reply: string, currentVfs: Record<string, string> = {}): string | null {
+function browserEntryFor(
+  reply: string,
+  currentVfs: Record<string, { content: string; language: string }> = {},
+): string | null {
   const parsed = parseVFSWithReport(reply, currentVfs);
   return pickPreviewEntryPath(parsed.vfs);
 }
@@ -22,8 +25,11 @@ test('[was-red] CSS-only output is not a runnable Coding Desk build', () => {
 
 test('[was-red] an existing-file patch is not mistaken for a fresh non-runnable reply', () => {
   const currentVfs = {
-    'index.html': '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head><body>Works</body></html>',
-    'styles.css': 'body { color: black; }',
+    'index.html': {
+      content: '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head><body>Works</body></html>',
+      language: 'html',
+    },
+    'styles.css': { content: 'body { color: black; }', language: 'css' },
   };
   const reply = '```css filepath="styles.css"\n<<<<\nbody { color: black; }\n====\nbody { color: navy; }\n>>>>\n```';
 
