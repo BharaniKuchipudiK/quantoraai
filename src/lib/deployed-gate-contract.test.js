@@ -460,11 +460,11 @@ test('a pull request golden plans two transactions, a production golden five, an
   const plan = read('scripts/lib/golden-plan.mjs');
   assert.match(plan, /parsed >= 1 \? Math\.min\(all\.length, Math\.floor\(parsed\)\) : all\.length/, 'anything but a positive number means the whole roster');
 });
-test('the deployed golden refuses success when project or checkpoint persistence is unavailable', () => {
+function persistenceProbe() {
   const gate = read('scripts/deployed-golden-transactions.mjs');
-  const start = gate.indexOf('  const failedOwnerWrites =');
+  const start = gate.indexOf('  const rejectedCodingWrites =');
   const end = gate.indexOf('  evidence.completedAt =', start);
-  assert.ok(start >= 0 && end > start, 'persistence failures must be checked before the success verdict');
+  assert.ok(start >= 0 && end > start, 'the persistence assertion must run before the success verdict');
   const capture = gate.slice(gate.indexOf('let activeTransactionName ='), gate.indexOf('function lastApiFailure('));
   const check = new Function('responses', `
     const BASE_ORIGIN = 'https://gate.invalid';
@@ -476,6 +476,11 @@ test('the deployed golden refuses success when project or checkpoint persistence
     url: () => `https://gate.invalid${path}`, status: () => status, text: async () => '{}',
     request: () => ({ method: () => method, postDataJSON: () => ({ action }) }),
   });
+  return { check, response };
+}
+
+test('the deployed golden refuses success when project or checkpoint persistence is unavailable', () => {
+  const { check, response } = persistenceProbe();
   for (const status of [400, 409, 503]) {
     for (const path of ['/api/projects', '/api/desk-checkpoints']) {
       assert.throws(() => check([response(path, status)]), /Project\/checkpoint persistence failed/);
@@ -485,4 +490,18 @@ test('the deployed golden refuses success when project or checkpoint persistence
   assert.doesNotThrow(() => check([]));
   assert.doesNotThrow(() => check([response('/api/projects', 409, 'POST', 'list')]));
   assert.doesNotThrow(() => check([response('/api/projects', 503, 'GET')]));
+});
+
+test('the deployed golden refuses success when the Coding artifact write was rejected', () => {
+  const { check, response } = persistenceProbe();
+  assert.throws(() => check([response('/api/qir-runs', 400)]), /Coding artifact persistence rejected/);
+  assert.doesNotThrow(() => check([]));
+});
+
+test('the deployed golden retains an early rejected Coding write after its diagnostic buffer rolls over', () => {
+  const { check, response } = persistenceProbe();
+  assert.throws(() => check([
+    response('/api/qir-runs', 400),
+    ...Array.from({ length: 45 }, () => response('/api/projects', 503)),
+  ]), /Coding artifact persistence rejected/);
 });

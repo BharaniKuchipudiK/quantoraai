@@ -177,6 +177,7 @@ page.on('pageerror', (error) => consoleErrors.push(error.message));
 let activeTransactionName = null;
 const apiFailures = [];
 let failedOwnerWriteCount = 0;
+let rejectedCodingWriteCount = 0;
 page.on('response', (response) => {
   let url;
   try { url = new URL(response.url()); } catch { return; }
@@ -190,6 +191,7 @@ page.on('response', (response) => {
   // The diagnostic tail may roll over; a failed save, including a conflict,
   // must remain load-bearing for the whole run.
   if (ownerWrite) failedOwnerWriteCount += 1;
+  if (entry.path === '/api/qir-runs' && entry.status === 400) rejectedCodingWriteCount += 1;
   apiFailures.push(entry);
   if (apiFailures.length > 40) apiFailures.shift();
   response.text().then((body) => {
@@ -1191,8 +1193,11 @@ try {
     );
   }
 
-  // Project and checkpoint persistence are part of the build handover, not
-  // optional console noise. The token-verified canary now has a durable owner.
+  // A rendered page is not a successful handover if its durable writes failed.
+  const rejectedCodingWrites = rejectedCodingWriteCount;
+  if (rejectedCodingWrites) {
+    throw new Error(`Coding artifact persistence rejected ${rejectedCodingWrites} request(s): /api/qir-runs HTTP 400`);
+  }
   const failedOwnerWrites = failedOwnerWriteCount;
   if (failedOwnerWrites) {
     throw new Error(`Project/checkpoint persistence failed: ${failedOwnerWrites} unsuccessful save request(s)`);
