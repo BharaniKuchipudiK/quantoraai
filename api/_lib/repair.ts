@@ -107,7 +107,12 @@ async function repairWithGemini(apiKey: string, system: string, user: string): P
   const res = await withNewestGeminiFlash(models, (model) => client.models.generateContent({
     model,
     contents: [{ role: "user", parts: [{ text: user }] }],
-    config: { systemInstruction: system, temperature: 0.1 },
+    config: {
+      systemInstruction: system,
+      temperature: 0.1,
+      // The same 90s this file already gives its OpenRouter repair call.
+      abortSignal: AbortSignal.timeout(90_000),
+    },
   }));
   const text = (res as any)?.text;
   if (!text) throw new UserFacingError("Gemini returned an empty response.");

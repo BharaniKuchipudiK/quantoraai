@@ -1,3 +1,4 @@
+import { UNTUNED_GEMINI_CEILING_MS } from './_lib/gemini-call-budget.js';
 import { GoogleGenAI } from "@google/genai";
 import chat from "./_lib/chat-handler.js";
 import moderate from "./_lib/handlers/moderate.js";
@@ -93,6 +94,7 @@ async function validateOrRepairStructuredOutput(input: {
     config: {
       systemInstruction: repairSystemPrompt(input.stage),
       temperature: 0,
+      abortSignal: AbortSignal.timeout(UNTUNED_GEMINI_CEILING_MS),
     },
   });
 
@@ -537,6 +539,7 @@ Schema:
       config: {
         systemInstruction: systemPrompt,
         temperature: 0.2,
+        abortSignal: AbortSignal.timeout(UNTUNED_GEMINI_CEILING_MS),
       },
     });
 
