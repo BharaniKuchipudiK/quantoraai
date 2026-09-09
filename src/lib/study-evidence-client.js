@@ -50,7 +50,7 @@ export async function requestStudyAssessment({ conceptId, conceptLabel, sessionI
   return data;
 }
 
-export async function gradeStudyAssessment({ attemptId, optionId } = {}) {
+export async function gradeStudyAssessment({ attemptId, optionId, retry = false, hintDepth = 0 } = {}) {
   const cleanAttemptId = clean(attemptId, 64);
   const data = await studyAssessmentRequest({
     action: 'grade',
@@ -62,9 +62,15 @@ export async function gradeStudyAssessment({ attemptId, optionId } = {}) {
   }
   // This is deliberately an observation side-channel only. The server grade is
   // still the sole owner of verified evidence/mastery. Duplicate idempotent
-  // grade receipts are not counted as a second learner interaction.
+  // grade receipts are not counted as a second learner interaction. Retry and
+  // hint depth are explicit UI provenance only; they do not alter the grade.
   if (data.duplicate !== true) {
-    recordStudyAssessmentOutcome({ attemptId: cleanAttemptId, result: data });
+    recordStudyAssessmentOutcome({
+      attemptId: cleanAttemptId,
+      result: data,
+      retry: retry === true,
+      hintDepth,
+    });
   }
   return data;
 }

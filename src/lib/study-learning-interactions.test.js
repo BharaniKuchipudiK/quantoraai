@@ -17,10 +17,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
-test('PR4 contract declares every governed learning interaction family', () => {
+test('PR4 contract declares every governed learning interaction family plus PR7 hint progress', () => {
   assert.deepEqual(Object.values(STUDY_LEARNING_INTERACTION).sort(), [
     'answer_changed',
     'hint_depth_used',
+    'hint_progress_unlocked',
     'hint_requested',
     'prediction_made',
     'repeated_explanation_requested',
@@ -98,19 +99,42 @@ test('verified outcome stays observational and emits retrieval success only for 
   assert.equal('learnerModel' in recorded[0], false);
 });
 
-test('retry success requires explicit retry context rather than inferring from a later correct answer', () => {
+test('hint progress requires explicit retry plus verified success rather than temporal correlation', () => {
   const ordinary = recordStudyAssessmentOutcome({
     attemptId: 'attempt-2',
+    hintDepth: 4,
     result: { correct: true, evidenceKind: 'assessment_item', evidenceConcept: { key: 'math.linear-functions' } },
   });
   assert.equal(ordinary.some((event) => event.type === STUDY_LEARNING_INTERACTION.RETRY_SUCCESS), false);
+  assert.equal(ordinary.some((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_PROGRESS_UNLOCKED), false);
 
-  const retry = recordStudyAssessmentOutcome({
+  const failedRetry = recordStudyAssessmentOutcome({
     attemptId: 'attempt-3',
     retry: true,
+    hintDepth: 4,
+    result: { correct: false, evidenceKind: 'assessment_item', evidenceConcept: { key: 'math.linear-functions' } },
+  });
+  assert.equal(failedRetry.some((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_PROGRESS_UNLOCKED), false);
+
+  const retryWithoutHint = recordStudyAssessmentOutcome({
+    attemptId: 'attempt-no-hint',
+    retry: true,
+    hintDepth: 0,
     result: { correct: true, evidenceKind: 'assessment_item', evidenceConcept: { key: 'math.linear-functions' } },
   });
+  assert.equal(retryWithoutHint.some((event) => event.type === STUDY_LEARNING_INTERACTION.RETRY_SUCCESS), true);
+  assert.equal(retryWithoutHint.some((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_PROGRESS_UNLOCKED), false);
+
+  const retry = recordStudyAssessmentOutcome({
+    attemptId: 'attempt-4',
+    retry: true,
+    hintDepth: 4,
+    result: { correct: true, evidenceKind: 'assessment_item', evidenceConcept: { key: 'math.linear-functions' } },
+  });
+  const unlocked = retry.find((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_PROGRESS_UNLOCKED);
   assert.equal(retry.some((event) => event.type === STUDY_LEARNING_INTERACTION.RETRY_SUCCESS), true);
+  assert.equal(unlocked?.hintDepth, 4);
+  assert.equal(unlocked?.retry, true);
 });
 
 test('browser event carries the exact frozen observation without storing a second copy', () => {
@@ -133,9 +157,10 @@ test('browser event carries the exact frozen observation without storing a secon
   }
 });
 
-test('PR4 signal wiring covers real Study actions without persistence or a mastery writer', () => {
+test('Study signal wiring covers adaptive hint depth without persistence or a mastery writer', () => {
   const contract = read('src/lib/study-learning-interactions.js');
   const evidenceClient = read('src/lib/study-evidence-client.js');
+  const tutor = read('src/components/StudyTutorWorkspace.jsx');
   const hub = read('src/components/StudyHubLauncher.jsx');
   const chips = read('src/components/StudioInlineSuggestions.jsx');
   const assessment = read('src/components/StudyAssessmentWorkspace.jsx');
@@ -145,9 +170,14 @@ test('PR4 signal wiring covers real Study actions without persistence or a maste
   assert.doesNotMatch(contract, /fetch\s*\(/);
   assert.doesNotMatch(contract, /localStorage|sessionStorage|study_mastery_events|masteryUpdated|const events\s*=|events\.push/);
   assert.match(evidenceClient, /recordStudyAssessmentOutcome/);
+  assert.match(evidenceClient, /retry:\s*retry === true/);
+  assert.match(tutor, /retry:\s*loop\.explicitRetry === true/);
+  assert.match(tutor, /readStudyWorkingState\(\)\?\.hintDepth/);
   assert.match(hub, /REPEATED_EXPLANATION_REQUESTED/);
   assert.match(hub, /VISUAL_REQUESTED/);
+  assert.match(chips, /import\('\.\.\/lib\/study-working-state\.js'\)/);
   assert.match(chips, /import\('\.\.\/lib\/study-learning-interactions\.js'\)/);
+  assert.match(chips, /nextStudyHintDepth/);
   assert.match(chips, /recordStudyHintRequest/);
   assert.match(assessment, /recordStudyAnswerChange/);
   assert.match(mathLab, /PREDICTION_MADE/);

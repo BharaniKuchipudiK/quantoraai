@@ -13,6 +13,7 @@ export function createStudyLoopState() {
     questionId: '',
     attempt: '',
     outcome: null,
+    explicitRetry: false,
     completedQuestionIds: [],
   };
 }
@@ -35,7 +36,14 @@ export function transitionStudyLoop(state, event, domain = 'education') {
       return createStudyLoopState();
     case 'ASK':
       if (!questionId || (completed(current, questionId) && event.explicitRetry !== true)) return current;
-      return { ...current, phase: 'ask', questionId, attempt: '', outcome: null };
+      return {
+        ...current,
+        phase: 'ask',
+        questionId,
+        attempt: '',
+        outcome: null,
+        explicitRetry: event.explicitRetry === true,
+      };
     case 'PRESENT':
       if (current.phase !== 'ask' || questionId !== current.questionId) return current;
       return { ...current, phase: 'awaiting_learner_response' };
@@ -59,7 +67,7 @@ export function transitionStudyLoop(state, event, domain = 'education') {
     }
     case 'ADVANCE':
       if (current.phase !== 'resolve') return current;
-      return { ...current, phase: 'advance', questionId: '', attempt: '', outcome: null };
+      return { ...current, phase: 'advance', questionId: '', attempt: '', outcome: null, explicitRetry: false };
     default:
       return current;
   }

@@ -7,6 +7,7 @@ export const STUDY_LEARNING_INTERACTION = Object.freeze({
   ANSWER_CHANGED: 'answer_changed',
   HINT_REQUESTED: 'hint_requested',
   HINT_DEPTH_USED: 'hint_depth_used',
+  HINT_PROGRESS_UNLOCKED: 'hint_progress_unlocked',
   REPEATED_EXPLANATION_REQUESTED: 'repeated_explanation_requested',
   VISUAL_REQUESTED: 'visual_requested',
   SIMULATION_MANIPULATED: 'simulation_manipulated',
@@ -24,8 +25,8 @@ function clean(value, max) {
 
 function boundedHintDepth(value) {
   const depth = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(depth)) return null;
-  return Math.max(1, Math.min(6, depth));
+  if (!Number.isFinite(depth) || depth < 1) return null;
+  return Math.min(6, depth);
 }
 
 function browserDispatch(event) {
@@ -111,7 +112,7 @@ export function recordStudyAnswerChange({ previousChoiceId = '', nextChoiceId = 
   });
 }
 
-export function recordStudyAssessmentOutcome({ attemptId = '', result = null, retry = false, source = 'verified_assessment' } = {}) {
+export function recordStudyAssessmentOutcome({ attemptId = '', result = null, retry = false, hintDepth = 0, source = 'verified_assessment' } = {}) {
   if (!result || typeof result.correct !== 'boolean') return [];
   const conceptId = clean(result?.evidenceConcept?.key, 160);
   const conceptLabel = clean(result?.evidenceConcept?.label, 220);
@@ -136,6 +137,15 @@ export function recordStudyAssessmentOutcome({ attemptId = '', result = null, re
       type: STUDY_LEARNING_INTERACTION.RETRY_SUCCESS,
       retry: true,
     }));
+    const unlockedDepth = boundedHintDepth(hintDepth);
+    if (unlockedDepth !== null) {
+      recorded.push(recordStudyLearningInteraction({
+        ...common,
+        type: STUDY_LEARNING_INTERACTION.HINT_PROGRESS_UNLOCKED,
+        hintDepth: unlockedDepth,
+        retry: true,
+      }));
+    }
   }
   if (result.correct && result.evidenceKind === 'retrieval') {
     recorded.push(recordStudyLearningInteraction({
