@@ -28,6 +28,7 @@
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
@@ -106,6 +107,19 @@ await page.route('**/api/**', async (route) => {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [
       { id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true },
     ] }) });
+  }
+  if (path === '/api/preview-compile') {
+    const body = request.postDataJSON?.() || {};
+    try {
+      const compiled = await compilePreviewVfs(body.vfs || {}, { correlationId: body.correlationId });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(compiled) });
+    } catch (error) {
+      return route.fulfill({
+        status: 422,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: error?.errors?.[0]?.text || error?.message || 'Preview compilation failed.' }),
+      });
+    }
   }
   if (path === '/api/chat') {
     const body = request.postDataJSON?.() || {};
