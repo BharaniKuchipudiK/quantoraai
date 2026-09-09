@@ -16,8 +16,12 @@ function isBrowserSessionProbe(req: any): boolean {
   const userAgent = String(req.headers?.["user-agent"] || "");
   // The desktop renderer reaches this API through the Node/Electron main-process
   // proxy, which does not forward the browser User-Agent. Keep desktop/curl/API
-  // probes out of a metric explicitly labelled as signed-out website loads.
-  return /Mozilla\//i.test(userAgent) && !/Electron|QuantoraDesktop/i.test(userAgent);
+  // probes and obvious crawlers out of a metric explicitly labelled as
+  // signed-out website loads.
+  if (!/Mozilla\//i.test(userAgent)) return false;
+  if (/Electron|QuantoraDesktop/i.test(userAgent)) return false;
+  if (/bot|crawler|spider|slurp|headless|lighthouse|monitor|uptime/i.test(userAgent)) return false;
+  return true;
 }
 
 export default async function handler(req: any, res: any) {
@@ -37,7 +41,7 @@ export default async function handler(req: any, res: any) {
      * hourly counter and ignores previews/dev, so no identity or test traffic
      * leaks into the executive metric.
      */
-    if (isBrowserSessionProbe(req)) recordSignedOutSiteHit();
+    if (isBrowserSessionProbe(req)) await recordSignedOutSiteHit();
     return res.status(200).json({ user: null });
   }
 
