@@ -24,9 +24,14 @@ test('adaptive request forwards working state through the existing Study context
   assert.doesNotMatch(request, /fetch\s*\(/);
 });
 
-test('active Study hub synchronizes working concept before its first interaction can be observed', () => {
+test('Study Hub keeps its existing lifecycle while emitting enough identity for a guarded concept switch', () => {
   const hub = readComponent('StudyHubLauncher.jsx');
-  assert.match(hub, /setStudyWorkingConcept/);
-  assert.match(hub, /useEffect\(\(\) => \{[\s\S]*if \(!ready\) return;[\s\S]*setStudyWorkingConcept\(\{ conceptKey: topicKey, conceptLabel: label \}\);[\s\S]*\[label, ready, topicKey\]/);
-  assert.match(hub, /recordStudyLearningInteraction\([\s\S]*conceptId: topicKey,[\s\S]*conceptLabel: label/);
+  const working = read('study-working-state.js');
+
+  assert.match(hub, /recordStudyLearningInteraction\([\s\S]*source: 'study_hub',[\s\S]*conceptId: topicKey,[\s\S]*conceptLabel: label/);
+  assert.doesNotMatch(hub, /setStudyWorkingConcept/);
+  assert.match(working, /canSwitchConceptFromHubObservation/);
+  assert.match(working, /event\?\.source === 'study_hub'/);
+  assert.match(working, /REPEATED_EXPLANATION_REQUESTED/);
+  assert.match(working, /VISUAL_REQUESTED/);
 });
