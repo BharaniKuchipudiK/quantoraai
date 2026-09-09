@@ -1,3 +1,5 @@
+import { traceSseChatSuccessSettled } from './transaction-trace.js';
+
 export type SseResponse = {
   headersSent?: boolean;
   writableEnded?: boolean;
@@ -29,6 +31,8 @@ export type StreamFailure = {
   spentEngineIds?: string[];
 };
 
+export type SseTerminalSuccessSink = (payload: unknown) => false | Promise<boolean>;
+
 /**
  * Single owner for an SSE response lifecycle.
  *
@@ -41,7 +45,10 @@ export class SseWriter {
   private finished = false;
   private committed = false;
 
-  constructor(private readonly res: SseResponse) {}
+  constructor(
+    private readonly res: SseResponse,
+    private readonly terminalSuccessSink: SseTerminalSuccessSink = traceSseChatSuccessSettled,
+  ) {}
 
   get isStarted() {
     return this.started || this.res.headersSent === true;
@@ -108,8 +115,34 @@ export class SseWriter {
       this.start();
       this.res.write('data: [DONE]\n\n');
     }
+
+    /*
+     * A successful chat's terminal trace must land before the serverless socket
+     * closes. The old handler called trace() after sse.done(), which meant the
+     * response could end — and the instance could freeze — while the durable
+     * store write was still in flight. Failures already use awaited traceFinal.
+     *
+     * Only a real chat-success payload produces a Promise. Synthetic/non-chat
+     * done() calls still close synchronously, so the generic SSE contract does
+     * not acquire a hidden delay.
+     */
+    const settleTerminalSuccess = finalPayload === undefined
+      ? false
+      : this.terminalSuccessSink(finalPayload);
+
     this.finished = true;
-    if (!this.res.writableEnded && !this.res.destroyed) this.res.end();
+    const endResponse = () => {
+      if (!this.res.writableEnded && !this.res.destroyed) this.res.end();
+    };
+
+    if (settleTerminalSuccess && typeof (settleTerminalSuccess as Promise<boolean>).then === 'function') {
+      void Promise.resolve(settleTerminalSuccess)
+        .catch(() => false)
+        .finally(endResponse);
+      return;
+    }
+
+    endResponse();
   }
 }
 

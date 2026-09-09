@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   authorizeTraceLookup,
+  chatSuccessEventFromSsePayload,
   correlationIdForRequest,
   isGoldenCanaryRequest,
   normalizeBoundaryEvent,
@@ -9,6 +10,7 @@ import {
   publicTraceEvents,
   traceBoundary,
   traceBoundarySettled,
+  traceSseChatSuccessSettled,
 } from './transaction-trace.js';
 
 test('correlation IDs accept bounded opaque values and reject injected text', () => {
@@ -156,6 +158,56 @@ test('a store that refuses the terminal row still never fails the turn', async (
   assert.equal(await traceBoundarySettled({ correlationId: 'studio-rejects', boundary: 'api.chat', state: 'failed' }, rejecter), true);
 });
 
+test('[was-red] final SSE payload becomes a settled api.chat success row', async () => {
+  const payload = {
+    provider: 'OpenRouter (anthropic/claude-opus-5)',
+    correlationId: 'studio-success-12345678',
+    modelId: 'anthropic/claude-opus-5',
+    latencyMs: 987,
+    inferenceRoute: { gateway: 'openrouter' },
+  };
+  const normalized = chatSuccessEventFromSsePayload(payload);
+  assert.deepEqual(normalized, {
+    correlationId: 'studio-success-12345678',
+    boundary: 'api.chat',
+    state: 'succeeded',
+    route: '/api/chat',
+    modelId: 'anthropic/claude-opus-5',
+    gateway: 'openrouter',
+    durationMs: 987,
+  });
+
+  const kept: any[] = [];
+  const original = console.log;
+  console.log = () => {};
+  try {
+    const result = traceSseChatSuccessSettled(payload, async (event) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      kept.push(event);
+    });
+    assert.ok(result instanceof Promise, 'a real success payload must produce a waitable durable write');
+    assert.equal(await result, true);
+  } finally {
+    console.log = original;
+  }
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].state, 'succeeded');
+  assert.equal(kept[0].gateway, 'openrouter');
+  assert.equal(traceSseChatSuccessSettled({ provider: 'Synthetic' }, () => {}), false,
+    'non-chat done payloads stay synchronous and do not invent api.chat traces');
+});
+
+test('[was-red] SseWriter is the chat handler\'s only terminal success owner', async () => {
+  const { readFileSync } = await import('node:fs');
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  const directSuccessTrace = /boundary:\s*['"]api\.chat['"],\s*state:\s*['"]succeeded['"]/;
+  assert.doesNotMatch(
+    handler,
+    directSuccessTrace,
+    'the handler must not append a second success after SseWriter starts the settled terminal write',
+  );
+});
+
 test('[was-red] every trace whose next statement ends the response is awaited', async () => {
   /*
    * Scoped to the four sites where the handler answers and returns: the two
@@ -163,6 +215,10 @@ test('[was-red] every trace whose next statement ends the response is awaited', 
    * fire-and-forget trace at any of them is a failed turn with no record that
    * it failed -- invisible to the failure digest, and to its own reference
    * lookup.
+   *
+   * Success is now settled by SseWriter before it closes the socket, so this
+   * handler-source assertion remains focused on the four non-SSE terminal
+   * refusal/failure exits it owns directly.
    */
   const { readFileSync } = await import('node:fs');
   const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
