@@ -279,3 +279,59 @@ test('a spend cap at the model list is named as billing, not as a rejected key (
   assert.match(verdict, /named the project/);
   assert.doesNotMatch(verdict, /not billing|wrong secret|rejected the key/);
 });
+
+/*
+ * Google's billing cap, in every sentence it has actually used, plus the
+ * neighbour it must not be confused with.
+ *
+ * The 2026-09-06 test below this pair covered one wording. On 2026-09-09 the
+ * deployed golden failed with the OTHER wording — "Your project has exceeded
+ * its monthly spending cap" — which the verb-enumerating matcher missed, so
+ * the probe would have called a billing cap a rate limit and sent the operator
+ * to the wrong page. A corpus containing only the case that motivated the fix
+ * reads 100% for a matcher that is still half blind, so the rate-limit row is
+ * held here deliberately: it proves the widened matcher did not simply learn
+ * to say "billing" about every 429.
+ */
+const SPEND_CAP_SENTENCES = [
+  {
+    when: '2026-09-06',
+    status: 403,
+    error: 'Spend cap breached for project: projects/1053456406059 for service: generativelanguage.googleapis.com. Correlation id: 6',
+    namesProject: true,
+  },
+  {
+    when: '2026-09-09',
+    status: 429,
+    error: 'Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend to manage your project spend limit.',
+    namesProject: false,
+  },
+];
+
+for (const row of SPEND_CAP_SENTENCES) {
+  test(`a billing cap is named as billing, in the ${row.when} wording (HTTP ${row.status})`, () => {
+    const key = describeKeyShape('AIzaSyREALKEY0001', 'env');
+    const capped = { attempted: true, ok: false, status: row.status, models: [], totalListed: 0, error: row.error, ms: 90 };
+    const none = { attempted: false, ok: false, status: null, model: null, chars: 0, chunks: 0, finishReason: null, blockReason: null, error: null, ms: 0 };
+    const verdict = verdictFor(key, capped, none);
+
+    assert.match(verdict, /billing cap/i, 'the verdict must name the cap as billing');
+    assert.match(verdict, /Raise the cap or add credit/, 'it must send the operator to the remedy that works');
+    assert.doesNotMatch(verdict, /rate limiting|over quota/i, 'a billing cap is not a rate limit; that wording sends them to the wrong page');
+    assert.doesNotMatch(verdict, /wrong secret|rejected the key/, 'the credential is fine');
+
+    // Claim Google named the project only where Google actually named it.
+    if (row.namesProject) assert.match(verdict, /named the project/);
+    else assert.doesNotMatch(verdict, /named the project/, 'this wording does not name a project, so the verdict must not say it does');
+  });
+}
+
+test('a genuine rate limit with no cap wording is still reported as a rate limit', () => {
+  const key = describeKeyShape('AIzaSyREALKEY0001', 'env');
+  const limited = { attempted: true, ok: false, status: 429, models: [], totalListed: 0, error: 'Resource has been exhausted (e.g. check quota).', ms: 90 };
+  const none = { attempted: false, ok: false, status: null, model: null, chars: 0, chunks: 0, finishReason: null, blockReason: null, error: null, ms: 0 };
+  const verdict = verdictFor(key, limited, none);
+
+  assert.match(verdict, /rate limiting|over quota/i);
+  assert.doesNotMatch(verdict, /billing cap|add credit/i, 'widening the cap matcher must not make every 429 read as billing');
+});
