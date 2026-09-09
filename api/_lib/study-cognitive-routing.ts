@@ -147,6 +147,7 @@ export function interpretStudyTurn(input: {
     intervention,
   });
   const difficultyControl = controlStudyAdaptiveDifficulty({
+    experiencePlan: baseExperienceDirector,
     learnerModel: input.learnerModel,
     workingState,
     intervention,
