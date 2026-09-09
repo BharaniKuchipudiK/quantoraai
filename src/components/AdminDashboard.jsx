@@ -214,7 +214,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
 
 import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
-import TechnicalCommandCenter from './TechnicalCommandCenter';
+import TechnicalCommandCenterBoundary from './TechnicalCommandCenterBoundary';
 import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
@@ -255,7 +255,7 @@ const TechnicalPredictiveTab = ({ metrics }) => {
 
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
-      <TechnicalCommandCenter
+      <TechnicalCommandCenterBoundary
         technical={metrics.technical}
         turnFailures={metrics.turnFailures}
         isLight={isLight}
