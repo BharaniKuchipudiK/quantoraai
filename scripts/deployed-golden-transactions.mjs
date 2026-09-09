@@ -1182,6 +1182,14 @@ try {
     );
   }
 
+  // A rendered page is not a successful handover if the durable Run rejected
+  // its artifact. Keep this precise: unrelated fixture/storage 503s need their
+  // own diagnosis, but a Coding request rejected as malformed is never green.
+  const rejectedCodingWrites = apiFailures.filter((entry) => entry.path === '/api/qir-runs' && entry.status === 400);
+  if (rejectedCodingWrites.length) {
+    throw new Error(`Coding artifact persistence rejected ${rejectedCodingWrites.length} request(s): ${rejectedCodingWrites.map((entry) => entry.error || 'HTTP 400').join('; ')}`);
+  }
+
   evidence.completedAt = new Date().toISOString();
   evidence.consoleErrors = consoleErrors.slice(0, 20);
   writeFileSync(`${ARTIFACT_DIR}/deployed-golden-evidence.json`, `${JSON.stringify(evidence, null, 2)}\n`);

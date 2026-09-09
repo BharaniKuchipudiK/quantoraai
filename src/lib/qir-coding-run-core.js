@@ -9,6 +9,18 @@
 
 const POINTER_PREFIX = 'quantora_qir_coding_run:';
 
+// Preview's assembly key is a full content fingerprint, not a short digest.
+// Keep existing locators compatible, but never POST a source-sized reference
+// to the API's 1024-character field. Hash the WHOLE value so changes near the
+// end of a large assembly still produce a different candidate identity.
+async function boundedArtifactRef(value) {
+  const ref = typeof value === 'string' ? value.trim() : '';
+  if (ref.length <= 1024) return ref;
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(ref));
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `coding-desk://assembly/sha256/${hex}`;
+}
+
 function id(prefix) {
   const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${suffix}`;
@@ -439,7 +451,8 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   const sync = () => enqueue(async () => {
     let current = await boot();
     if (!current) return null;
-    const { artifactRef, code } = readOptions();
+    const { artifactRef: rawArtifactRef, code } = readOptions();
+    const artifactRef = await boundedArtifactRef(rawArtifactRef);
 
     if (qirCodingRunCanStart(current, artifactRef, code)) {
       current = accept(await requestQir({
@@ -469,7 +482,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     return accept(await requestQir({
       action: 'coding.recover',
       runId: current.runId,
-      artifactRef: nextArtifactRef || readOptions().artifactRef,
+      artifactRef: await boundedArtifactRef(nextArtifactRef || readOptions().artifactRef),
       code: healedCode,
     }));
   });

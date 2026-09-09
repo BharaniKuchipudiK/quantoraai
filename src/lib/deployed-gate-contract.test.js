@@ -460,3 +460,13 @@ test('a pull request golden plans two transactions, a production golden five, an
   const plan = read('scripts/lib/golden-plan.mjs');
   assert.match(plan, /parsed >= 1 \? Math\.min\(all\.length, Math\.floor\(parsed\)\) : all\.length/, 'anything but a positive number means the whole roster');
 });
+test('the deployed golden refuses success when the Coding artifact write was rejected', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const start = gate.indexOf('  const rejectedCodingWrites =');
+  const end = gate.indexOf('  evidence.completedAt =', start);
+  assert.ok(start >= 0 && end > start, 'the persistence assertion must run before the success verdict');
+  const check = new Function('apiFailures', gate.slice(start, end));
+  assert.throws(() => check([{ path: '/api/qir-runs', status: 400, error: 'A durable Coding artifact is required.' }]), /Coding artifact persistence rejected/);
+  assert.doesNotThrow(() => check([]));
+  assert.doesNotThrow(() => check([{ path: '/api/projects', status: 503 }]));
+});
