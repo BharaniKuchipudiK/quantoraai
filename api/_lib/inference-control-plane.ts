@@ -345,12 +345,32 @@ async function describeRoute(
 export async function planInferenceRoutes(input: InferencePlanInput): Promise<InferenceRoute[]> {
   const primary = canonicalizeModelId(input.primaryModelId);
   if (!primary) return [];
+  // One planning pass asks about the same gateway/domain circuit for several
+  // candidate models. Share those reads inside the request: when the durable
+  // store is slow, multiplying an identical cross-region read by every route
+  // delays the decision and can make health memory appear unavailable.
+  const circuitReads = new Map<string, Promise<ProviderCircuitState | null>>();
+  const planningInput: InferencePlanInput = input.circuitStore
+    ? {
+        ...input,
+        circuitStore: {
+          get(key) {
+            let pending = circuitReads.get(key);
+            if (!pending) {
+              pending = Promise.resolve(input.circuitStore!.get(key));
+              circuitReads.set(key, pending);
+            }
+            return pending;
+          },
+        },
+      }
+    : input;
   const registry = new Map((input.models || []).filter((model) => model?.id).map((model) => [String(model.id), model]));
   const ids = [primary, ...((input.fallbackModelIds || []).map(canonicalizeModelId)), GEMINI_STABLE, OPENROUTER_LOW_COST]
     .map((id) => String(id || '').trim())
     .filter((id, index, all) => Boolean(id) && all.indexOf(id) === index);
 
-  const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', input, registry))))
+  const described = (await Promise.all(ids.map((id, index) => describeRoute(id, index === 0 ? 'primary' : 'fallback', planningInput, registry))))
     .filter((route): route is InferenceRoute => Boolean(route))
     .filter((route) => route.health !== 'offline');
 
@@ -386,11 +406,11 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
    * have quietly demoted the zero-cost gateway below a paid one.
    */
   if (input.geminiAvailable && !hasGateway('gemini')) {
-    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', input, emptyRegistry);
+    const lastResort = await describeRoute(GEMINI_STABLE, 'fallback', planningInput, emptyRegistry);
     if (lastResort && lastResort.health !== 'offline') poolDescribed = [lastResort, ...poolDescribed];
   }
   if (input.openRouterAvailable && !hasGateway('openrouter')) {
-    const lastResort = await describeRoute(OPENROUTER_LOW_COST, 'fallback', input, emptyRegistry);
+    const lastResort = await describeRoute(OPENROUTER_LOW_COST, 'fallback', planningInput, emptyRegistry);
     if (lastResort && lastResort.health !== 'offline') poolDescribed = [...poolDescribed, lastResort];
   }
   if (!poolDescribed.length) return [];
@@ -461,7 +481,7 @@ export async function planInferenceRoutes(input: InferencePlanInput): Promise<In
   );
   let paidRoute: InferenceRoute | null = null;
   if (wantsPaid) {
-    const described = await describeRoute(paidId, 'fallback', input, registry);
+    const described = await describeRoute(paidId, 'fallback', planningInput, registry);
     if (described && described.health !== 'offline' && described.circuit !== 'open') {
       paidRoute = { ...described, paid: true };
     }

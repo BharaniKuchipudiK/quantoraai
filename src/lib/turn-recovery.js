@@ -113,6 +113,13 @@ function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
   );
 }
 
+function buildContractEscalationBrief(failureDetail, hasExistingProject = false) {
+  return buildContractRetryBrief(failureDetail, hasExistingProject).replace(
+    'This is the ONE automatic artifact repair for this turn.',
+    'That repair was already attempted. Keep this corrected artifact contract while a fresh engine completes the same job.',
+  );
+}
+
 function deadlineRecoveryBrief(failureDetail) {
   const detail = String(failureDetail || '').trim();
   return (
@@ -201,7 +208,16 @@ export function resolveTurnRecovery({
     const repairsStarted = artifactRepairCount == null
       ? Math.max(0, Number(attempt) - 1)
       : Math.max(0, Number(artifactRepairCount) || 0);
-    if (repairsStarted >= 1) return no('build-repair-exhausted');
+    if (repairsStarted >= 1) {
+      if (!fallbackEngineName) return no('build-repair-exhausted');
+      return {
+        retry: true,
+        switchModel: true,
+        retryBrief: buildContractEscalationBrief(failureDetail, hasExistingProject),
+        notice: `That engine ignored the file contract after one repair. Switching to ${fallbackEngineName} with the corrected build brief…`,
+        reason: 'build-contract-escalation',
+      };
+    }
     return {
       retry: true,
       switchModel: false,

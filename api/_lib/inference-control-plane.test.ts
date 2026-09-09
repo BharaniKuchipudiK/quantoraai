@@ -104,6 +104,28 @@ test('open circuits and offline registry routes are removed before execution', a
   assert.deepEqual(routes.map((route) => route.id), ['gemini-flash-latest']);
 });
 
+test('[was-red] one route plan reads each shared circuit key once', async () => {
+  const reads = new Map<string, number>();
+  await planInferenceRoutes({
+    primaryModelId: 'deepseek/deepseek-chat',
+    fallbackModelIds: ['qwen/qwen-2.5-coder-32b-instruct', 'gemini-flash-latest'],
+    geminiAvailable: true,
+    openRouterAvailable: true,
+    circuitStore: {
+      async get(key) {
+        reads.set(key, (reads.get(key) || 0) + 1);
+        return null;
+      },
+    },
+  });
+
+  assert.equal(reads.get('inference:domain:openrouter:server'), 1,
+    'several OpenRouter candidates must share one domain-health read');
+  assert.equal(reads.get('inference:domain:gemini:server'), 1);
+  assert.ok([...reads.values()].every((count) => count === 1),
+    `every circuit key should be memoized per plan, got ${JSON.stringify([...reads])}`);
+});
+
 test('routes without usable credentials are not planned', async () => {
   const routes = await planInferenceRoutes({
     primaryModelId: 'gemini-flash-latest',

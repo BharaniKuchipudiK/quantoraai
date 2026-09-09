@@ -73,3 +73,17 @@ test('every success-path ledger write in the live handler is measured (§4)', as
   }
   assert.ok(measured >= 3, `expected the three success-path writes to be measured, found ${measured}`);
 });
+
+test('[was-red] failed attempts teach routing about the engine that actually ran, not Auto', async () => {
+  const source = await readFile(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /modelId: route\.id,[^]*?outcome: 'failure'[^]*?latencyMs: Date\.now\(\) - attemptStartedAt/,
+    'each failed provider attempt must be attributed to its real route',
+  );
+  assert.match(
+    source,
+    /spentEngineIds\.size === 0[^]*?req\.body\.modelId !== 'auto'/,
+    'the outer catch must not duplicate a real route failure or create an unusable Auto row',
+  );
+});
