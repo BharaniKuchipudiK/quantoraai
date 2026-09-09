@@ -1,8 +1,9 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-09.2';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-09.3';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
   | 'newton-lab'
+  | 'linear-function-lab'
   | 'electricity-circuit'
   | 'field-lines'
   | 'algebra-balance'
@@ -20,13 +21,16 @@ export type StudyRepresentationCapability = {
   version: typeof STUDY_REPRESENTATION_CAPABILITY_VERSION;
   representation: 'annotated_diagram' | 'graph' | 'process_flow' | 'timeline' | 'number_line' | 'simulation_or_lab';
   rendererKind: StudyRepresentationRendererKind;
-  reason: 'mechanics' | 'newton_animation' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line' | 'fraction' | 'state_change';
+  reason: 'mechanics' | 'newton_animation' | 'linear_function_lab' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line' | 'fraction' | 'state_change';
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
 const NEWTON_THIRD = /\b(?:newton(?:'s|’s)?\s+third\s+law|third\s+law\s+of\s+motion|action\s+and\s+reaction)\b/i;
 const NEWTON_THIRD_KEY = /(?:newton(?:s)?[-_. ]*third[-_. ]*law|third[-_. ]*law)/i;
+const LINEAR_FUNCTION = /\b(?:linear function|slope[- ]intercept|gradient[- ]intercept|straight[- ]line graph|y[- ]intercept)\b|\by\s*=\s*m\s*\*?\s*x\s*(?:[+-]\s*b)?\b/i;
+const LINEAR_FUNCTION_KEY = /(?:linear[-_. ]*function|slope[-_. ]*intercept|gradient[-_. ]*intercept)/i;
 const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive(?:\s+(?:animation|demonstration|simulation|lab))?)\b/i;
+const LAB_REQUEST = /\b(?:lab|experiment)\b/i;
 const DIRECT_VISUAL_REQUEST = /\b(?:show|draw|sketch)\b.{0,80}\b(?:image|picture|diagram|visual(?:ly)?)\b|\bexplain\b.{0,60}\bvisually\b/i;
 const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
 const FIELD = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
@@ -53,6 +57,14 @@ function requestsNewtonThirdLawLab(context = '', conceptKey = ''): boolean {
   return isThirdLaw && directlyRequestsLabCapableVisual;
 }
 
+function requestsLinearFunctionLab(context = '', conceptKey = ''): boolean {
+  const text = String(context || '');
+  const key = String(conceptKey || '').trim().toLowerCase();
+  const isLinearFunction = LINEAR_FUNCTION.test(text) || LINEAR_FUNCTION_KEY.test(key);
+  const directlyRequestsLab = ANIMATION_REQUEST.test(text) || LAB_REQUEST.test(text);
+  return isLinearFunction && directlyRequestsLab;
+}
+
 /**
  * Text resolver retained as a discovery/bootstrap fallback. Downstream planners
  * should prefer resolveStudyRepresentationCapabilityForConcept() so the same
@@ -63,6 +75,7 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
   if (!context) return null;
 
   if (requestsNewtonThirdLawLab(context)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
+  if (requestsLinearFunctionLab(context)) return capability('simulation_or_lab', 'linear-function-lab', 'linear_function_lab');
   if (NUMBER_LINE.test(context)) return capability('number_line', 'number-line', 'number_line');
   if (BEFORE_AFTER.test(context)) return capability('annotated_diagram', 'before-after', 'state_change');
   if (FRACTION.test(context)) return capability('annotated_diagram', 'fraction-model', 'fraction');
@@ -95,12 +108,13 @@ export function resolveStudyRepresentationCapabilityForConcept(input: {
   const discoveryText = `${label}\n${fallback}`.trim();
 
   if (requestsNewtonThirdLawLab(discoveryText, key)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
+  if (requestsLinearFunctionLab(discoveryText, key)) return capability('simulation_or_lab', 'linear-function-lab', 'linear_function_lab');
 
   if (key) {
     if (/number[-_. ]?line|inequalit/.test(key)) return capability('number_line', 'number-line', 'number_line');
     if (/state[-_. ]?change|phase[-_. ]?change/.test(key)) return capability('annotated_diagram', 'before-after', 'state_change');
     if (/fraction|proportion/.test(key)) return capability('annotated_diagram', 'fraction-model', 'fraction');
-    if (/motion[-_. ]?graph|kinematics.*graph|coordinate|quadrant|trig|unit[-_. ]?circle|function[-_. ]?graph/.test(key)) return capability('graph', 'graph', 'graph_semantics');
+    if (/linear[-_. ]?function|slope[-_. ]?intercept|gradient[-_. ]?intercept|motion[-_. ]?graph|kinematics.*graph|coordinate|quadrant|trig|unit[-_. ]?circle|function[-_. ]?graph/.test(key)) return capability('graph', 'graph', 'graph_semantics');
     if (/electric[-_. ]?field|magnetic[-_. ]?field|electromagnet.*field/.test(key)) return capability('annotated_diagram', 'field-lines', 'field');
     if (/electric|circuit|emf|potential[-_. ]?difference|voltage|resistance/.test(key)) return capability('annotated_diagram', 'electricity-circuit', 'electricity');
     if (/newton|mechanic|dynamics|kinematics|force|momentum|projectile|inertia/.test(key)) return capability('annotated_diagram', 'physics-motion', 'mechanics');
