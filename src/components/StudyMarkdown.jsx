@@ -5,9 +5,11 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import StudyFlashcards from './StudyFlashcards.jsx';
+import StudyMicroVisual from './StudyMicroVisual.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
+import { studyMicroVisualKind } from '../lib/study-micro-visuals.js';
 import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.js';
 import {
   studyActiveConcept,
@@ -79,6 +81,10 @@ export default function StudyMarkdown({ text = '', topic = '', isLight = false, 
         }
         if (segment.type === 'picture') {
           if (!studyPictureFitsTopic(segment.caption, activeTopic)) return null;
+          const microKind = studyMicroVisualKind(segment.caption);
+          if (microKind) {
+            return <StudyMicroVisual key={`micro-${index}-${segment.caption}`} kind={microKind} caption={segment.caption} isLight={isLight} />;
+          }
           return (
             <React.Suspense key={`pic-${index}-${segment.caption}`} fallback={null}>
               <StudyPicture caption={segment.caption} isLight={isLight} />
