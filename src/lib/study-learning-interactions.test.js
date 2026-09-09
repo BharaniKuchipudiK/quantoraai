@@ -11,6 +11,7 @@ import {
   clearStudyLearningInteractions,
   normalizeStudyLearningInteraction,
   readStudyLearningInteractions,
+  recordStudyAnswerChange,
   recordStudyAssessmentOutcome,
   recordStudyHintRequest,
   recordStudyLearningInteraction,
@@ -48,6 +49,21 @@ test('unknown interaction kinds fail closed', () => {
   clearStudyLearningInteractions();
   assert.equal(recordStudyLearningInteraction({ type: 'learner_is_bad_at_math' }), null);
   assert.deepEqual(readStudyLearningInteractions(), []);
+});
+
+test('answer changed is emitted only after a real pre-submit change', () => {
+  clearStudyLearningInteractions();
+  assert.equal(recordStudyAnswerChange({ previousChoiceId: '', nextChoiceId: 'b' }), null);
+  assert.equal(recordStudyAnswerChange({ previousChoiceId: 'b', nextChoiceId: 'b' }), null);
+  const changed = recordStudyAnswerChange({
+    previousChoiceId: 'b',
+    nextChoiceId: 'c',
+    source: 'assessment_batch',
+    attemptId: 'attempt-change',
+  });
+  assert.equal(changed.type, STUDY_LEARNING_INTERACTION.ANSWER_CHANGED);
+  assert.equal(changed.choiceId, 'c');
+  assert.equal(readStudyLearningInteractions().length, 1);
 });
 
 test('hint request records request and bounded depth without copying hint text', () => {
@@ -140,7 +156,7 @@ test('PR4 signal wiring covers real Study actions without a persistence or maste
   assert.match(hub, /REPEATED_EXPLANATION_REQUESTED/);
   assert.match(hub, /VISUAL_REQUESTED/);
   assert.match(chips, /recordStudyHintRequest/);
-  assert.match(assessment, /ANSWER_CHANGED/);
+  assert.match(assessment, /recordStudyAnswerChange/);
   assert.match(lab, /PREDICTION_MADE/);
   assert.match(lab, /SIMULATION_MANIPULATED/);
 });
