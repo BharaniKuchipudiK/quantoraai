@@ -341,6 +341,28 @@ export async function generateGeminiOnce(
  * This is the whole point of the file. A report of six fields is a puzzle; a
  * sentence is an answer, and it stops the next diagnosis from being a guess.
  */
+/*
+ * Google has answered a billing cap in two different sentences, and the second
+ * one cost a night.
+ *
+ *   2026-09-06, HTTP 403: "Spend cap breached for project: projects/105… for
+ *                          service: generativelanguage.googleapis.com"
+ *   2026-09-09, HTTP 429: "Your project has exceeded its monthly spending cap."
+ *
+ * The first matcher enumerated verbs after the noun — spend cap breached |
+ * exceeded | reached — so the second sentence missed it twice over: the noun is
+ * "spending cap", and the verb comes first. It fell through to the generic 429
+ * branch and reported "rate limiting … over quota", sending the operator to
+ * look at request rates while the remedy was money. The deployed golden failed
+ * that night and the probe would have named the wrong cause.
+ *
+ * So match the NOUN and nothing else. A Google error mentioning a spend or
+ * spending cap is a billing cap whatever grammar surrounds it, and no other
+ * condition here uses that phrase. gemini-probe.test.ts holds both real
+ * sentences plus a genuine rate limit that must NOT be read as billing.
+ */
+const SPEND_CAP_WORDING = /\bspend(?:ing)?\s+cap\b/i;
+
 export function verdictFor(key: GeminiKeyShape, list: GeminiListResult, generate: GeminiGenerateResult): string {
   if (!key.present) {
     return 'No Gemini key is present in this environment. The platform cannot be calling Gemini at all, which is why Google logs zero requests.';
@@ -372,8 +394,18 @@ export function verdictFor(key: GeminiKeyShape, list: GeminiListResult, generate
      * the key page while the balance sat at $0 against the cap. Google named
      * the project, so the key is recognised; the remedy is the billing page.
      */
-    if (/\bspend cap (?:breached|exceeded|reached)\b/i.test(String(list.error || ''))) {
-      return `Google refused this project's spend cap at the model list (HTTP ${list.status}: ${list.error}). The key is recognised — Google named the project — so this is the project's billing cap, not the credential and not the code. Raise the cap or add credit on the Gemini API billing page; the same key then works.`;
+    if (SPEND_CAP_WORDING.test(String(list.error || ''))) {
+      /*
+       * Only claim Google named the project when it actually did. The 403
+       * wording does ("for project: projects/105…"); the 429 wording does not
+       * ("Your project has exceeded…"), and asserting it there would be this
+       * probe inventing a reason of its own — the thing it exists to prevent.
+       */
+      const namesProject = /\bprojects?\/[0-9]/.test(String(list.error || ''));
+      const recognised = namesProject
+        ? 'The key is recognised — Google named the project — so this is'
+        : 'This is';
+      return `Google refused this project at its billing cap, at the model list (HTTP ${list.status}: ${list.error}). ${recognised} the project's billing cap, not the credential and not the code. Raise the cap or add credit on the Gemini API billing page; the same key then works.`;
     }
     if (list.status === 400 || list.status === 403) {
       return `Google rejected the key when merely listing models (HTTP ${list.status}: ${list.error}). Listing consumes no quota, so this is the credential or the project — not billing and not the code.${shapeHint}`;
