@@ -222,6 +222,7 @@ function overlaySupport(
 }
 
 export function controlStudyAdaptiveDifficulty(input: {
+  experiencePlan?: StudyLearningExperiencePlan | null;
   learnerModel?: StudyLearnerModel | null;
   workingState?: StudyWorkingStateSnapshot | null;
   intervention?: StudyLearningIntervention | null;
@@ -230,12 +231,23 @@ export function controlStudyAdaptiveDifficulty(input: {
   const workingState = input.workingState || null;
   const intervention = input.intervention || null;
   const base = verifiedBasePlan(learnerModel);
-  return overlaySupport(base.plan, {
+  const supported = overlaySupport(base.plan, {
     learnerModel,
     workingState,
     intervention,
     independentEvidenceLocked: base.independentEvidenceLocked,
   });
+  // Publish the effective policy, so the directive cannot ask for scaffolding
+  // that the independently verified turn is prohibited from providing.
+  if (input.experiencePlan?.verificationRequirement === 'fresh_independent') {
+    return {
+      ...supported,
+      scaffoldingAction: 'remove',
+      representationAction: 'maintain',
+      reasonCodes: [...supported.reasonCodes, 'independent_verification_support_locked'],
+    };
+  }
+  return supported;
 }
 
 export function applyStudyAdaptiveDifficulty(input: {
@@ -270,7 +282,8 @@ export function applyStudyAdaptiveDifficulty(input: {
   let explanationDensity = experience.explanationDensity;
   let hintPolicy = experience.hintPolicy;
 
-  if (control.representationAction === 'change' && modality !== 'request_driven') {
+  if (control.representationAction === 'change' && modality !== 'request_driven'
+    && experience.verificationRequirement !== 'fresh_independent') {
     const capability = active?.representationCapability || null;
     if (capability) modality = capability.representation === 'simulation_or_lab' ? 'interactive' : 'visual';
   }
@@ -278,7 +291,7 @@ export function applyStudyAdaptiveDifficulty(input: {
   if (control.scaffoldingAction === 'add' && experience.verificationRequirement !== 'fresh_independent') {
     explanationDensity = 'compressed';
     if (hintPolicy !== 'none') hintPolicy = workingState?.hintDependence === 'high' ? 'fade' : 'progressive';
-  } else if (control.scaffoldingAction === 'remove' && experience.verificationRequirement === 'fresh_independent') {
+  } else if (experience.verificationRequirement === 'fresh_independent') {
     hintPolicy = 'none';
   }
 
