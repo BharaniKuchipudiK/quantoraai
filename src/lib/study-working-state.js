@@ -1,6 +1,7 @@
 import {
   STUDY_LEARNING_INTERACTION,
   STUDY_LEARNING_INTERACTION_EVENT,
+  STUDY_LEARNING_INTERACTION_VERSION,
 } from './study-learning-interactions.js';
 
 export const STUDY_WORKING_STATE_VERSION = 'study-working-state-v1';
@@ -28,9 +29,17 @@ function eventTime(event) {
   return Number.isFinite(value) ? value : null;
 }
 
+function admittedObservation(event) {
+  return Boolean(
+    event
+    && event.observationOnly === true
+    && event.contractVersion === STUDY_LEARNING_INTERACTION_VERSION,
+  );
+}
+
 function boundedEvents(events, nowMs) {
   return (Array.isArray(events) ? events : [])
-    .filter((event) => event && event.observationOnly === true && event.contractVersion)
+    .filter(admittedObservation)
     .filter((event) => {
       const at = eventTime(event);
       return at !== null && at <= nowMs && nowMs - at <= STUDY_WORKING_STATE_TTL_MS;
@@ -133,6 +142,17 @@ export function setStudyWorkingConcept({ conceptKey = '', conceptLabel = '' } = 
   activeConcept = next;
 }
 
+export function observeStudyWorkingInteraction(event) {
+  if (!admittedObservation(event)) return false;
+  const eventConcept = normalizeConceptKey(event.conceptId);
+  if (eventConcept && activeConcept.conceptKey && eventConcept !== activeConcept.conceptKey) return false;
+  if (!activeConcept.conceptKey && eventConcept) {
+    activeConcept = { ...activeConcept, conceptKey: eventConcept };
+  }
+  observations = [...observations, event].slice(-STUDY_WORKING_STATE_MAX_EVENTS);
+  return true;
+}
+
 export function readStudyWorkingState(options = {}) {
   return deriveStudyWorkingState({
     events: observations,
@@ -147,14 +167,6 @@ export function resetStudyWorkingStateForTests() {
   observations = [];
 }
 
-function consumeStudyInteraction(event) {
-  if (!event || event.observationOnly !== true) return;
-  const eventConcept = normalizeConceptKey(event.conceptId);
-  if (eventConcept && activeConcept.conceptKey && eventConcept !== activeConcept.conceptKey) return;
-  if (!activeConcept.conceptKey && eventConcept) activeConcept.conceptKey = eventConcept;
-  observations = [...observations, event].slice(-STUDY_WORKING_STATE_MAX_EVENTS);
-}
-
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener(STUDY_LEARNING_INTERACTION_EVENT, (event) => consumeStudyInteraction(event?.detail));
+  window.addEventListener(STUDY_LEARNING_INTERACTION_EVENT, (event) => observeStudyWorkingInteraction(event?.detail));
 }
