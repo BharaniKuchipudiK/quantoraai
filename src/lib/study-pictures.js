@@ -245,6 +245,28 @@ export function splitStudySegments(text = '', topic = '') {
   return segments.filter((segment) => segment.type !== 'md' || String(segment.text || '').trim());
 }
 
+function requiredStudyLabTagFromRouting(routing = null) {
+  const plan = routing?.representation || null;
+  if (
+    !plan
+    || plan.rendererRequired !== true
+    || plan.fallback !== 'none'
+    || plan.primaryRepresentation !== 'simulation_or_lab'
+  ) {
+    return '';
+  }
+  if (plan.rendererKind === 'newton-lab') return '<quantora-study-lab kind="newton-third-law" />';
+  if (plan.rendererKind === 'linear-function-lab') return '<quantora-study-lab kind="linear-function" />';
+  return '';
+}
+
+export function enforceStudyRendererContract(text = '', routing = null) {
+  const source = String(text || '');
+  const requiredTag = requiredStudyLabTagFromRouting(routing);
+  if (!requiredTag || source.includes(requiredTag)) return source;
+  return `${requiredTag}\n\n${source}`.trim();
+}
+
 export function wantsStudyLab(text = '') {
   return /free-?body|\bfbd\b|inertia tab|newton lab|quantora-study-lab/i.test(String(text || ''));
 }

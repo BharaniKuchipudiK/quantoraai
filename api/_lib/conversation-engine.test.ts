@@ -4,6 +4,7 @@ import {
   buildConversationSnapshot,
   chooseNextConversationMove,
   formatConversationDecisionForPrompt,
+  publicConversationMetadata,
   verifyConversationResponse,
 } from "./conversation-engine.js";
 
@@ -28,6 +29,26 @@ test("authoritative outcome state wins over browser context", () => {
   assert.equal(snapshot.goal?.statement, "Ship the verified beta");
   assert.deepEqual(snapshot.confirmedFacts, ["Use server state"]);
   assert.doesNotMatch(JSON.stringify(snapshot), /Browser claim/);
+});
+
+test("[was-red] conversation metadata preserves routed domain contracts", () => {
+  const snapshot = buildConversationSnapshot({ message: "Show it with an animation.", studioDomain: "education" });
+  const decision = chooseNextConversationMove(snapshot);
+  const verification = verifyConversationResponse({ snapshot, decision, response: "Here is the animation." });
+  const metadata = publicConversationMetadata(snapshot, decision, verification, {
+    studyCognitiveRouting: {
+      representation: {
+        primaryRepresentation: "simulation_or_lab",
+        rendererRequired: true,
+        rendererKind: "newton-lab",
+        fallback: "none",
+      },
+    },
+    financeRouting: { responseMode: "direct" },
+  }) as any;
+
+  assert.equal(metadata.studyCognitiveRouting.representation.rendererKind, "newton-lab");
+  assert.equal(metadata.financeRouting.responseMode, "direct");
 });
 
 test("explicit implementation selects ACT without another discovery round", () => {

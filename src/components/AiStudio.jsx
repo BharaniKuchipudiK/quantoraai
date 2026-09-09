@@ -2730,6 +2730,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
                           <StudyMarkdown
                             text={cleanText}
                             topic={studySyllabusHaystack({ conversationContext, messages })}
+                            studyRouting={msg.conversation?.studyCognitiveRouting}
                             isLight={isLight}
                             textColor={textColor}
                             components={markdownComponents}

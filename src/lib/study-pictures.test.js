@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   decorateStudyMessage,
+  enforceStudyRendererContract,
   pictureCaptionFitsLesson,
   splitStudySegments,
   studyAlgebraVisualVariant,
@@ -108,6 +109,35 @@ test('a model caption about this Algebra turn is kept', () => {
 test('wantsStudyLab does not treat a generic visual as Newton', () => {
   assert.equal(wantsStudyLab('Add a visual workspace for this idea'), false);
   assert.equal(wantsStudyLab('Open the free-body diagram lab'), true);
+});
+
+test('[was-red] server-owned Study routing can require a native lab even when the model only wrote prose', () => {
+  const routed = enforceStudyRendererContract(
+    'I cannot run a live video or interactive simulation directly inside this text desk, but picture two skaters pushing apart.',
+    {
+      representation: {
+        primaryRepresentation: 'simulation_or_lab',
+        rendererRequired: true,
+        rendererKind: 'newton-lab',
+        fallback: 'none',
+      },
+    },
+  );
+  const parts = splitStudySegments(routed, "Explain Newton's third law of motion");
+
+  assert.equal(parts[0].type, 'lab');
+  assert.equal(parts[0].kind, 'newton-third-law');
+});
+
+test('renderer enforcement stays off without an explicit server-owned lab contract', () => {
+  assert.equal(
+    enforceStudyRendererContract('Show this visually.', { representation: { rendererRequired: false } }),
+    'Show this visually.',
+  );
+  assert.equal(
+    enforceStudyRendererContract('Show this visually.', { representation: { primaryRepresentation: 'simulation_or_lab', rendererRequired: true, rendererKind: 'newton-lab', fallback: 'renderer_unavailable' } }),
+    'Show this visually.',
+  );
 });
 
 test('Study visuals are subject-aware teaching diagrams', () => {

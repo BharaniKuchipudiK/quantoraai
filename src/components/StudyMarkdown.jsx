@@ -9,7 +9,7 @@ import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
 import { studyMicroVisualKind } from '../lib/study-micro-visuals.js';
-import { decorateStudyMessage, splitStudySegments } from '../lib/study-pictures.js';
+import { decorateStudyMessage, enforceStudyRendererContract, splitStudySegments } from '../lib/study-pictures.js';
 import {
   studyActiveConcept,
   studyOpticsVisualSpec,
@@ -57,8 +57,9 @@ function StudyReadingBlock({ text, textColor, components, blockKey }) {
   );
 }
 
-export default function StudyMarkdown({ text = '', topic = '', isLight = false, textColor, components }) {
-  const polished = polishStudyTutorText(text);
+export default function StudyMarkdown({ text = '', topic = '', studyRouting = null, isLight = false, textColor, components }) {
+  const routedText = enforceStudyRendererContract(text, studyRouting);
+  const polished = polishStudyTutorText(routedText);
   const nudge = studyTutorNudge(polished);
   const activeTopic = studyActiveConcept(topic, polished);
 

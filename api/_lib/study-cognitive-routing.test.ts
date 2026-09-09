@@ -73,6 +73,21 @@ test('carries a deterministic teaching representation plan into the production S
   assert.match(formatStudyCognitiveDirective(electricity), /response must use the supported representation rather than silently falling back to prose/i);
 });
 
+test('[was-red] public Study metadata carries the renderer contract to the client', () => {
+  const interpretation = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'can you show me with an animation to visualise',
+    history: [{ role: 'user', content: "Explain Newton's third law of motion" }],
+  });
+  const metadata = publicStudyCognitiveMetadata(interpretation);
+
+  assert.equal(metadata?.representation.requestedMode, 'animation');
+  assert.equal(metadata?.representation.primaryRepresentation, 'simulation_or_lab');
+  assert.equal(metadata?.representation.rendererRequired, true);
+  assert.equal(metadata?.representation.rendererKind, 'newton-lab');
+  assert.equal(metadata?.representation.fallback, 'none');
+});
+
 test('keeps unproven free reasoning endpoints behind the reliable Study verification rung', () => {
   const interpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Verify my proof and identify the first invalid assumption.' });
   const decision = applyStudyCapabilityRouting({ interpretation, baseDecision, models: [
