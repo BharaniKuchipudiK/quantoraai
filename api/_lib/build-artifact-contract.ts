@@ -224,7 +224,7 @@ export function validateBuildArtifactResponse(
   }
 
   const code = files.length ? files.map((file) => file.content).join('\n') : source;
-  if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage)\b/.test(code)) {
+  if (/\b(?:window\s*\.\s*)?(?:localStorage|sessionStorage|indexedDB)\b/i.test(code)) {
     return { ok: false, detailCode: 'opaque-storage-access' };
   }
 

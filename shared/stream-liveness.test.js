@@ -6,9 +6,23 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NO_CONTENT_MS, nextReadBudgetMs, streamStopReason } from './stream-liveness.js';
+import {
+  BUILD_NO_CONTENT_MS,
+  NO_CONTENT_MS,
+  contentSilenceWindowMs,
+  nextReadBudgetMs,
+  streamStopReason,
+} from './stream-liveness.js';
 
 const IDLE = 20_000;
+
+test('[was-red] build startup gets a larger silence window without stealing the fallback budget', () => {
+  assert.ok(BUILD_NO_CONTENT_MS > NO_CONTENT_MS, 'a complex build must not inherit the chat cutoff');
+  assert.equal(contentSilenceWindowMs({ buildMode: false, attemptBudgetMs: 90_000 }), NO_CONTENT_MS);
+  assert.equal(contentSilenceWindowMs({ buildMode: true, attemptBudgetMs: 90_000 }), BUILD_NO_CONTENT_MS);
+  assert.equal(contentSilenceWindowMs({ buildMode: true, attemptBudgetMs: 12_000 }), 12_000,
+    'the silence window may never outlive the attempt itself');
+});
 
 test('[was-red] keepalives do not keep a silent route alive', () => {
   /*
@@ -130,10 +144,10 @@ test('[was-red] both provider loops are bounded by content, and both count it', 
    * classify a read that expired on the window as no-content rather than as a
    * bare idle error the fallback policy does not recognise.
    */
-  const stops = handler.match(/streamStopReason\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs \}\)/g) || [];
+  const stops = handler.match(/streamStopReason\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs, noContentMs \}\)/g) || [];
   assert.equal(stops.length, 4, `both provider loops must consult the rule before the read and in the catch, found ${stops.length}`);
 
-  const budgets = handler.match(/nextReadBudgetMs\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS \}\)/g) || [];
+  const budgets = handler.match(/nextReadBudgetMs\(\{ now: Date\.now\(\), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS, noContentMs \}\)/g) || [];
   assert.equal(budgets.length, 2, `both reads must be bounded by the window, found ${budgets.length}`);
 
   /* And both must advance the clock ONLY on real content. */

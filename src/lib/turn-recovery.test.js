@@ -18,6 +18,18 @@ test('a build-contract failure heals itself instead of asking the user to retry'
   assert.match(decision.notice, /Rebuilding once/);
 });
 
+test('[was-red] forbidden Preview storage gets a diagnosis-specific repair', () => {
+  const decision = resolveTurnRecovery({
+    attempt: 1,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+    failureDetail: 'Generated files failed Preview (opaque-storage-access).',
+  });
+  assert.equal(decision.retry, true);
+  assert.match(decision.retryBrief, /localStorage/i);
+  assert.match(decision.retryBrief, /in-memory/i);
+  assert.match(decision.retryBrief, /cannot survive a refresh/i);
+});
+
 test('repair of an existing project never asks for a wholesale page replacement', () => {
   const decision = resolveTurnRecovery({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT', hasExistingProject: true, failureDetail: 'patch did not match' });
   assert.equal(decision.retry, true);

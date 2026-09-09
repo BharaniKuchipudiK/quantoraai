@@ -50,7 +50,7 @@ import {
   normalizeWatchQuestion,
 } from './research-watch.js';
 import { TRAVEL_FLIGHT_PROVIDER_CODE } from '../../shared/travel/flight-resilience.js';
-import { NO_CONTENT_MS, nextReadBudgetMs, streamStopReason } from '../../shared/stream-liveness.js';
+import { NO_CONTENT_MS, contentSilenceWindowMs, nextReadBudgetMs, streamStopReason } from '../../shared/stream-liveness.js';
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
@@ -210,12 +210,31 @@ const FEATURED_SERVER_MODELS = new Set([
   // serve, which is what the eight removed ids violated.
 ]);
 
-function emitBuildProgress(sse: SseWriter, enabled: boolean, beat: { t: number }) {
+function emitBuildProgress(
+  sse: SseWriter,
+  enabled: boolean,
+  beat: { t: number },
+  progress: { stage?: 'connecting' | 'generating' | 'validating'; modelId?: string; receivedChars?: number; force?: boolean } = {},
+) {
   if (!enabled) return;
   const now = Date.now();
-  if (beat.t && now - beat.t < 1600) return;
+  if (!progress.force && beat.t && now - beat.t < 1600) return;
   beat.t = now;
-  sse.status({ phase: 'build', state: 'generating', label: 'Building your preview…' });
+  const stage = progress.stage || 'generating';
+  const modelId = String(progress.modelId || '').trim();
+  const receivedKb = Math.max(1, Math.ceil(Math.max(0, Number(progress.receivedChars) || 0) / 1000));
+  const label = stage === 'connecting'
+    ? `Connecting to ${modelId || 'the selected engine'}…`
+    : stage === 'validating'
+      ? 'Checking the generated files before opening Preview…'
+      : `Generating files${modelId ? ` with ${modelId}` : ''} · ${receivedKb} KB received…`;
+  sse.status({
+    phase: 'build',
+    state: stage,
+    label,
+    ...(modelId ? { activeEngineId: modelId } : {}),
+    ...(stage === 'generating' ? { receivedChars: Math.max(0, Number(progress.receivedChars) || 0) } : {}),
+  });
 }
 
 function normaliseTaskCategory(value: unknown): string {
@@ -441,6 +460,7 @@ async function openOpenRouterResponse(input: {
   temperature: number;
   grounding: boolean;
   jsonMode: boolean;
+  preferResponsiveProvider?: boolean;
   timeoutMs?: number;
 }) {
   const controller = new AbortController();
@@ -454,6 +474,7 @@ async function openOpenRouterResponse(input: {
         Authorization: `Bearer ${input.key}`,
         "HTTP-Referer": process.env.APP_URL || "https://quantoraai.app",
         "X-Title": "Quantora AI",
+        "X-OpenRouter-Metadata": "enabled",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -461,6 +482,10 @@ async function openOpenRouterResponse(input: {
         messages: input.messages,
         temperature: input.temperature,
         stream: true,
+        // Keep OpenRouter's default price-first ordering, but move endpoints
+        // whose recent p50 latency cannot fit our content window behind the
+        // responsive choices. They remain fallbacks rather than being banned.
+        ...(input.preferResponsiveProvider ? { provider: { preferred_max_latency: 20, allow_fallbacks: true } } : {}),
         ...(input.grounding ? { plugins: [{ id: "web", max_results: 3 }] } : {}),
         ...(input.jsonMode ? { response_format: { type: "json_object" } } : {}),
       }),
@@ -1646,6 +1671,10 @@ export default async function handler(req: any, res: any) {
               { minAttemptMs: MIN_VIABLE_BUILD_ATTEMPT_MS },
             )
           : remainingBudgetMs(startTime, turnBudgetMs);
+        const noContentMs = contentSilenceWindowMs({
+          buildMode: effectiveBuildMode,
+          attemptBudgetMs,
+        });
         trace({
           correlationId,
           boundary: 'inference.provider',
@@ -1679,7 +1708,11 @@ export default async function handler(req: any, res: any) {
             ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
             : finalSystemPrompt;
           formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
-          emitBuildProgress(sse, effectiveBuildMode, buildBeat);
+          emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
+            stage: 'connecting',
+            modelId: route.id,
+            force: true,
+          });
           if (route.provider === 'gemini') {
             /*
              * SILENT WHILE CONNECTING IS STILL SILENT.
@@ -1704,7 +1737,7 @@ export default async function handler(req: any, res: any) {
              * the same definition, so it gets the same deadline.
              */
             const openRemainingMs = Math.min(
-              NO_CONTENT_MS,
+              noContentMs,
               attemptBudgetMs - (Date.now() - attemptStartedAt),
             );
             if (openRemainingMs <= 0) throw inferenceAttemptTimeout(route, attemptBudgetMs);
@@ -1759,15 +1792,15 @@ export default async function handler(req: any, res: any) {
                */
               let next;
               try {
-                const geminiStop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                const geminiStop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, noContentMs });
                 if (geminiStop) {
                   throw geminiStop === 'no-content'
-                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    ? inferenceNoContent(route, noContentMs)
                     : inferenceAttemptTimeout(route, attemptBudgetMs);
                 }
                 next = await nextAsyncIteratorWithIdleTimeout(
                   iterator,
-                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS, noContentMs }),
                   'Gemini stream',
                 );
               } catch (error) {
@@ -1775,9 +1808,9 @@ export default async function handler(req: any, res: any) {
                 if (Date.now() - attemptStartedAt >= attemptBudgetMs) {
                   throw inferenceAttemptTimeout(route, attemptBudgetMs);
                 }
-                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, noContentMs }) === 'no-content'
                   || /idle for more than/i.test(String((error as any)?.message || ''))) {
-                  throw inferenceNoContent(route, NO_CONTENT_MS);
+                  throw inferenceNoContent(route, noContentMs);
                 }
                 throw error;
               }
@@ -1787,7 +1820,11 @@ export default async function handler(req: any, res: any) {
               if (chunk?.text) {
                 lastContentAt = Date.now();
                 attemptReply += chunk.text;
-                emitBuildProgress(sse, effectiveBuildMode, buildBeat);
+                emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
+                  stage: 'generating',
+                  modelId: route.id,
+                  receivedChars: attemptReply.length,
+                });
                 if (!effectiveBuildMode) sse.text(chunk.text);
               }
               const groundingChunks = chunk?.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -1812,13 +1849,26 @@ export default async function handler(req: any, res: any) {
               temperature: dynamicTemperature,
               grounding,
               jsonMode: finalSystemPrompt.includes('JSON DECK SPEC'),
+              preferResponsiveProvider: effectiveBuildMode,
               /* Bounded by the CONTENT window, not the attempt budget: the
                * helper clamps this to at most 55s, so a dead route could hold
                * the connection open for 55 seconds before the stream — and the
                * liveness guard — existed at all. Same reason as the Gemini
                * opener above. */
-              timeoutMs: Math.min(NO_CONTENT_MS, attemptBudgetMs),
+              timeoutMs: Math.min(noContentMs, attemptBudgetMs),
             });
+            const openRouterGenerationId = response.headers.get('x-generation-id');
+            if (openRouterGenerationId) {
+              trace({
+                correlationId,
+                boundary: 'inference.upstream',
+                state: 'selected',
+                modelId: route.id,
+                gateway: route.gateway,
+                route: openRouterGenerationId,
+                detailCode: 'openrouter-generation',
+              });
+            }
             if (!response.body) throw Object.assign(new Error('OpenRouter API returned no body.'), { status: 502 });
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
@@ -1839,16 +1889,16 @@ export default async function handler(req: any, res: any) {
                  * byte-based idle guard treated them as life. That is how one
                  * attempt ran 89.7s of a 90s budget having produced nothing.
                  */
-                const stop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs });
+                const stop = streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, noContentMs });
                 if (stop) {
                   await reader.cancel().catch(() => {});
                   throw stop === 'no-content'
-                    ? inferenceNoContent(route, NO_CONTENT_MS)
+                    ? inferenceNoContent(route, noContentMs)
                     : inferenceAttemptTimeout(route, attemptBudgetMs);
                 }
                 chunkResult = await readWithIdleTimeout(
                   reader,
-                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS }),
+                  nextReadBudgetMs({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, idleMs: PROVIDER_STREAM_IDLE_MS, noContentMs }),
                   'OpenRouter stream',
                 );
               } catch (error) {
@@ -1869,9 +1919,9 @@ export default async function handler(req: any, res: any) {
                  * 90-second silence would have become a turn that gives up
                  * entirely. Found by review before it shipped.
                  */
-                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs }) === 'no-content'
+                if (streamStopReason({ now: Date.now(), lastContentAt, attemptStartedAt, attemptBudgetMs, noContentMs }) === 'no-content'
                   || /idle for more than/i.test(String((error as any)?.message || ''))) {
-                  throw inferenceNoContent(route, NO_CONTENT_MS);
+                  throw inferenceNoContent(route, noContentMs);
                 }
                 throw error;
               }
@@ -1892,7 +1942,11 @@ export default async function handler(req: any, res: any) {
                     /* The only thing that counts as this route being alive. */
                     lastContentAt = Date.now();
                     attemptReply += token;
-                    emitBuildProgress(sse, effectiveBuildMode, buildBeat);
+                    emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
+                      stage: 'generating',
+                      modelId: route.id,
+                      receivedChars: attemptReply.length,
+                    });
                     if (!effectiveBuildMode) sse.text(token);
                   }
                   // The web plugin's citations arrive as url_citation
@@ -1939,6 +1993,11 @@ export default async function handler(req: any, res: any) {
             throw truncatedArtifactError(route.gateway === 'gemini' ? 'Gemini' : 'OpenRouter', attemptFinish.reason);
           }
           if (effectiveBuildMode) {
+            emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
+              stage: 'validating',
+              modelId: route.id,
+              force: true,
+            });
             const artifactContract = validateBuildArtifactResponse(
               attemptReply,
               goldenCanary ? transaction : null,
@@ -2010,7 +2069,9 @@ export default async function handler(req: any, res: any) {
             statusCode: status,
             detailCode: error?.code === 'BUILD_ARTIFACT_CONTRACT'
               ? error.detailCode
-              : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'attempt-timeout' : 'provider-failure',
+              : error?.code === 'INFERENCE_NO_CONTENT' ? 'no-content'
+                : error?.code === 'INFERENCE_ATTEMPT_TIMEOUT' ? 'attempt-timeout'
+                  : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'provider-timeout' : 'provider-failure',
           });
           if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) {
             htmlRecoveryTried = true;
