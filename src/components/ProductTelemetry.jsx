@@ -28,8 +28,9 @@ let claimedThisDocument = false;
  *   - did a signed-in browser reach the real Studio workspace for the first
  *     time on this device?
  *
- * The auth lookup is read-only and occurs once per non-local page load. We do
- * not use the result as authorization; /api/auth/session remains the authority.
+ * The session observation below is explicitly side-effect-free: the normal App
+ * bootstrap owns the signed-out website hit counter, while this read only asks
+ * the server for coarse auth state. /api/auth/session remains the authority.
  */
 export default function ProductTelemetry() {
   useEffect(() => {
@@ -50,7 +51,7 @@ export default function ProductTelemetry() {
       }
     };
 
-    fetch('/api/auth/session', { credentials: 'same-origin' })
+    fetch('/api/auth/session?purpose=product-telemetry', { credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
         const authState = authStateFromSession(payload);
