@@ -7,7 +7,7 @@ export type BuildArtifactContractResult = {
 };
 
 function fencedFiles(text: string) {
-  const files: Array<{ path: string; language: string; content: string }> = [];
+  const files: Array<{ path: string; language: string; content: string; end: number }> = [];
   const pattern = /```(\w+)?[ \t]*(.*?)\r?\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
@@ -15,7 +15,12 @@ function fencedFiles(text: string) {
     const attributes = match[2] || '';
     const pathMatch = attributes.match(/(?:filepath|filename)\s*=\s*["']([^"']+)["']/i)
       || attributes.match(/(?:filepath|filename)\s*=\s*([^\s"']+)/i);
-    files.push({ path: pathMatch?.[1] || '', language, content: match[3] || '' });
+    files.push({
+      path: pathMatch?.[1] || '',
+      language,
+      content: match[3] || '',
+      end: match.index + match[0].length,
+    });
   }
   return files;
 }
@@ -257,6 +262,46 @@ export function validateBuildArtifactResponse(
   }
 
   return { ok: true, detailCode: 'build-artifact-valid' };
+}
+
+/**
+ * Recover only artifacts that were already complete when an upstream stream
+ * missed its deadline.
+ *
+ * Build responses are buffered until their contract is known to be safe. That
+ * correctly prevents half-written code from reaching Preview, but used to
+ * discard every byte when the provider streamed complete file fences and then
+ * failed to send its terminal event before the attempt clock expired. Keep the
+ * safety boundary: trim to the last CLOSED file fence (or a closed HTML
+ * document), then run the same build contract used by the normal completion
+ * path. An open final fence, prose, or an unrunnable partial project is never
+ * admitted.
+ */
+export function recoverInterruptedBuildArtifactResponse(
+  text: unknown,
+  transaction: string | null = null,
+  options: { allowIntake?: boolean } = {},
+): string | null {
+  const source = typeof text === 'string' ? text : '';
+  const files = fencedFiles(source);
+  let candidate = files.length
+    ? source.slice(0, files[files.length - 1].end).trim()
+    : '';
+
+  if (!candidate) {
+    let htmlEnd = 0;
+    for (const match of source.matchAll(/<\/html\s*>/ig)) {
+      htmlEnd = (match.index ?? 0) + match[0].length;
+    }
+    if (htmlEnd > 0) {
+      candidate = source.slice(0, htmlEnd).trim();
+    }
+  }
+
+  if (!candidate) return null;
+  return validateBuildArtifactResponse(candidate, transaction, options).ok
+    ? candidate
+    : null;
 }
 
 export function buildArtifactContractError(detailCode: string) {
