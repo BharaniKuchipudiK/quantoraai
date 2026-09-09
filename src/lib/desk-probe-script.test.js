@@ -3,7 +3,7 @@ import test from 'node:test';
 import { collectLiveDeskFacts, DESK_PAGE_COUNT_KEYS, DESK_PAGE_FACT_KEYS, DESK_PROBE_FACT_KEYS, DESK_PROBE_FN_SOURCE, DESK_PROBE_ITEM_TEXT } from './desk-probe-script.js';
 
 test('the probe is a self-contained function both runtimes can inline', () => {
-  assert.match(DESK_PROBE_FN_SOURCE, /^function __quantoraDeskProbe\(report\)\{/);
+  assert.match(DESK_PROBE_FN_SOURCE, /^function __quantoraDeskProbe\(report, options\)\{/);
   assert.equal(DESK_PROBE_FN_SOURCE.includes('</script'), false);
   assert.equal(DESK_PROBE_FN_SOURCE.includes('import '), false);
   assert.equal(DESK_PROBE_FN_SOURCE.includes('`'), false);

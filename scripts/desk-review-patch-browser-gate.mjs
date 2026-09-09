@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * "Review this" must patch the running desk, not write an essay.
+ * "Review this" must preserve the repaired running desk, not write an essay.
  *
  * A boutique can ship a dead Add to Cart next to a working photo. Review
- * applies the deterministic shop inject first (one HTML file), then the
- * bag must increment. A passing photos probe must stay passing.
+ * The build pipeline applies the deterministic shop repair before Review.
+ * Both before and after Review, a deliberate click must increment exactly
+ * once and the observer must report it. Photos must stay passing.
  */
 import process from 'node:process';
 import { mkdirSync } from 'node:fs';
@@ -119,6 +120,13 @@ try {
     15_000,
   );
 
+  // The model shipped a dead button; the normal build pipeline has already
+  // repaired it. Observe a real action rather than letting a probe add items.
+  await boutiqueFrame.waitForFunction(() => typeof window.__quantoraDeskObserveClick === 'function');
+  if (await boutiqueFrame.evaluate(() => window.__quantoraBagCount || 0) !== 0) throw new Error('A background probe changed the cart before interaction.');
+  await boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first().click();
+  await visible(page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(), 'The repaired cart click was not observed.');
+  if (await boutiqueFrame.evaluate(() => window.__quantoraBagCount) !== 1) throw new Error('One deliberate cart click did not add exactly one item.');
   await prompt.fill('Review this');
   await prompt.press('Enter');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click().catch(() => {});
@@ -126,11 +134,6 @@ try {
   await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Review this did not keep Preview checks.', 12_000);
   await visible(page.locator('[data-quantora-desk-next="true"], [data-quantora-desk-probes="true"]').first(), 'Review this did not show the next beat or probe rail.', 8_000);
 
-  await visible(
-    page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),
-    'Review this did not turn a dead Add to Cart into a working click.',
-    15_000,
-  );
   await visible(
     page.locator('[data-quantora-desk-probe="photos"][data-quantora-desk-probe-ok="true"]').first(),
     'Review this regressed a passing photos probe.',
@@ -143,6 +146,8 @@ try {
 
   const reviewed = await visibleFrame('.product-card', 12_000);
   if (!reviewed) throw new Error('Preview stopped running after Review this.');
+  await reviewed.waitForFunction(() => typeof window.__quantoraDeskObserveClick === 'function');
+  const beforeClick = await reviewed.evaluate(() => window.__quantoraBagCount || 0);
   await reviewed.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button, a')).find((node) => /add to (bag|cart)/i.test(node.textContent || ''));
     btn?.click();
@@ -152,6 +157,12 @@ try {
     'Add to Cart is on Preview but the bag did not increment after Review this.',
     12_000,
   );
+  await visible(
+    page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),
+    'Review this did not confirm the repaired cart click.',
+    15_000,
+  );
+  if (await reviewed.evaluate(() => window.__quantoraBagCount) !== beforeClick + 1) throw new Error('Review introduced a duplicate or missing cart increment.');
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/desk-review-patch.png', fullPage: true });

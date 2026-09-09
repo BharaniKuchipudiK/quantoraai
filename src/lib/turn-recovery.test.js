@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_TURN_ATTEMPTS, resolveTurnRecovery } from './turn-recovery.js';
+import { MAX_TURN_ATTEMPTS, resolveTurnRecovery, resolveBudgetedTurnRecovery } from './turn-recovery.js';
+import { planTurnEscalation } from './turn-escalation.js';
+
+test('recovery uses the remaining budget after failure, never the budget at attempt start', () => {
+  const failure = { attempt: 2, retryable: true, code: 'INFERENCE_ATTEMPT_TIMEOUT' };
+  const before = planTurnEscalation({ elapsedMs: 23000, turnDeadlineMs: 175000, engineCount: 5 });
+  const after = planTurnEscalation({ elapsedMs: 176000, turnDeadlineMs: 175000, engineCount: 5 });
+  assert.equal(resolveBudgetedTurnRecovery(failure, before).retry, true);
+  assert.equal(resolveBudgetedTurnRecovery(failure, after).retry, false);
+});
 
 test('a build-contract failure heals itself instead of asking the user to retry', () => {
   const decision = resolveTurnRecovery({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT' });
   assert.equal(decision.retry, true);
   assert.equal(decision.reason, 'build-contract');
   assert.match(decision.notice, /Rebuilding once/);
+});
+
+test('repair of an existing project never asks for a wholesale page replacement', () => {
+  const decision = resolveTurnRecovery({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT', hasExistingProject: true, failureDetail: 'patch did not match' });
+  assert.equal(decision.retry, true);
+  assert.match(decision.retryBrief, /patch did not match/);
+  assert.match(decision.retryBrief, /Preserve unrelated files/);
+  assert.doesNotMatch(decision.retryBrief, /Return EXACTLY one complete self-contained HTML/);
 });
 
 test('the retryable flag the server streams is actually honored', () => {
