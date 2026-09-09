@@ -158,6 +158,15 @@ function isHtmlDocument(source: string) {
 }
 
 const NATIVE_PATH = /\.(swift|kt|kts|java|m|mm|cs)$/i;
+const SEARCH_REPLACE_PATCH = /(?:^|\n)\s*<<<<\s*\r?\n[\s\S]*?\r?\n\s*====\s*\r?\n[\s\S]*?\r?\n\s*>>>>(?:\s*$|\s*\n)/;
+
+function hasExistingFilePatchArtifact(source: string) {
+  return fencedFiles(source).some((file) => (
+    Boolean(file.path)
+    && !NATIVE_PATH.test(file.path)
+    && SEARCH_REPLACE_PATCH.test(file.content)
+  ));
+}
 
 /**
  * Server and Coding Desk must agree on whether a reply contains something the
@@ -171,6 +180,12 @@ const NATIVE_PATH = /\.(swift|kt|kts|java|m|mm|cs)$/i;
 export function hasBrowserPreviewArtifact(text: unknown): boolean {
   const source = typeof text === 'string' ? text : '';
   if (isHtmlDocument(source)) return true;
+  // Existing-file refinements are applied by Coding Desk against currentVfs.
+  // The server intentionally has no copy of that VFS, so parsing a governed
+  // patch against {} would erase a valid edit and falsely report no runnable
+  // entry. Fresh-file checks remain strict; only explicit patch syntax defers
+  // final materialization to the browser that owns currentVfs.
+  if (hasExistingFilePatchArtifact(source)) return true;
   const parsed = parseVFSWithReport(source, {});
   return Boolean(pickPreviewEntryPath(parsed.vfs));
 }
