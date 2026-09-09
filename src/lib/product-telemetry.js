@@ -8,7 +8,6 @@ export const PRODUCT_TELEMETRY_EVENT = Object.freeze({
 export const PRODUCT_TELEMETRY_STORAGE = Object.freeze({
   LAST_VISIT_DAY: 'quantora_product_last_visit_day',
   FIRST_WORKSPACE_OPEN: 'quantora_product_first_workspace_open',
-  PAGE_EMITTED: 'quantora_product_page_emitted',
 });
 
 export function shouldCollectProductTelemetry(locationLike) {
@@ -37,19 +36,6 @@ export function classifyVisit(storage, now = Date.now()) {
   if (!previous) return 'first_seen';
   if (previous === today) return 'same_day';
   return 'returning';
-}
-
-export function claimPageTelemetry(storage) {
-  try {
-    if (storage?.getItem?.(PRODUCT_TELEMETRY_STORAGE.PAGE_EMITTED) === '1') return false;
-    storage?.setItem?.(PRODUCT_TELEMETRY_STORAGE.PAGE_EMITTED, '1');
-    return true;
-  } catch {
-    // If session storage is blocked, permit one best-effort emission. The
-    // component still has its React lifecycle guard; this path only loses the
-    // StrictMode duplicate defence in unusually locked-down browsers.
-    return true;
-  }
 }
 
 export function claimFirstWorkspaceOpen(storage) {
