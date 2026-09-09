@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   loadRemoteProjectContext,
   loadRemoteProjects,
@@ -15,6 +16,25 @@ function withMockFetch(handler, run) {
     globalThis.fetch = originalFetch;
   });
 }
+
+test('[was-red] a rejected reconciliation save preserves the newer local project', async () => {
+  // Exercise the hook's actual failure branch: its result is later persisted
+  // back into localStorage, so selecting remote here destroys unsynced edits.
+  const hook = readFileSync(new URL('../hooks/useStudioSession.js', import.meta.url), 'utf8');
+  const start = hook.indexOf('if (timeValue(localProject.updatedAt) > timeValue(remote.updatedAt) + 1000)');
+  assert.ok(start >= 0);
+  const fallback = /\} catch \{([\s\S]*?)\n\s*\}/.exec(hook.slice(start))?.[1];
+  assert.ok(fallback, 'the actual reconciliation fallback must remain covered');
+  const retainAfterFailure = new Function('localProject', 'remote', `const reconciled = []; ${fallback}; return reconciled[0];`);
+  const local = { id: 'project-a', name: 'My unsynced edits', version: 2, updatedAt: 20000 };
+  const remote = { id: 'project-a', name: 'Older cloud copy', version: 2, updatedAt: 10000 };
+  for (const status of [409, 503]) {
+    await withMockFetch(async () => Response.json({ error: 'Save failed', conflict: status === 409 }, { status }), async () => {
+      await assert.rejects(saveRemoteProject({ project: local, expectedVersion: remote.version }));
+      assert.equal(retainAfterFailure(local, remote), local, `HTTP ${status} must not replace local edits with stale remote data`);
+    });
+  }
+});
 
 test('project client uses the shared pipeline-backed endpoint', async () => {
   let captured;
