@@ -35,7 +35,7 @@ function browserDispatch(event) {
   window.dispatchEvent(new window.CustomEvent(STUDY_LEARNING_INTERACTION_EVENT, { detail: event }));
 }
 
-export function normalizeStudyLearningInteraction(input = {}, now = Date.now) {
+function normalizeStudyLearningInteraction(input = {}, now = Date.now) {
   const type = clean(input.type, 64);
   if (!ALLOWED_TYPES.has(type)) return null;
 
