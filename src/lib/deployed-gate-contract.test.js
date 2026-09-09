@@ -460,3 +460,30 @@ test('a pull request golden plans two transactions, a production golden five, an
   const plan = read('scripts/lib/golden-plan.mjs');
   assert.match(plan, /parsed >= 1 \? Math\.min\(all\.length, Math\.floor\(parsed\)\) : all\.length/, 'anything but a positive number means the whole roster');
 });
+test('the deployed golden refuses success when the Coding artifact write was rejected', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const start = gate.indexOf('  const rejectedCodingWrites =');
+  const end = gate.indexOf('  evidence.completedAt =', start);
+  assert.ok(start >= 0 && end > start, 'the persistence assertion must run before the success verdict');
+  const check = new Function('rejectedCodingWriteCount', gate.slice(start, end));
+  assert.throws(() => check(1), /Coding artifact persistence rejected/);
+  assert.doesNotThrow(() => check(0));
+});
+
+test('the deployed golden retains an early rejected Coding write after its diagnostic buffer rolls over', () => {
+  const gate = read('scripts/deployed-golden-transactions.mjs');
+  const capture = gate.slice(gate.indexOf('let activeTransactionName ='), gate.indexOf('function lastApiFailure('));
+  const verdictStart = gate.indexOf('  const rejectedCodingWrites =');
+  const verdict = gate.slice(verdictStart, gate.indexOf('  evidence.completedAt =', verdictStart));
+  const check = new Function('responses', `
+    const BASE_ORIGIN = 'https://gate.invalid';
+    const page = { on: (_event, listener) => responses.forEach(listener) };
+    ${capture}
+    ${verdict}
+  `);
+  const response = (path, status) => ({ url: () => `https://gate.invalid${path}`, status: () => status, text: async () => '{}' });
+  assert.throws(() => check([
+    response('/api/qir-runs', 400),
+    ...Array.from({ length: 45 }, () => response('/api/projects', 503)),
+  ]), /Coding artifact persistence rejected/);
+});

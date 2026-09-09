@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { qirCodingRunCanStart } from './qir-coding-run-core.js';
+import { previewAssemblyFingerprint } from './studio-preview-helpers.js';
 
 const run = (status = 'QUEUED', extras = {}) => ({
   runId: 'coding-run-1',
@@ -88,6 +89,61 @@ function stubTransport() {
   };
   return { posted, restore: () => { globalThis.fetch = original; } };
 }
+
+test('[was-red] real preview assemblies fit the API reference limit on start and recovery', async () => {
+  const originalFetch = globalThis.fetch;
+  const source = readFileSync(new URL('../../api/qir-runs.ts', import.meta.url), 'utf8');
+  const limits = [...source.matchAll(/safeText\(req\.body\?\.artifactRef, (\d+)\)/g)].map((match) => Number(match[1]));
+  assert.equal(limits.length, 2, 'exercise both server artifact boundaries');
+  const maxRef = Math.min(...limits);
+  const code = `<html><body>${'real page content '.repeat(300)}</body></html>`;
+  const rawRef = `coding-desk://session/assembly/${previewAssemblyFingerprint({ 'index.html': code })}`;
+  assert.ok(rawRef.length > maxRef, 'fixture must reproduce the deployed failure');
+  const refs = [];
+  try {
+    for (const mode of ['start', 'recover', 'healed']) {
+      const errors = [];
+      const posted = [];
+      let snapshot = mode === 'start' ? run() : run('REPAIRING', { artifacts: [{ artifactId: 'coding-desk-vfs', ref: 'old-candidate' }] });
+      globalThis.fetch = async (_url, init) => {
+        const body = init?.body ? JSON.parse(init.body) : {};
+        if (body.action === 'coding.start' || body.action === 'coding.recover') {
+          posted.push(body);
+          if (!body.artifactRef || body.artifactRef.length > maxRef) {
+            return { ok: false, status: 400, json: async () => ({ error: 'A durable Coding artifact is required.' }) };
+          }
+          snapshot = { ...snapshot, artifacts: [{ artifactId: 'coding-desk-vfs', ref: `${body.artifactRef}#sha256=server-digest` }] };
+        }
+        return { ok: true, json: async () => ({ run: snapshot }) };
+      };
+      const options = { enabled: true, sessionId: 's1', goal: 'build', artifactRef: mode === 'healed' ? '' : rawRef, code };
+      const client = createQirCodingRunClient({ onRun: () => {}, onError: (error) => errors.push(error), readOptions: () => options });
+      await client.sync();
+      if (mode === 'healed') await client.reportHealedArtifact(rawRef, code);
+      assert.deepEqual(errors, [], `${mode} must not be rejected by the server reference limit`);
+      assert.equal(posted.length, 1);
+      assert.equal(posted[0].code, code, 'compact the reference, never truncate the artifact bytes');
+      assert.ok(posted[0].artifactRef.length <= maxRef);
+      assert.ok(!posted[0].artifactRef.includes('real page content'), 'the locator must not carry source');
+      refs.push(posted[0].artifactRef);
+      if (mode === 'recover') {
+        await client.sync();
+        assert.equal(posted.length, 1, 'the same compact candidate must not repeatedly trigger recovery');
+        options.artifactRef = `${rawRef}changed-at-the-end`;
+        await client.sync();
+        assert.equal(posted.length, 2);
+        assert.notEqual(posted[1].artifactRef, posted[0].artifactRef, 'hash the entire assembly, not a truncated prefix');
+        options.artifactRef += ' ';
+        await client.sync();
+        assert.equal(posted.length, 3, 'trailing source whitespace can be meaningful');
+        assert.notEqual(posted[2].artifactRef, posted[1].artifactRef);
+      }
+    }
+    assert.equal(new Set(refs).size, 1, 'all write paths must derive the same identity');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('[was-red] a failure records every engine the turn actually burned', async () => {
   const transport = stubTransport();
