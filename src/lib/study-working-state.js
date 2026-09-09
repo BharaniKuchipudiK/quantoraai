@@ -170,11 +170,6 @@ export function readStudyWorkingState(options = {}) {
   });
 }
 
-export function resetStudyWorkingStateForTests() {
-  activeConcept = { conceptKey: '', conceptLabel: '' };
-  observations = [];
-}
-
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener(STUDY_LEARNING_INTERACTION_EVENT, (event) => observeStudyWorkingInteraction(event?.detail));
 }
