@@ -7,10 +7,7 @@ import {
   Rows3,
   X,
 } from 'lucide-react';
-import {
-  STUDY_LEARNING_INTERACTION,
-  recordStudyLearningInteraction,
-} from '../lib/study-learning-interactions.js';
+import { recordStudyAnswerChange } from '../lib/study-learning-interactions.js';
 import StudyAssessmentHistory from './StudyAssessmentHistory.jsx';
 import './study-assessment-workspace.css';
 
@@ -240,17 +237,14 @@ function BatchRunning({ session, onSubmit, topic }) {
 
   const chooseAnswer = (entry, optionId) => {
     setAnswers((current) => {
-      const previous = current[entry.attemptId];
-      if (previous && previous !== optionId) {
-        recordStudyLearningInteraction({
-          type: STUDY_LEARNING_INTERACTION.ANSWER_CHANGED,
-          source: 'assessment_batch',
-          conceptId: entry.item?.conceptKey,
-          conceptLabel: topic,
-          attemptId: entry.attemptId,
-          choiceId: optionId,
-        });
-      }
+      recordStudyAnswerChange({
+        previousChoiceId: current[entry.attemptId],
+        nextChoiceId: optionId,
+        source: 'assessment_batch',
+        conceptId: entry.item?.conceptKey,
+        conceptLabel: topic,
+        attemptId: entry.attemptId,
+      });
       return { ...current, [entry.attemptId]: optionId };
     });
   };
