@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "python3 scripts/reliability-execution-spine-surgical.py && npx tsx --test api/_lib/transaction-trace.test.ts && node --test src/lib/turn-recovery.test.js src/lib/coding-desk-artifact-repair-cap.test.js src/lib/execution-spine-recovery-wiring.test.js && npm run lint && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && python3 scripts/reliability-export-blobs.py",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -75,7 +75,7 @@
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0",
+    "remark-math": "^6.0.1",
     "vite": "^6.2.3",
     "write-excel-file": "^4.1.1",
     "ws": "^8.21.3",
