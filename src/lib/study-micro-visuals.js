@@ -46,15 +46,21 @@ export function studyFractionSpec(caption = '') {
 }
 
 function compactState(value = '') {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const text = String(value || '').replace(/\s+/g, ' ').replace(/[.;]+$/g, '').trim();
   if (!text || text.length > 52) return '';
   return text;
 }
 
-/** Parse one explicit state transition. Generic arrows remain process flows. */
+/**
+ * Parse one explicit state transition. Generic arrows remain process flows.
+ * Accepted captions must name both states rather than asking the renderer to
+ * infer a transition from arbitrary lesson prose.
+ */
 export function studyBeforeAfterSpec(caption = '') {
   const text = String(caption || '').replace(/\s+/g, ' ').trim();
-  const match = /^before\s*\/\s*after\s*:\s*(.+?)\s*(?:->|→|⇒)\s*(.+?)\s*[.;]?$/i.exec(text);
+  const transition = /^before\s*(?:\/\s*after|and\s+after)\s*:\s*(.+?)\s*(?:->|→|⇒|\bbecomes?\b|\bchanges?\s+to\b)\s*(.+?)\s*[.;]?$/i.exec(text);
+  const labelledPair = /^before\s*:\s*(.+?)\s*[;,]\s*after\s*:\s*(.+?)\s*[.;]?$/i.exec(text);
+  const match = transition || labelledPair;
   if (!match) return null;
   const before = compactState(match[1]);
   const after = compactState(match[2]);
