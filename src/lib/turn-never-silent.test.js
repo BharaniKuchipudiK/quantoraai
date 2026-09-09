@@ -48,10 +48,11 @@ test('a non-message is never treated as silence', () => {
   }
 });
 
-test('the notice says whose fault it is, that nothing was lost, and what to do', () => {
+test('the notice explains missing completion without inventing provider or persistence evidence', () => {
   const notice = describeSilentTurn({ text: '' });
   assert.match(notice, /not a refusal/, 'the user must not read silence as a refusal');
-  assert.match(notice, /nothing was lost/i, 'and must know their work survived');
+  assert.doesNotMatch(notice, /nothing was (lost|recorded)/i);
+  assert.match(notice, /could not confirm a completed response/);
   assert.match(notice, /Retry/, 'and must be told the next step');
 });
 

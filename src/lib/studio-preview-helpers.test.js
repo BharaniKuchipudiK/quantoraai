@@ -5,6 +5,7 @@ import {
   applyWorkspaceFromChat,
   messageHasExtractableWorkspaceCode,
   assembleStudioPreview,
+  assessCodingReply,
   canOpenStudioPreviewPane,
   extractRunnableCode,
   runningPreviewCode,
@@ -36,6 +37,24 @@ const splitApp = `Here is the app.
 document.querySelector(".key").onclick = () => {};
 \`\`\`
 `;
+
+test('the turn gate accepts ten successive patches against the current project, not an empty desk', () => {
+  let vfs = assembleStudioPreview(splitApp).vfs;
+  for (let i = 0; i < 10; i += 1) {
+    const before = vfs['styles.css'].content;
+    const after = `.key{color:rgb(${i},0,0)}`;
+    const reply = `\`\`\`css filepath="styles.css"\n<<<<\n${before.trim()}\n====\n${after}\n>>>>\n\`\`\``;
+    const result = assessCodingReply(reply, vfs);
+    assert.equal(result.accepted, true);
+    assert.equal(result.assembled.vfs['index.html'].content, vfs['index.html'].content);
+    assert.equal(result.assembled.vfs['script.js'].content, vfs['script.js'].content);
+    assert.ok(result.assembled.vfs['styles.css'].content.includes(`rgb(${i},0,0)`));
+    vfs = result.assembled.vfs;
+  }
+  assert.equal(assessCodingReply('I changed it.', vfs).accepted, false);
+  const missing = '```css filepath="styles.css"\n<<<<\nnot present\n====\nnew value\n>>>>\n```';
+  assert.equal(assessCodingReply(missing, vfs).detailCode, 'patch-conflict');
+});
 
 test('assembled preview keeps HTML as the entry and sibling CSS/JS in the VFS', () => {
   const assembled = assembleStudioPreview(splitApp);

@@ -22,6 +22,16 @@ const shopHtml = `<!DOCTYPE html><html><body>
 <script data-quantora-shop-ui="script"></script>
 </body></html>`;
 
+test('observing a page does not prove a click happened or every control works', () => {
+  const packet = buildDeskContextPacket({ html: shopHtml });
+  const observed = mergeLiveDeskProbe(packet, { pageRendered: true, hasCart: true });
+  const click = observed.checks.find((check) => check.id === 'cart-click');
+  assert.equal(click?.state, 'unverified');
+  for (const original of packet.checks.filter((check) => check.id.startsWith('truth-'))) {
+    assert.deepEqual(observed.checks.find((check) => check.id === original.id), original);
+  }
+});
+
 test('a running boutique packet names files, catalog, and live Preview facts', () => {
   const packet = buildDeskContextPacket({
     html: shopHtml,

@@ -33,7 +33,7 @@ import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRenam
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
-import { assembleStudioPreview } from '../lib/studio-preview-helpers.js';
+import { assembleStudioPreview, assessCodingReply } from '../lib/studio-preview-helpers.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallbacks, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain, turnDomainSessionPatch } from '../../shared/studio/domain-inference.js';
@@ -41,7 +41,7 @@ import { mayWriteToDesk, resolveStudioMode, studioModeRequestFields } from '../l
 import { TURN_BUILD, TURN_CHAT, endSessionWork, sendBlockedReason, startSessionWork } from '../lib/session-activity.js';
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
-import { resolveTurnRecovery } from '../lib/turn-recovery.js';
+import { resolveBudgetedTurnRecovery } from '../lib/turn-recovery.js';
 import { MIN_VIABLE_ATTEMPT_MS, mayRunAttempt, planTurnEscalation } from '../lib/turn-escalation.js';
 import { orderEnginesForMission, planMissionContinuation, rerouteBurnedEngine } from '../lib/mission-continuation.js';
 import {
@@ -1525,6 +1525,26 @@ export function useChatStream({
       turnDeadlineMs,
       engineCount: (availableModels || []).filter((m) => m && m.available !== false && m.id).length,
     });
+    // The existing trace ledger records decisions, not prompts or source code.
+    // A successful provider reply can still fail here; that boundary must be
+    // visible without a screenshot or a guess about the missing reply body.
+    const recoverTurn = (input) => {
+      const remaining = escalationNow();
+      const recovery = resolveBudgetedTurnRecovery({ ...input, hasExistingProject: Object.keys(vfs || {}).length > 0 }, remaining);
+      void recordClientBoundary(turnCorrelationId, 'browser.turn-attempt', 'failed', {
+        detailCode: input.code || (input.timedOut ? 'attempt-timeout' : input.networkError ? 'network-error' : 'stream-truncated'),
+        statusCode: input.status || null,
+        modelId: attemptEngineId(targetModel),
+        budgetMs: remaining.remainingMs,
+        durationMs: Date.now() - turnStartedAt,
+      });
+      void recordClientBoundary(turnCorrelationId, 'browser.turn-recovery', recovery.retry ? 'attempting' : 'skipped', {
+        detailCode: recovery.reason,
+        budgetMs: remaining.remainingMs,
+        modelId: recovery.switchModel ? nextFallbackEngine()?.id || null : attemptEngineId(targetModel),
+      });
+      return recovery;
+    };
     /*
      * Has the MISSION run out of materially different things to try? Only when
      * no engine remains that has not already failed on it — the promise the
@@ -1553,7 +1573,6 @@ export function useChatStream({
       if (!stillCurrent()) return;
       updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
         ...m,
-        text: '',
         isError: false,
         executionStatus: { label: notice },
       } : m));
@@ -1568,7 +1587,14 @@ export function useChatStream({
          * climb past what the clock and the catalogue can pay for.
          */
         const escalation = escalationNow();
-        if (attempt > 1 && !mayRunAttempt(attempt, escalation)) break;
+        if (attempt > 1 && !mayRunAttempt(attempt, escalation)) {
+          const note = 'Quantora stopped recovery because this turn has no time left for another attempt. The previous attempt did not complete.';
+          void recordClientBoundary(turnCorrelationId, 'browser.turn-recovery', 'skipped', { detailCode: 'budget-spent', budgetMs: escalation.remainingMs });
+          updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m, text: m.text ? `${m.text}\n\n${note}` : note, isError: true, executionStatus: null,
+          } : m));
+          return;
+        }
         qirTurn.beginAttempt(visibleUserText || text, attemptEngineId(targetModel));
         /*
          * Charge the premium reserve only when the engine that is actually
@@ -1686,9 +1712,8 @@ export function useChatStream({
             const errData = await res.json().catch(() => ({}));
             // A turn that died before the stream started still burned rungs.
             absorbServerEngines(errData?.spentEngineIds);
-            const recovery = resolveTurnRecovery({
+            const recovery = recoverTurn({
               attempt,
-              maxAttempts: escalation.maxAttempts,
               status: res.status,
               code: errData.code,
               retryable: errData.retryable === true,
@@ -1852,9 +1877,8 @@ export function useChatStream({
           if (!stillCurrent()) return;
           let resumeAfterFailure = false;
           if (streamedError || !receivedDone) {
-            const recovery = resolveTurnRecovery({
+            const recovery = recoverTurn({
               attempt,
-              maxAttempts: escalation.maxAttempts,
               code: streamedError?.code,
               retryable: streamedError ? streamedError.retryable === true : true,
               hasPartialText: Boolean(currentText),
@@ -2063,11 +2087,21 @@ export function useChatStream({
            * the 2026-09-01 boutique failure exactly, and the reason
            * guided-intake-browser-gate.mjs exists.
            */
+          const artifactAssessment = codingSpineOwns && !guidedIntakeTurn && !planTurn
+            ? assessCodingReply(currentText, vfs || {}) : null;
+          if (artifactAssessment) {
+            void recordClientBoundary(responseCorrelationId, 'browser.artifact-validation', artifactAssessment.accepted ? 'succeeded' : 'failed', {
+              detailCode: artifactAssessment.detailCode,
+              fileCount: Object.keys(artifactAssessment.assembled.vfs || {}).length,
+              modelId: attemptEngineId(targetModel),
+              budgetMs: escalationNow().remainingMs,
+            });
+          }
           if (
             codingSpineOwns
             && !guidedIntakeTurn
             && !planTurn
-            && !assembleStudioPreview(currentText).code
+            && !artifactAssessment.accepted
           ) {
             const shopOwned = Boolean(
               turnPlan?.isCodingTurn
@@ -2136,12 +2170,14 @@ export function useChatStream({
                 return;
               }
             }
-            const recovery = resolveTurnRecovery({
+            const artifactFailureDetail = artifactAssessment.detailCode === 'patch-conflict'
+              ? 'the proposed patch did not match the current project; some requested changes could not be applied'
+              : unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply contained no runnable files for this project';
+            const recovery = recoverTurn({
               attempt,
-              maxAttempts: escalation.maxAttempts,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
-              failureDetail: unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files',
+              failureDetail: artifactFailureDetail,
             });
             if (recovery.retry) {
               applyRecoveryRepairs(recovery);
@@ -2150,7 +2186,7 @@ export function useChatStream({
             }
             // No authored scaffold here either: a build that produced no files is
             // reported as the failure it is, via resolveCodingTurnOutcome below.
-            qirFail('contract', unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply was a chat plan with no runnable files', missionSpent());
+            qirFail('contract', artifactFailureDetail, missionSpent());
             updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
               ...m,
               ...(() => {
@@ -2192,7 +2228,7 @@ export function useChatStream({
           // An intake turn owes a question, not files — proving it would re-note
           // the same false failure the no-preview exemption above just removed.
           if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn && !planTurn) {
-            const assembled = assembleStudioPreview(currentText, vfs || {});
+            const assembled = artifactAssessment?.assembled || assembleStudioPreview(currentText, vfs || {});
             const seedVfs = {
               ...(vfs || {}),
               ...(assembled.vfs || {}),
@@ -2350,9 +2386,8 @@ export function useChatStream({
           if (!stillCurrent()) return;
           const timedOut = controller.signal.aborted && controller.signal.reason === 'timeout';
           const stopped = controller.signal.aborted && controller.signal.reason === 'user';
-          const recovery = resolveTurnRecovery({
+          const recovery = recoverTurn({
             attempt,
-            maxAttempts: escalation.maxAttempts,
             networkError: true,
             timedOut,
             stoppedByUser: stopped,

@@ -49,7 +49,7 @@ export function collectLiveDeskFacts(payload = {}) {
   return live;
 }
 
-export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
+export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report, options){
   function visibleText(){ return ((document.body && document.body.innerText) || '').replace(/\\s+/g, ' ').trim(); }
   function countItems(){ return document.querySelectorAll('li, [role="listitem"], [data-testid*="item"], [data-item]').length; }
   function labelOf(node){ return ((node.textContent || '') + ' ' + (node.getAttribute('aria-label') || '')).trim(); }
@@ -188,6 +188,12 @@ export const DESK_PROBE_FN_SOURCE = `function __quantoraDeskProbe(report){
   facts.hasScientificKeys = hasScientificKeys();
   var cartBtn = findCart();
   facts.hasCart = Boolean(cartBtn);
+  // The user's running page is observational. Mutating checks are opt-in for
+  // disposable test fixtures only, never either production preview runtime.
+  if (!options || options.allowMutations !== true) {
+    try { report(facts); } catch (reportError) {}
+    return;
+  }
   var bagBefore = readBag();
 
   var list = controls();

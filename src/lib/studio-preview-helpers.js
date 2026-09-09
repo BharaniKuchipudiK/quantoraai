@@ -147,6 +147,13 @@ function extractUnfencedHtml(rawText) {
  * One pipeline for every generated artifact: fenced VFS, single HTML file,
  * or unfenced HTML document. Callers must not pick the first markdown fence.
  */
+export function assessCodingReply(rawText, currentVfs = {}) {
+  const assembled = assembleStudioPreview(rawText, currentVfs);
+  const detailCode = assembled.patchFailures?.length ? 'patch-conflict'
+    : assembled.code ? 'artifact-accepted' : 'browser-preview-missing';
+  return { accepted: detailCode === 'artifact-accepted', detailCode, assembled };
+}
+
 export function assembleStudioPreview(rawText, currentVfs = {}) {
   if (!rawText || typeof rawText !== 'string') return { vfs: {}, code: '' };
 
@@ -559,4 +566,3 @@ export function canOpenStudioPreviewPane(rawText, currentVfs = {}) {
   if (isHtmlDocument(assembled.code) || isInlineReactRuntimeCode(assembled.code || rawText)) return true;
   return vfsHasBrowserPreview(assembled.vfs);
 }
-
