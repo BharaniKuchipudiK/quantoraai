@@ -59,6 +59,8 @@ async function callGeminiRouter(prompt: string, apiKey: string, schema: object) 
       temperature: 0.05,
       responseMimeType: 'application/json',
       responseSchema: schema,
+      // The same 20s this file already gives its OpenRouter router call.
+      abortSignal: AbortSignal.timeout(20_000),
     },
   });
   return parseJsonText(response.text);

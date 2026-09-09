@@ -837,6 +837,10 @@ async function callGemini(systemPrompt, promptWithContext, apiKey, format, remai
           responseMimeType: 'application/json',
           responseSchema: outputSchemaFor(format),
           temperature: format === 'powerpoint' ? 0.2 : 0.3,
+          // remainingMs is this function's own budget. It was computed on the
+          // line above the loop, used to decide the retry count, and then never
+          // enforced on the call it was computed for.
+          abortSignal: AbortSignal.timeout(Math.max(1_000, remainingMs)),
         },
       });
       let text = String(response.text || '');

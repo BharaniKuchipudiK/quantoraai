@@ -401,7 +401,12 @@ async function critiqueWithGemini(apiKey: string, code: string, brief: string) {
   const res = await withNewestGeminiFlash(models, (model) => client.models.generateContent({
     model,
     contents: [{ role: "user", parts: [{ text: `USER BRIEF:\n${brief || "(none)"}\n\nHTML:\n${code.slice(0, 60_000)}` }] }],
-    config: { systemInstruction: system, temperature: 0.2 },
+    config: {
+      systemInstruction: system,
+      temperature: 0.2,
+      // The same 45s this file already gives its OpenRouter critic call.
+      abortSignal: AbortSignal.timeout(45_000),
+    },
   }));
   return stripJsonFence((res as any)?.text || "");
 }

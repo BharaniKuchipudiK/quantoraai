@@ -188,7 +188,12 @@ export async function proposeResearchEvidence(input: {
     const result = await withNewestGeminiFlash(ids, (model) => client.models.generateContent({
       model,
       contents: [{ role: "user", parts: [{ text: user }] }],
-      config: { systemInstruction: system, temperature: 0 },
+      config: {
+        systemInstruction: system,
+        temperature: 0,
+        // MODEL_TIMEOUT_MS: the budget this file already fixed for the same job.
+        abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+      },
     }));
     return parseProposals((result as any)?.text || "");
   }

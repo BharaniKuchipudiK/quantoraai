@@ -1173,6 +1173,20 @@ export const JOURNEYS = Object.freeze([
     note: 'A user reported wasted space on a wide monitor and one inline style was the whole cause (2026-09-09): the <main> shell was capped at 1800px in the studio and 1400px everywhere else, the admin dashboard included. Measured before the fix — at 2000px the studio rendered 1800px and every other tab 1400px, so 30% of that screen was empty; at 2560px, 45%. Nothing could see it, because every layout gate in this repository asks whether a surface renders or overflows and none asked whether it used the space, and a shell that stops early overflows nothing. The dashboard grid was already fluid (auto-fit, minmax(200px, 1fr)), so no dashboard test could have found it either — the waste came from above. The cap is gone rather than raised: a first attempt kept a 2200px ceiling and the gate measured that wasting 14.1% at 2560px, which was the same bandaid one size larger. Width now belongs to each surface, where it can be read — the hub still states its own 1120px measure, and running text still caps itself at 860px, so a wider shell buys panels room and never a 2000px line of prose. The gate asserts both halves against each other: at least 98% of the viewport used, AND no sideways scroll, so \'use the width\' cannot be satisfied by letting content escape.',
   }),
   journey({
+    id: 'provider-calls-bounded',
+    kind: 'platform',
+    area: 'platform invariants',
+    name: 'No provider call can hold a function open until the platform kills it',
+    entry: 'api/_lib/gemini-call-budget.ts',
+    gates: {
+      deterministic: [
+        'api/_lib/stream-liveness-contract.test.ts',
+        'api/_lib/gemini-call-budget.test.ts',
+      ],
+    },
+    note: 'The @google/genai SDK is interruptible only through config.abortSignal, and on 2026-09-09 twelve generateContent call sites under api/ passed none: autocomplete (which runs as the user types), the intent router, both research paths, the repair loop, the build critic, both pipeline calls, Office generation and domain suggestions. Each could hold its serverless function until Vercel killed it — the same defect a user measured at 69.4s in the chat handler, in twelve more places. There is no single right timeout: autocomplete is useless after seconds and a deck can take a minute and a half, so each site takes the budget its own file already stated for the SAME job on its OpenRouter path (router 20s, critic 45s, repair 90s, domains 8s, research 45s, Office its own remainingMs — computed, used to pick a retry count, and never enforced on the call it was computed for). Four sites state no budget anywhere and take a deliberately generous ceiling instead of an invented tight one, because a bound that is too short breaks a working call, which is worse than the hang: a production trace that same day recorded a SUCCESSFUL gemini-flash reply at 51 seconds, so any ceiling under that would have killed work that was fine. Both gates COUNT rather than sample, which is the whole lesson — the stream-liveness assertion originally ran .exec() for one bound, found the one call site that had it, and let the class survive two more rounds.',
+  }),
+  journey({
     id: 'experience-budget',
     kind: 'platform',
     area: 'platform invariants',
