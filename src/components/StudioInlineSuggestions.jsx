@@ -1,7 +1,6 @@
 import React from 'react';
 import { ArrowRight, Sparkles, X } from 'lucide-react';
 import { requestStudyAdaptiveMission } from '../lib/study-adaptive-mission-event.js';
-import { recordStudyHintRequest } from '../lib/study-learning-interactions.js';
 
 /**
  * Unified inline suggestions — lives under the latest AI message in the thread.
@@ -48,9 +47,12 @@ export default function StudioInlineSuggestions({
 
   const selectContinue = (item) => {
     if (item?.id === 'study-hint') {
-      // PR4 observes the only current hint level as depth 1. The adaptive hint
-      // ladder owns deeper levels later; this signal contract does not invent them.
-      recordStudyHintRequest({ source: 'guided_chip', hintDepth: 1 });
+      // This component is shared by every workspace. Load Study observation
+      // code only when a Study hint is actually selected so non-Study desks do
+      // not pay for PR4 in their entry bundle.
+      void import('../lib/study-learning-interactions.js')
+        .then(({ recordStudyHintRequest }) => recordStudyHintRequest({ source: 'guided_chip', hintDepth: 1 }))
+        .catch(() => {});
     }
     if (item?.id === 'study-work-together' && requestStudyAdaptiveMission({ source: 'guided_chip', item })) {
       return;
