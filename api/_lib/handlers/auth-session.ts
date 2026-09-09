@@ -2,6 +2,7 @@ import { applyCors } from "../rate-limit.js";
 import { clearSessionCookie, getSessionUser } from "../session.js";
 import { isAdminUser, readStoredUser } from "../store.js";
 import { providerLabel } from "../auth-privacy.js";
+import { recordSignedOutSiteHit } from "../site-traffic.js";
 
 /*
  * Who is signed in on this request.
@@ -21,6 +22,14 @@ export default async function handler(req: any, res: any) {
 
   res.setHeader("Cache-Control", "no-store");
   if (!sessionUser) {
+    /*
+     * The browser asks this endpoint once while bootstrapping the app. A null
+     * session therefore gives us the cleanest available definition of a
+     * signed-out Quantora page/app load. The recorder stores only an aggregate
+     * hourly counter and ignores previews/dev, so no identity or test traffic
+     * leaks into the executive metric.
+     */
+    recordSignedOutSiteHit();
     return res.status(200).json({ user: null });
   }
 
