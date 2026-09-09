@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import FeedbackWidget from './components/FeedbackWidget.jsx'
+import ProductTelemetry from './components/ProductTelemetry.jsx'
 import { installPromptClipboardImagePaste } from './lib/clipboard-image-paste.js'
 import { clearLegacyPersistentSecrets } from './lib/client-secrets.js'
 import './index.css'
@@ -21,5 +22,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
     <FeedbackWidget />
+    <ProductTelemetry />
   </React.StrictMode>,
 )
