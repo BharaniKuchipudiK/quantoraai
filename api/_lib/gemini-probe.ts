@@ -179,17 +179,51 @@ export async function listGeminiModels(
  * outlived the models they name; a retired id 404s and the failure looks like
  * a broken key instead of a stale string.
  */
+/*
+ * What production tries FIRST, and therefore what this probe owes an answer
+ * about.
+ *
+ * chat-handler.ts opens FEATURED_SERVER_MODELS with "gemini-flash-latest"
+ * under "Rung 0 — direct to Google, costs no OpenRouter credit at all", and
+ * the same id is the default in autocomplete.ts, semantic-router.ts,
+ * prompt-enhancement.ts, model-execution-policy.ts (GEMINI_STABLE_FALLBACK)
+ * and inference-control-plane.ts (GEMINI_STABLE).
+ *
+ * The ranking below used to DERANK it, on the stated grounds that "-latest"
+ * variants "come and go and are not what production would pick". That was
+ * false for this repository, and on 2026-09-09 it cost the operator an
+ * outage: at 01:07 the probe reported gemini=ok(gemini-3.8-flash 1218ms)
+ * while, in the same minutes, a user's desk turn had gemini-flash-latest
+ * answer 504 twice. A watchdog that proves a model production never calls is
+ * green about the wrong thing — CLAUDE.md §1, in the shape that costs the
+ * most, because nobody goes looking behind a passing check.
+ *
+ * Still chosen from the LIVE list and never asserted blind, because this
+ * function's original worry stands: three hardcoded Gemini ids in this repo
+ * have outlived the models they name, and a retired id 404s in a way that
+ * reads as a broken key. An alias cannot rot like a pinned id, and if Google
+ * ever stops listing this one the ranking below still answers.
+ *
+ * gemini-probe.test.ts ties this constant to the id production actually
+ * routes to, read out of the source, so the two cannot drift apart in silence.
+ */
+export const PRODUCTION_FIRST_GEMINI = 'gemini-flash-latest';
+
 export function pickProbeModel(models: string[]): string | null {
   const usable = models.filter((id) => !/embedding|aqa|tts|image|audio|native|live|batch/i.test(id));
   if (!usable.length) return null;
+  // Prove what production calls first, whenever this key can see it.
+  if (usable.includes(PRODUCTION_FIRST_GEMINI)) return PRODUCTION_FIRST_GEMINI;
   const version = (id: string) => {
     const match = id.match(/gemini-(\d+(?:\.\d+)?)/);
     return match ? Number(match[1]) : 0;
   };
   const rank = (id: string) => {
-    // Flash first: it is what the platform routes to, so it is what we should
-    // be proving. Plain ids beat -preview/-exp/-latest variants, which come
-    // and go and are not what production would pick.
+    // Reached only when this key cannot see PRODUCTION_FIRST_GEMINI at all.
+    // Flash first: it is the rung production routes to. Plain ids beat
+    // -preview/-exp variants, which come and go. "-latest" is deranked here
+    // only because the one alias production DOES use is already returned
+    // above; a different -latest is still a guess.
     let score = 0;
     if (/flash/.test(id)) score += 100;
     if (!/preview|exp|thinking|latest|\d{3,}/.test(id)) score += 50;
