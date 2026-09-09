@@ -1,3 +1,4 @@
+import { studyMicroVisualPromptHint } from './study-micro-visuals.js';
 import { studyPicturePromptHint } from './study-pictures.js';
 
 export function studyIcebreakerAsk(topic) {
@@ -7,6 +8,7 @@ export function studyIcebreakerAsk(topic) {
     'First infer whether they sound curious, stuck, rushed, or unsure from the conversation already present.',
     'Acknowledge that state in one natural sentence only when it genuinely helps; never use generic praise.',
     studyPicturePromptHint(label),
+    studyMicroVisualPromptHint(),
     'Use one true hook or small visual only if it makes the idea easier to enter.',
     'Then ask ONE short question that helps you understand what they already think, and STOP. Do not dump the lesson underneath it.',
     'No leaderboard, points, or rank. Do not plan trips.',
@@ -19,6 +21,7 @@ export function studyLessonAsk(topic) {
     `Teach ONE idea about ${label} in this message — not a whole chapter.`,
     'Read the learner’s last turn first. If they sound confused or frustrated, acknowledge the exact difficulty in one human sentence before teaching; otherwise begin naturally without a ceremonial greeting.',
     studyPicturePromptHint(label),
+    studyMicroVisualPromptHint(),
     'Speak directly to the learner in two or three natural paragraphs, adapted to the context already present in this conversation.',
     'Begin from something familiar, connect it to the idea, and name the likely misconception in ordinary language.',
     'Do not use labels such as “Why it is relevant”, “Context-aware question”, “Key takeaway”, or narrate the teaching structure.',
@@ -38,6 +41,7 @@ export function studyExplainDifferentlyAsk(topic) {
     'Do NOT repeat the same wording, structure, analogy, or worked example from the previous explanation.',
     'Switch modality deliberately: if the last answer was abstract, use a concrete analogy; if it was verbal, use a simple subject-aware picture; if it was an analogy, use a tiny worked example; if it was procedural, explain the underlying intuition.',
     studyPicturePromptHint(label),
+    studyMicroVisualPromptHint(),
     'Teach one idea only. Keep it short and conversational.',
     'End with ONE quick question that reveals whether this new explanation worked, then STOP.',
   ].join(' ');
@@ -50,6 +54,7 @@ export function studyVisualExplainAsk(topic) {
     'Honor the active Study representation directive for this turn. If it requires the native lab, render that governed lab instead of substituting a static picture.',
     'Otherwise use one subject-aware <quantora-study-picture> caption when the existing Study visual system can teach the relationship. Never add a decorative image merely to make the answer pretty.',
     studyPicturePromptHint(label),
+    studyMicroVisualPromptHint(),
     'Give at most two short sentences around the visual: what to notice before it, and one question after it.',
     'If the concept cannot be represented honestly with the available visual language, say that briefly and use a tiny text sketch instead of inventing an image URL or pretending a diagram exists.',
     'STOP after one question.',
