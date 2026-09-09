@@ -5,7 +5,10 @@
  * "retry and I will rebuild" — but nothing on the client ever read either, so
  * every failure ended as a dead message the user had to nurse.
  *
- * Bounded on purpose: one extra attempt, never a loop.
+ * Bounded on purpose. Transport failures may still walk the evidence-based
+ * engine ladder, but an ARTIFACT-SHAPE failure gets exactly one automatic
+ * repair. Re-running the same behavioral repair after it already failed is not
+ * escalation; it is the same experiment billed again.
  *
  * THE REPAIR MUST MATCH THE DIAGNOSIS. On 2026-09-01 a boutique build failed
  * BUILD_ARTIFACT_CONTRACT (chat answer, no files), and the retry re-sent the
@@ -15,9 +18,8 @@
  * and billed twice. So each diagnosis now carries its matched repair:
  *
  *   - behavioral failure (the model ignored the artifact contract)
- *       → same engine, STRENGTHENED BRIEF: `retryBrief` names what the last
- *         attempt did wrong, so the retry has memory (the same law
- *         shared/refinement-loop.js enforces for artifact repair rounds).
+ *       → same engine, ONE STRENGTHENED BRIEF: emit one self-contained HTML
+ *         document so the browser and server cannot disagree about the entry.
  *   - transport failure (route dead, gateway 5xx, stream dropped)
  *       → same brief, DIFFERENT ENGINE: `switchModel` tells the caller to
  *         re-run on a fallback. The notice names that engine only when the
@@ -69,18 +71,20 @@ const FATAL_STATUS = new Set([401, 402, 403]);
 const REFUSED_STATUS = new Set([429]);
 
 /**
- * The memory a rebuild attempt carries about the attempt that failed. Without
- * this the model is asked the identical question and returns the identical
- * chat-only answer — the exact transcript of the 2026-09-01 incident.
+ * The memory a rebuild attempt carries about the attempt that failed. The
+ * repair deliberately collapses to ONE HTML entrypoint. A prior version asked
+ * for "html/css/js files" and a model could satisfy those words with CSS alone;
+ * the server then saw browser code while Coding Desk had no page to mount.
  */
 function buildContractRetryBrief(failureDetail) {
   const detail = String(failureDetail || '').trim();
   return (
     'PREVIOUS ATTEMPT FAILED VERIFICATION'
     + (detail ? `: ${detail}` : '.')
-    + ' Do not answer with prose or a plan. Return the complete files for this build,'
-    + ' each in a fenced code block (```html / ```css / ```js) so Preview can run them.'
-    + ' A response without code fences will fail again.'
+    + ' This is the ONE automatic artifact repair for this turn.'
+    + ' Do not answer with prose, a plan, CSS-only, JS-only, or native source.'
+    + ' Return EXACTLY one complete self-contained HTML document in a single ```html code fence.'
+    + ' Inline the CSS and JavaScript needed for the page so Quantora Preview has one unambiguous runnable entrypoint.'
   );
 }
 
@@ -110,6 +114,8 @@ export function resolveTurnRecovery({
    * tried once. The bound stays; it just gets measured instead of assumed.
    */
   maxAttempts = MAX_TURN_ATTEMPTS,
+  /** Number of BUILD_ARTIFACT_CONTRACT repairs already started for this turn. */
+  artifactRepairCount = 0,
   status = 0,
   code = '',
   retryable = false,
@@ -151,16 +157,16 @@ export function resolveTurnRecovery({
   if (FATAL_STATUS.has(Number(status))) return no('credentials');
   if (REFUSED_STATUS.has(Number(status))) return no('rate-limited');
 
-  // Chat-only "plans" on Coding Desk often arrive as a full paragraph before
-  // we notice there were no fences. Rebuild anyway — Preview/files are the
-  // product, not the prose that already rendered. Behavioral failure: keep the
-  // engine, strengthen the brief.
+  // A build artifact gets exactly ONE automatic repair per turn. Count that
+  // behavioral repair independently from transport/provider attempts: a dead
+  // route before the first artifact must not consume the one repair opportunity.
   if (code === 'BUILD_ARTIFACT_CONTRACT') {
+    if (Number(artifactRepairCount) >= 1) return no('build-repair-exhausted');
     return {
       retry: true,
       switchModel: false,
       retryBrief: buildContractRetryBrief(failureDetail),
-      notice: 'Those files could not run in Preview. Rebuilding once with stricter instructions…',
+      notice: 'Those files could not run in Preview. Rebuilding once as a self-contained page…',
       reason: 'build-contract',
     };
   }

@@ -105,8 +105,6 @@ export function describeTraceEvent(event = {}) {
     if (state === 'failed') return `The preview failed to compile${detail ? `: ${detail}` : ''}.`;
   }
   if (boundary === 'browser.response-parser' && state === 'parsed') {
-    // The desk records what it parsed even when that was nothing; "read the
-    // reply" would be a lie for an empty stream.
     return event.detailCode === 'assistant-response-empty'
       ? 'The desk read the stream to its end and found no reply in it.'
       : 'The desk received the reply and read it.';
@@ -194,17 +192,6 @@ export function describeTrace(events = []) {
       };
   }
 
-  /*
-   * A LIMIT IS NOT A BREAKAGE.
-   *
-   * Kept ahead of the generic failure branch and narrow on purpose (§5): the
-   * STATUS ALONE IS AMBIGUOUS EVIDENCE. /api/chat also records a failed
-   * boundary at 429 when every engine's provider quota died — the deployment's
-   * routing problem, and a real fault. The first draft of this branch keyed on
-   * 429 and told that user "a limit on your account, not a failure", which was
-   * false; the gate below caught it. Only the two detail codes the handler
-   * writes when IT declines are unambiguous, so only they qualify.
-   */
   if (apiState === 'failed' && REFUSAL_DETAIL.has(String(last.detailCode || ''))) {
     const shared = String(last.detailCode || '') === SHARED_REFUSAL_DETAIL;
     return {
@@ -235,10 +222,30 @@ export function describeTrace(events = []) {
   }
 
   /*
-   * The record stops before the server's final word. That is the incident's
-   * shape: started, engine chosen, engine called — then nothing. A function
-   * that timed out or crashed writes no "failed" event, so the absence IS the
-   * finding, and it is a fault on our side by definition.
+   * A provider SUCCESS followed by no terminal api.chat record is not evidence
+   * of a provider timeout, nor evidence that the server died "before choosing
+   * an engine". Production incident studio-f32ae5dd-4e01-4828-8896-c4c5e0add16b
+   * proved the opposite: Vercel's runtime log had api.chat succeeded, while the
+   * durable trace lost that last row. State exactly what survived and stop there.
+   */
+  if (last.boundary === 'inference.provider' && last.state === 'succeeded') {
+    return {
+      outcome: 'provider-finished-terminal-missing',
+      headline: 'The model replied successfully, but Quantora has no terminal server record for this turn.',
+      detail: `The last thing recorded was: ${lastWords} The provider completed its reply. `
+        + 'The trace ends before api.chat recorded success or failure, so this record alone cannot distinguish '
+        + 'a lost terminal trace from a post-processing failure. It does not prove that the provider timed out, crashed, or refused the request.'
+        + (deskSilent ? ' The desk later recorded that it still did not receive a usable reply.' : ''),
+      steps,
+    };
+  }
+
+  /*
+   * The record stops before the server's final word. That is the original
+   * cut-off incident shape: started, engine chosen, engine called — then nothing.
+   * Keep that diagnosis for an in-flight call / failed provider record. The
+   * provider-success case above is deliberately excluded because success is
+   * positive evidence that the engine DID finish.
    */
   const cutOffWhile = last.boundary === 'inference.provider' && (last.state === 'attempting')
     ? ` while waiting on ${engineWords(last)}`

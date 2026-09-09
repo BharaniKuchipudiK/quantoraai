@@ -1,3 +1,6 @@
+import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
+import { pickPreviewEntryPath } from '../../src/lib/preview-utils.js';
+
 export type BuildArtifactContractResult = {
   ok: boolean;
   detailCode: string;
@@ -154,19 +157,37 @@ function isHtmlDocument(source: string) {
   return /<!DOCTYPE html>/i.test(source) || /<html[\s>]/i.test(source);
 }
 
-const BROWSER_LANG = /^(html|css|javascript|js|jsx|tsx|react)$/i;
-const BROWSER_PATH = /\.(html|css|js|jsx|tsx|mjs|cjs)$/i;
 const NATIVE_PATH = /\.(swift|kt|kts|java|m|mm|cs)$/i;
+const SEARCH_REPLACE_PATCH = /(?:^|\n)\s*<<<<\s*\r?\n[\s\S]*?\r?\n\s*====\s*\r?\n[\s\S]*?\r?\n\s*>>>>(?:\s*$|\s*\n)/;
 
+function hasExistingFilePatchArtifact(source: string) {
+  return fencedFiles(source).some((file) => (
+    Boolean(file.path)
+    && !NATIVE_PATH.test(file.path)
+    && SEARCH_REPLACE_PATCH.test(file.content)
+  ));
+}
+
+/**
+ * Server and Coding Desk must agree on whether a reply contains something the
+ * Preview can actually mount. Do not maintain a second list of "browser-ish"
+ * extensions here: that is how CSS-only replies were accepted by the server
+ * while `pickPreviewEntryPath` quite correctly found no page in the browser.
+ *
+ * Reuse the browser's parser and entry selector. Unfenced full HTML is handled
+ * separately because Coding Desk's assembly path also accepts it directly.
+ */
 export function hasBrowserPreviewArtifact(text: unknown): boolean {
   const source = typeof text === 'string' ? text : '';
   if (isHtmlDocument(source)) return true;
-  const files = fencedFiles(source);
-  return files.some((file) => (
-    BROWSER_LANG.test(file.language)
-    || BROWSER_PATH.test(file.path)
-    || isHtmlDocument(file.content)
-  ));
+  // Existing-file refinements are applied by Coding Desk against currentVfs.
+  // The server intentionally has no copy of that VFS, so parsing a governed
+  // patch against {} would erase a valid edit and falsely report no runnable
+  // entry. Fresh-file checks remain strict; only explicit patch syntax defers
+  // final materialization to the browser that owns currentVfs.
+  if (hasExistingFilePatchArtifact(source)) return true;
+  const parsed = parseVFSWithReport(source, {});
+  return Boolean(pickPreviewEntryPath(parsed.vfs));
 }
 
 /**
