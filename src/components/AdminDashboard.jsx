@@ -74,6 +74,8 @@ const AdminDashboard = ({ onBack }) => {
 
   if (!metrics) return null;
 
+  const telemetryStatus = getTelemetryStatus(metrics);
+
   return (
     <div style={{
       padding: '30px 40px',
@@ -106,9 +108,9 @@ const AdminDashboard = ({ onBack }) => {
         </button>
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
-            LIVE
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: telemetryStatus.color, background: telemetryStatus.background, padding: '6px 12px', borderRadius: '20px', border: `1px solid ${telemetryStatus.border}` }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: telemetryStatus.color }} />
+            {telemetryStatus.label}
           </span>
           <div style={{ fontSize: '0.78rem', color: '#64748b', fontFamily: 'monospace' }}>
             Updated {new Date(metrics.timestamp).toLocaleTimeString()}
@@ -157,6 +159,36 @@ const AdminDashboard = ({ onBack }) => {
   );
 };
 
+const getTelemetryStatus = (metrics) => {
+  const source = metrics?.source;
+  const workspaceSource = metrics?.workspaceUse?.source;
+
+  if (source === 'not_configured' || workspaceSource === 'not_configured' || metrics?.isLiveConnected === false) {
+    return {
+      label: 'NOT CONFIGURED',
+      color: '#f59e0b',
+      background: 'rgba(245, 158, 11, 0.1)',
+      border: 'rgba(245, 158, 11, 0.25)',
+    };
+  }
+
+  if (source === 'unavailable' || workspaceSource === 'unavailable') {
+    return {
+      label: 'DEGRADED',
+      color: '#f59e0b',
+      background: 'rgba(245, 158, 11, 0.1)',
+      border: 'rgba(245, 158, 11, 0.25)',
+    };
+  }
+
+  return {
+    label: 'CONNECTED',
+    color: '#10b981',
+    background: 'rgba(16, 185, 129, 0.1)',
+    border: 'rgba(16, 185, 129, 0.2)',
+  };
+};
+
 const TabButton = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
@@ -183,24 +215,35 @@ import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
 import AdminFeedbackPanel from './AdminFeedbackPanel';
 
-const UserAnalyticsTab = ({ metrics }) => (
-  <div style={{ animation: 'fadeIn 0.35s ease-out' }}>
-    {metrics.source === 'not_configured' && (
-      <div style={{ padding: '16px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', borderRadius: '8px', marginBottom: '24px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <AlertTriangle size={18} />
-        <span>User Analytics requires configuring Supabase Service Role Key. Displaying zeros.</span>
-      </div>
-    )}
+const UserAnalyticsTab = ({ metrics }) => {
+  const notConfigured = metrics.source === 'not_configured' || metrics.workspaceUse?.source === 'not_configured';
+  const unavailable = metrics.source === 'unavailable' || metrics.workspaceUse?.source === 'unavailable';
+  const warning = notConfigured
+    ? 'Analytics storage is not configured. Unavailable metrics are shown as — rather than zero.'
+    : unavailable
+      ? 'Some analytics queries are unavailable. Missing telemetry is shown as — rather than being reported as zero usage.'
+      : '';
 
-    <ProductAnalyticsPanel
-      product={metrics.product}
-      growth={metrics.growth}
-      workspaceUse={metrics.workspaceUse}
-      window={metrics.window}
-      daily={metrics.daily}
-    />
-  </div>
-);
+  return (
+    <div style={{ animation: 'fadeIn 0.35s ease-out' }}>
+      {warning && (
+        <div style={{ padding: '16px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', borderRadius: '8px', marginBottom: '24px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <AlertTriangle size={18} />
+          <span>{warning}</span>
+        </div>
+      )}
+
+      <ProductAnalyticsPanel
+        product={metrics.product}
+        growth={metrics.growth}
+        workspaceUse={metrics.workspaceUse}
+        window={metrics.window}
+        daily={metrics.daily}
+        source={metrics.source}
+      />
+    </div>
+  );
+};
 
 const TechnicalPredictiveTab = ({ metrics }) => {
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
