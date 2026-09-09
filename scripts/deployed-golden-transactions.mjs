@@ -9,6 +9,7 @@ import { planGoldenTransactions } from './lib/golden-plan.mjs';
 import { claimFilterWroteThis } from '../src/lib/desk-chat-claim-filter.js';
 import { buildMinimalPdf, bylawsFixtureText, eventCalendarFixtureText } from './lib/minimal-pdf.mjs';
 import { wordDocumentWords } from './lib/office-words.mjs';
+import { verifyProjectPersistence } from './lib/project-persistence-probe.mjs';
 
 /*
  * THE ROSTER, AND WHY A SUCCESSFUL RUN NOW HAS TO NAME IT.
@@ -401,6 +402,8 @@ try {
     console.log(`Engine refused; the transactions run on the fallback engine. ${refusal.reason}`);
   }
 
+  evidence.activeTransaction = { name: 'project-persistence', correlationId: null };
+  evidence.projectPersistence = await verifyProjectPersistence({ baseUrl: BASE_URL, headers: apiBypassHeaders });
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   /*
    * Anchor on the data hook, not the button's words.
