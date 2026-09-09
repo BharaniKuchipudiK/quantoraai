@@ -6,11 +6,15 @@ import {
   buildFirstWorkspaceEventData,
   buildVisitEventData,
   claimFirstWorkspaceOpen,
-  claimPageTelemetry,
   classifyVisit,
   productTelemetrySurface,
   shouldCollectProductTelemetry,
 } from '../lib/product-telemetry.js';
+
+// One module instance belongs to one loaded document. This blocks React
+// StrictMode's development remount without suppressing a later real navigation
+// or reload in the same browser tab (sessionStorage would incorrectly do so).
+let claimedThisDocument = false;
 
 /**
  * Aggregate product telemetry that complements the existing <Analytics /> page
@@ -31,14 +35,13 @@ export default function ProductTelemetry() {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     if (!shouldCollectProductTelemetry(window.location)) return undefined;
-    if (!claimPageTelemetry(window.sessionStorage)) return undefined;
+    if (claimedThisDocument) return undefined;
+    claimedThisDocument = true;
 
-    let cancelled = false;
     const visitType = classifyVisit(window.localStorage);
     const surface = productTelemetrySurface(window.location.pathname);
 
     const emit = (eventName, data) => {
-      if (cancelled) return;
       try {
         track(eventName, data);
       } catch {
@@ -76,9 +79,7 @@ export default function ProductTelemetry() {
         }));
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, []);
 
   return null;
