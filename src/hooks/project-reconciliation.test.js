@@ -17,6 +17,8 @@ async function reconcile(local, remote, rejectSave = false) {
   const run = new Function('localStorage', 'PROJECTS_STORAGE_KEY', 'normalizeLocalProject', 'createDefaultProject',
     'loadRemoteProjects', 'saveRemoteProject', 'persistProjects', 'sortProjects', 'timeValue', `
       const cancelled = false;
+      const accountKey = 'account-a';
+      const scopedStorageKey = (base) => base;
       const activeProjectId = 'project-personal';
       const setProjects = () => {};
       const setActiveProjectIdState = () => {};

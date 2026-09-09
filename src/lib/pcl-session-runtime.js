@@ -2,6 +2,9 @@ const CHAT_SESSIONS_KEY = 'quantora_chat_sessions';
 const ACTIVE_SESSION_KEY = 'quantora_active_pcl_session';
 const SESSION_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const PROJECT_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
+const scopedKey = (base, accountScope) => accountScope
+  ? `${base}:account:${encodeURIComponent(String(accountScope))}`
+  : base;
 
 function storageOrNull(storage) {
   if (storage) return storage;
@@ -12,22 +15,22 @@ function storageOrNull(storage) {
   }
 }
 
-function readSessions(storage) {
+function readSessions(storage, accountScope) {
   const target = storageOrNull(storage);
   if (!target) return [];
   try {
-    const parsed = JSON.parse(target.getItem(CHAT_SESSIONS_KEY) || '[]');
+    const parsed = JSON.parse(target.getItem(scopedKey(CHAT_SESSIONS_KEY, accountScope)) || '[]');
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-function writeSessions(sessions, storage) {
+function writeSessions(sessions, storage, accountScope) {
   const target = storageOrNull(storage);
   if (!target) return false;
   try {
-    target.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+    target.setItem(scopedKey(CHAT_SESSIONS_KEY, accountScope), JSON.stringify(sessions));
     return true;
   } catch {
     return false;
@@ -42,57 +45,57 @@ export function normalizePclProjectId(value) {
   return typeof value === 'string' && PROJECT_ID.test(value.trim()) ? value.trim() : null;
 }
 
-export function rememberActivePclSession(sessionId, storage) {
+export function rememberActivePclSession(sessionId, storage, accountScope) {
   const id = normalizePclSessionId(sessionId);
   const target = storageOrNull(storage);
   if (!id || !target) return null;
   try {
-    target.setItem(ACTIVE_SESSION_KEY, id);
+    target.setItem(scopedKey(ACTIVE_SESSION_KEY, accountScope), id);
     return id;
   } catch {
     return null;
   }
 }
 
-export function readActivePclSessionId(storage) {
+export function readActivePclSessionId(storage, accountScope) {
   const target = storageOrNull(storage);
   if (!target) return null;
   try {
-    return normalizePclSessionId(target.getItem(ACTIVE_SESSION_KEY));
+    return normalizePclSessionId(target.getItem(scopedKey(ACTIVE_SESSION_KEY, accountScope)));
   } catch {
     return null;
   }
 }
 
-export function setPclSessionMemoryConsent(sessionId, consented, storage) {
+export function setPclSessionMemoryConsent(sessionId, consented, storage, accountScope) {
   const id = normalizePclSessionId(sessionId);
   if (!id) return false;
-  const sessions = readSessions(storage);
+  const sessions = readSessions(storage, accountScope);
   let changed = false;
   const updated = sessions.map((session) => {
     if (session?.id !== id) return session;
     changed = true;
     return { ...session, memoryConsented: consented === true };
   });
-  return changed ? writeSessions(updated, storage) : false;
+  return changed ? writeSessions(updated, storage, accountScope) : false;
 }
 
-export function updatePclSessionOutcomeVersion(sessionId, version, storage) {
+export function updatePclSessionOutcomeVersion(sessionId, version, storage, accountScope) {
   const id = normalizePclSessionId(sessionId);
   if (!id || !Number.isInteger(version) || version < 0) return false;
-  const sessions = readSessions(storage);
+  const sessions = readSessions(storage, accountScope);
   let changed = false;
   const updated = sessions.map((session) => {
     if (session?.id !== id) return session;
     changed = true;
     return { ...session, outcomeVersion: version };
   });
-  return changed ? writeSessions(updated, storage) : false;
+  return changed ? writeSessions(updated, storage, accountScope) : false;
 }
 
-export function readPclConversationEnvelope({ sessionId, sessionContext, storage } = {}) {
-  const id = normalizePclSessionId(sessionId) || readActivePclSessionId(storage);
-  const session = id ? readSessions(storage).find((item) => item?.id === id) : null;
+export function readPclConversationEnvelope({ sessionId, sessionContext, storage, accountScope } = {}) {
+  const id = normalizePclSessionId(sessionId) || readActivePclSessionId(storage, accountScope);
+  const session = id ? readSessions(storage, accountScope).find((item) => item?.id === id) : null;
   const projectId = normalizePclProjectId(sessionContext?.projectId || session?.projectId);
   return {
     ...(id ? { sessionId: id } : {}),

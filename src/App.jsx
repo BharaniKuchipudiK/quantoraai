@@ -681,6 +681,7 @@ export default function App() {
 
             {activeTab === 'studio' && (
               <AiStudio
+                key={`studio-account-${user?.sub || user?.email || 'signed-out'}`}
                 onOpenAuth={openAuth}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}

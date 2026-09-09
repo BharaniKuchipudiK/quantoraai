@@ -8,6 +8,11 @@ import { listingShowsGeneratedProjectFile } from '../src/lib/studio-workspace-tr
 import { assertJourneyEntry } from './lib/parked-surfaces.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
+const STUDIO_RECOVERY_SUB = 'studio-recovery-user';
+const STUDIO_RECOVERY_EMAIL = 'recovery@quantora.test';
+// The browser session response intentionally exposes email, not the server's
+// internal subject, so the hook's authenticated fallback scope is this email.
+const ACCOUNT_CHAT_SESSIONS_KEY = `quantora_chat_sessions:account:${encodeURIComponent(STUDIO_RECOVERY_EMAIL)}`;
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 const page = await context.newPage();
@@ -107,7 +112,7 @@ await page.route('**/api/**', async (route) => {
 
   if (path === '/api/auth/session') {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-      user: { sub: 'studio-recovery-user', name: 'Recovery User', email: 'recovery@quantora.test', picture: null, isAdmin: false },
+      user: { sub: STUDIO_RECOVERY_SUB, name: 'Recovery User', email: STUDIO_RECOVERY_EMAIL, picture: null, isAdmin: false },
     }) });
   }
   if (path === '/api/models') {
@@ -543,9 +548,10 @@ try {
   const fork = page.locator('[data-quantora-message-fork="true"]').last();
   await visible(fork, 'Fork Chat was not placed in the completed response footer.');
 
-  const readSessions = () => page.evaluate(() => {
-    try { return JSON.parse(localStorage.getItem('quantora_chat_sessions') || '[]'); } catch { return []; }
-  });
+  const readSessions = () => page.evaluate((storageKey) => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch { return []; }
+  }, ACCOUNT_CHAT_SESSIONS_KEY);
+  const legacySessionsBeforeFork = await page.evaluate(() => localStorage.getItem('quantora_chat_sessions'));
   const sessionsBeforeFork = await readSessions();
   await fork.click();
   await page.waitForLoadState('domcontentloaded');
@@ -571,12 +577,16 @@ try {
     if (sessionsAfterFork.length > sessionsBeforeFork.length) break;
     if (Date.now() >= forkDeadline) {
       throw new Error(
-        `Footer Fork Chat did not create an independent session: quantora_chat_sessions held `
+        `Footer Fork Chat did not create an independent session: ${ACCOUNT_CHAT_SESSIONS_KEY} held `
         + `${sessionsBeforeFork.length} before the click and still holds ${sessionsAfterFork.length} `
         + 'after 10s.',
       );
     }
     await new Promise((resolve) => { setTimeout(resolve, 100); });
+  }
+  const legacySessionsAfterFork = await page.evaluate(() => localStorage.getItem('quantora_chat_sessions'));
+  if (legacySessionsAfterFork !== legacySessionsBeforeFork) {
+    throw new Error('Footer Fork Chat wrote to the unowned legacy session key instead of the signed-in account scope.');
   }
 
   console.log('Studio regression recovery browser gate passed with self-hosted compiler runtime.');
