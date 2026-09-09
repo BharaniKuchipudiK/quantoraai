@@ -21,7 +21,7 @@ export function isProjectStoreConfigured(): boolean {
   return config() !== null;
 }
 
-async function requestRaw(path: string, init: RequestInit & { headers?: Record<string, string> }) {
+async function requestRaw(path: string, init: RequestInit & { headers?: Record<string, string> }, propagateFailure = false) {
   const cfg = config();
   if (!cfg) return null;
   try {
@@ -36,6 +36,7 @@ async function requestRaw(path: string, init: RequestInit & { headers?: Record<s
       signal: AbortSignal.timeout(REST_TIMEOUT_MS),
     });
   } catch (error: any) {
+    if (propagateFailure) throw error;
     console.warn(`Supabase ${init.method || "GET"} ${path} failed:`, error?.message || error);
     return null;
   }
@@ -82,34 +83,59 @@ export async function saveProject(entry: {
   project: ProjectRecord;
 }): Promise<ProjectSaveResult> {
   const project = normalizeProjectInput(entry.project);
-  if (!entry.userSub || !project) return { status: "unavailable" };
-  const response = await requestRaw("rpc/save_project", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: JSON.stringify({
-      p_user_sub: entry.userSub,
-      p_project_id: project.id,
-      p_expected_version: entry.expectedVersion,
-      p_name: project.name,
-      p_description: project.description,
-      p_goal: project.goal,
-      p_status: project.status,
-      p_color: project.color,
-    }),
-  });
-  if (!response) return { status: "unavailable" };
-  if (!response.ok) {
-    const detail = await response.text();
-    if (detail.includes("project_version_conflict")) return { status: "conflict" };
-    console.warn(`Supabase POST rpc/save_project -> ${response.status}`, detail);
-    return { status: "unavailable" };
-  }
+  if (!entry.userSub || !project || !config()) return { status: "unavailable" };
+  const startedAt = performance.now();
+  const diagnostic: {
+    outcome: ProjectSaveResult['status'];
+    phase: 'headers' | 'body' | 'complete';
+    failure: 'timeout' | 'transport' | 'decode' | null;
+    headersMs: number | null;
+    httpStatus: number | null;
+  } = { outcome: 'unavailable', phase: 'headers', failure: null, headersMs: null, httpStatus: null };
   try {
+    const response = await requestRaw("rpc/save_project", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        p_user_sub: entry.userSub,
+        p_project_id: project.id,
+        p_expected_version: entry.expectedVersion,
+        p_name: project.name,
+        p_description: project.description,
+        p_goal: project.goal,
+        p_status: project.status,
+        p_color: project.color,
+      }),
+    }, true);
+    if (!response) return { status: "unavailable" };
+    diagnostic.headersMs = Math.round(performance.now() - startedAt);
+    diagnostic.httpStatus = response.status;
+    diagnostic.phase = 'body';
+    if (!response.ok) {
+      const detail = await response.text();
+      diagnostic.phase = 'complete';
+      if (detail.includes("project_version_conflict")) {
+        diagnostic.outcome = 'conflict';
+        return { status: "conflict" };
+      }
+      return { status: "unavailable" };
+    }
     const rows = await response.json();
     const record = projectRecord(Array.isArray(rows) ? rows[0] : rows);
+    diagnostic.phase = 'complete';
+    diagnostic.outcome = record ? 'saved' : 'unavailable';
     return record ? { status: "saved", record } : { status: "unavailable" };
-  } catch {
+  } catch (error: any) {
+    diagnostic.failure = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+      ? 'timeout' : error instanceof SyntaxError ? 'decode' : 'transport';
     return { status: "unavailable" };
+  } finally {
+    // One bounded event per attempt, including successful timings for a baseline.
+    // Never log project contents, owner IDs, credentials, URLs, or raw DB errors.
+    // A timeout is an unknown commit outcome; it must not replay the mutation.
+    const event = { ...diagnostic, elapsedMs: Math.round(performance.now() - startedAt), budgetMs: REST_TIMEOUT_MS };
+    if (diagnostic.outcome === 'unavailable') console.warn('[project-save]', event);
+    else console.info('[project-save]', event);
   }
 }
 
