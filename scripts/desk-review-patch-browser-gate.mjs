@@ -119,6 +119,10 @@ try {
     15_000,
   );
 
+  // The observer never clicks the user's cart. Exercise the broken control
+  // explicitly, then require the review to repair the observed failure.
+  await boutiqueFrame.locator('button').filter({ hasText: /add to cart/i }).first().click();
+  await visible(page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-state="fix"]').first(), 'The dead cart click was not diagnosed.');
   await prompt.fill('Review this');
   await prompt.press('Enter');
   await page.locator('[data-quantora-code-workspace="true"] button').filter({ hasText: /^Preview$/ }).first().click().catch(() => {});
@@ -126,11 +130,6 @@ try {
   await visible(page.locator('[data-quantora-desk-probes="true"]').first(), 'Review this did not keep Preview checks.', 12_000);
   await visible(page.locator('[data-quantora-desk-next="true"], [data-quantora-desk-probes="true"]').first(), 'Review this did not show the next beat or probe rail.', 8_000);
 
-  await visible(
-    page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),
-    'Review this did not turn a dead Add to Cart into a working click.',
-    15_000,
-  );
   await visible(
     page.locator('[data-quantora-desk-probe="photos"][data-quantora-desk-probe-ok="true"]').first(),
     'Review this regressed a passing photos probe.',
@@ -143,6 +142,7 @@ try {
 
   const reviewed = await visibleFrame('.product-card', 12_000);
   if (!reviewed) throw new Error('Preview stopped running after Review this.');
+  await reviewed.waitForFunction(() => typeof window.__quantoraDeskObserveClick === 'function');
   await reviewed.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button, a')).find((node) => /add to (bag|cart)/i.test(node.textContent || ''));
     btn?.click();
@@ -151,6 +151,11 @@ try {
     reviewed.locator('[data-quantora-bag="true"], button').filter({ hasText: /^Bag\s+[1-9]/ }).first(),
     'Add to Cart is on Preview but the bag did not increment after Review this.',
     12_000,
+  );
+  await visible(
+    page.locator('[data-quantora-desk-probe="cart-click"][data-quantora-desk-probe-ok="true"]').first(),
+    'Review this did not confirm the repaired cart click.',
+    15_000,
   );
 
   mkdirSync('artifacts/e2e', { recursive: true });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { filterDeskChatClaims } from './desk-chat-claim-filter.js';
 import {
   buildCodingTurnPacket,
   buildDeskContextPacket,
@@ -27,6 +28,10 @@ test('observing a page does not prove a click happened or every control works', 
   const observed = mergeLiveDeskProbe(packet, { pageRendered: true, hasCart: true });
   const click = observed.checks.find((check) => check.id === 'cart-click');
   assert.equal(click?.state, 'unverified');
+  assert.equal(observed.facts.bagIncremented, undefined);
+  const safe = sanitizeDeskContext(observed);
+  assert.equal(safe.facts.bagIncremented, undefined);
+  assert.match(filterDeskChatClaims('Add to Cart is working.', safe, 'coding'), /has not confirmed Add to Cart/);
   for (const original of packet.checks.filter((check) => check.id.startsWith('truth-'))) {
     assert.deepEqual(observed.checks.find((check) => check.id === original.id), original);
   }

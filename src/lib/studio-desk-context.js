@@ -445,7 +445,7 @@ export function mergeLiveDeskProbe(packet, live = null) {
       || (facts.photoCount || 0) >= 2;
     facts.hasDistinctPhotos = (facts.uniquePhotoCount || 0) >= 2 || !needsVariety;
   }
-  facts.bagIncremented = live.bagIncremented === true;
+  delete facts.bagIncremented;
   for (const key of DESK_PROBE_FACT_KEYS) {
     if (typeof live[key] === 'boolean') facts[key] = live[key];
   }
@@ -575,7 +575,6 @@ export function sanitizeDeskContext(raw) {
     hasCalculatorKey: raw.facts.hasCalculatorKey === true,
     hasScientificKeys: raw.facts.hasScientificKeys === true,
     wantsScientific: raw.facts.wantsScientific === true,
-    bagIncremented: raw.facts.bagIncremented === true,
     shop: raw.facts.shop === true,
     calculator: raw.facts.calculator === true,
     // Tri-state on purpose: an unobserved fact must not collapse into false.

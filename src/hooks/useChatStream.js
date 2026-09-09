@@ -33,7 +33,7 @@ import { applyDeskRename, describeDeskRename, detectRenameRequest, planDeskRenam
 import { buildJobIsComplete, nextStepBrief } from '../lib/build-job.js';
 import { deskCanStart, describeDeskEvidence, describeMissingImports, findMissingLocalImports } from '../lib/desk-commit-guard.js';
 import { isBuildSessionActive, turnBelongsToBuild } from '../lib/build-session.js';
-import { assembleStudioPreview, assessCodingReply } from '../lib/studio-preview-helpers.js';
+import { assembleStudioPreview, assessCodingReply, studioAssemblyBase } from '../lib/studio-preview-helpers.js';
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection, rankCodingDeskFallbacks, resolveCodingDeskModel } from '../lib/coding-desk-auto-model.js';
 import { studioDomainPolicy } from '../lib/studio-domain-policy.js';
 import { resolveTurnStudioDomain, turnDomainSessionPatch } from '../../shared/studio/domain-inference.js';
@@ -1528,9 +1528,10 @@ export function useChatStream({
     // The existing trace ledger records decisions, not prompts or source code.
     // A successful provider reply can still fail here; that boundary must be
     // visible without a screenshot or a guess about the missing reply body.
+    const artifactBaseVfs = studioAssemblyBase(vfs || {}, visibleUserText || text, deskJob);
     const recoverTurn = (input) => {
       const remaining = escalationNow();
-      const recovery = resolveBudgetedTurnRecovery({ ...input, hasExistingProject: Object.keys(vfs || {}).length > 0 }, remaining);
+      const recovery = resolveBudgetedTurnRecovery({ ...input, hasExistingProject: Object.keys(artifactBaseVfs).length > 0 }, remaining);
       void recordClientBoundary(turnCorrelationId, 'browser.turn-attempt', 'failed', {
         detailCode: input.code || (input.timedOut ? 'attempt-timeout' : input.networkError ? 'network-error' : 'stream-truncated'),
         statusCode: input.status || null,
@@ -2088,7 +2089,7 @@ export function useChatStream({
            * guided-intake-browser-gate.mjs exists.
            */
           const artifactAssessment = codingSpineOwns && !guidedIntakeTurn && !planTurn
-            ? assessCodingReply(currentText, vfs || {}) : null;
+            ? assessCodingReply(currentText, artifactBaseVfs) : null;
           if (artifactAssessment) {
             void recordClientBoundary(responseCorrelationId, 'browser.artifact-validation', artifactAssessment.accepted ? 'succeeded' : 'failed', {
               detailCode: artifactAssessment.detailCode,
@@ -2228,9 +2229,9 @@ export function useChatStream({
           // An intake turn owes a question, not files — proving it would re-note
           // the same false failure the no-preview exemption above just removed.
           if (turnPlan?.isCodingTurn && !advisorBlocksPreviewBuild(turnDomain) && !guidedIntakeTurn && !planTurn) {
-            const assembled = artifactAssessment?.assembled || assembleStudioPreview(currentText, vfs || {});
+            const assembled = artifactAssessment?.assembled || assembleStudioPreview(currentText, artifactBaseVfs);
             const seedVfs = {
-              ...(vfs || {}),
+              ...artifactBaseVfs,
               ...(assembled.vfs || {}),
             };
             codingProof = proveCodingTurn({

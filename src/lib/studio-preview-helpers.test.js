@@ -6,6 +6,7 @@ import {
   messageHasExtractableWorkspaceCode,
   assembleStudioPreview,
   assessCodingReply,
+  studioAssemblyBase,
   canOpenStudioPreviewPane,
   extractRunnableCode,
   runningPreviewCode,
@@ -536,4 +537,16 @@ test('a stated switch is still allowed, exactly as before', () => {
   const job = buildStudioJobCard({ brief: 'Create a simple working React calculator', vfs: calculatorDesk(), existing: null });
   const switched = applyWorkspaceFromChat(bakeryReply, calculatorDesk(), job, { brief: BAKERY_BRIEF });
   assert.equal(switched.rejected, false);
+});
+
+test('product-switch assessment cannot borrow the previous app to accept sidecars', () => {
+  const prior = calculatorDesk();
+  const job = buildStudioJobCard({ brief: 'Create a simple working React calculator', vfs: prior });
+  const freshBase = studioAssemblyBase(prior, BAKERY_BRIEF, job);
+  assert.deepEqual(freshBase, {});
+  for (const reply of ['```css filepath="styles.css"\nbody{color:red}\n```', '```md filepath="README.md"\nBakery\n```']) {
+    assert.equal(assessCodingReply(reply, freshBase).accepted, false);
+  }
+  assert.equal(studioAssemblyBase(prior, 'make the calculator prettier', job), prior);
+  assert.equal(assessCodingReply(bakeryReply, freshBase).accepted, true);
 });

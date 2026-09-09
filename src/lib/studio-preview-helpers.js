@@ -147,6 +147,10 @@ function extractUnfencedHtml(rawText) {
  * One pipeline for every generated artifact: fenced VFS, single HTML file,
  * or unfenced HTML document. Callers must not pick the first markdown fence.
  */
+export function studioAssemblyBase(currentVfs = {}, brief = '', job = null) {
+  return isStudioProductSwitch(brief, job) ? {} : currentVfs;
+}
+
 export function assessCodingReply(rawText, currentVfs = {}) {
   const assembled = assembleStudioPreview(rawText, currentVfs);
   const detailCode = assembled.patchFailures?.length ? 'patch-conflict'
@@ -208,7 +212,7 @@ export function applyWorkspaceFromChat(rawText, currentVfs = {}, job = null, opt
   const brief = typeof options === 'string' ? options : String(options?.brief || '');
   // Shop → landing (or any new product): do not merge Latte/products.json into Nimbus.
   const switchingProduct = isStudioProductSwitch(brief, job);
-  const assembleBase = switchingProduct ? {} : currentVfs;
+  const assembleBase = studioAssemblyBase(currentVfs, brief, job);
   const assembled = assembleStudioPreview(rawText, assembleBase);
   const hadProject = Object.keys(currentVfs || {}).some(
     (path) => path && currentVfs[path] && typeof currentVfs[path].content === 'string',
