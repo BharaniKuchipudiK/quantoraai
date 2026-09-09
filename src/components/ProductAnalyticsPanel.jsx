@@ -1,14 +1,23 @@
 import React from 'react';
 
 function compact(value) {
+  if (value == null || value === '') return '—';
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
   return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(number);
 }
 
+function count(value) {
+  if (value == null || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString() : '—';
+}
+
 function percent(part, whole) {
-  const a = Number(part) || 0;
-  const b = Number(whole) || 0;
+  if (part == null || whole == null) return null;
+  const a = Number(part);
+  const b = Number(whole);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   return b > 0 ? Math.round((a / b) * 100) : null;
 }
 
@@ -16,6 +25,11 @@ function shortModel(id) {
   const value = String(id || '').trim();
   if (!value) return 'Unrecorded';
   return value.split('/').pop()?.slice(0, 28) || value;
+}
+
+function sourceAvailable(source, value) {
+  if (source == null) return value != null;
+  return source === 'measured' || source === 'no-rows';
 }
 
 function KpiCard({ label, value, note }) {
@@ -34,13 +48,17 @@ function KpiCard({ label, value, note }) {
   );
 }
 
-function UsageTrend({ daily }) {
-  const days = Array.isArray(daily?.usage) ? daily.usage.slice().reverse() : [];
+function UsageTrend({ daily, windowDays }) {
+  const usage = daily?.usage;
+  const days = Array.isArray(usage) ? usage.slice().reverse() : [];
   if (!days.length) {
+    const message = usage == null
+      ? 'Daily usage telemetry is unavailable.'
+      : 'No daily usage has been recorded in this window.';
     return (
       <section style={panelStyle}>
-        <SectionHeader title="Usage trend" subtitle="Prompts and token intensity over the measured 14-day window" />
-        <EmptyState>No daily usage history is available yet.</EmptyState>
+        <SectionHeader title="Usage trend" subtitle={`Prompts and token intensity over the measured ${windowDays || 14}-day window`} />
+        <EmptyState>{message}</EmptyState>
       </section>
     );
   }
@@ -80,12 +98,20 @@ function UsageTrend({ daily }) {
   );
 }
 
-function RankingCard({ title, subtitle, rows, kind, windowHours }) {
+function RankingCard({ title, subtitle, rows, kind, windowHours, source }) {
+  const available = sourceAvailable(source, rows);
+  let emptyMessage = 'No measured usage in this window.';
+  if (!available) {
+    emptyMessage = source === 'not_configured'
+      ? 'Workspace telemetry is not configured.'
+      : 'Workspace telemetry is unavailable.';
+  }
+
   return (
     <section style={panelStyle}>
       <SectionHeader title={title} subtitle={subtitle} />
-      {!rows?.length ? (
-        <EmptyState>No measured usage in this window.</EmptyState>
+      {!available || !rows?.length ? (
+        <EmptyState>{emptyMessage}</EmptyState>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '13px', marginTop: '20px' }}>
           {rows.slice(0, 6).map((row, index) => {
@@ -117,18 +143,22 @@ function RankingCard({ title, subtitle, rows, kind, windowHours }) {
 }
 
 function InsightStrip({ product, growth, workspaceUse }) {
+  const workspaceAvailable = sourceAvailable(workspaceUse?.source, workspaceUse);
   const choiceRate = product?.choiceEngagement?.total_requests
     ? percent(product.choiceEngagement.choice_selections, product.choiceEngagement.total_requests)
     : null;
-  const serverKeyShare = percent(workspaceUse?.serverKeyTurns, workspaceUse?.turns);
-  const activeWorkspaces = Array.isArray(workspaceUse?.workspaces) ? workspaceUse.workspaces.length : 0;
+  const serverKeyShare = workspaceAvailable ? percent(workspaceUse?.serverKeyTurns, workspaceUse?.turns) : null;
+  const activeWorkspaces = workspaceAvailable && Array.isArray(workspaceUse?.workspaces)
+    ? workspaceUse.workspaces.length.toLocaleString()
+    : '—';
+  const billableShare = percent(growth?.billableRequests7d, growth?.requests7d);
 
   const items = [
     ['Prompts / active user', product?.promptsPerActiveUser7d ?? '—', '7d'],
-    ['Billable prompt share', percent(growth?.billableRequests7d, growth?.requests7d) == null ? '—' : `${percent(growth?.billableRequests7d, growth?.requests7d)}%`, '7d'],
+    ['Billable prompt share', billableShare == null ? '—' : `${billableShare}%`, '7d'],
     ['Platform-key turn share', serverKeyShare == null ? '—' : `${serverKeyShare}%`, `${workspaceUse?.windowHours || 24}h`],
     ['Choice-card engagement', choiceRate == null ? '—' : `${choiceRate}%`, '7d'],
-    ['Active workspaces', activeWorkspaces.toLocaleString(), `${workspaceUse?.windowHours || 24}h`],
+    ['Active workspaces', activeWorkspaces, `${workspaceUse?.windowHours || 24}h`],
   ];
 
   return (
@@ -179,22 +209,24 @@ const panelStyle = {
  * Executive usage view built only from measured admin telemetry.
  * Different source windows are labelled rather than blended into a fake common period.
  */
-export default function ProductAnalyticsPanel({ product, growth, workspaceUse, window, daily }) {
+export default function ProductAnalyticsPanel({ product, growth, workspaceUse, window, daily, source }) {
+  const growthAvailable = sourceAvailable(source, growth);
+  const workspaceAvailable = sourceAvailable(workspaceUse?.source, workspaceUse);
   const recentlyActiveNote = workspaceUse?.recentWindowMinutes
     ? `activity in last ${workspaceUse.recentWindowMinutes}m`
     : 'recent activity';
 
   const kpis = [
-    ['Registered users', (growth?.totalUsers ?? 0).toLocaleString(), 'all time'],
-    ['Active users', (growth?.activeUsers7d ?? 0).toLocaleString(), 'last 7d'],
-    ['Prompts', (growth?.requests7d ?? 0).toLocaleString(), 'last 7d'],
+    ['Registered users', growthAvailable ? count(growth?.totalUsers) : '—', 'all time'],
+    ['Active users', growthAvailable ? count(growth?.activeUsers7d) : '—', 'last 7d'],
+    ['Prompts', growthAvailable ? count(growth?.requests7d) : '—', 'last 7d'],
     ['Estimated tokens', compact(window?.tokensEstimated), `measured ${window?.days || 14}d`],
-    ['Prompts / active user', product?.promptsPerActiveUser7d ?? '—', 'last 7d'],
-    ['Recently active', (workspaceUse?.recentlyActiveUsers ?? 0).toLocaleString(), recentlyActiveNote],
+    ['Prompts / active user', growthAvailable ? (product?.promptsPerActiveUser7d ?? '—') : '—', 'last 7d'],
+    ['Recently active', workspaceAvailable ? count(workspaceUse?.recentlyActiveUsers) : '—', recentlyActiveNote],
   ];
 
   return (
-    <div data-quantora-executive-analytics="measured" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div data-quantora-executive-analytics={source || 'unknown'} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {workspaceUse?.truncated && (
         <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.08)', color: '#fbbf24', fontSize: '0.7rem' }}>
           The {workspaceUse.windowHours || 24}h workspace window reached its row cap. Workspace/model figures shown here are floors, not complete totals.
@@ -205,7 +237,7 @@ export default function ProductAnalyticsPanel({ product, growth, workspaceUse, w
         {kpis.map(([label, value, note]) => <KpiCard key={label} label={label} value={value} note={note} />)}
       </div>
 
-      <UsageTrend daily={daily} />
+      <UsageTrend daily={daily} windowDays={window?.days} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
         <RankingCard
@@ -214,6 +246,7 @@ export default function ProductAnalyticsPanel({ product, growth, workspaceUse, w
           rows={workspaceUse?.workspaces || []}
           kind="workspace"
           windowHours={workspaceUse?.windowHours}
+          source={workspaceUse?.source}
         />
         <RankingCard
           title="Top models"
@@ -221,10 +254,11 @@ export default function ProductAnalyticsPanel({ product, growth, workspaceUse, w
           rows={workspaceUse?.models || []}
           kind="model"
           windowHours={workspaceUse?.windowHours}
+          source={workspaceUse?.source}
         />
       </div>
 
-      <InsightStrip product={product} growth={growth} workspaceUse={workspaceUse} />
+      <InsightStrip product={product} growth={growthAvailable ? growth : null} workspaceUse={workspaceUse} />
     </div>
   );
 }
