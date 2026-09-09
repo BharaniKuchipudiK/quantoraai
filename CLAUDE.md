@@ -209,6 +209,7 @@ becomes safely more autonomous.
 | `npm run test:image-parsers` | a picture a stranger supplied that hangs the function embedding it — a zero-length section in an ICNS, HEIF, JXL or ASF header, in a library with no patched release |
 | `npm run test:advisories` | a high-severity dependency advisory nobody decided to accept, an acceptance whose reason has expired, and a NEW advisory on a package an old name-based allowlist was already silencing |
 | `node scripts/shell-width-browser-gate.mjs` | an application shell that renders perfectly and overflows nothing while refusing a third of the screen — the class every other layout gate is blind to, because they all ask whether a surface fits, never whether it fills |
+| `npx tsx --test api/_lib/gemini-call-budget.test.ts` | a provider call with no abortSignal — the SDK's only interrupt — holding a serverless function until the platform kills it, counted across every call site under `api/` rather than sampled at the first |
 | `npm run test:journeys` | a user journey no gate exercises, printed as a number that may only rise — and a ledger that lies: a gate it names that does not exist or does not run, a muted CI step whose outcome nobody reads, a gate on disk that no journey claims |
 
 ### A tool description is a promise, and the model passes it on

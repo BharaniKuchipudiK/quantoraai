@@ -1,3 +1,4 @@
+import { UNTUNED_GEMINI_CEILING_MS } from './_lib/gemini-call-budget.js';
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from "./_lib/rate-limit.js";
 import { fetchApiGatewayKey } from "./autocomplete.js";
@@ -68,7 +69,11 @@ export default async function handler(req: any, res: any) {
     const response = await ai.models.generateContent({
       model: resolvePromptEnhancerModel(),
       contents: [{ role: "user", parts: [{ text: buildPromptEnhancementInput({ prompt, depth, history, sessionContext }) }] }],
-      config: { systemInstruction: SYSTEM_INSTRUCTION, temperature: 0.25 },
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        temperature: 0.25,
+        abortSignal: AbortSignal.timeout(UNTUNED_GEMINI_CEILING_MS),
+      },
     });
 
     const { tier, prompt: enhancedPrompt } = parseEnhancement(response.text || "");

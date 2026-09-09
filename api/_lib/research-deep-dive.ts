@@ -1,3 +1,4 @@
+import { RESEARCH_GEMINI_BUDGET_MS } from './gemini-call-budget.js';
 import { GoogleGenAI } from "@google/genai";
 import { admitResearchSourceUrl } from "./research-claim-verifier.js";
 import { buildGroundedSourceBlock } from "../../shared/research/grounding-marker.js";
@@ -139,6 +140,7 @@ async function decomposeWithGemini(question: string, geminiKey: string): Promise
     config: {
       systemInstruction: `Decompose the research question into the ${MAX_SUB_QUESTIONS} most decision-relevant sub-questions. Each must be a complete standalone question ending in "?", answerable from current public sources. Reply with ONLY compact JSON: {"subQuestions":["...?","...?"]}.`,
       temperature: 0,
+      abortSignal: AbortSignal.timeout(RESEARCH_GEMINI_BUDGET_MS),
     },
   }));
   const raw = String((result as any)?.text || "").replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
@@ -160,6 +162,9 @@ export async function groundedAnswerWithGemini(subQuestion: string, geminiKey: s
       systemInstruction: `You are a research analyst with live web search (${MODEL_TIMEOUT_NOTE}). Answer from what current sources say. State findings as 2-4 short declarative markdown bullets, one finding per bullet — a claim the evidence supports, never a topic heading. If a material claim has no live source, say so in line. Never fabricate a source, number, or date.`,
       temperature: 0.2,
       tools: [{ googleSearch: {} }],
+      // MODEL_TIMEOUT_NOTE above says these calls "share the function's time
+      // budget". Nothing enforced that until now.
+      abortSignal: AbortSignal.timeout(RESEARCH_GEMINI_BUDGET_MS),
     },
   }));
   const sources: Array<{ uri: string; title: string }> = [];

@@ -156,7 +156,9 @@ ${context || 'A modern web application'}`;
        * pinned id does.
        */
       model: GEMINI_FLASH,
-      contents: [{ role: "user", parts: [{ text: prompt }] }]
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      // The same 8s this file already gives its OpenRouter call.
+      config: { abortSignal: AbortSignal.timeout(8_000) },
     });
     
     const text = response.text.replace(/```json/g, '').replace(/```/g, '').trim();

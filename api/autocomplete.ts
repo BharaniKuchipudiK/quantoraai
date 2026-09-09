@@ -1,3 +1,4 @@
+import { UNTUNED_GEMINI_CEILING_MS } from './_lib/gemini-call-budget.js';
 import { GoogleGenAI } from "@google/genai";
 import { applyCors, clientIp, isRateLimited, isRateLimitedDurable, applyDurableCostBearingGuard } from './_lib/rate-limit.js';
 import { requireActiveSession } from "./_lib/authz.js";
@@ -67,7 +68,8 @@ ${suffix}`;
        * pinned id does.
        */
       model: GEMINI_FLASH,
-      contents: [{ role: "user", parts: [{ text: prompt }] }]
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { abortSignal: AbortSignal.timeout(UNTUNED_GEMINI_CEILING_MS) },
     });
 
     return res.status(200).json({ completion: response.text });
