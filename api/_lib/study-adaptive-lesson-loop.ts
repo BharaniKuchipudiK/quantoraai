@@ -1,7 +1,8 @@
 import type { StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import type { StudyLearningIntervention } from './study-learning-intervention.js';
+import type { StudyLearningExperiencePlan } from './study-learning-experience-director.js';
 
-export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-03.3';
+export const STUDY_ADAPTIVE_LESSON_LOOP_VERSION = 'study-adaptive-lesson-loop-2026-09-09.1';
 
 export type StudyTeachingBeat = 'HOOK' | 'PREDICT' | 'SEE' | 'EXPLAIN' | 'TRY' | 'VERIFY' | 'EXAM_READY';
 
@@ -18,6 +19,7 @@ export type StudyAdaptiveLessonLoopPlan = {
     | 'verification'
     | 'continuation_policy'
     | 'explicit_representation'
+    | 'experience_director'
     | 'verified_learner_state'
     | 'direct_explanation';
 };
@@ -26,6 +28,7 @@ export function planStudyAdaptiveLessonLoop(input: {
   intent: 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
   representation: StudyTeachingRepresentationPlan;
   intervention: StudyLearningIntervention;
+  experiencePlan?: StudyLearningExperiencePlan | null;
 }): StudyAdaptiveLessonLoopPlan {
   const { intent, representation, intervention } = input;
 
@@ -71,8 +74,9 @@ export function planStudyAdaptiveLessonLoop(input: {
 
   if (intent === 'continue') {
     // Generic continuation is already governed by study-teaching-policy.ts,
-    // which may advance to SEE, EXPLAIN, TRY, or VERIFY. Do not create a
-    // second turn planner here by forcing every "continue" into TRY + wait.
+    // which may advance to SEE, EXPLAIN, TRY, or VERIFY. The Experience
+    // Director supplies policy constraints but does not become a second turn
+    // planner here.
     return {
       version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
       beats: [],
@@ -106,6 +110,28 @@ export function planStudyAdaptiveLessonLoop(input: {
       mustWaitForLearner: false,
       maxLearnerQuestions: 0,
       reason: 'explicit_representation',
+    };
+  }
+
+  if (representation.reason === 'experience_director' && input.experiencePlan) {
+    const verificationNow = input.experiencePlan.verificationRequirement === 'fresh_independent'
+      || input.experiencePlan.verificationRequirement === 'governed_after_teaching';
+    const beats: StudyTeachingBeat[] = verificationNow
+      ? representation.rendererRequired
+        ? ['SEE', 'PREDICT']
+        : representation.primaryRepresentation === 'governed_assessment'
+          || representation.primaryRepresentation === 'interactive_probe'
+          ? ['TRY']
+          : ['EXPLAIN', 'TRY']
+      : representation.rendererRequired
+        ? ['SEE', 'EXPLAIN']
+        : ['EXPLAIN'];
+    return {
+      version: STUDY_ADAPTIVE_LESSON_LOOP_VERSION,
+      beats,
+      mustWaitForLearner: verificationNow,
+      maxLearnerQuestions: verificationNow ? 1 : 0,
+      reason: 'experience_director',
     };
   }
 

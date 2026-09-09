@@ -1,10 +1,12 @@
 import type { StudyLearnerModel } from './study-learner-model.js';
+import { currentStudyRequestWorkingState, type StudyWorkingStateSnapshot } from './study-adaptive-learning.js';
 import { buildStudyActiveLearningContext, type StudyActiveLearningContext } from './study-active-learning-context.js';
+import { directStudyLearningExperience, type StudyLearningExperiencePlan } from './study-learning-experience-director.js';
 import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan } from './study-teaching-representation.js';
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-09.1';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-09.2';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -20,6 +22,7 @@ export type StudyCognitiveInterpretation = {
   requiresVerification: boolean;
   temperatureCeiling: number;
   activeLearningContext: StudyActiveLearningContext;
+  experienceDirector: StudyLearningExperiencePlan;
   representation: StudyTeachingRepresentationPlan;
   intervention: StudyLearningIntervention;
   lessonLoop: StudyAdaptiveLessonLoopPlan;
@@ -101,6 +104,7 @@ export function interpretStudyTurn(input: {
   history?: HistoryItem[];
   hasImages?: boolean;
   learnerModel?: StudyLearnerModel | null;
+  workingState?: StudyWorkingStateSnapshot | null;
 }): StudyCognitiveInterpretation | null {
   if (input.studioDomain !== 'education') return null;
   const message = String(input.message || '').trim();
@@ -109,8 +113,8 @@ export function interpretStudyTurn(input: {
   const continuity = recentConversationExists(history)
     && (intent === 'continue' || intent === 'challenge' || intent === 'diagnose' || intent === 'verify' || FOLLOW_UP_RE.test(message))
     ? 'follow_up' : 'new_topic';
-  const difficulty = studyDifficulty(message, history, intent);
-  const requiresVerification = intent === 'verify' || intent === 'challenge' || intent === 'diagnose';
+  const baseDifficulty = studyDifficulty(message, history, intent);
+  const intentRequiresVerification = intent === 'verify' || intent === 'challenge' || intent === 'diagnose';
   const responseMode = intent === 'verify' || intent === 'challenge' ? 'evaluative'
     : intent === 'diagnose' ? 'diagnostic'
       : intent === 'practice' || intent === 'continue' ? 'guided'
@@ -123,6 +127,21 @@ export function interpretStudyTurn(input: {
     learnerModel: input.learnerModel,
   });
   const intervention = evaluateStudyLearningIntervention({ message, history });
+  const workingState = input.workingState === undefined
+    ? currentStudyRequestWorkingState()
+    : input.workingState;
+  const experienceDirector = directStudyLearningExperience({
+    intent,
+    baseDifficulty,
+    learnerModel: input.learnerModel,
+    workingState,
+    activeLearningContext,
+    intervention,
+  });
+  const difficulty = experienceDirector.difficulty;
+  const requiresVerification = intentRequiresVerification
+    || experienceDirector.verificationRequirement === 'fresh_independent'
+    || experienceDirector.verificationRequirement === 'governed_after_teaching';
   const representation = planStudyTeachingRepresentation({
     message,
     contextText,
@@ -130,8 +149,14 @@ export function interpretStudyTurn(input: {
     intervention,
     learnerModel: input.learnerModel,
     activeLearningContext,
+    experiencePlan: experienceDirector,
   });
-  const lessonLoop = planStudyAdaptiveLessonLoop({ intent, representation, intervention });
+  const lessonLoop = planStudyAdaptiveLessonLoop({
+    intent,
+    representation,
+    intervention,
+    experiencePlan: experienceDirector,
+  });
   return {
     version: STUDY_COGNITIVE_ROUTING_VERSION,
     intent,
@@ -142,6 +167,7 @@ export function interpretStudyTurn(input: {
     requiresVerification,
     temperatureCeiling: requiresVerification ? 0.2 : difficulty === 'advanced' ? 0.3 : 0.5,
     activeLearningContext,
+    experienceDirector,
     representation,
     intervention,
     lessonLoop,
@@ -166,6 +192,7 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
   const teachingBeatsInstruction = interpretation.lessonLoop.reason === 'continuation_policy'
     ? 'defer to the authoritative Study teaching-turn policy: choose the next useful SEE, EXPLAIN, TRY, or VERIFY beat for the established concept; do not restart the hook'
     : `${interpretation.lessonLoop.beats.join(' -> ')}. Do not continue into later beats.`;
+  const experience = interpretation.experienceDirector;
   return `\n\nSTUDY COGNITIVE ROUTE (${interpretation.version})
 This directive applies only because the active workspace is Study Tutor.
 - Learner intent: ${interpretation.intent}
@@ -175,6 +202,14 @@ This directive applies only because the active workspace is Study Tutor.
 - Continuity: ${interpretation.continuity}; preserve the current lesson context and resolve references from the supplied history. Do not restart discovery when the reference is clear.
 - Response mode: ${interpretation.responseMode}
 - Required teaching capabilities: ${interpretation.capabilities.join(', ')}
+- Experience Director: ${experience.version}
+- Teaching strategy: ${experience.teachingStrategy}
+- Modality policy: ${experience.modality}
+- Explanation density: ${experience.explanationDensity}
+- Director interaction: ${experience.interactionType}
+- Hint policy: ${experience.hintPolicy}
+- Verification policy: ${experience.verificationRequirement}
+- Director reasons: ${experience.reasonCodes.join(', ') || 'none'}
 - Teaching representation: ${interpretation.representation.primaryRepresentation}
 - Representation reason: ${interpretation.representation.reason}
 - Learner action: ${interpretation.representation.learnerAction}
@@ -184,7 +219,7 @@ This directive applies only because the active workspace is Study Tutor.
 - Teaching beats for THIS response only: ${teachingBeatsInstruction}
 - Wait boundary: ${waitInstruction}
 - Verification: ${interpretation.requiresVerification ? 'required — check the learner\'s reasoning before agreeing, distinguish verified facts from inference, and explain the first material error' : 'not mandatory — remain accurate and do not invent learner understanding'}
-Honor this route inside the existing Study teaching-turn policy. The Active Learning Context is the semantic control plane for this turn: do not re-infer a different concept from generated prose downstream. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, or beat labels to the learner. Do not claim mastery or persistent learner knowledge from these conversational signals.`;
+Honor this route inside the existing Study teaching-turn policy. The Experience Director is deterministic policy, while the governed representation capability remains the authority on what native visual or lab can actually render. Temporary working-state reasons may alter scaffolding, density, hint posture, or a supported modality preference, but they are NOT learner truth and may never become a mastery claim or a diagnosed misconception. Only the verified learner model may supply an evidence-backed misconception or next-learning move. The LLM generates content inside this policy; it does not overrule it. The Active Learning Context remains the semantic control plane for the concept: do not re-infer a different concept from generated prose downstream. Keep one concept and one learner action in the turn. When repeated difficulty changes the representation, do not merely paraphrase the previous explanation. Do not expose routing, intervention, representation, director, or beat labels to the learner.`;
 }
 
 function isUnmeteredFreeEndpoint(model: ModelLike): boolean {
@@ -256,5 +291,16 @@ export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInter
     capabilities: interpretation.capabilities,
     responseMode: interpretation.responseMode,
     requiresVerification: interpretation.requiresVerification,
+    experienceDirector: {
+      version: interpretation.experienceDirector.version,
+      teachingStrategy: interpretation.experienceDirector.teachingStrategy,
+      modality: interpretation.experienceDirector.modality,
+      explanationDensity: interpretation.experienceDirector.explanationDensity,
+      interactionType: interpretation.experienceDirector.interactionType,
+      difficulty: interpretation.experienceDirector.difficulty,
+      hintPolicy: interpretation.experienceDirector.hintPolicy,
+      verificationRequirement: interpretation.experienceDirector.verificationRequirement,
+      reasonCodes: interpretation.experienceDirector.reasonCodes,
+    },
   };
 }

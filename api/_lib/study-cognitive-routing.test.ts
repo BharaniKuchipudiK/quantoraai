@@ -99,7 +99,7 @@ test('lets observed quality evidence earn a free reasoning rung back to primary'
   assert.deepEqual(new Set([decision.primaryModelId, ...decision.fallbackModelIds]), new Set([baseDecision.primaryModelId, ...baseDecision.fallbackModelIds]));
 });
 
-test('routes ordinary Study explanation and practice to the eligible fast Gemini model', () => {
+test('routes ordinary Study explanation fast while practice honors fresh verification', () => {
   const slowFirst = {
     primaryModelId: 'nvidia/nemotron-3.5-lightning:free',
     fallbackModelIds: ['gemini-flash-latest', 'openai/gpt-oss-120b:free'],
@@ -108,15 +108,20 @@ test('routes ordinary Study explanation and practice to the eligible fast Gemini
     hasVisionSupport: false,
     selectionSource: 'ranked_free',
   };
-  for (const message of ['Explain entropy in simple terms.', 'Give me one practice question on entropy.']) {
-    const routed = applyStudyCapabilityRouting({
-      interpretation: interpretStudyTurn({ studioDomain: 'education', message }),
-      baseDecision: slowFirst,
-    });
-    assert.equal(routed.primaryModelId, 'gemini-flash-latest');
-    assert.equal(routed.reason, 'study_fast_response');
-    assert.deepEqual(new Set([routed.primaryModelId, ...routed.fallbackModelIds]), new Set([slowFirst.primaryModelId, ...slowFirst.fallbackModelIds]));
-  }
+  const explanation = applyStudyCapabilityRouting({
+    interpretation: interpretStudyTurn({ studioDomain: 'education', message: 'Explain entropy in simple terms.' }),
+    baseDecision: slowFirst,
+  });
+  assert.equal(explanation.primaryModelId, 'gemini-flash-latest');
+  assert.equal(explanation.reason, 'study_fast_response');
+  assert.deepEqual(new Set([explanation.primaryModelId, ...explanation.fallbackModelIds]), new Set([slowFirst.primaryModelId, ...slowFirst.fallbackModelIds]));
+
+  const practiceInterpretation = interpretStudyTurn({ studioDomain: 'education', message: 'Give me one practice question on entropy.' });
+  assert.equal(practiceInterpretation?.requiresVerification, true);
+  const practice = applyStudyCapabilityRouting({ interpretation: practiceInterpretation, baseDecision: slowFirst });
+  assert.equal(practice.primaryModelId, 'gemini-flash-latest');
+  assert.equal(practice.reason, 'study_verification');
+  assert.deepEqual(new Set([practice.primaryModelId, ...practice.fallbackModelIds]), new Set([slowFirst.primaryModelId, ...slowFirst.fallbackModelIds]));
 });
 
 test('prefers DeepSeek V4 Flash for ordinary Study turns when that workhorse is already eligible', () => {
