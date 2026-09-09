@@ -2,7 +2,7 @@ import { applyCors } from "../rate-limit.js";
 import { clearSessionCookie, getSessionUser } from "../session.js";
 import { isAdminUser, readStoredUser } from "../store.js";
 import { providerLabel } from "../auth-privacy.js";
-import { recordSignedOutSiteHit } from "../site-traffic.js";
+import { recordSignedOutSiteHit, shouldCountSignedOutBrowserHit } from "../site-traffic.js";
 
 /*
  * Who is signed in on this request.
@@ -11,18 +11,6 @@ import { recordSignedOutSiteHit } from "../site-traffic.js";
  * approach of trusting a user object cached in localStorage — which the user
  * could edit at will.
  */
-
-function isBrowserSessionProbe(req: any): boolean {
-  const userAgent = String(req.headers?.["user-agent"] || "");
-  // The desktop renderer reaches this API through the Node/Electron main-process
-  // proxy, which does not forward the browser User-Agent. Keep desktop/curl/API
-  // probes and obvious crawlers out of a metric explicitly labelled as
-  // signed-out website loads.
-  if (!/Mozilla\//i.test(userAgent)) return false;
-  if (/Electron|QuantoraDesktop/i.test(userAgent)) return false;
-  if (/bot|crawler|spider|slurp|headless|lighthouse|monitor|uptime/i.test(userAgent)) return false;
-  return true;
-}
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, "GET,OPTIONS");
@@ -41,7 +29,9 @@ export default async function handler(req: any, res: any) {
      * hourly counter and ignores previews/dev, so no identity or test traffic
      * leaks into the executive metric.
      */
-    if (isBrowserSessionProbe(req)) await recordSignedOutSiteHit();
+    if (shouldCountSignedOutBrowserHit(req.headers?.["user-agent"])) {
+      await recordSignedOutSiteHit();
+    }
     return res.status(200).json({ user: null });
   }
 
