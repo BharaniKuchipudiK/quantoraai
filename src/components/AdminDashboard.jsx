@@ -162,6 +162,7 @@ const AdminDashboard = ({ onBack }) => {
 const getTelemetryStatus = (metrics) => {
   const source = metrics?.source;
   const workspaceSource = metrics?.workspaceUse?.source;
+  const trafficSource = metrics?.product?.traffic?.source;
 
   if (source === 'not_configured' || workspaceSource === 'not_configured' || metrics?.isLiveConnected === false) {
     return {
@@ -172,7 +173,7 @@ const getTelemetryStatus = (metrics) => {
     };
   }
 
-  if (source === 'unavailable' || workspaceSource === 'unavailable') {
+  if (source === 'unavailable' || workspaceSource === 'unavailable' || trafficSource === 'unavailable') {
     return {
       label: 'DEGRADED',
       color: '#f59e0b',
@@ -217,7 +218,9 @@ import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
   const notConfigured = metrics.source === 'not_configured' || metrics.workspaceUse?.source === 'not_configured';
-  const unavailable = metrics.source === 'unavailable' || metrics.workspaceUse?.source === 'unavailable';
+  const unavailable = metrics.source === 'unavailable'
+    || metrics.workspaceUse?.source === 'unavailable'
+    || metrics.product?.traffic?.source === 'unavailable';
   const warning = notConfigured
     ? 'Analytics storage is not configured. Unavailable metrics are shown as — rather than zero.'
     : unavailable
@@ -239,6 +242,7 @@ const UserAnalyticsTab = ({ metrics }) => {
         workspaceUse={metrics.workspaceUse}
         window={metrics.window}
         daily={metrics.daily}
+        technical={metrics.technical}
         source={metrics.source}
       />
     </div>

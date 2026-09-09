@@ -7,6 +7,17 @@ export type ProductModelRow = { model_id: string; requests: number };
 export type ProductModeRow = { studio_mode: string; requests: number };
 export type ProductDomainRow = { studio_domain: string; requests: number };
 export type ProductChoiceEngagement = { choice_selections: number; total_requests: number };
+export type WebsiteTrafficSummary = {
+  signed_out_hits_24h: number;
+  signed_out_hits_7d: number;
+  signed_out_hits_14d: number;
+};
+export type WebsiteTrafficDay = { day: string; hits: number };
+export type WebsiteTraffic = {
+  summary: WebsiteTrafficSummary | null;
+  daily: WebsiteTrafficDay[];
+  source: "measured" | "no-rows" | "unavailable";
+};
 
 export type ProductTrackingHealth = {
   configured: boolean;
@@ -16,6 +27,8 @@ export type ProductTrackingHealth = {
   hasDomainBreakdown: boolean;
   hasChoiceEngagement: boolean;
   hasGeoBreakdown: boolean;
+  trafficReachable: boolean;
+  hasAnonymousTraffic: boolean;
 };
 
 export type ProductInsights = {
@@ -26,6 +39,7 @@ export type ProductInsights = {
   geoUsers: ProductGeoUsersRow[];
   choiceEngagement: ProductChoiceEngagement | null;
   promptsPerActiveUser7d: number | null;
+  traffic: WebsiteTraffic;
   tracking: ProductTrackingHealth;
 };
 
@@ -69,13 +83,15 @@ export async function getProductInsights(growth: {
   const configured = isStoreConfigured();
   if (!configured) return null;
 
-  const [modelResult, modeResult, domainResult, choiceResult, geoReqResult, geoUserResult] = await Promise.all([
+  const [modelResult, modeResult, domainResult, choiceResult, geoReqResult, geoUserResult, trafficSummaryResult, trafficDailyResult] = await Promise.all([
     fetchView<ProductModelRow>("product_model_usage_7d"),
     fetchView<ProductModeRow>("product_mode_usage_7d"),
     fetchView<ProductDomainRow>("product_domain_usage_7d"),
     fetchView<ProductChoiceEngagement>("product_choice_engagement_7d"),
     fetchView<ProductGeoRow>("product_geo_requests_7d"),
     fetchView<ProductGeoUsersRow>("product_geo_users_7d"),
+    fetchView<WebsiteTrafficSummary>("website_traffic_summary"),
+    fetchView<WebsiteTrafficDay>("website_traffic_daily_14d"),
   ]);
 
   const models = modelResult.rows;
@@ -86,6 +102,14 @@ export async function getProductInsights(growth: {
   const choiceEngagement = choiceResult.rows[0] ?? null;
   const viewsReachable = modelResult.reachable && modeResult.reachable && domainResult.reachable
     && choiceResult.reachable && geoReqResult.reachable && geoUserResult.reachable;
+  const trafficReachable = trafficSummaryResult.reachable && trafficDailyResult.reachable;
+  const trafficSummary = trafficSummaryResult.rows[0] ?? null;
+  const trafficHits14d = Number(trafficSummary?.signed_out_hits_14d || 0);
+  const traffic: WebsiteTraffic = {
+    summary: trafficReachable ? trafficSummary : null,
+    daily: trafficReachable ? trafficDailyResult.rows : [],
+    source: !trafficReachable ? "unavailable" : trafficHits14d > 0 ? "measured" : "no-rows",
+  };
 
   const requests7d = growth?.requests7d ?? 0;
   const activeUsers7d = growth?.activeUsers7d ?? 0;
@@ -101,6 +125,8 @@ export async function getProductInsights(growth: {
     hasDomainBreakdown: hasMeaningfulDomainRows(domains),
     hasChoiceEngagement: Number(choiceEngagement?.choice_selections || 0) > 0,
     hasGeoBreakdown: hasMeaningfulGeoRows(geoRequests),
+    trafficReachable,
+    hasAnonymousTraffic: trafficHits14d > 0,
   };
 
   return {
@@ -111,6 +137,7 @@ export async function getProductInsights(growth: {
     geoUsers: geoUsers.slice(0, 12),
     choiceEngagement,
     promptsPerActiveUser7d,
+    traffic,
     tracking,
   };
 }
