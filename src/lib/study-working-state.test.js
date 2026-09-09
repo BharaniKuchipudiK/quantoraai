@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   STUDY_WORKING_STATE_TTL_MS,
   deriveStudyWorkingState,
+  nextStudyHintDepth,
   observeStudyWorkingInteraction,
   readStudyWorkingState,
   setStudyWorkingConcept,
@@ -62,17 +63,47 @@ test('later verified success clears the consecutive incorrect misconception cand
   assert.equal(state.recentPattern, 'mixed');
 });
 
-test('repeated hints raise temporary hint dependence without claiming mastery or confidence', () => {
+test('repeated hints raise temporary hint dependence and preserve bounded current depth', () => {
   const state = derive([
     observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED, -5000),
     observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, -4900, { hintDepth: 1 }),
     observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED, -3000),
+    observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, -2900, { hintDepth: 3 }),
     observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED, -1000),
   ]);
   assert.equal(state.hintDependence, 'high');
+  assert.equal(state.hintDepth, 3);
   assert.equal(state.scaffoldingNeed, 'high');
   assert.equal('mastery' in state, false);
   assert.equal('confidence' in state, false);
+});
+
+test('verified success resets only the active problem hint rung while keeping recent hint dependence', () => {
+  const state = derive([
+    observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED, -5000),
+    observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, -4900, { hintDepth: 4 }),
+    observation(STUDY_LEARNING_INTERACTION.RESPONSE_CORRECT, -1000),
+  ]);
+  assert.equal(state.hintDepth, 0);
+  assert.equal(state.hintDependence, 'high');
+  assert.equal(nextStudyHintDepth(state), 1);
+});
+
+test('a new hint after verified success starts a new active rung sequence', () => {
+  const state = derive([
+    observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, -5000, { hintDepth: 5 }),
+    observation(STUDY_LEARNING_INTERACTION.RESPONSE_CORRECT, -3000),
+    observation(STUDY_LEARNING_INTERACTION.HINT_REQUESTED, -2000),
+    observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, -1900, { hintDepth: 1 }),
+  ]);
+  assert.equal(state.hintDepth, 1);
+  assert.equal(nextStudyHintDepth(state), 2);
+});
+
+test('next hint depth advances exactly one rung and saturates at six', () => {
+  assert.equal(nextStudyHintDepth({ hintDepth: 0 }), 1);
+  assert.equal(nextStudyHintDepth({ hintDepth: 3 }), 4);
+  assert.equal(nextStudyHintDepth({ hintDepth: 6 }), 6);
 });
 
 test('latest representation interaction becomes only a current-concept preference candidate', () => {
@@ -144,10 +175,10 @@ test('first explicit Study Hub observation switches temporary concept and preser
   assert.equal(readStudyWorkingState({ now: () => NOW })?.conceptKey, 'test.concept-b');
 });
 
-test('changing the active concept discards temporary observations', () => {
+test('changing the active concept discards temporary observations including hint depth', () => {
   setStudyWorkingConcept({ conceptKey: 'test.concept-a', conceptLabel: 'Concept A' });
-  assert.equal(observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.VISUAL_REQUESTED)), true);
-  assert.equal(readStudyWorkingState({ now: () => NOW })?.representationPreference, 'visual');
+  assert.equal(observeStudyWorkingInteraction(observation(STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED, 0, { hintDepth: 4 })), true);
+  assert.equal(readStudyWorkingState({ now: () => NOW })?.hintDepth, 4);
   setStudyWorkingConcept({ conceptKey: 'test.concept-b', conceptLabel: 'Concept B' });
   assert.equal(readStudyWorkingState({ now: () => NOW }), null);
 });

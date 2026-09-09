@@ -25,6 +25,7 @@ test('Study follows ask → await → attempt → verify → resolve → advance
   let state = createStudyLoopState();
   state = transitionStudyLoop(state, { type: 'ASK', questionId });
   assert.equal(state.phase, 'ask');
+  assert.equal(state.explicitRetry, false);
   state = transitionStudyLoop(state, { type: 'PRESENT', questionId });
   assert.equal(state.phase, 'awaiting_learner_response');
   state = transitionStudyLoop(state, { type: 'ATTEMPT', answer: 'Velocity' });
@@ -35,6 +36,7 @@ test('Study follows ask → await → attempt → verify → resolve → advance
   assert.equal(state.phase, 'resolve');
   state = transitionStudyLoop(state, { type: 'ADVANCE' });
   assert.equal(state.phase, 'advance');
+  assert.equal(state.explicitRetry, false);
 });
 
 test('a correct completed question cannot silently repeat', () => {
@@ -45,6 +47,21 @@ test('a correct completed question cannot silently repeat', () => {
   assert.strictEqual(blocked, advanced);
   const retry = transitionStudyLoop(advanced, { type: 'ASK', questionId: studyQuestionId(item), explicitRetry: true });
   assert.equal(retry.phase, 'ask');
+  assert.equal(retry.explicitRetry, true);
+});
+
+test('explicit retry provenance survives until resolve and clears only on advance', () => {
+  const questionId = studyQuestionId(item);
+  let state = createStudyLoopState();
+  state = transitionStudyLoop(state, { type: 'ASK', questionId, explicitRetry: true });
+  state = transitionStudyLoop(state, { type: 'PRESENT', questionId });
+  state = transitionStudyLoop(state, { type: 'ATTEMPT', answer: 'Velocity' });
+  state = transitionStudyLoop(state, { type: 'VERIFY' });
+  assert.equal(state.explicitRetry, true);
+  state = transitionStudyLoop(state, { type: 'RESOLVE', correct: true });
+  assert.equal(state.explicitRetry, true);
+  state = transitionStudyLoop(state, { type: 'ADVANCE' });
+  assert.equal(state.explicitRetry, false);
 });
 
 test('an incorrect attempt resolves with remediation context and remains retryable', () => {
@@ -53,6 +70,7 @@ test('an incorrect attempt resolves with remediation context and remains retryab
   assert.equal(isStudyQuestionCompleted(resolved, item), false);
   const retry = transitionStudyLoop(resolved, { type: 'ASK', questionId: studyQuestionId(item), explicitRetry: true });
   assert.equal(retry.phase, 'ask');
+  assert.equal(retry.explicitRetry, true);
 });
 
 test('all non-Study domains are exact behavioral no-ops', () => {

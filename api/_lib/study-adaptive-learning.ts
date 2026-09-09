@@ -10,7 +10,7 @@ import {
 import { teachingStrategyFromLearnerTruth, type StudyExperienceTeachingStrategy } from './study-learning-experience-director.js';
 import { resolveActiveStudyConcept } from './store.js';
 
-export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-09.1';
+export const STUDY_ADAPTIVE_LEARNING_VERSION = 'study-adaptive-learning-2026-09-09.2';
 
 export type StudyWorkingStateSnapshot = {
   version: 'study-working-state-v1';
@@ -19,6 +19,7 @@ export type StudyWorkingStateSnapshot = {
   conceptLabel: string;
   misconceptionCandidate: 'none' | 'possible';
   hintDependence: 'none' | 'emerging' | 'high';
+  hintDepth?: number;
   representationPreference: 'visual' | 'interactive' | null;
   recentPattern: 'neutral' | 'struggle' | 'mixed' | 'success';
   scaffoldingNeed: 'low' | 'moderate' | 'high';
@@ -50,6 +51,9 @@ function normalizeWorkingState(value: unknown, conceptKey: string, conceptLabel:
   const observedSignals = Number.isFinite(Number(input.observedSignals))
     ? Math.max(0, Math.min(12, Math.trunc(Number(input.observedSignals))))
     : 0;
+  const hintDepth = Number.isFinite(Number(input.hintDepth))
+    ? Math.max(0, Math.min(6, Math.trunc(Number(input.hintDepth))))
+    : 0;
   const reasonCodes = Array.isArray(input.reasonCodes)
     ? input.reasonCodes.map((value) => clean(value, 64)).filter(Boolean).slice(0, 6)
     : [];
@@ -64,6 +68,7 @@ function normalizeWorkingState(value: unknown, conceptKey: string, conceptLabel:
     conceptLabel: clean(input.conceptLabel, 300) || conceptLabel,
     misconceptionCandidate: oneOf(input.misconceptionCandidate, ['none', 'possible'] as const, 'none'),
     hintDependence: oneOf(input.hintDependence, ['none', 'emerging', 'high'] as const, 'none'),
+    hintDepth,
     representationPreference: representation,
     recentPattern: oneOf(input.recentPattern, ['neutral', 'struggle', 'mixed', 'success'] as const, 'neutral'),
     scaffoldingNeed: oneOf(input.scaffoldingNeed, ['low', 'moderate', 'high'] as const, 'low'),

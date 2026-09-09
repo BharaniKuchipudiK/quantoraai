@@ -73,6 +73,11 @@ function canSwitchConceptFromHubObservation(event, eventConcept) {
   );
 }
 
+export function nextStudyHintDepth(state = readStudyWorkingState()) {
+  const current = Math.trunc(Number(state?.hintDepth) || 0);
+  return Math.max(1, Math.min(6, current + 1));
+}
+
 export function deriveStudyWorkingState({
   events = [],
   conceptKey = '',
@@ -88,15 +93,26 @@ export function deriveStudyWorkingState({
   const incorrectTail = consecutiveTail(responses, STUDY_LEARNING_INTERACTION.RESPONSE_INCORRECT);
   const correctTail = consecutiveTail(responses, STUDY_LEARNING_INTERACTION.RESPONSE_CORRECT);
   const hintRequests = recent.filter((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_REQUESTED).length;
-  const hintDepth = recent
+  const sessionHintDepth = recent
+    .filter((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED)
+    .reduce((max, event) => Math.max(max, Number(event.hintDepth) || 0), 0);
+  let latestCorrectIndex = -1;
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    if (recent[index]?.type === STUDY_LEARNING_INTERACTION.RESPONSE_CORRECT) {
+      latestCorrectIndex = index;
+      break;
+    }
+  }
+  const activeProblemEvents = latestCorrectIndex >= 0 ? recent.slice(latestCorrectIndex + 1) : recent;
+  const hintDepth = activeProblemEvents
     .filter((event) => event.type === STUDY_LEARNING_INTERACTION.HINT_DEPTH_USED)
     .reduce((max, event) => Math.max(max, Number(event.hintDepth) || 0), 0);
   const repeatedExplanations = recent.filter((event) => event.type === STUDY_LEARNING_INTERACTION.REPEATED_EXPLANATION_REQUESTED).length;
 
   const misconceptionCandidate = incorrectTail >= 2 ? 'possible' : 'none';
-  const hintDependence = hintRequests >= 3 || hintDepth >= 3
+  const hintDependence = hintRequests >= 3 || sessionHintDepth >= 3
     ? 'high'
-    : hintRequests > 0 || hintDepth > 0
+    : hintRequests > 0 || sessionHintDepth > 0
       ? 'emerging'
       : 'none';
 
@@ -140,6 +156,7 @@ export function deriveStudyWorkingState({
     conceptLabel: clean(conceptLabel, 300),
     misconceptionCandidate,
     hintDependence,
+    hintDepth: Math.max(0, Math.min(6, hintDepth)),
     representationPreference,
     recentPattern,
     scaffoldingNeed,

@@ -9,6 +9,7 @@ import {
   gradeStudyAssessment,
   requestStudyAssessment,
 } from '../lib/study-evidence-client.js';
+import { readStudyWorkingState } from '../lib/study-working-state.js';
 import { loadStudyOnboarding } from '../lib/study-onboarding-client.js';
 import {
   createStudyLoopState,
@@ -185,7 +186,13 @@ export default function StudyTutorWorkspace({
     dispatchLoop({ type: 'VERIFY' });
     setAssessment((current) => ({ ...current, status: 'grading', selectedOptionId: optionId, error: '' }));
     try {
-      const result = await gradeStudyAssessment({ attemptId: assessment.attemptId, optionId });
+      const hintDepth = readStudyWorkingState()?.hintDepth || 0;
+      const result = await gradeStudyAssessment({
+        attemptId: assessment.attemptId,
+        optionId,
+        retry: loop.explicitRetry === true,
+        hintDepth,
+      });
       if (assessmentGeneration.current !== generation) return { recorded: false, stale: true };
       dispatchLoop({ type: 'RESOLVE', correct: result.correct, misconception: result.misconceptionSignal });
       setAssessment((current) => ({ ...current, status: 'graded', result, error: '' }));
@@ -196,7 +203,7 @@ export default function StudyTutorWorkspace({
       setAssessment((current) => ({ ...current, status: 'error', error: message }));
       return { recorded: false, error: message };
     }
-  }, [assessment.attemptId, assessment.item?.options, assessment.result, assessment.status]);
+  }, [assessment.attemptId, assessment.item?.options, assessment.result, assessment.status, loop.explicitRetry]);
 
   const issueAssessmentBatch = useCallback(async (targetCount) => {
     if (!brief?.conceptId || !activeSessionId) {
