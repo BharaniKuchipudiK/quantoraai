@@ -6,7 +6,6 @@ import {
   buildFirstWorkspaceEventData,
   buildVisitEventData,
   claimFirstWorkspaceOpen,
-  claimPageTelemetry,
   classifyVisit,
   productTelemetrySurface,
   shouldCollectProductTelemetry,
@@ -46,12 +45,8 @@ test('visit classification distinguishes first seen, same-day and later-day brow
   assert.ok(storage.snapshot()[PRODUCT_TELEMETRY_STORAGE.LAST_VISIT_DAY]);
 });
 
-test('page and first-workspace claims are one-shot', () => {
-  const session = memoryStorage();
+test('first-workspace claim is device-local and one-shot', () => {
   const local = memoryStorage();
-
-  assert.equal(claimPageTelemetry(session), true);
-  assert.equal(claimPageTelemetry(session), false);
   assert.equal(claimFirstWorkspaceOpen(local), true);
   assert.equal(claimFirstWorkspaceOpen(local), false);
 });
