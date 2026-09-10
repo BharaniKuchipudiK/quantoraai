@@ -11,6 +11,7 @@ import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
 import { studyMicroVisualKind } from '../lib/study-micro-visuals.js';
 import { decorateStudyMessage, enforceStudyRendererContract, splitStudySegments } from '../lib/study-pictures.js';
+import { enforceStudyStaticVisualText, resolveStudyStaticVisualContract } from '../lib/study-static-visual-delivery.js';
 import {
   studyActiveConcept,
   studyOpticsVisualSpec,
@@ -60,7 +61,12 @@ function StudyReadingBlock({ text, textColor, components, blockKey }) {
 }
 
 export default function StudyMarkdown({ text = '', topic = '', studyRouting = null, isLight = false, textColor, components }) {
-  const routedText = enforceStudyRendererContract(text, studyRouting);
+  // The server-selected static renderer is a per-message delivery contract, not
+  // a second topic inference pass. It is rendered directly below so a model can
+  // neither omit it nor replace it with a competing picture tag.
+  const routedStaticVisual = resolveStudyStaticVisualContract(studyRouting);
+  const staticPreparedText = enforceStudyStaticVisualText(text, studyRouting);
+  const routedText = enforceStudyRendererContract(staticPreparedText, studyRouting);
   const polished = polishStudyTutorText(routedText);
   const nudge = studyTutorNudge(polished);
   const activeTopic = studyActiveConcept(topic, polished);
@@ -78,6 +84,21 @@ export default function StudyMarkdown({ text = '', topic = '', studyRouting = nu
   return (
     <div className="study-lesson markdown-prose" data-quantora-study-lesson="true" style={{ color: textColor, width: '100%' }}>
       {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
+      {routedStaticVisual ? (
+        <div data-quantora-study-routed-visual={routedStaticVisual.rendererKind}>
+          <React.Suspense fallback={<p role="status">Loading the study visual…</p>}>
+            {routedStaticVisual.deliveryClass === 'micro_visual' ? (
+              <StudyMicroVisual
+                kind={routedStaticVisual.rendererKind}
+                caption={routedStaticVisual.caption}
+                isLight={isLight}
+              />
+            ) : (
+              <StudyPicture caption={routedStaticVisual.caption} isLight={isLight} />
+            )}
+          </React.Suspense>
+        </div>
+      ) : null}
       {segments.map((segment, index) => {
         if (segment.type === 'flashcard') {
           return index === firstFlashcardIndex ? <StudyFlashcards key="study-flashcard-deck" cards={flashcards} isLight={isLight} /> : null;

@@ -13,7 +13,7 @@ import { planStudyTeachingRepresentation, type StudyTeachingRepresentationPlan }
 import { evaluateStudyLearningIntervention, type StudyLearningIntervention } from './study-learning-intervention.js';
 import { planStudyAdaptiveLessonLoop, type StudyAdaptiveLessonLoopPlan } from './study-adaptive-lesson-loop.js';
 
-export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-09.4';
+export const STUDY_COGNITIVE_ROUTING_VERSION = 'study-cognitive-routing-2026-09-10.1';
 
 export type StudyIntent = 'explain' | 'worked_example' | 'practice' | 'diagnose' | 'challenge' | 'verify' | 'plan' | 'continue';
 export type StudyDifficulty = 'foundational' | 'standard' | 'advanced';
@@ -203,16 +203,33 @@ export function interpretStudyTurn(input: {
   };
 }
 
+function routedRepresentationCapability(interpretation: StudyCognitiveInterpretation) {
+  const capability = interpretation.activeLearningContext.representationCapability;
+  return interpretation.representation.rendererRequired === true
+    && interpretation.representation.fallback === 'none'
+    && capability?.rendererKind === interpretation.representation.rendererKind
+    ? capability
+    : null;
+}
+
+function pictureTag(caption: string): string {
+  return `<quantora-study-picture caption="${String(caption || '').replace(/[<>"\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()}" />`;
+}
+
 export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInterpretation | null): string {
   if (!interpretation) return '';
   const representationFallback = interpretation.representation.fallback === 'none'
     ? 'none'
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
   const nativeLab = studyNativeLabForRenderer(interpretation.representation.rendererKind);
+  const routedCapability = routedRepresentationCapability(interpretation);
+  const requiredPictureTag = routedCapability?.renderCaption ? pictureTag(routedCapability.renderCaption) : '';
   const rendererInstruction = interpretation.representation.rendererRequired
     ? nativeLab
       ? `yes — ${nativeLab.instruction}`
-      : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
+      : requiredPictureTag
+        ? `yes — render the governed ${routedCapability?.deliveryClass || 'static_diagram'} by including exactly one ${requiredPictureTag} tag. The client will enforce this same per-message renderer contract if the tag is omitted; do not substitute another subject visual or claim this interface cannot show it`
+        : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
     : 'no — do NOT emit <quantora-study-picture> or <quantora-study-lab> tags for this turn; the presentation layer must not invent a subject visual';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
     ? `YES — ask at most ${interpretation.lessonLoop.maxLearnerQuestions} learner question, end on that question, and do not reveal the next beat or its answer in the same response`
@@ -319,6 +336,7 @@ export function applyStudyCapabilityRouting(input: { interpretation: StudyCognit
 
 export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInterpretation | null) {
   if (!interpretation) return undefined;
+  const routedCapability = routedRepresentationCapability(interpretation);
   return {
     version: interpretation.version,
     intent: interpretation.intent,
@@ -365,6 +383,8 @@ export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInter
       rendererKind: interpretation.representation.rendererKind,
       fallback: interpretation.representation.fallback,
       reason: interpretation.representation.reason,
+      deliveryClass: routedCapability?.deliveryClass || null,
+      renderCaption: routedCapability?.renderCaption || null,
     },
   };
 }
