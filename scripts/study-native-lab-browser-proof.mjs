@@ -45,11 +45,16 @@ async function scenario({ name, theme, reduced = false, mobile = false, assetFai
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) {
     const origin = new URL(BASE_URL).origin;
-    await context.route('**/*', (route) => {
+    await context.route('**/*', async (route) => {
       const request = route.request();
-      return new URL(request.url()).origin === origin
-        ? route.continue({ headers: { ...request.headers(), 'x-vercel-protection-bypass': bypass } })
-        : route.continue();
+      if (new URL(request.url()).origin !== origin) return route.continue();
+      // continue({headers}) propagates overrides through redirects. Fetch only
+      // this hop, then let the browser follow redirects without a secret header.
+      const response = await route.fetch({
+        headers: { ...request.headers(), 'x-vercel-protection-bypass': bypass },
+        maxRedirects: 0,
+      });
+      return route.fulfill({ response });
     });
   }
   const page = await context.newPage();
