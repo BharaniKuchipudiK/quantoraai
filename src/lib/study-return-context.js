@@ -1,5 +1,9 @@
 export const STUDY_RETURN_CONTEXT_VERSION = 'study-return-context-v1';
-/** Project verified server reconstructions, never saved browser lesson positions. */
+/**
+ * Project verified server reconstructions, never saved browser lesson positions.
+ * @param {any[]} entries
+ * @param {{ asOf?: string, partial?: boolean }} options
+ */
 export function summarizeStudyReturnContext(entries, { asOf, partial = false } = {}) {
   const now = Date.parse(asOf);
   if (!Number.isFinite(now)) return null;

@@ -15,6 +15,7 @@ function scopeKey({ accountKey, sessionId } = {}) {
   return account && session ? `${PREFIX}${encodeURIComponent(account)}:${encodeURIComponent(session)}` : '';
 }
 
+/** @param {{ mission?: any, sessionId?: string, workingState?: any, now?: number }} options */
 export function makeStudyContinuityCheckpoint({ mission, sessionId, workingState = null, now = Date.now() } = {}) {
   const label = text(mission?.label, 160);
   if (!Number.isFinite(now) || now < 0 || !text(sessionId, 128) || !labelKey(label)
@@ -43,6 +44,10 @@ export function makeStudyContinuityCheckpoint({ mission, sessionId, workingState
   };
 }
 
+/**
+ * @param {any} value
+ * @param {{ sessionId?: string, topic?: string, now?: number }} scope
+ */
 export function validateStudyContinuityCheckpoint(value, { sessionId, topic, now = Date.now() } = {}) {
   if (!value || value.version !== STUDY_CONTINUITY_VERSION || value.observationOnly !== true
     || !text(sessionId, 128) || value.sessionId !== sessionId || !Number.isFinite(now)
