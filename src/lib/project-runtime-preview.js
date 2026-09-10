@@ -95,6 +95,10 @@ export function extractRuntimeDependencies(code = '') {
 export function isInlineReactRuntimeCode(code = '') {
   const source = String(code || '');
   if (!source.trim()) return false;
+  // A complete HTML document owns its runtime even when scripts or export payloads
+  // contain React-looking identifiers or capitalized XML tags such as <Workbook>.
+  // Only inspect non-document snippets for inline React conversion.
+  if (/^\s*(?:<!doctype\s+html\b|<html[\s>])/i.test(source)) return false;
   return /(?:from\s+['\"]react['\"]|import\s+React\b|useState\s*\(|useEffect\s*\(|export\s+default\s+(?:function|class)|ReactDOM\.createRoot\s*\(|createRoot\s*\(|<[A-Z][A-Za-z0-9_.:-]*(?:\s|\/?>))/m.test(source);
 }
 
@@ -168,4 +172,3 @@ export function isProjectRuntimeVfs(vfs = {}) {
   if (!names.includes('package.json')) return false;
   return names.some((name) => /(?:^|\/)src\/(?:main|App)\.(?:jsx|tsx|js|ts)$/i.test(name));
 }
-
