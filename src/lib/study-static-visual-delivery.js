@@ -7,10 +7,12 @@ const STATIC_CLASSES = new Set(['static_diagram', 'micro_visual']);
 const VISUAL_TAG_RE = /<(?:quantora-study-picture|quantora-study-lab)\b[^>]*\/?>/gi;
 
 function cleanCaption(value = '') {
-  return String(value || '')
-    .replace(/[<>"\r\n]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  // Do not repair malformed contracts into a different teaching statement.
+  // ASCII arrows are data, not HTML terminators in this direct-render path.
+  if (typeof value !== 'string' || value.length > 240
+    || /[<>"]/.test(value.replace(/->/g, ''))
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) return '';
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function deliveredKind(caption = '') {
@@ -31,6 +33,8 @@ export function resolveStudyStaticVisualContract(routing = null) {
     || typeof plan.rendererKind !== 'string') return null;
   const caption = cleanCaption(plan.renderCaption);
   if (!caption || deliveredKind(caption) !== plan.rendererKind) return null;
+  const expectedClass = studyMicroVisualKind(caption) ? 'micro_visual' : 'static_diagram';
+  if (plan.deliveryClass !== expectedClass || plan.primaryRepresentation === 'simulation_or_lab') return null;
   return {
     version: STUDY_STATIC_VISUAL_DELIVERY_VERSION,
     rendererKind: plan.rendererKind,

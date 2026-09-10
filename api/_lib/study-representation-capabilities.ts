@@ -47,7 +47,9 @@ const BRAKING_VISUAL = /\b(?:passenger|vehicle|car|bus)\b[\s\S]*\b(?:brak|stop)|
 const ALGEBRA_TRANSFORM = /\b(?:both sides|same operation|undo|isolat(?:e|ing)|transform(?:ation)?)\b/i;
 
 function compact(value = '', max = 150): string {
-  return String(value || '').replace(/[<>"\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max).trim();
+  // A right angle bracket is part of the supported ASCII arrow (->).
+  // Captions are data; the prompt-tag encoder handles attribute grammar.
+  return String(value || '').replace(/[<"\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max).trim();
 }
 
 function deliveryClassFor(kind: StudyRepresentationRendererKind): StudyRepresentationDeliveryClass {
@@ -59,18 +61,20 @@ function deliveryClassFor(kind: StudyRepresentationRendererKind): StudyRepresent
 
 function fractionCaption(context = ''): string | null {
   if (!FRACTION.test(context)) return null;
-  const parts = [...String(context).matchAll(/\b(\d+)\s*\/\s*(\d+)\b/g)].slice(0, 2)
+  const source = String(context).split(/\r?\n/).find((line) => FRACTION.test(line) && /\d+\s*\/\s*\d+/.test(line)) || '';
+  if (/-\s*\d+\s*\/|\/\s*-/.test(source)) return null;
+  const parts = [...source.matchAll(/\b(\d+)\s*\/\s*(\d+)\b/g)]
     .map((m) => ({ n: Number(m[1]), d: Number(m[2]) }));
-  if (!parts.length || parts.some((p) => !Number.isSafeInteger(p.n) || !Number.isSafeInteger(p.d) || p.d < 1 || p.d > 12 || p.n < 0 || p.n > p.d)) return null;
+  if (!parts.length || parts.length > 2 || parts.some((p) => !Number.isSafeInteger(p.n) || !Number.isSafeInteger(p.d) || p.d < 1 || p.d > 12 || p.n < 0 || p.n > p.d)) return null;
   const [a, b] = parts;
-  if (b && a.n * b.d === b.n * a.d && /\b(?:equivalent|equals?|equal to|same (?:value|amount|fraction)|proportion)\b|=/i.test(context)) {
+  if (b && a.n * b.d === b.n * a.d && /\b(?:equivalent|equals?|equal to|same (?:value|amount|fraction)|proportion)\b|=/i.test(source)) {
     return `Proportion model: ${a.n}/${a.d} = ${b.n}/${b.d}`;
   }
-  return `Fraction model: ${a.n}/${a.d}`;
+  return b ? null : `Fraction model: ${a.n}/${a.d}`;
 }
 
 function beforeAfterCaption(context = ''): string | null {
-  const source = compact(context, 180);
+  const source = String(context).split(/\r?\n/).map((line) => compact(line, 180)).find((line) => BEFORE_AFTER.test(line)) || '';
   let match = /before\s*(?:\/\s*after|and\s+after)\s*:\s*(.+?)\s*(?:->|→|⇒|\bbecomes?\b|\bchanges?\s+to\b)\s*(.+?)(?:[.;]|$)/i.exec(source);
   if (!match) match = /\bchanges?\s+from\s+(.+?)\s+to\s+(.+?)(?:[.;]|$)/i.exec(source);
   if (!match) return null;
@@ -80,9 +84,10 @@ function beforeAfterCaption(context = ''): string | null {
 }
 
 function processCaption(context = ''): string | null {
-  const source = compact(context, 180);
+  const source = String(context).split(/\r?\n/).map((line) => compact(line, 180)).find((line) => PROCESS.test(line) && /(?:->|→|⇒)/.test(line)) || '';
   if (!PROCESS.test(source) || !/(?:->|→|⇒)/.test(source)) return null;
-  const body = source.includes(':') ? source.slice(source.indexOf(':') + 1) : source;
+  const named = /\b(?:process|cycle|flow|pathway|sequence|step|stage)\s*:\s*(.+)$/i.exec(source);
+  const body = named ? named[1] : source.includes(':') ? source.slice(source.indexOf(':') + 1) : source;
   const steps = body.split(/\s*(?:->|→|⇒)\s*/).map((p) => compact(p.replace(/[.;]+$/g, ''), 34)).filter(Boolean);
   return steps.length >= 2 ? `Process: ${steps.slice(0, 4).join(' -> ')}` : null;
 }

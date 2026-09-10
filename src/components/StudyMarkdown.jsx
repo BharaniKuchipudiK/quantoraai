@@ -86,17 +86,22 @@ export default function StudyMarkdown({ text = '', topic = '', studyRouting = nu
       {nudge ? <StudyTutorNudge kind={nudge.kind} label={nudge.label} isLight={isLight} /> : null}
       {routedStaticVisual ? (
         <div data-quantora-study-routed-visual={routedStaticVisual.rendererKind}>
-          <React.Suspense fallback={<p role="status">Loading the study visual…</p>}>
-            {routedStaticVisual.deliveryClass === 'micro_visual' ? (
-              <StudyMicroVisual
-                kind={routedStaticVisual.rendererKind}
-                caption={routedStaticVisual.caption}
-                isLight={isLight}
-              />
-            ) : (
-              <StudyPicture caption={routedStaticVisual.caption} isLight={isLight} />
-            )}
-          </React.Suspense>
+          <StudyNativeLabBoundary
+            key={`${routedStaticVisual.rendererKind}-${routedStaticVisual.caption}`}
+            fallback={<p role="status" data-quantora-study-visual-unavailable="true">The visual could not load. The written lesson is still available.</p>}
+          >
+            <React.Suspense fallback={<p role="status">Loading the study visual…</p>}>
+              {routedStaticVisual.deliveryClass === 'micro_visual' ? (
+                <StudyMicroVisual
+                  kind={routedStaticVisual.rendererKind}
+                  caption={routedStaticVisual.caption}
+                  isLight={isLight}
+                />
+              ) : (
+                <StudyPicture caption={routedStaticVisual.caption} isLight={isLight} />
+              )}
+            </React.Suspense>
+          </StudyNativeLabBoundary>
         </div>
       ) : null}
       {segments.map((segment, index) => {

@@ -213,7 +213,7 @@ function routedRepresentationCapability(interpretation: StudyCognitiveInterpreta
 }
 
 function pictureTag(caption: string): string {
-  return `<quantora-study-picture caption="${String(caption || '').replace(/[<>"\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()}" />`;
+  return `<quantora-study-picture caption="${String(caption || '').replace(/->/g, '→').replace(/[<>"\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()}" />`;
 }
 
 export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInterpretation | null): string {
@@ -228,7 +228,7 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
     ? nativeLab
       ? `yes — ${nativeLab.instruction}`
       : requiredPictureTag
-        ? `yes — render the governed ${routedCapability?.deliveryClass || 'static_diagram'} by including exactly one ${requiredPictureTag} tag. The client will enforce this same per-message renderer contract if the tag is omitted; do not substitute another subject visual or claim this interface cannot show it`
+        ? `yes — the response must use the supported representation rather than silently falling back to prose; render the governed ${routedCapability?.deliveryClass || 'static_diagram'} by including exactly one ${requiredPictureTag} tag. The client will enforce this same per-message renderer contract if the tag is omitted; do not substitute another subject visual or claim this interface cannot show it`
         : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
     : 'no — do NOT emit <quantora-study-picture> or <quantora-study-lab> tags for this turn; the presentation layer must not invent a subject visual';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
