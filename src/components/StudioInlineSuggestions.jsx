@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight, Sparkles, X } from 'lucide-react';
 import { requestStudyAdaptiveMission } from '../lib/study-adaptive-mission-event.js';
+import { requestStudyContinuityHint } from '../lib/study-continuity-hints.js';
 
 /**
  * Unified inline suggestions — lives under the latest AI message in the thread.
@@ -47,6 +48,8 @@ export default function StudioInlineSuggestions({
 
   const selectContinue = (item) => {
     if (item?.id === 'study-hint') {
+      // Capture the authenticated chat at the actual click, before async imports.
+      requestStudyContinuityHint();
       // This component is shared by every workspace. Load Study-only working
       // state and observations only when the learner requests a hint, preserving
       // the shared entry bundle. Depth is temporary and saturates at rung 6.

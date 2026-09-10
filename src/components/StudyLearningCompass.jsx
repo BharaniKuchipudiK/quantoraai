@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, CalendarPlus, Clock3, Map, RefreshCw, X } from 'lucide-react';
 import { loadStudyLearningCompass } from '../lib/study-learning-compass-client.js';
+import StudyReturnContext from './StudyReturnContext.jsx';
 import {
   studyCompassActionLabel,
   studyCompassExplanation,
@@ -70,6 +71,8 @@ export default function StudyLearningCompass({
           </button>
         ))}
       </div>
+
+      <StudyReturnContext scopeKey={`${topicKey}:${refresh}`} topic={topic} onClose={onClose} onStart={onStart} />
 
       {state.status === 'loading' ? (
         <div className="study-compass__state" role="status"><RefreshCw size={15} className="study-compass__spinner" /> Reading verified learning evidence…</div>
