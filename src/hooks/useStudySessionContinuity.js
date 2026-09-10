@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import '../components/study-session-continuity.css';
 import {
   clearStudyContinuity,
   makeStudyContinuityCheckpoint,
