@@ -438,6 +438,7 @@ export default function StudyTutorWorkspace({
   return (
     <>
       <StudyTutorShell
+        sessionId={activeSessionId}
         brief={brief}
         onAsk={onAsk}
         onSend={contextualSend}
