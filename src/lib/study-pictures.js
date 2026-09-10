@@ -1,3 +1,5 @@
+import { studyNativeLabForRenderer } from '../../shared/study-native-labs.js';
+
 /**
  * Study pictures are caption-first and conversation-scoped.
  * There is no stock scene playlist. The client never invents a Newton
@@ -6,7 +8,7 @@
 
 const TOKEN_RE = /<(quantora-study-picture|quantora-study-lab|quantora-study-flashcard)\b([^>]*)\/?>/gi;
 
-export const STUDY_LAB_KINDS = Object.freeze(['newton', 'newton-third-law', 'fbd', 'linear-function']);
+export const STUDY_LAB_KINDS = Object.freeze(['newton', 'newton-third-law', 'fbd', 'linear-function', 'simple-dc-circuit']);
 
 /*
  * A caption ABOUT THE INSTRUCTION rather than about an idea. The tutor prompt
@@ -259,9 +261,24 @@ function requiredStudyLabKindFromRouting(routing = null) {
   ) {
     return '';
   }
-  if (plan.rendererKind === 'newton-lab') return 'newton-third-law';
-  if (plan.rendererKind === 'linear-function-lab') return 'linear-function';
-  return '';
+  return studyNativeLabForRenderer(plan.rendererKind)?.kind || '';
+}
+
+// Correct only an unquoted, generic platform denial when a supported native
+// lab is being delivered. Scientific limitations and code remain untouched.
+function withoutNativePlatformDenial(source) {
+  let fence = '';
+  const denial = /^(?:I|We)\s+(?:cannot|can't|can’t|am unable to|are unable to)\s+(?:run|render|play|show|display|create|provide)\s+(?:(?:a|an)\s+)?(?:live video or\s+)?(?:interactive\s+)?(?:simulation|animation)s?\s+(?:directly\s+)?(?:inside|in|within|on)\s+(?:this|the)\s+(?:text desk|text chat|chat interface|chat|interface|platform)\b[^.!?]*(?:[.!?](?=\s|$)|$)\s*/i;
+  return source.split('\n').map((line) => {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = '';
+      return line;
+    }
+    if (fence || /^(?: {4}|\t|\s*>)/.test(line)) return line;
+    return line.replace(denial, '');
+  }).join('\n');
 }
 
 export function enforceStudyRendererContract(text = '', routing = null) {
@@ -271,7 +288,7 @@ export function enforceStudyRendererContract(text = '', routing = null) {
   const requiredTag = `<quantora-study-lab kind="${requiredKind}" />`;
   let found = false;
   TOKEN_RE.lastIndex = 0;
-  const normalized = source.replace(TOKEN_RE, (full, tagName, attrs) => {
+  const normalized = withoutNativePlatformDenial(source).replace(TOKEN_RE, (full, tagName, attrs) => {
     if (tagName.toLowerCase() !== 'quantora-study-lab') return full;
     // Use the same attribute grammar as the parser, not literal string equality.
     if (attr(attrs, 'kind').toLowerCase() !== requiredKind || found) return '';

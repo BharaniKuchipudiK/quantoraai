@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
+import StudyNativeLabBoundary from './StudyNativeLabBoundary.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
 import { studyMicroVisualKind } from '../lib/study-micro-visuals.js';
@@ -23,6 +24,7 @@ import { polishStudyTutorText, studyTutorNudge } from '../lib/study-tutor-presen
 // bundle each Coding-desk visitor downloads. The code payload gate caps that chunk
 // at 300 KB and it was within ~70 bytes of the cap, so each new renderer family
 // (H3.5.4 adds more) was spending budget every visitor paid for and few used.
+const StudyCircuitLab = React.lazy(() => import('./StudyCircuitLab.jsx'));
 const StudyMicroVisual = React.lazy(() => import('./StudyMicroVisual.jsx'));
 const StudyPicture = React.lazy(() => import('./StudyPicture.jsx'));
 
@@ -97,7 +99,15 @@ export default function StudyMarkdown({ text = '', topic = '', studyRouting = nu
           );
         }
         if (segment.type === 'lab') {
-          return <StudyVisualLab key={`lab-${index}-${segment.kind}`} kind={segment.kind} isLight={isLight} />;
+          return (
+            <StudyNativeLabBoundary key={`lab-${index}-${segment.kind}`}>
+              {segment.kind === 'simple-dc-circuit' ? (
+                <React.Suspense fallback={<p role="status">Loading the interactive circuit…</p>}>
+                  <StudyCircuitLab isLight={isLight} conceptKey={studyRouting?.concept?.key || ''} />
+                </React.Suspense>
+              ) : <StudyVisualLab kind={segment.kind} isLight={isLight} />}
+            </StudyNativeLabBoundary>
+          );
         }
         if (opticsVisual && index === firstMarkdownIndex) {
           const { lead, rest } = splitLeadParagraph(segment.text);

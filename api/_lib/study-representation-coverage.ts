@@ -4,7 +4,7 @@ import {
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-09.3';
+export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-10.1';
 
 export type StudyRepresentationCoverageOutcome = 'renderer_available' | 'renderer_unavailable';
 
@@ -12,6 +12,7 @@ export type StudyRepresentationCoverageRequestClass =
   | 'visual_mechanics'
   | 'visual_newton_animation'
   | 'visual_linear_function_lab'
+  | 'visual_circuit_lab'
   | 'visual_electricity'
   | 'visual_field'
   | 'visual_geometry'
@@ -47,6 +48,7 @@ const COVERAGE_PROBES = Object.freeze([
   { requestClass: 'visual_mechanics', context: 'Newton second law and friction' },
   { requestClass: 'visual_newton_animation', context: "Animate Newton's third law of motion as an interactive simulation" },
   { requestClass: 'visual_linear_function_lab', context: 'interactive lab for the linear function y = mx + b with slope and intercept' },
+  { requestClass: 'visual_circuit_lab', context: 'Animate a battery and lamp circuit with an open return wire' },
   { requestClass: 'visual_electricity', context: 'EMF, terminal potential difference, battery and circuit' },
   { requestClass: 'visual_field', context: 'magnetic field direction with right-hand rule' },
   { requestClass: 'visual_geometry', context: 'Find side x in this right triangle using Pythagoras' },

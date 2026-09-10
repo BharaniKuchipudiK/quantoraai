@@ -1,0 +1,66 @@
+name: Study native deployed visuals
+
+# Exercise the actual deployed SVG/component chunks without model spend or
+# writes to learner data. This supplements, never replaces, the existing
+# live-API golden transactions and protected pre-merge browser gates.
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: study-native-deployed-${{ github.event.deployment.environment }}-${{ github.event.deployment.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_VERSION: 1.55.1
+
+jobs:
+  native-visuals:
+    name: Deployed Study native circuit interactions
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      startsWith(github.event.deployment_status.environment_url, 'https://') &&
+      github.event.deployment.sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact deployed commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
+      - name: Install browser binary
+        run: npx playwright install chromium
+      - name: Prove native controls on the deployed frontend (deterministic API fixtures)
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          node --input-type=module -e '
+            const url = new URL(process.env.QUANTORA_E2E_BASE_URL);
+            const allowed = url.hostname.endsWith(".vercel.app") || ["quantora.fit", "www.quantora.fit", "quantoraai.app", "www.quantoraai.app"].includes(url.hostname);
+            if (url.protocol !== "https:" || !allowed || url.username || url.password) throw new Error("Unexpected deployment target");
+          '
+          node scripts/study-native-lab-browser-proof.mjs
+      - name: Upload exact-deployment native visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: study-native-deployed-${{ github.event.deployment.sha }}
+          path: artifacts/e2e
+          if-no-files-found: error
+          retention-days: 14

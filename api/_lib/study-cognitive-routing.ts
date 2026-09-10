@@ -1,3 +1,4 @@
+import { studyNativeLabForRenderer } from '../../shared/study-native-labs.js';
 import type { StudyLearnerModel } from './study-learner-model.js';
 import { currentStudyRequestWorkingState, type StudyWorkingStateSnapshot } from './study-adaptive-learning.js';
 import { buildStudyActiveLearningContext, type StudyActiveLearningContext } from './study-active-learning-context.js';
@@ -207,12 +208,11 @@ export function formatStudyCognitiveDirective(interpretation: StudyCognitiveInte
   const representationFallback = interpretation.representation.fallback === 'none'
     ? 'none'
     : `${interpretation.representation.fallback} — do not claim that an unsupported visual, graph, simulation, or interactive surface was rendered`;
+  const nativeLab = studyNativeLabForRenderer(interpretation.representation.rendererKind);
   const rendererInstruction = interpretation.representation.rendererRequired
-    ? interpretation.representation.rendererKind === 'newton-lab'
-      ? 'yes — render the native Newton third-law interaction by including exactly one <quantora-study-lab kind="newton-third-law" /> tag; do not replace it with prose frames or claim a video was streamed'
-      : interpretation.representation.rendererKind === 'linear-function-lab'
-        ? 'yes — render the governed native Linear Function lab by including exactly one <quantora-study-lab kind="linear-function" /> tag; this is the supported Study workspace for this turn, so do not replace it with a static graph or prose-only description'
-        : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
+    ? nativeLab
+      ? `yes — ${nativeLab.instruction}`
+      : `yes — the response must use the supported representation rather than silently falling back to prose; use the ${interpretation.representation.rendererKind || 'subject-native'} renderer and anchor the explanation to what the learner can see`
     : 'no — do NOT emit <quantora-study-picture> or <quantora-study-lab> tags for this turn; the presentation layer must not invent a subject visual';
   const waitInstruction = interpretation.lessonLoop.mustWaitForLearner
     ? `YES — ask at most ${interpretation.lessonLoop.maxLearnerQuestions} learner question, end on that question, and do not reveal the next beat or its answer in the same response`
@@ -327,6 +327,7 @@ export function publicStudyCognitiveMetadata(interpretation: StudyCognitiveInter
     capabilities: interpretation.capabilities,
     responseMode: interpretation.responseMode,
     requiresVerification: interpretation.requiresVerification,
+    concept: { key: interpretation.activeLearningContext.concept.key },
     experienceDirector: {
       version: interpretation.experienceDirector.version,
       teachingStrategy: interpretation.experienceDirector.teachingStrategy,
