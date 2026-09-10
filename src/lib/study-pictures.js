@@ -196,9 +196,10 @@ export function studyPictureCaption(caption = '', topic = '', body = '') {
   return custom;
 }
 
-export function rewriteStudyPictureTags(text = '', topic = '') {
+export function rewriteStudyPictureTags(text = '', topic = '', routing = null) {
   const source = String(text || '');
   const hay = contextHay(topic, source);
+  const requiredKind = requiredStudyLabKindFromRouting(routing);
   TOKEN_RE.lastIndex = 0;
   return source.replace(TOKEN_RE, (full, tagName, attrs) => {
     if (String(tagName || '').toLowerCase() === 'quantora-study-flashcard') {
@@ -209,7 +210,10 @@ export function rewriteStudyPictureTags(text = '', topic = '') {
     }
     if (String(tagName || '').toLowerCase() === 'quantora-study-lab') {
       const kindRaw = attr(attrs, 'kind').toLowerCase();
-      if (!STUDY_LAB_KINDS.includes(kindRaw) || !labKindFitsLesson(kindRaw, hay)) return '';
+      if (!STUDY_LAB_KINDS.includes(kindRaw)) return '';
+      // An explicit per-message route owns its lab even after the conversation
+      // moves to a different topic. Prose cannot add a competing lab.
+      if (requiredKind ? kindRaw !== requiredKind : !labKindFitsLesson(kindRaw, hay)) return '';
       return `<quantora-study-lab kind="${kindRaw}" />`;
     }
     const caption = studyPictureCaption(attr(attrs, 'caption'), topic, source);
@@ -218,8 +222,8 @@ export function rewriteStudyPictureTags(text = '', topic = '') {
   });
 }
 
-export function splitStudySegments(text = '', topic = '') {
-  const source = rewriteStudyPictureTags(text, topic);
+export function splitStudySegments(text = '', topic = '', routing = null) {
+  const source = rewriteStudyPictureTags(text, topic, routing);
   const segments = [];
   let last = 0;
   TOKEN_RE.lastIndex = 0;
@@ -245,12 +249,44 @@ export function splitStudySegments(text = '', topic = '') {
   return segments.filter((segment) => segment.type !== 'md' || String(segment.text || '').trim());
 }
 
+function requiredStudyLabKindFromRouting(routing = null) {
+  const plan = routing?.representation || null;
+  if (
+    !plan
+    || plan.rendererRequired !== true
+    || plan.fallback !== 'none'
+    || plan.primaryRepresentation !== 'simulation_or_lab'
+  ) {
+    return '';
+  }
+  if (plan.rendererKind === 'newton-lab') return 'newton-third-law';
+  if (plan.rendererKind === 'linear-function-lab') return 'linear-function';
+  return '';
+}
+
+export function enforceStudyRendererContract(text = '', routing = null) {
+  const source = String(text || '');
+  const requiredKind = requiredStudyLabKindFromRouting(routing);
+  if (!requiredKind) return source;
+  const requiredTag = `<quantora-study-lab kind="${requiredKind}" />`;
+  let found = false;
+  TOKEN_RE.lastIndex = 0;
+  const normalized = source.replace(TOKEN_RE, (full, tagName, attrs) => {
+    if (tagName.toLowerCase() !== 'quantora-study-lab') return full;
+    // Use the same attribute grammar as the parser, not literal string equality.
+    if (attr(attrs, 'kind').toLowerCase() !== requiredKind || found) return '';
+    found = true;
+    return requiredTag;
+  });
+  return found ? normalized : `${requiredTag}\n\n${normalized}`.trim();
+}
+
 export function wantsStudyLab(text = '') {
   return /free-?body|\bfbd\b|inertia tab|newton lab|quantora-study-lab/i.test(String(text || ''));
 }
 
-export function decorateStudyMessage(text = '', topic = '') {
-  return rewriteStudyPictureTags(String(text || ''), topic);
+export function decorateStudyMessage(text = '', topic = '', routing = null) {
+  return rewriteStudyPictureTags(String(text || ''), topic, routing);
 }
 
 export function studyPicturePromptHint(topic = '') {
