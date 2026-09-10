@@ -14,7 +14,7 @@ const step = (source, name) => {
   return source.slice(start, end < 0 ? source.length : end);
 };
 
-for (const name of ['deployed-golden-transactions.yml', 'provider-health.yml', 'desk-eval.yml']) {
+for (const name of ['deployed-golden-transactions.yml', 'provider-health.yml', 'desk-eval.yml', 'study-native-deployed-visuals.yml']) {
   test(`${name}: paid automation needs a per-run boolean confirmation, default off`, () => {
     const source = workflow(name);
     assert.match(source, /workflow_dispatch:\s*\n\s+inputs:\s*\n\s+confirm_live_model_spend:/);
@@ -83,4 +83,15 @@ test('manual goldens resolve the selected commit rather than guessing a deployed
   assert.ok(source.includes("github.event.pull_request.head.sha || github.sha"));
   assert.ok(source.includes("github.ref == 'refs/heads/main' && 'Production' || 'Preview'"));
   assert.match(source, /deployments\?sha=\$PR_SHA&environment=\$TARGET_ENVIRONMENT/);
+});
+
+test('[was-red] Study live turns require per-run consent; native fixture tests remain automatic', () => {
+  const source = workflow('study-native-deployed-visuals.yml');
+  const live = source.slice(source.indexOf('  live-routing:'));
+  assert.ok(live.includes(`if: ${consent}`));
+  assert.doesNotMatch(live, /contains\(github\.event\.pull_request\.title/);
+  const native = source.slice(source.indexOf('  native-visuals:'), source.indexOf('  live-routing:'));
+  assert.match(native, /node scripts\/study-native-lab-browser-proof\.mjs/);
+  assert.ok(!native.includes('confirm_live_model_spend'));
+  assert.doesNotMatch(native, /continue-on-error/);
 });

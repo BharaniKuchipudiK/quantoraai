@@ -12,6 +12,8 @@ routing, user quotas and provider spending limits are unchanged.
 - Provider health keeps half-hourly no-generation readiness checks. It no longer
   makes scheduled Gemini generation probes.
 - Desk Eval no longer has a daily paid schedule.
+- Study live visual tests also require per-run manual consent; its automatic
+  deterministic native-component job is preserved unchanged from #684.
 - Each real-model workflow requires a manual dispatch and an explicit boolean
   `confirm_live_model_spend=true` for that run. The default is false. No PR title,
   opening, ready event, merge, deployment, or schedule grants that consent.
