@@ -481,6 +481,9 @@ export function publicConversationMetadata(
     responseContract?: unknown;
     evaluation?: unknown;
     routing?: unknown;
+    studyCognitiveRouting?: unknown;
+    studyAdaptiveLearning?: unknown;
+    financeRouting?: unknown;
     communicationRequest?: unknown;
   },
 ) {
@@ -497,6 +500,9 @@ export function publicConversationMetadata(
     ...(extras?.responseContract ? { responseContract: extras.responseContract } : {}),
     ...(extras?.evaluation ? { evaluation: extras.evaluation } : {}),
     ...(extras?.routing ? { routing: extras.routing } : {}),
+    ...(extras?.studyCognitiveRouting ? { studyCognitiveRouting: extras.studyCognitiveRouting } : {}),
+    ...(extras?.studyAdaptiveLearning ? { studyAdaptiveLearning: extras.studyAdaptiveLearning } : {}),
+    ...(extras?.financeRouting ? { financeRouting: extras.financeRouting } : {}),
     ...(extras?.communicationRequest ? { communicationRequest: extras.communicationRequest } : {}),
   };
 }

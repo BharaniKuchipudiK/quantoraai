@@ -96,3 +96,21 @@ test('control-only Show it visually preserves the established Newton third-law c
   assert.equal(interpretation.representation.rendererKind, 'newton-lab');
   assert.match(formatStudyCognitiveDirective(interpretation), /<quantora-study-lab kind="newton-third-law" \/>/);
 });
+
+test('[was-red] casual animation follow-up preserves the established Newton concept', () => {
+  const interpretation = interpretStudyTurn({
+    studioDomain: 'education',
+    message: 'can you show me with an animation to visualise',
+    history: [{ role: 'user', content: "Explain Newton's third law of motion" }],
+    hasImages: false,
+  });
+
+  assert.ok(interpretation);
+  assert.equal(interpretation.continuity, 'follow_up');
+  assert.equal(interpretation.activeLearningContext.concept.label, "Explain Newton's third law of motion");
+  assert.equal(interpretation.representation.requestedMode, 'animation');
+  assert.equal(interpretation.representation.primaryRepresentation, 'simulation_or_lab');
+  assert.equal(interpretation.representation.rendererRequired, true);
+  assert.equal(interpretation.representation.rendererKind, 'newton-lab');
+  assert.match(formatStudyCognitiveDirective(interpretation), /<quantora-study-lab kind="newton-third-law" \/>/);
+});

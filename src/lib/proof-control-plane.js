@@ -18,6 +18,7 @@ import { lessonKindFromOutcome } from './coding-turn-lesson-kinds.js';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
 import { describeBuildTruth, inspectBuildTruth } from './build-truth.js';
 import { describeRepair, repairBuild } from './build-repair.js';
+import { missingRequestedDeliverables } from './requested-deliverables.js';
 
 /** @typedef {'pending'|'pass'|'repair'|'fail'} ProofStatus */
 
@@ -116,6 +117,7 @@ function readHtml(vfs = {}) {
  */
 export function evaluateProofEvidence(plan, {
   vfs = {},
+  brief = '',
   embedReady = null,
   liveFacts = null,
 } = {}) {
@@ -130,6 +132,8 @@ export function evaluateProofEvidence(plan, {
     || /\.(jsx|tsx)$/i.test(String(path || ''));
   // Shop desks must be HTML Preview. Ordinary builds may use the React project runtime.
   const hasRunnable = shopTurn ? hasHtmlDoc : (hasHtmlDoc || hasReactRuntime);
+  const deliverableBrief = brief || plan?.messageForModel || plan?.displayUserText || '';
+  const missingDeliverables = missingRequestedDeliverables(deliverableBrief, vfs);
 
   const livePhotoCount = liveFacts && typeof liveFacts.photoCount === 'number'
     ? liveFacts.photoCount
@@ -164,6 +168,9 @@ export function evaluateProofEvidence(plan, {
   if (!hasRunnable) {
     gaps.push(shopTurn ? 'runnable Preview HTML' : 'runnable Preview (HTML or React VFS)');
   }
+  for (const deliverable of missingDeliverables) {
+    gaps.push(`requested deliverable ${deliverable}`);
+  }
   if (shopTurn) {
     const effectivePhotos = livePhotoCount != null ? Math.max(photos, livePhotoCount) : photos;
     if (effectivePhotos < Math.min(target, 10)) {
@@ -173,7 +180,7 @@ export function evaluateProofEvidence(plan, {
   }
   if (embedReady === false) gaps.push('Preview shell embed-ready');
 
-  return { evidence, gaps, truth, ok: gaps.length === 0 };
+  return { evidence, gaps, truth, missingDeliverables, ok: gaps.length === 0 };
 }
 
 /**
@@ -251,6 +258,7 @@ export function proveCodingTurn({
 
   let evalResult = evaluateProofEvidence(plan, {
     vfs: nextVfs,
+    brief,
     embedReady,
     liveFacts,
   });
@@ -275,6 +283,7 @@ export function proveCodingTurn({
     ran = [...new Set([...ran, ...second.ran, 'repair_shop_skills'])];
     evalResult = evaluateProofEvidence(plan, {
       vfs: nextVfs,
+      brief,
       embedReady,
       liveFacts,
     });
@@ -303,9 +312,11 @@ export function proveCodingTurn({
   }
 
   const shopTurn = isShopPlan(plan);
-  const outcomeKind = !evalResult.evidence.hasHtml
-    ? 'no-preview'
-    : (shopTurn && evalResult.evidence.photos < 1 ? 'svg_only' : 'empty_photos');
+  const outcomeKind = evalResult.missingDeliverables?.length
+    ? 'missing-deliverables'
+    : !evalResult.evidence.hasHtml
+      ? 'no-preview'
+      : (shopTurn && evalResult.evidence.photos < 1 ? 'svg_only' : 'empty_photos');
 
   if (sessionId) {
     rememberCodingTurnLesson(sessionId, {
@@ -340,13 +351,14 @@ export function proveCodingTurn({
  * plainly that the build is still there, because it is.
  */
 export function proofFailureCopy(verdict, plan = null) {
-  const gaps = (verdict?.gaps || []).join(', ') || 'required Preview proof';
+  const gaps = (verdict?.gaps || []).join(', ') || 'required completion proof';
+  const deliverableGap = (verdict?.gaps || []).some((gap) => String(gap).startsWith('requested deliverable '));
   const lines = [
-    `**Preview proof did not pass** — missing: ${gaps}.`,
+    `**${deliverableGap ? 'Completion' : 'Preview'} proof did not pass** — missing: ${gaps}.`,
     '',
-    'The build above is exactly what the model produced. Nothing was replaced or '
-    + 'removed. Open Preview and judge it yourself — this is a warning about what '
-    + 'I could not verify, not a verdict on the work.',
+    deliverableGap
+      ? 'The generated work is still available, but a rendered page cannot stand in for files the request explicitly asked for. Nothing was removed.'
+      : 'The build above is exactly what the model produced. Nothing was replaced or removed. Open Preview and judge it yourself — this is a warning about what I could not verify, not a verdict on the work.',
   ];
   if (isShopPlan(plan)) {
     const target = photoTargetFor(plan);

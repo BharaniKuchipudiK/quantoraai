@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import StudyAssessmentWorkspace from './StudyAssessmentWorkspace.jsx';
 import StudyHubLauncher from './StudyHubLauncher.jsx';
 import StudyReinforcement from './StudyReinforcement.jsx';
+import { shouldSuppressStudyReinforcement } from '../lib/study-reinforcement.js';
 import StudyTutorShell from './StudyTutorShell.jsx';
 import './study-h1.css';
 import { deriveStudyTutorBrief } from '../lib/study-tutor-brief.js';
@@ -99,6 +100,7 @@ export default function StudyTutorWorkspace({
     () => deriveStudyTutorBrief({ conversationContext, messages }),
     [conversationContext, messages],
   );
+  const reinforcementScope = JSON.stringify([activeSessionId || '', brief?.conceptId || '']);
   const onboardingSuffix = useMemo(() => coldStartContext(onboarding.profile), [onboarding.profile]);
   const contextualSend = useCallback((text, options) => {
     onSend?.(`${text}${onboardingSuffix}`, options);
@@ -195,7 +197,7 @@ export default function StudyTutorWorkspace({
       });
       if (assessmentGeneration.current !== generation) return { recorded: false, stale: true };
       dispatchLoop({ type: 'RESOLVE', correct: result.correct, misconception: result.misconceptionSignal });
-      setAssessment((current) => ({ ...current, status: 'graded', result, error: '' }));
+      setAssessment((current) => ({ ...current, status: 'graded', result, error: '', feedbackScopeKey: reinforcementScope, feedbackHintDepth: hintDepth }));
       return { recorded: true, result };
     } catch (error) {
       if (assessmentGeneration.current !== generation) return { recorded: false, stale: true };
@@ -203,7 +205,7 @@ export default function StudyTutorWorkspace({
       setAssessment((current) => ({ ...current, status: 'error', error: message }));
       return { recorded: false, error: message };
     }
-  }, [assessment.attemptId, assessment.item?.options, assessment.result, assessment.status, loop.explicitRetry]);
+  }, [assessment.attemptId, assessment.item?.options, assessment.result, assessment.status, loop.explicitRetry, reinforcementScope]);
 
   const issueAssessmentBatch = useCallback(async (targetCount) => {
     if (!brief?.conceptId || !activeSessionId) {
@@ -380,6 +382,8 @@ export default function StudyTutorWorkspace({
         attemptId: lastResolved.entry.attemptId,
         selectedOptionId: lastResolved.optionId,
         result: lastResolved.result,
+        feedbackScopeKey: reinforcementScope,
+        feedbackHintDepth: null, // Batch grades have no per-item hint provenance here.
       });
     }
     setAssessmentSession((current) => ({
@@ -391,7 +395,7 @@ export default function StudyTutorWorkspace({
       results,
       error: failure || current.error,
     }));
-  }, [assessmentSession.batchItems, assessmentSession.submitting]);
+  }, [assessmentSession.batchItems, assessmentSession.submitting, reinforcementScope]);
 
   const resetAssessmentSession = useCallback(() => {
     dispatchLoop({ type: 'ADVANCE' });
@@ -466,7 +470,15 @@ export default function StudyTutorWorkspace({
           onReset={resetAssessmentSession}
         />
       ) : null}
-      <StudyReinforcement result={assessment.result} />
+      <StudyReinforcement
+        result={assessment.result}
+        attemptId={assessment.attemptId}
+        itemRef={assessmentItemRef(assessment.item)}
+        scopeKey={reinforcementScope}
+        resultScopeKey={assessment.feedbackScopeKey}
+        hintDepth={assessment.feedbackHintDepth}
+        suppressed={shouldSuppressStudyReinforcement(assessmentSession)}
+      />
     </>
   );
 }

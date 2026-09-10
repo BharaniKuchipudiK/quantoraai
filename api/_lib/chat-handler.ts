@@ -103,7 +103,11 @@ import { describeUserQuotaHold, userPaidQuotaAllowed } from "./user-paid-quota.j
 import { TRAVEL_CONVERSATION_MODEL_ID } from "./travel-model-routing.js";
 import { shouldRefineRunningDesk } from "../../shared/workspace-intent.js";
 import { formatDeskContextForPrompt, sanitizeDeskContext } from "../../src/lib/studio-desk-context.js";
-import { buildArtifactContractError, validateBuildArtifactResponse } from './build-artifact-contract.js';
+import {
+  buildArtifactContractError,
+  recoverInterruptedBuildArtifactResponse,
+  validateBuildArtifactResponse,
+} from './build-artifact-contract.js';
 import {
   applyFinanceStabilityRouting,
   formatFinanceDirective,
@@ -121,16 +125,6 @@ import {
   loadStudyLearnerModel,
   publicStudyAdaptiveMetadata,
 } from './study-adaptive-learning.js';
-
-const PREVIEW_HTML_RECOVERY = `
-
-PREVIEW RECOVERY
-The previous attempt did not emit a runnable web page — either a chat-only plan or native iOS/Android/Python source. Quantora Live Preview can only run HTML/CSS/JS (or a React VFS). Output a short explanation, then EXACTLY one complete, self-contained HTML document in a single \`\`\`html fence that demonstrates the product in the browser. For macOS/native/agent asks, ship a glossy web dashboard mock of the workflow. Do not emit .swift, .kt, .py, or Xcode/Android project files as the only artifact.`;
-
-const PREVIEW_REFINE_RECOVERY = `
-
-PREVIEW RECOVERY
-This turn must update the running page. The previous reply only talked. Output a short explanation, then EXACTLY one complete updated HTML document in a single \`\`\`html fence that implements the user's request. Do not claim the change unless those tags exist in the HTML.`;
 
 const MAX_MESSAGE_LENGTH = 200_000;
 const MAX_HISTORY_ITEMS = 100;
@@ -1585,8 +1579,6 @@ export default async function handler(req: any, res: any) {
       let usedRoute: InferenceRoute | null = null;
       let lastRouteError: any = null;
       const failedQuotaDomains = new Set<string>();
-      let recoverHtmlPreview = false;
-      let htmlRecoveryTried = false;
 
       for (let index = 0; index < attempts.length; index += 1) {
         const route = attempts[index];
@@ -1692,8 +1684,12 @@ export default async function handler(req: any, res: any) {
           detailCode: effectiveBuildMode ? 'build' : 'conversation',
         });
 
+        // Kept outside the try block because its catch can safely recover a
+        // completed artifact when the provider's terminal event misses the
+        // attempt deadline.
+        let attemptReply = '';
+        const attemptSources: Array<{ uri: string; title: string }> = [];
         try {
-          let attemptReply = '';
           // Why the model stopped, from the provider's last event. Read on
           // every consumer below; judged once at acceptance.
           let attemptFinishReason: string | null = null;
@@ -1701,13 +1697,8 @@ export default async function handler(req: any, res: any) {
           // per attempt and committed with it: a failed attempt's citations
           // appended to a fallback attempt's answer would be forged
           // provenance — a Sources block backing prose its model never saw.
-          const attemptSources: Array<{ uri: string; title: string }> = [];
           const attemptSeenSources = new Set<string>();
           const buildBeat = { t: 0 };
-          const attemptSystemPrompt = recoverHtmlPreview
-            ? `${finalSystemPrompt}${isRefine ? PREVIEW_REFINE_RECOVERY : PREVIEW_HTML_RECOVERY}`
-            : finalSystemPrompt;
-          formattedHistory[0] = { role: 'system', content: attemptSystemPrompt };
           emitBuildProgress(sse, effectiveBuildMode, buildBeat, {
             stage: 'connecting',
             modelId: route.id,
@@ -1749,7 +1740,7 @@ export default async function handler(req: any, res: any) {
                 apiKey: effectiveGeminiKey as string,
                 model: route.id,
                 contents: geminiContents,
-                systemInstruction: attemptSystemPrompt,
+                systemInstruction: finalSystemPrompt,
                 temperature: dynamicTemperature,
                 grounding,
                 // The non-travel text/build route offers no tools at all.
@@ -1764,12 +1755,12 @@ export default async function handler(req: any, res: any) {
             }
             const iterator = stream[Symbol.asyncIterator]();
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await iterator.return?.(undefined);
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               /*
                * ONE catch, cleanup FIRST, then classify — the same shape as the
                * other three reads.
@@ -1874,12 +1865,12 @@ export default async function handler(req: any, res: any) {
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
             while (true) {
-              assertBudget(startTime, turnBudgetMs, 'chat turn');
               const attemptRemainingMs = attemptBudgetMs - (Date.now() - attemptStartedAt);
               if (attemptRemainingMs <= 0) {
                 await reader.cancel().catch(() => {});
                 throw inferenceAttemptTimeout(route, attemptBudgetMs);
               }
+              assertBudget(startTime, turnBudgetMs, 'chat turn');
               let chunkResult;
               try {
                 /*
@@ -2034,18 +2025,63 @@ export default async function handler(req: any, res: any) {
           if (effectiveBuildMode) sse.text(attemptReply);
           break;
         } catch (error: any) {
+          /*
+           * THE MODEL WROTE THE FILES; THE TERMINAL EVENT MISSED THE CLOCK.
+           *
+           * Production reference studio-0e8fb615-75ec-4f05-9b02-38b589674fa1
+           * received about 63 KB from Gemini, then threw all of it away when
+           * the attempt deadline arrived before the provider's final event.
+           * The person saw "No files yet" because build output is deliberately
+           * buffered until it passes the artifact contract.
+           *
+           * Preserve that safety rule while closing the data-loss path: only a
+           * timeout/no-content interruption may enter here, only CLOSED file
+           * fences are retained, and the exact normal build contract must pass.
+           * Unknown prose and genuinely partial projects still fail over.
+           */
+          const recoveredArtifact = effectiveBuildMode
+            && (error?.code === 'INFERENCE_ATTEMPT_TIMEOUT' || error?.code === 'INFERENCE_NO_CONTENT')
+            ? recoverInterruptedBuildArtifactResponse(
+                attemptReply,
+                goldenCanary ? transaction : null,
+                { allowIntake: honorGuided },
+              )
+            : null;
+          if (recoveredArtifact) {
+            fullReply = recoveredArtifact;
+            // No provider terminal word arrived. Keep the quality ledger
+            // unmeasured rather than inventing either success or failure.
+            fullReplyFinish = { kind: 'unknown', reason: 'interrupted-artifact-recovered' };
+            sources = attemptSources;
+            usedRoute = route;
+            // At the attempt deadline there is no time left for a database
+            // round-trip before delivery. Put the artifact on the wire first;
+            // health bookkeeping is best-effort and may never hold the files.
+            sse.text(recoveredArtifact);
+            void recordInferenceRouteSuccess(providerCircuitStore, route).catch(() => {});
+            trace({
+              correlationId,
+              boundary: 'inference.provider',
+              state: 'succeeded',
+              transaction,
+              modelId: route.id,
+              gateway: route.gateway,
+              upstreamProvider: route.upstreamProvider,
+              failureDomain: route.failureDomain,
+              quotaDomain: route.quotaDomain,
+              costClass: route.costClass,
+              durationMs: Date.now() - attemptStartedAt,
+              detailCode: 'interrupted-artifact-recovered',
+            });
+            break;
+          }
           lastRouteError = error;
           // The engine that refused rides on the error, so the sentence the
           // user reads names it and not the model they asked for (Auto is
           // nobody's id). A plain string error has nowhere to carry it.
           if (error && typeof error === 'object' && !error.gateway) error.gateway = route.gateway;
-          // This rung ran and did not deliver. A Set because the HTML-recovery
-          // path below re-runs the same route.
+          // This rung ran and did not deliver.
           spentEngineIds.add(route.id);
-          const shouldRecoverHtml = error?.detailCode === 'browser-preview-missing'
-            || error?.detailCode === 'code-fences-missing'
-            || (isRefine && error?.detailCode === 'code-fences-missing');
-          if (shouldRecoverHtml) recoverHtmlPreview = true;
           const status = Number(error?.status || (error?.name === 'AbortError' ? 504 : 500));
           if ([401, 402, 403, 429].includes(status)) failedQuotaDomains.add(route.quotaDomain);
           // A response-contract miss is specific to this prompt/output. It may
@@ -2053,6 +2089,21 @@ export default async function handler(req: any, res: any) {
           // shared operational health circuit for unrelated users.
           if (error?.code !== 'BUILD_ARTIFACT_CONTRACT') {
             await recordInferenceRouteFailure(providerCircuitStore, route, status, Date.now(), { billing: isBillingRefusal(error) });
+          }
+          // Quality and operational health answer different questions. A model
+          // that answers but ignores the file contract must not poison the
+          // provider circuit, but it DID fail this coding job and must be
+          // learned against by Auto routing. Record the route that actually
+          // ran, never the request alias "auto".
+          if (req.body?.task !== 'repair' && req.body?.task !== 'feedback') {
+            recordModelQualityEvent({
+              requestId,
+              modelId: route.id,
+              taskCategory,
+              outcome: 'failure',
+              latencyMs: Date.now() - attemptStartedAt,
+              fallbackFrom: route.reason === 'fallback' ? modelId : fallbackFrom,
+            });
           }
           trace({
             correlationId,
@@ -2073,11 +2124,6 @@ export default async function handler(req: any, res: any) {
                 : error?.code === 'INFERENCE_ATTEMPT_TIMEOUT' ? 'attempt-timeout'
                   : status === 429 ? 'quota-exhausted' : status === 404 ? 'route-not-found' : status === 504 ? 'provider-timeout' : 'provider-failure',
           });
-          if (shouldRecoverHtml && !htmlRecoveryTried && !sse.isCommitted) {
-            htmlRecoveryTried = true;
-            index -= 1;
-            continue;
-          }
           const nextRoute = attempts[index + 1];
           if (
             sse.isCommitted
@@ -2785,7 +2831,13 @@ export default async function handler(req: any, res: any) {
       statusCode: Number(err?.status || 500),
       detailCode: Number(err?.status) === 429 ? 'quota-exhausted' : 'chat-failure',
     });
-    if (req.body?.task !== "repair" && req.body?.task !== "feedback" && typeof req.body?.modelId === "string") {
+    if (
+      spentEngineIds.size === 0
+      && req.body?.task !== "repair"
+      && req.body?.task !== "feedback"
+      && typeof req.body?.modelId === "string"
+      && req.body.modelId !== 'auto'
+    ) {
       recordModelQualityEvent({
         requestId,
         modelId: req.body.modelId,

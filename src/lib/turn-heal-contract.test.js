@@ -482,25 +482,29 @@ test('a reported engine is named for the person, falling back to something quota
   assert.equal(engineDisplayName('', catalogue), '');
 });
 
-test('[was-red] the desk absorbs the server’s rungs wherever they can arrive', () => {
+test('[was-red] the desk absorbs every server-confirmed engine wherever it can arrive', () => {
   /*
-   * Three arrival points, because a turn can die at any of them: a live
+   * Four arrival points, because a turn can die at any of three failure paths: a live
    * failover status, a streamed terminal error, and a non-2xx response that
-   * never opened a stream at all. Missing one loses the whole record for that
-   * failure mode — and a unit test cannot see a receive point that was never
-   * wired.
+   * never opened a stream at all. A completed response is also absorbed before
+   * client-side artifact repair so the desk cannot call that same engine a
+   * fresh fallback. Missing any one loses part of the route history.
    */
   const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
   assert.match(hook, /const absorbServerEngines = \(reported\) => \{/, 'the absorber must exist before it can be called');
   const absorbed = hook.match(/absorbServerEngines\([^)]*\)/g) || [];
   assert.equal(
     absorbed.length,
-    3,
-    `expected three arrival points, found ${absorbed.length}: ${absorbed.join(' | ')}`,
+    4,
+    `expected four arrival points, found ${absorbed.length}: ${absorbed.join(' | ')}`,
   );
   assert.ok(absorbed.includes('absorbServerEngines(parsed.status.spentEngineIds)'), 'a live failover names the rung it just left');
   assert.ok(absorbed.includes('absorbServerEngines(parsed.error.spentEngineIds)'), 'a streamed terminal error carries the full set');
   assert.ok(absorbed.includes('absorbServerEngines(errData?.spentEngineIds)'), 'a turn that never opened a stream still burned rungs');
+  assert.ok(
+    absorbed.includes('absorbServerEngines(completedServerEngineId ? [completedServerEngineId] : [])'),
+    'a completed server responder is not reused as a supposedly fresh artifact-repair fallback',
+  );
 
   assert.match(
     hook,
