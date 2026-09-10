@@ -30,7 +30,8 @@ test('explicit state-change concepts route to the before-after renderer only whe
   assert.equal(direct?.representation, 'annotated_diagram');
   assert.equal(direct?.reason, 'state_change');
   assert.equal(direct?.deliveryClass, 'micro_visual');
-  assert.equal(direct?.renderCaption, 'Before/after: ice -> liquid water');
+  // Arrow typography is presentation; the ordered state labels remain exact.
+  assert.equal(direct?.renderCaption?.replace(/→/g, '->'), 'Before/after: ice -> liquid water');
 
   const canonical = resolveStudyRepresentationCapabilityForConcept({
     conceptKey: 'science.states.phase-change',
