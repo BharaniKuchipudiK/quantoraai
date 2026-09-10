@@ -15,6 +15,7 @@ test('while generating, names the work and the observed phase', () => {
     elapsedSec: 8,
     hasPreview: false,
     activeModelName: 'Gemini 3 Flash',
+    streamedBytes: 0,
   });
   assert.match(status.now, /preview/i);
   assert.match(status.next, /Reaching Gemini 3 Flash/);
@@ -29,6 +30,7 @@ test('a turn with nothing coming back says so, and offers a way out', () => {
     elapsedSec: 70,
     hasPreview: false,
     activeModelName: 'Nemotron 3 Super 120B',
+    streamedBytes: 0,
     turnBudgetSec: 175,
   });
   assert.match(status.next, /No output from Nemotron 3 Super 120B after 1:10/);
@@ -165,4 +167,27 @@ test('the build clock counts past a minute', () => {
   assert.equal(at(60), '1:00', 'the minute must roll over, not stay literal');
   assert.equal(at(110), '1:50', 'the primary build attempt budget');
   assert.equal(at(165), '2:45', 'the full turn budget');
+});
+
+test('the screenshot: an observed execution label cannot be contradicted by missing counters', () => {
+  const label = 'Generating files with anthropic/claude-opus-5 · 1 KB received…';
+  for (const elapsedSec of [31, 70, 175]) {
+    // This matches the production AiStudio caller: label + clock, no counters.
+    const status = resolveStudioPartnerStatus({ isGenerating: true, generatingLabel: label, elapsedSec });
+    assert.equal(status.now, label);
+    assert.match(status.next, /^Elapsed /);
+    assert.equal(status.phase, 'unknown');
+    assert.equal(status.stalled, false);
+    assert.deepEqual(status.actions, []);
+    assert.doesNotMatch(status.next, /nothing received|No output|0 B/i);
+  }
+});
+
+test('a new attempt with unknown telemetry does not inherit the prior attempt progress', () => {
+  const first = resolveStudioPartnerStatus({ isGenerating: true, streamedBytes: 1024, elapsedSec: 31 });
+  const retry = resolveStudioPartnerStatus({ isGenerating: true, generatingLabel: 'Retrying on the next eligible engine…', elapsedSec: 60 });
+  assert.equal(first.phase, 'streaming');
+  assert.equal(retry.phase, 'unknown');
+  assert.equal(retry.stalled, false);
+  assert.doesNotMatch(retry.next, /1\.0 KB|nothing received|No output/);
 });

@@ -51,7 +51,7 @@ export const SILENT_STALL_SEC = 45;
  */
 export function describeTurnPhase({
   elapsedSec = 0,
-  bytes = 0,
+  bytes = null,
   filePaths = [],
   previewCompiling = false,
   previewHealing = false,
@@ -59,7 +59,8 @@ export function describeTurnPhase({
   budgetSec = 0,
 } = {}) {
   const elapsed = Math.max(0, Math.floor(Number(elapsedSec) || 0));
-  const received = Math.max(0, Number(bytes) || 0);
+  const bytesKnown = typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0;
+  const received = bytesKnown ? bytes : 0;
   const files = (Array.isArray(filePaths) ? filePaths : []).filter(Boolean);
   const who = String(modelName || '').trim() || 'the model';
   const remaining = budgetSec > 0 ? Math.max(0, Math.floor(budgetSec - elapsed)) : 0;
@@ -69,15 +70,24 @@ export function describeTurnPhase({
     return { line: `Preview hit an error — repairing it (${clock(elapsed)})`, phase: 'healing', stalled: false };
   }
   if (previewCompiling) {
-    return { line: `Compiling the preview — ${files.length} file${files.length === 1 ? '' : 's'} (${clock(elapsed)})`, phase: 'compiling', stalled: false };
+    const count = files.length ? ` — ${files.length} file${files.length === 1 ? '' : 's'}` : '';
+    return { line: `Compiling the preview${count} (${clock(elapsed)})`, phase: 'compiling', stalled: false };
   }
   if (files.length) {
     const shown = files.slice(0, 3).join(', ');
     const more = files.length > 3 ? ` +${files.length - 3} more` : '';
-    return { line: `Writing ${shown}${more} — ${humanBytes(received)} so far (${clock(elapsed)})`, phase: 'writing', stalled: false };
+    const amount = bytesKnown ? ` — ${humanBytes(received)} so far` : '';
+    return { line: `Writing ${shown}${more}${amount} (${clock(elapsed)})`, phase: 'writing', stalled: false };
   }
   if (received > 0) {
     return { line: `${who} is writing — ${humanBytes(received)} so far (${clock(elapsed)})`, phase: 'streaming', stalled: false };
+  }
+
+  // AiStudio currently supplies the execution label, not structured counters.
+  // Keep that observed label authoritative; missing telemetry is not zero bytes
+  // and must not produce a contradictory no-output message or a retry nudge.
+  if (!bytesKnown) {
+    return { line: `Elapsed ${clock(elapsed)}`, phase: 'unknown', stalled: false };
   }
 
   /*

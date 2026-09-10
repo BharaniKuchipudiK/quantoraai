@@ -321,7 +321,9 @@ export function deriveStudioMission({
         ? 'Working through'
         : studioDomain === 'research'
           ? 'Investigating'
-          : 'Building';
+          // This is a retained project goal, not an observed running operation.
+          // The execution-status line owns activity; historical goals cannot.
+          : 'Project';
 
   if (!goal && !understanding && !next && !(ctx.facts || []).length) return null;
 

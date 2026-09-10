@@ -69,7 +69,7 @@ const boutiqueSiteReply = [
   '<style>body{font-family:Georgia,serif;margin:0;background:#fdf6f0;color:#3b2f2f}main{padding:40px}h1{color:#8b1e3f}</style></head>',
   '<body><main><h1 data-testid="boutique-title">The Silk Thread Boutique</h1>',
   '<p>Kanjivaram, Uppada and Gadwal sarees. Blouse stitching, draping, pico and fall, mehndi.</p>',
-  '<button type="button" data-testid="boutique-browse">Browse the collection</button></main>',
+  '<button type="button" data-testid="boutique-browse" onclick="this.textContent=\'Collection opened\'">Browse the collection</button></main>',
   '</body></html>',
   '```',
 ].join('\n');
@@ -108,7 +108,9 @@ await page.route('**/api/**', async (route) => {
     chatCalls += 1;
     const body = request.postDataJSON?.() || {};
     guidedFlags.push(body.guidedBuild === true);
-    const reply = chatCalls === 1 ? compliantIntakeReply : boutiqueSiteReply;
+    const reply = chatCalls === 1 ? compliantIntakeReply
+      : chatCalls === 2 ? boutiqueSiteReply
+        : boutiqueSiteReply.replace('The Silk Thread Boutique</h1>', 'The Silk Thread Boutique Updated</h1>');
     return route.fulfill({
       status: 200,
       headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
@@ -172,9 +174,50 @@ try {
     throw new Error(`The build turn after intake was reported as a failure: "${finalFailure[0]}".`);
   }
 
+  // 4. Acknowledging a working build must not call the model or remount it.
+  // Use the actual rendered page, not the assistant's claim that files landed.
+  async function frameWithHeading(expected, timeout = 20_000) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) continue;
+        const heading = await frame.locator('[data-testid="boutique-title"]').textContent({ timeout: 100 }).catch(() => null);
+        if (heading === expected) return frame;
+      }
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`Preview never rendered the expected fixture heading: ${expected}`);
+  }
+  const workingFrame = await frameWithHeading('The Silk Thread Boutique');
+  await page.waitForTimeout(3_000);
+  await workingFrame.locator('[data-testid="boutique-browse"]').evaluate((button) => {
+    button.setAttribute('data-ack-sentinel', 'keep-this-working-page');
+  });
+  for (const acknowledgement of ['Excellent work', 'Thanks!']) {
+    const completed = await page.locator('[data-quantora-message-fork="true"]').count();
+    await prompt.fill(acknowledgement);
+    await prompt.press('Enter');
+    // A new completed AI footer proves the send was handled; a disabled send
+    // or an ignored message must not pass merely by making no network call.
+    await page.waitForFunction((expected) => (
+      document.querySelectorAll('[data-quantora-message-fork="true"]').length === expected
+    ), completed + 1, { timeout: 10_000 });
+    await page.waitForTimeout(1_000);
+    if (chatCalls !== 2) throw new Error(`Acknowledgement started an unwanted model/build call: ${acknowledgement}; calls=${chatCalls}`);
+    await visible(page.locator('[data-quantora-code-workspace="true"]').first(), 'Acknowledgement closed the working Coding Desk.');
+    const sentinel = await workingFrame.locator('[data-testid="boutique-browse"]').getAttribute('data-ack-sentinel').catch(() => null);
+    if (sentinel !== 'keep-this-working-page') throw new Error('Acknowledgement replaced or remounted the working preview.');
+  }
+
+  // 5. Praise is not a denylist: a real edit in the same message still lands.
+  await prompt.fill('Thanks — change the heading to The Silk Thread Boutique Updated');
+  await prompt.press('Enter');
+  await frameWithHeading('The Silk Thread Boutique Updated');
+  if (chatCalls !== 3) throw new Error(`Expected one real refinement after acknowledgements; calls=${chatCalls}`);
+
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/guided-intake.png', fullPage: true });
-  console.log('guided-intake browser gate passed — intake question rendered, no false failure, no burned retry, answer landed a build.');
+  console.log('guided-intake browser gate passed — intake question rendered, no false failure, no burned retry, answer landed a build, acknowledgements preserved Preview, real follow-up edit landed.');
   await browser.close();
   process.exit(0);
 } catch (error) {
