@@ -48,6 +48,7 @@ test('ordinary visual request for a linear function stays on the graph renderer'
   assert.equal(interpretation.representation.primaryRepresentation, 'graph');
   assert.equal(interpretation.representation.rendererKind, 'graph');
   assert.doesNotMatch(formatStudyCognitiveDirective(interpretation), /kind="linear-function"/);
+  assert.match(formatStudyCognitiveDirective(interpretation), /quantora-study-picture/);
 });
 
 test('unsupported interactive mathematics does not borrow the linear-function lab', () => {
@@ -68,11 +69,12 @@ test('unsupported interactive mathematics does not borrow the linear-function la
   assert.match(directive, /do NOT emit <quantora-study-picture> or <quantora-study-lab> tags/);
 });
 
-test('operator representation coverage includes the linear-function lab', () => {
+test('operator representation coverage includes the linear-function lab and distinguishes it from timed animation', () => {
   const row = reportStudyRepresentationCoverage().rows.find((item) => item.requestClass === 'visual_linear_function_lab');
   assert.deepEqual(row, {
     requestClass: 'visual_linear_function_lab',
     rendererKind: 'linear-function-lab',
+    deliveryClass: 'interactive_lab',
     outcome: 'renderer_available',
   });
 });

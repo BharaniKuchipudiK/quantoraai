@@ -1,10 +1,11 @@
 import {
   resolveStudyRepresentationCapability,
   STUDY_REPRESENTATION_CAPABILITY_VERSION,
+  type StudyRepresentationDeliveryClass,
   type StudyRepresentationRendererKind,
 } from './study-representation-capabilities.js';
 
-export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-10.1';
+export const STUDY_REPRESENTATION_COVERAGE_VERSION = 'study-representation-coverage-2026-09-10.2';
 
 export type StudyRepresentationCoverageOutcome = 'renderer_available' | 'renderer_unavailable';
 
@@ -30,6 +31,7 @@ export type StudyRepresentationCoverageRequestClass =
 export type StudyRepresentationCoverageRow = {
   requestClass: StudyRepresentationCoverageRequestClass;
   rendererKind: StudyRepresentationRendererKind | null;
+  deliveryClass: StudyRepresentationDeliveryClass | null;
   outcome: StudyRepresentationCoverageOutcome;
 };
 
@@ -42,7 +44,8 @@ export type StudyRepresentationCoverageReport = {
 
 /**
  * Closed probes for the operator catalog. Context strings stay server-side;
- * the report emits only request class, renderer family, and availability.
+ * the report emits only request class, renderer family, delivery class and
+ * availability. This is capability coverage, not learner traffic.
  */
 const COVERAGE_PROBES = Object.freeze([
   { requestClass: 'visual_mechanics', context: 'Newton second law and friction' },
@@ -60,7 +63,7 @@ const COVERAGE_PROBES = Object.freeze([
   { requestClass: 'visual_timeline', context: 'timeline of events in 1914 and 1918' },
   { requestClass: 'visual_number_line', context: 'number line from -3 to 5, mark 2' },
   { requestClass: 'visual_fraction', context: 'show equivalent fractions 2/3 and 4/6 visually' },
-  { requestClass: 'visual_before_after', context: 'show the before/after state change from ice to liquid water' },
+  { requestClass: 'visual_before_after', context: 'Before/after: ice -> liquid water' },
   { requestClass: 'visual_unsupported', context: 'Explain opportunity cost in simple terms' },
 ] as const satisfies ReadonlyArray<{ requestClass: StudyRepresentationCoverageRequestClass; context: string }>);
 
@@ -79,6 +82,7 @@ export function reportStudyRepresentationCoverage(): StudyRepresentationCoverage
       return {
         requestClass: probe.requestClass,
         rendererKind: capability?.rendererKind || null,
+        deliveryClass: capability?.deliveryClass || null,
         outcome: capability ? 'renderer_available' : 'renderer_unavailable',
       };
     }),

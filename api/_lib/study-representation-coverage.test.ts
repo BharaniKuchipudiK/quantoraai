@@ -16,12 +16,12 @@ function declaredRendererKinds(): string[] {
   const source = read('api/_lib/study-representation-capabilities.ts');
   const union = source.slice(
     source.indexOf('export type StudyRepresentationRendererKind'),
-    source.indexOf('export type StudyRepresentationCapability'),
+    source.indexOf('export type StudyRepresentationDeliveryClass'),
   );
   return [...union.matchAll(/'([a-z0-9-]+)'/g)].map((match) => match[1]);
 }
 
-test('the coverage catalog names every renderer family and keeps unsupported unavailable', () => {
+test('the coverage catalog names every renderer family, delivery class, and keeps unsupported unavailable', () => {
   const report = reportStudyRepresentationCoverage();
   assert.equal(report.version, STUDY_REPRESENTATION_COVERAGE_VERSION);
   assert.equal(report.capabilityVersion, STUDY_REPRESENTATION_CAPABILITY_VERSION);
@@ -35,16 +35,21 @@ test('the coverage catalog names every renderer family and keeps unsupported una
     assert.equal(available.has(kind), true, `coverage catalog is missing renderer family ${kind}`);
   }
 
+  const classes = new Set(report.rows.map((row) => row.deliveryClass).filter(Boolean));
+  assert.deepEqual([...classes].sort(), ['interactive_lab', 'micro_visual', 'static_diagram', 'timed_animation'].sort());
+
   const unsupported = report.rows.find((row) => row.requestClass === 'visual_unsupported');
   assert.equal(unsupported?.outcome, 'renderer_unavailable');
   assert.equal(unsupported?.rendererKind, null);
+  assert.equal(unsupported?.deliveryClass, null);
 
   for (const row of report.rows) {
-    assert.deepEqual(Object.keys(row).sort(), ['outcome', 'rendererKind', 'requestClass'].sort());
+    assert.deepEqual(Object.keys(row).sort(), ['deliveryClass', 'outcome', 'rendererKind', 'requestClass'].sort());
     assert.equal('context' in row, false);
     assert.equal('prompt' in row, false);
     assert.equal('message' in row, false);
     assert.equal('caption' in row, false);
+    assert.equal('renderCaption' in row, false);
   }
 });
 
