@@ -1,0 +1,74 @@
+name: Project persistence contract
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/deployed-project-persistence.mjs'
+      - 'api/_lib/project-persistence-probe.test.js'
+      - '.github/workflows/project-persistence.yml'
+  deployment_status:
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: project-persistence-${{ github.event.pull_request.number || github.event.deployment.environment }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  persistence:
+    name: Deployed project save and conflict contract
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.event.deployment.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Test the probe without database or model calls
+        run: node --test api/_lib/project-persistence-probe.test.js
+      - name: Resolve the exact successful deployment
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_URL: ${{ github.event.deployment_status.environment_url }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.event.deployment.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          url=''
+          if [ "$EVENT_NAME" = 'deployment_status' ]; then
+            url="$EVENT_URL"
+          else
+            for attempt in $(seq 1 60); do
+              id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$TARGET_SHA&environment=Preview&per_page=10" --jq '.[0].id // empty')
+              if [ -n "$id" ]; then
+                url=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=10" --jq 'map(select(.state == "success"))[0].environment_url // empty')
+                [ -n "$url" ] && break
+              fi
+              sleep 10
+            done
+          fi
+          # Do not release either secret to a user-supplied or redirected host.
+          [[ "$url" =~ ^https://quantora-platform-[a-z0-9]+-sartho\.vercel\.app/?$ ]] || { echo 'No verified Quantora deployment URL'; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+      - name: Prove saves and non-retrying version conflicts through the real API
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          QUANTORA_DEPLOYMENT_SHA: ${{ steps.target.outputs.sha }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/deployed-project-persistence.mjs
