@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import './study-visual-delivery.css';
 import StudyFlashcards from './StudyFlashcards.jsx';
 import StudyVisualLab from './StudyVisualLab.jsx';
 import StudyNativeLabBoundary from './StudyNativeLabBoundary.jsx';

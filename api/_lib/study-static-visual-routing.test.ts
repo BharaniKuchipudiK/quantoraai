@@ -58,7 +58,11 @@ for (const probe of [
 
     const directive = formatStudyCognitiveDirective(interpretation);
     assert.match(directive, /including exactly one <quantora-study-picture caption=/i);
-    assert.match(directive, probe.caption);
+    // The prompt tag must encode ASCII arrows without introducing an HTML tag
+    // terminator. Assert the complete caption, not just an arrow-shaped substring.
+    const directiveTag = /<quantora-study-picture caption="([^"<>]+)" \/>/.exec(directive);
+    assert.ok(directiveTag);
+    assert.equal(directiveTag[1], metadata?.representation.renderCaption?.replace(/->/g, '→'));
   });
 }
 
