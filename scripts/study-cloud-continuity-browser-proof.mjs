@@ -117,7 +117,7 @@ async function scenario(mobile) {
     records.set(sourceKey, { revision: revision(), checkpoint: sourceRow.checkpoint });
     await savedButton.click();
     await b.page.locator(MISSION).waitFor({ state: 'visible' });
-    await b.page.getByRole('button', { name: 'Close Study AI', exact: true }).click();
+    await b.page.getByRole('dialog', { name: 'Study AI', exact: true }).getByRole('button', { name: 'Close Study AI', exact: true }).click();
     assert.equal(b.calls, before, 'Cloud Resume must not generate a model turn.');
     assert.equal(b.assessments, 0, 'Cloud Resume must not start an assessment.');
     assert.equal(await b.page.locator('[data-quantora-study-verified-result]').count(), 0);
