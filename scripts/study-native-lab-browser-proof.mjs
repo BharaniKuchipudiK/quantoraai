@@ -213,3 +213,6 @@ try {
   await scenario({ name: 'mobile-dark-reduced', theme: 'dark', mobile: true, reduced: true });
   await scenario({ name: 'unavailable-chunk', theme: 'dark', assetFailure: true });
 } finally { await browser.close(); }
+
+// Extend the same CI and exact-deployment proof without creating another workflow.
+await import('./study-static-visual-browser-proof.mjs');

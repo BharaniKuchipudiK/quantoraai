@@ -1,0 +1,6 @@
+/* Every Study visual shares this message-layout rule. Keeping it in the
+ * lazy circuit chunk made fractions and other first-rendered visuals overflow
+ * on small screens until a circuit happened to load. StudyMarkdown owns it. */
+html[data-quantora-domain="education"] .app-shell--studio .animate-slide-up > div:last-child {
+  min-width: 0;
+}

@@ -15,7 +15,14 @@ test('[was-red] build-contract repair runs once even when the turn budget funds 
   assert.equal(first.switchModel, false);
   assert.equal(first.reason, 'build-contract');
   assert.match(first.retryBrief, /ONE automatic artifact repair/i);
-  assert.match(first.retryBrief, /EXACTLY one complete self-contained HTML document/i);
+  // The one repair must preserve requested files. HTML is a conditional
+  // fallback for an unspecified web page, not a mandatory format override.
+  const preservation = first.retryBrief.indexOf("Preserve the original request's language, runtime, framework, required filenames and project layout.");
+  const webFallback = first.retryBrief.indexOf('Only for a web page request with no specified framework or file layout:');
+  const htmlFallback = first.retryBrief.indexOf('Return EXACTLY one complete self-contained HTML document');
+  assert.ok(preservation >= 0 && webFallback > preservation && htmlFallback > webFallback,
+    'the repair must preserve explicit file contracts before offering a conditional HTML fallback');
+  assert.match(first.retryBrief, /Do not replace a requested multi-file project or non-web deliverable with a webpage/);
   assert.match(first.retryBrief, /single ```html code fence/i);
   assert.match(first.retryBrief, /CSS-only/i);
 
