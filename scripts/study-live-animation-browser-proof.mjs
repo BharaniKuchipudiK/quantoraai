@@ -21,13 +21,23 @@ mkdirSync(dir, { recursive: true });
 const proof = { test: 'live-study-animation', deploymentSha: process.env.QUANTORA_DEPLOYMENT_SHA, origin: base.origin, mocked: ['shell-authentication-only'], turns: [], passed: false };
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'no-preference', serviceWorkers: 'block' });
+let shuttingDown = false;
 // Forward unchanged requests/responses, adding credentials only for this origin
 // and only this hop. A redirected request cannot inherit our secret headers.
 await context.route('**/*', async (route) => {
   const request = route.request();
   if (new URL(request.url()).origin !== base.origin) return route.continue();
-  const response = await route.fetch({ headers: { ...request.headers(), ...headers }, maxRedirects: 0, timeout: 180_000 });
-  return route.fulfill({ response });
+  try {
+    const response = await route.fetch({ headers: { ...request.headers(), ...headers }, maxRedirects: 0, timeout: 180_000 });
+    return await route.fulfill({ response });
+  } catch (error) {
+    // The app can emit a final best-effort trace while the proof closes the
+    // browser. Ignore only that known cancellation after every assertion has
+    // finished; any proxy failure during the test remains fatal.
+    const message = String(error?.message || error);
+    if (shuttingDown && /Request context disposed|Target page, context or browser has been closed/i.test(message)) return;
+    throw error;
+  }
 });
 const page = await context.newPage();
 page.setDefaultTimeout(20_000);
@@ -132,5 +142,6 @@ try {
   throw error;
 } finally {
   writeFileSync(`${dir}/live-study-proof.json`, JSON.stringify(proof, null, 2));
+  shuttingDown = true;
   await browser.close();
 }
