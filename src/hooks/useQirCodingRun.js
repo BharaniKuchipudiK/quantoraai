@@ -98,6 +98,9 @@ export function useQirCodingRun(options) {
   return {
     run,
     error,
+    // Current files travel with the historical Run; the header may veto a
+    // completion claim without rewriting the server-owned journal.
+    workspace: { goal: options.goal, vfs: options.vfs },
     beginModelAttempt,
     requestPremiumEscalation,
     reportModelFailure,
