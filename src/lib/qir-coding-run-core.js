@@ -7,6 +7,8 @@
  * keeps only a Run-id pointer.
  */
 
+import { missingRequestedDeliverables } from './requested-deliverables.js';
+
 const POINTER_PREFIX = 'quantora_qir_coding_run:';
 
 // Preview's assembly key is a full content fingerprint, not a short digest.
@@ -165,6 +167,49 @@ async function observePreview(run, failure) {
     },
   });
   return data;
+}
+
+/*
+ * A Preview can prove that index.html renders; it cannot prove that parser.py,
+ * cleaner.py and README.md exist just because the page prints those names.
+ * Record that distinction in the same durable observation stream QIR already
+ * trusts. This is verification evidence, not a runtime failure, and it keeps
+ * the candidate available for repair rather than promoting a false COMPLETE.
+ */
+async function observeRequestedDeliverablesFailure(run, missing = []) {
+  const artifact = currentArtifact(run);
+  if (!artifact || !run.cursor?.actionId || !missing.length) return run;
+  const observedAt = new Date().toISOString();
+  const observationId = id('deliverables-failure');
+  const names = missing.slice(0, 20).join(', ');
+  return requestQir({
+    action: 'coding.observe',
+    runId: run.runId,
+    observation: {
+      observationId,
+      runId: run.runId,
+      actionId: run.cursor.actionId,
+      artifactId: artifact.artifactId,
+      artifactGeneration: artifact.generation,
+      kind: 'verification',
+      status: 'failure',
+      evidence: [{
+        evidenceId: `${observationId}-evidence`,
+        source: 'verifier',
+        kind: 'artifact.requested_deliverables_missing',
+        actionId: run.cursor.actionId,
+        ref: artifact.ref,
+        observedAt,
+      }],
+      error: {
+        code: 'VERIFICATION_FAILURE',
+        message: `Requested deliverables are missing from the Coding Desk VFS: ${names}`.slice(0, 500),
+        retryable: true,
+        recoveryExhausted: false,
+      },
+      observedAt,
+    },
+  });
 }
 
 /**
@@ -504,6 +549,14 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
       }
       if (current.status === 'EXECUTING') current = accept(await observePreview(current, false));
       if (current.status !== 'VERIFYING') return current;
+
+      const missing = missingRequestedDeliverables(goal, vfs);
+      if (missing.length) {
+        current = accept(await observeRequestedDeliverablesFailure(current, missing));
+        void compactWorkingContext(current, `requested deliverables missing: ${missing.slice(0, 20).join(', ')}`);
+        return current;
+      }
+
       const promoted = await requestQir({
         action: 'coding.promote',
         runId: current.runId,
