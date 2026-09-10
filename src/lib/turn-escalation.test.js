@@ -41,6 +41,23 @@ test('[was-red] a fast failure keeps climbing: the budget, not a count, is the b
   assert.equal(mayRunAttempt(5, plan), true);
 });
 
+test('[was-red] recalculating after a failure does not move the absolute ceiling behind the next attempt', () => {
+  // Production failure: after two attempts, 108s remained. The old planner
+  // called that "2 affordable attempts" and used 2 as the ABSOLUTE ceiling,
+  // so attempt 3 was refused even though those were two NEW attempts.
+  const plan = planTurnEscalation({
+    elapsedMs: 67_000,
+    turnDeadlineMs: TURN_DEADLINE_MS,
+    engineCount: 5,
+    attemptsStarted: 2,
+  });
+
+  assert.equal(plan.remainingMs, 108_000);
+  assert.ok(plan.maxAttempts >= 4, `two more attempts should extend the absolute ceiling beyond 2, got ${plan.maxAttempts}`);
+  assert.equal(mayRunAttempt(3, plan), true, 'the first fresh fallback must be reachable');
+  assert.equal(mayRunAttempt(4, plan), true, 'the second affordable fallback must remain reachable');
+});
+
 test('[was-red] no doomed attempt: a spent budget stops the loop instead of padding it', () => {
   // The old arithmetic was Math.max(MIN, deadline - elapsed) — a FLOOR. With 3s
   // left it started a 20s attempt that could not finish, then reported the same
@@ -81,6 +98,15 @@ test('the loop is ALWAYS bounded — the law the old count was protecting', () =
     `2 engines + one same-engine brief repair is 3 rungs, got ${instantFailures.maxAttempts}`,
   );
   assert.equal(mayRunAttempt(99, instantFailures), false, 'no evidence ever authorises an unbounded climb');
+
+  const exhaustedCatalogue = planTurnEscalation({
+    elapsedMs: 1_000,
+    turnDeadlineMs: TURN_DEADLINE_MS,
+    engineCount: 2,
+    attemptsStarted: 3,
+  });
+  assert.equal(exhaustedCatalogue.mayAttempt, false, 'two engines plus one repair can never produce a fourth attempt');
+  assert.equal(exhaustedCatalogue.stopReason, 'catalogue-spent');
 });
 
 test('a turn always gets its first attempt, even with a hostile clock', () => {

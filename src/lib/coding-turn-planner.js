@@ -16,7 +16,7 @@ import {
 } from './shop-catalog-scale.js';
 import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-intent.js';
-import { isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
+import { isBuildAcknowledgement, isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
@@ -213,6 +213,31 @@ export function planCodingTurn({
     // became a build.
     isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: Boolean(codingDeskOpen) }),
   });
+
+  // Use the existing local-reply exit in useChatStream. A plain pass-through
+  // could be reclassified by the later lane planner and punished for emitting
+  // no files. This exit runs before model selection, skills, repair and writes.
+  if (buildSessionActive && !advisorBlocksPreviewBuild(studioDomain)
+    && !intakeAccept.expanded && isBuildAcknowledgement(raw)) {
+    return {
+      mode: 'interrupt',
+      isCodingTurn: false,
+      intent: { kind: 'acknowledgement', summary: 'Acknowledgement only; no changes requested.' },
+      skillsRequired: [],
+      skillsMissing: [],
+      feasible: true,
+      messageForModel: raw,
+      displayUserText,
+      statusLabel: '',
+      modelPlan: null,
+      interrupt: { kind: 'acknowledgement', reply: 'Thank you. No further changes made.', chips: [] },
+      proof: { mustHave: [], how: [] },
+      shop: null,
+      intakeAccept: null,
+      runSkillsFirst: false,
+      hints,
+    };
+  }
 
   const isCodingTurn = (
     resolveIsCodingRequest(messageForModel, {

@@ -33,7 +33,7 @@ export function resolveStudioPartnerStatus({
   previewRunStatus = '',
   // Observed signals for the progress line. Absent ones simply narrow what it
   // can say; none of them are inferred from elapsed time.
-  streamedBytes = 0,
+  streamedBytes = null,
   streamedPaths = [],
   previewCompiling = false,
   previewHealing = false,

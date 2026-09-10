@@ -33,9 +33,11 @@ function normalizeSkillIds(skillsRequired = []) {
  */
 export function planFromMessageSnapshot(snapshot, { messageForModel = '', displayUserText = '' } = {}) {
   if (!snapshot?.intent) return null;
+  // The local acknowledgement exit must survive message snapshot restoration.
+  const acknowledgement = snapshot.intent.kind === 'acknowledgement';
   return {
-    mode: 'execute',
-    isCodingTurn: true,
+    mode: acknowledgement ? 'pass' : 'execute',
+    isCodingTurn: !acknowledgement,
     intent: snapshot.intent,
     skillsRequired: normalizeSkillIds(snapshot.skillsRequired).map((id) => ({
       id,
@@ -43,7 +45,7 @@ export function planFromMessageSnapshot(snapshot, { messageForModel = '', displa
     })),
     messageForModel,
     displayUserText,
-    runSkillsFirst: snapshot.runSkillsFirst !== false,
+    runSkillsFirst: !acknowledgement && snapshot.runSkillsFirst !== false,
   };
 }
 

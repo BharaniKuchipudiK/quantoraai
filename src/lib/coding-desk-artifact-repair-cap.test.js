@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { resolveTurnRecovery } from './turn-recovery.js';
 
 test('[was-red] build-contract repair runs once even when the turn budget funds more attempts', () => {
@@ -24,9 +25,22 @@ test('[was-red] build-contract repair runs once even when the turn budget funds 
     artifactRepairCount: 1,
     code: 'BUILD_ARTIFACT_CONTRACT',
     failureDetail: 'the repaired reply still had no runnable page',
+    fallbackEngineName: 'Gemini Flash',
   });
-  assert.equal(second.retry, false);
-  assert.equal(second.reason, 'build-repair-exhausted');
+  assert.equal(second.retry, true, 'a fresh engine is a materially different recovery, not a repeated repair');
+  assert.equal(second.switchModel, true);
+  assert.equal(second.reason, 'build-contract-escalation');
+  assert.match(second.notice, /Gemini Flash/);
+  assert.match(second.retryBrief, /repair was already attempted/i);
+
+  const noFreshEngine = resolveTurnRecovery({
+    attempt: 2,
+    maxAttempts: 6,
+    artifactRepairCount: 1,
+    code: 'BUILD_ARTIFACT_CONTRACT',
+  });
+  assert.equal(noFreshEngine.retry, false);
+  assert.equal(noFreshEngine.reason, 'build-repair-exhausted');
 });
 
 test('[was-red] a transport attempt does not consume the one artifact repair when the caller owns explicit repair state', () => {
@@ -94,4 +108,21 @@ test('artifact repair cap does not remove transport failover', () => {
   assert.equal(transport.retry, true);
   assert.equal(transport.switchModel, true);
   assert.equal(transport.reason, 'route');
+});
+
+test('[was-red] Coding Desk is the sole artifact-repair owner and wires its repair counter', () => {
+  const handler = readFileSync(new URL('../../api/_lib/chat-handler.ts', import.meta.url), 'utf8');
+  const hook = readFileSync(new URL('../hooks/useChatStream.js', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(handler, /htmlRecoveryTried|recoverHtmlPreview|PREVIEW_HTML_RECOVERY/,
+    'the server must return a contract miss to Coding Desk, not secretly retry the same engine');
+  assert.match(hook, /let artifactRepairCount = 0/);
+  assert.match(hook, /artifactRepairCount,/,
+    'the live caller must pass explicit per-turn repair state');
+  assert.match(hook, /recovery\.reason === 'build-contract'\) artifactRepairCount \+= 1/,
+    'only the one same-engine behavioral repair consumes the repair allowance');
+  const markResponder = hook.indexOf('absorbServerEngines(completedServerEngineId ? [completedServerEngineId] : [])');
+  const assessRecovery = hook.indexOf("code: 'BUILD_ARTIFACT_CONTRACT'", markResponder);
+  assert.ok(markResponder >= 0 && assessRecovery > markResponder,
+    'a client-rejected response must mark the real server engine as spent before choosing its fallback');
 });

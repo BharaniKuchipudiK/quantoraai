@@ -1485,6 +1485,7 @@ export function useChatStream({
     const triedEngines = [];
     const spentEngineIds = new Set();
     let retryBrief = '';
+    let artifactRepairCount = 0;
     /*
      * Take the server at its word about what it actually ran.
      *
@@ -1524,18 +1525,23 @@ export function useChatStream({
      * self-healing standard requires, replacing a constant that stopped the
      * loop "merely because it tried once".
      */
-    const escalationNow = () => planTurnEscalation({
+    const escalationNow = (attemptsStarted = 0) => planTurnEscalation({
       elapsedMs: Date.now() - turnStartedAt,
       turnDeadlineMs,
       engineCount: (availableModels || []).filter((m) => m && m.available !== false && m.id).length,
+      attemptsStarted,
     });
     // The existing trace ledger records decisions, not prompts or source code.
     // A successful provider reply can still fail here; that boundary must be
     // visible without a screenshot or a guess about the missing reply body.
     const artifactBaseVfs = studioAssemblyBase(vfs || {}, visibleUserText || text, deskJob);
     const recoverTurn = (input) => {
-      const remaining = escalationNow();
-      const recovery = resolveBudgetedTurnRecovery({ ...input, hasExistingProject: Object.keys(artifactBaseVfs).length > 0 }, remaining);
+      const remaining = escalationNow(input.attempt);
+      const recovery = resolveBudgetedTurnRecovery({
+        ...input,
+        artifactRepairCount,
+        hasExistingProject: Object.keys(artifactBaseVfs).length > 0,
+      }, remaining);
       void recordClientBoundary(turnCorrelationId, 'browser.turn-attempt', 'failed', {
         detailCode: input.code || (input.timedOut ? 'attempt-timeout' : input.networkError ? 'network-error' : 'stream-truncated'),
         statusCode: input.status || null,
@@ -1564,11 +1570,14 @@ export function useChatStream({
     }).missionExhausted;
     const applyRecoveryRepairs = (recovery) => {
       qirFail(
-        recovery.reason === 'step-deadline' ? 'timeout' : recovery.reason === 'build-contract' ? 'contract' : 'transport',
+        recovery.reason === 'step-deadline'
+          ? 'timeout'
+          : recovery.reason?.startsWith('build-contract') ? 'contract' : 'transport',
         recovery.notice || recovery.reason || '',
         false,
       );
       if (recovery.retryBrief) retryBrief = recovery.retryBrief;
+      if (recovery.reason === 'build-contract') artifactRepairCount += 1;
       if (recovery.switchModel) {
         const fallback = nextFallbackEngine();
         if (fallback) targetModel = fallback;
@@ -1598,7 +1607,7 @@ export function useChatStream({
          * loop can never start work it already knows cannot land, and can never
          * climb past what the clock and the catalogue can pay for.
          */
-        const escalation = escalationNow();
+        const escalation = escalationNow(attempt - 1);
         if (attempt > 1 && !mayRunAttempt(attempt, escalation)) {
           const note = 'Quantora stopped recovery because this turn has no time left for another attempt. The previous attempt did not complete.';
           void recordClientBoundary(turnCorrelationId, 'browser.turn-recovery', 'skipped', { detailCode: 'budget-spent', budgetMs: escalation.remainingMs });
@@ -1691,7 +1700,7 @@ export function useChatStream({
                * remainder is a little less, and it may only shorten its budget
                * with this, never extend it.
                */
-              turnRemainingMs: escalationNow().remainingMs,
+              turnRemainingMs: escalation.remainingMs,
             })
           });
           /*
@@ -1782,6 +1791,7 @@ export function useChatStream({
           let streamedError = null;
           let travelPlaces = null;
           let travelDegraded = false;
+          let completedServerEngineId = '';
 
           while (true) {
             const { done, value } = await reader.read();
@@ -1850,6 +1860,7 @@ export function useChatStream({
                 } : m));
               }
               if (parsed.provider) {
+                if (parsed.modelId) completedServerEngineId = String(parsed.modelId);
                 if (Array.isArray(parsed.travelPlaces) && parsed.travelPlaces.length) {
                   travelPlaces = parsed.travelPlaces;
                 }
@@ -2113,7 +2124,7 @@ export function useChatStream({
               detailCode: artifactAssessment.detailCode,
               fileCount: Object.keys(artifactAssessment.assembled.vfs || {}).length,
               modelId: attemptEngineId(targetModel),
-              budgetMs: escalationNow().remainingMs,
+              budgetMs: escalationNow(attempt).remainingMs,
             });
           }
           if (
@@ -2192,11 +2203,17 @@ export function useChatStream({
             const artifactFailureDetail = artifactAssessment.detailCode === 'patch-conflict'
               ? 'the proposed patch did not match the current project; some requested changes could not be applied'
               : unchangedDeskProse ? UNCHANGED_DESK_FAILURE_DETAIL : 'the reply contained no runnable files for this project';
+            // The server accepted this engine's response, but the browser has
+            // now proved the artifact unusable. Mark the actual responder as
+            // spent before selecting a fresh engine; targetModel may still be
+            // the routing alias Auto and cannot identify what really ran.
+            absorbServerEngines(completedServerEngineId ? [completedServerEngineId] : []);
             const recovery = recoverTurn({
               attempt,
               code: 'BUILD_ARTIFACT_CONTRACT',
               hasPartialText: Boolean(currentText),
               failureDetail: artifactFailureDetail,
+              fallbackEngineName: nextFallbackEngine()?.name || null,
             });
             if (recovery.retry) {
               applyRecoveryRepairs(recovery);

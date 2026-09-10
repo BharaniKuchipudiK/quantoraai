@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { validateBuildArtifactResponse } from './build-artifact-contract.js';
+import {
+  recoverInterruptedBuildArtifactResponse,
+  validateBuildArtifactResponse,
+} from './build-artifact-contract.js';
 
 const website = `
 \`\`\`json filepath="package.json"
@@ -31,6 +35,79 @@ test('accepts an executable golden website contract', () => {
     ok: true,
     detailCode: 'build-artifact-valid',
   });
+});
+
+test('[was-red] a timed-out stream keeps every closed runnable file and drops its unfinished tail', () => {
+  const interrupted = `${website}\n\n\`\`\`jsx filepath="src/StillWriting.jsx"\nexport default function`;
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse(interrupted, 'simple-website'),
+    website.trim(),
+    '63 KB of completed files must not become zero files because the terminal event missed the deadline',
+  );
+});
+
+test('an interrupted response without a complete runnable artifact is never salvaged', () => {
+  const onlyPartial = '```jsx filepath="src/App.jsx"\nexport default function App(){';
+  assert.equal(recoverInterruptedBuildArtifactResponse(onlyPartial), null);
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse('```json filepath="package.json"\n{}\n```'),
+    null,
+    'a closed fence is not enough when Preview has no runnable entry',
+  );
+
+  const missingImportedFile = website
+    .replace(
+      'export default function App(){',
+      "import Card from './Card.jsx'; export default function App(){",
+    )
+    + '\n\n```jsx filepath="src/Card.jsx"\nexport default function Card(){';
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse(missingImportedFile, 'simple-website'),
+    null,
+    'a closed entry that imports the unfinished file is not a runnable recovered project',
+  );
+});
+
+test('a complete standalone HTML document survives a late provider disconnect', () => {
+  const html = '<!DOCTYPE html><html><body><button>Ready</button></body></html>';
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse(`${html}\nThe provider began more prose but never finished`),
+    html,
+  );
+
+  const unclosedFence = `Built the first working slice.\n\n\`\`\`html\n${html}\nThe stream ended before its closing fence`;
+  assert.equal(
+    recoverInterruptedBuildArtifactResponse(unclosedFence),
+    `Built the first working slice.\n\n\`\`\`html\n${html}`,
+    'a closed HTML document is usable even when the surrounding Markdown fence never closed',
+  );
+});
+
+test('the live handler salvages only named stream interruptions and emits the recovered files', () => {
+  const handler = readFileSync(new URL('./chat-handler.ts', import.meta.url), 'utf8');
+  assert.match(
+    handler,
+    /error\?\.code === 'INFERENCE_ATTEMPT_TIMEOUT' \|\| error\?\.code === 'INFERENCE_NO_CONTENT'/,
+    'ordinary provider and contract failures must not be waved through',
+  );
+  for (const providerLoop of ['const iterator = stream[Symbol.asyncIterator]();', "let buffer = '';"]) {
+    const start = handler.indexOf(providerLoop);
+    const attemptDeadline = handler.indexOf('if (attemptRemainingMs <= 0)', start);
+    const turnDeadline = handler.indexOf("assertBudget(startTime, turnBudgetMs, 'chat turn')", start);
+    assert.ok(
+      start >= 0 && attemptDeadline > start && turnDeadline > attemptDeadline,
+      `${providerLoop} must classify the final shared deadline as a recoverable attempt timeout`,
+    );
+  }
+  assert.match(handler, /recoverInterruptedBuildArtifactResponse\([\s\S]*?attemptReply/);
+  assert.match(handler, /sse\.text\(recoveredArtifact\)/, 'the recovered files must reach Coding Desk');
+  const recoveryStart = handler.indexOf('if (recoveredArtifact)');
+  const delivery = handler.indexOf('sse.text(recoveredArtifact)', recoveryStart);
+  const bookkeeping = handler.indexOf('recordInferenceRouteSuccess(providerCircuitStore, route)', recoveryStart);
+  assert.ok(
+    delivery > recoveryStart && bookkeeping > delivery,
+    'deadline recovery must deliver files before any health-store round trip',
+  );
 });
 
 test('rejects opaque-origin storage before committing a model route', () => {

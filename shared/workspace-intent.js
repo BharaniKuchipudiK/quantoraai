@@ -1,5 +1,6 @@
 import { advisorBlocksPreviewBuild } from './build-intent.js';
 import { asksForRepositoryWork } from './repo-work-intent.js';
+import { isBuildAcknowledgement } from './build-session.js';
 
 const WORKSPACE_NOUN = /\b(app|application|website|site|home ?page|homepage|landing page|page|code|component|preview|workspace|canvas|presentation|deck|slide|document|spreadsheet|workbook)\b/i;
 const BUILD_INTENT = /\b(build|create|develop|design|implement|code|prototype)\b/i;
@@ -14,6 +15,8 @@ export function shouldKeepWorkspaceForPrompt({ prompt = '', hasWorkspace = false
   if (!hasWorkspace) return false;
   const text = String(prompt || '').trim();
   if (!text) return true;
+  // Keep the current preview visible without treating thanks as an edit.
+  if (isBuildAcknowledgement(text)) return true;
   if (EXPLICIT_REFERENCE.test(text)) return true;
   if (BUILD_INTENT.test(text) && WORKSPACE_NOUN.test(text)) return true;
   if (EDIT_INTENT.test(text) && (WORKSPACE_NOUN.test(text) || UI_TARGET.test(text) || ARTIFACT_ITERATION.test(text) || DESK_FEATURE.test(text))) return true;
@@ -46,7 +49,7 @@ export function shouldKeepWorkspaceForPrompt({ prompt = '', hasWorkspace = false
  * until there is actually code open.
  */
 export function shouldRefineRunningDesk({ prompt = '', hasDeskFiles = false, studioDomain = null } = {}) {
-  if (!hasDeskFiles) return false;
+  if (!hasDeskFiles || isBuildAcknowledgement(prompt)) return false;
   if (advisorBlocksPreviewBuild(studioDomain)) return false;
   if (shouldKeepWorkspaceForPrompt({ prompt, hasWorkspace: true })) return true;
   return asksForRepositoryWork(prompt);

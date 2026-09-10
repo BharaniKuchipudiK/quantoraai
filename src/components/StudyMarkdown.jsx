@@ -67,7 +67,7 @@ export default function StudyMarkdown({ text = '', topic = '', studyRouting = nu
   // render a model/server-authored Study tag, but it must never manufacture a
   // new subject picture by scanning generated prose. That old fallback caused
   // stale mechanics diagrams to appear on study-plan and progress-review turns.
-  const segments = splitStudySegments(decorateStudyMessage(polished, activeTopic), activeTopic);
+  const segments = splitStudySegments(decorateStudyMessage(polished, activeTopic, studyRouting), activeTopic, studyRouting);
   const flashcards = segments.filter((segment) => segment.type === 'flashcard');
   const firstFlashcardIndex = segments.findIndex((segment) => segment.type === 'flashcard');
   const firstMarkdownIndex = segments.findIndex((segment) => segment.type === 'md');
