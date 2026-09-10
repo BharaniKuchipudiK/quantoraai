@@ -7,6 +7,7 @@ import {
   directStudyLearningExperience,
   STUDY_LEARNING_EXPERIENCE_DIRECTOR_VERSION,
 } from './study-learning-experience-director.js';
+import { STUDY_REPRESENTATION_CAPABILITY_VERSION } from './study-representation-capabilities.js';
 
 function learnerModel(move: StudyNextLearningMove, overrides: Partial<StudyLearnerModel> = {}): StudyLearnerModel {
   return {
@@ -51,7 +52,7 @@ function active(representation: StudyActiveLearningContext['representationCapabi
 }
 
 const linearLab = {
-  version: 'study-representation-capability-2026-09-09.3',
+  version: STUDY_REPRESENTATION_CAPABILITY_VERSION,
   conceptFamily: 'linear_function',
   representation: 'simulation_or_lab',
   rendererKind: 'linear-function-lab',
