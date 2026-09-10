@@ -55,9 +55,41 @@ export function requestedDeliverablePaths(prompt = '') {
   return found.length >= 2 ? found : [];
 }
 
+/**
+ * Source availability, not syntax or execution proof. Keep this first content
+ * guard limited to explicitly requested Python bundles and their documentation;
+ * website/React contracts retain their existing behavior.
+ */
+function hasPythonBundleContent(path, entry) {
+  const content = typeof entry === 'string'
+    ? entry
+    : entry && Object.prototype.hasOwnProperty.call(entry, 'content') && typeof entry.content === 'string'
+      ? entry.content
+      : null;
+  if (content === null) return false;
+  // Empty text is still a real file (for example __init__.py or a requested
+  // scaffold). Semantic completeness belongs to task-specific verification.
+  if (!/\.py$/i.test(path)) return true;
+  // Skip leading HTML comments linearly; a repeated wildcard regex can
+  // backtrack on model-controlled input. Python string literals are untouched.
+  let source = content.trimStart();
+  while (source.startsWith('<!--')) {
+    const end = source.indexOf('-->');
+    if (end === -1) return false;
+    source = source.slice(end + 3).trimStart();
+  }
+  // A rendered code panel renamed to .py is still HTML, not Python source.
+  return !/^(?:<!doctype\s+html\b|<html[\s>])/i.test(source);
+}
+
 export function missingRequestedDeliverables(prompt = '', vfs = {}) {
   const requested = requestedDeliverablePaths(prompt);
   if (!requested.length) return [];
-  const present = new Set(Object.keys(vfs || {}).map(normalizeRequestedDeliverablePath).filter(Boolean));
+  const inspectPythonBundle = requested.some((path) => /\.py$/i.test(path))
+    && requested.every((path) => /\.(?:py|md|txt)$/i.test(path));
+  const present = new Set(Object.keys(vfs || {})
+    .filter((path) => !inspectPythonBundle
+      || hasPythonBundleContent(normalizeRequestedDeliverablePath(path), vfs[path]))
+    .map(normalizeRequestedDeliverablePath).filter(Boolean));
   return requested.filter((path) => !present.has(path));
 }

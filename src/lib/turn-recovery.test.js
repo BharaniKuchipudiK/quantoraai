@@ -15,7 +15,8 @@ test('a build-contract failure heals itself instead of asking the user to retry'
   const decision = resolveTurnRecovery({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT' });
   assert.equal(decision.retry, true);
   assert.equal(decision.reason, 'build-contract');
-  assert.match(decision.notice, /Rebuilding once/);
+  assert.match(decision.notice, /Repairing once while preserving the requested format/);
+  assert.doesNotMatch(decision.notice, /Rebuilding once as a self-contained page/);
 });
 
 test('[was-red] forbidden Preview storage gets a diagnosis-specific repair', () => {
