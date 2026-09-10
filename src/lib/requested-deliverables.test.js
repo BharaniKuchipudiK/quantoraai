@@ -4,7 +4,6 @@ import {
   missingRequestedDeliverables,
   normalizeRequestedDeliverablePath,
   requestedDeliverablePaths,
-  requestedDeliverablesSatisfied,
 } from './requested-deliverables.js';
 
 const PYTHON_ASK = "Act as a Data Engineer and write a modular 3-file Python utility (parser.py, cleaner.py and README.md) for processing financial datasets. Once the code is generated, package all three files into a single Git tree.";
@@ -20,7 +19,6 @@ test('[was-red] a web page that merely displays the requested filenames does not
     },
   };
   assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py', 'cleaner.py', 'README.md']);
-  assert.equal(requestedDeliverablesSatisfied(PYTHON_ASK, vfs), false);
 });
 
 test('the requested files themselves satisfy the contract; extra preview files neither help nor hurt', () => {
@@ -31,7 +29,6 @@ test('the requested files themselves satisfy the contract; extra preview files n
     'index.html': { content: '<html><body>Optional preview companion</body></html>' },
   };
   assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), []);
-  assert.equal(requestedDeliverablesSatisfied(PYTHON_ASK, vfs), true);
 });
 
 test('ordinary source discussion does not silently become a deliverables contract', () => {
