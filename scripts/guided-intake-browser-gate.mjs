@@ -40,6 +40,9 @@ const context = await browser.newContext({ viewport: { width: 1600, height: 1000
 const page = await context.newPage();
 
 let chatCalls = 0;
+let verificationCalls = 0;
+let repairCalls = 0;
+const requestFacts = [];
 const guidedFlags = [];
 
 function sseBody(text) {
@@ -105,8 +108,22 @@ await page.route('**/api/**', async (route) => {
     });
   }
   if (path === '/api/chat') {
-    chatCalls += 1;
     const body = request.postDataJSON?.() || {};
+    const task = body.task || 'chat';
+    requestFacts.push({ task, message: String(body.message || '').slice(0, 180) });
+    // /api/chat also carries preview verification and repair. Returning the
+    // model's SSE reply to its JSON verifier hid which operation actually ran.
+    if (task === 'verify-build') {
+      verificationCalls += 1;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        score: 100, passed: true, issues: [], checks: [], summary: 'Synthetic fixture verification passed.',
+      }) });
+    }
+    if (task === 'repair') {
+      repairCalls += 1;
+      return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'Unexpected repair of a working fixture.' }) });
+    }
+    chatCalls += 1;
     guidedFlags.push(body.guidedBuild === true);
     const reply = chatCalls === 1 ? compliantIntakeReply
       : chatCalls === 2 ? boutiqueSiteReply
@@ -189,7 +206,14 @@ try {
     throw new Error(`Preview never rendered the expected fixture heading: ${expected}`);
   }
   const workingFrame = await frameWithHeading('The Silk Thread Boutique');
-  await page.waitForTimeout(3_000);
+  // Finish the original build's real verification before judging a subsequent
+  // local reply. Its asynchronous verifier shares /api/chat with generation.
+  const verificationDeadline = Date.now() + 15_000;
+  while (verificationCalls === 0 && Date.now() < verificationDeadline) await page.waitForTimeout(100);
+  if (verificationCalls === 0) throw new Error('The built fixture never requested preview verification.');
+  await page.waitForTimeout(1_000);
+  if (chatCalls !== 2 || repairCalls !== 0) throw new Error('The initial working fixture unexpectedly generated or repaired again.');
+  const settledRequests = requestFacts.length;
   await workingFrame.locator('[data-testid="boutique-browse"]').evaluate((button) => {
     button.setAttribute('data-ack-sentinel', 'keep-this-working-page');
   });
@@ -203,7 +227,9 @@ try {
       document.querySelectorAll('[data-quantora-message-fork="true"]').length === expected
     ), completed + 1, { timeout: 10_000 });
     await page.waitForTimeout(1_000);
-    if (chatCalls !== 2) throw new Error(`Acknowledgement started an unwanted model/build call: ${acknowledgement}; calls=${chatCalls}`);
+    if (chatCalls !== 2 || repairCalls !== 0 || requestFacts.length !== settledRequests) {
+      throw new Error(`Acknowledgement started an unwanted generation, verification or repair: ${acknowledgement}; requests=${JSON.stringify(requestFacts.slice(settledRequests))}`);
+    }
     await visible(page.locator('[data-quantora-code-workspace="true"]').first(), 'Acknowledgement closed the working Coding Desk.');
     const sentinel = await workingFrame.locator('[data-testid="boutique-browse"]').getAttribute('data-ack-sentinel').catch(() => null);
     if (sentinel !== 'keep-this-working-page') throw new Error('Acknowledgement replaced or remounted the working preview.');
@@ -224,7 +250,7 @@ try {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/guided-intake-failure.png', fullPage: true }).catch(() => {});
   console.error('guided-intake browser gate FAILED:', error?.stack || error);
-  console.error(`Evidence: chatCalls=${chatCalls}, guidedFlags=${JSON.stringify(guidedFlags)}`);
+  console.error(`Evidence: chatCalls=${chatCalls}, verificationCalls=${verificationCalls}, repairCalls=${repairCalls}, guidedFlags=${JSON.stringify(guidedFlags)}, requests=${JSON.stringify(requestFacts)}`);
   await browser.close().catch(() => {});
   process.exit(1);
 }
