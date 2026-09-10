@@ -138,9 +138,23 @@ async function scenario(mobile) {
     assert.equal(await b.page.locator('[data-quantora-study-session-resume="available"]').count(), 0);
     b.account = 'other-cloud-student@quantora.test';
     await b.page.reload({ waitUntil: 'domcontentloaded' });
+    await enterSignedInStudio(b.page);
+    // Account switching correctly clears the previous user's active workspace.
+    // Assert that boundary, then enter the same topic as the new account itself.
+    assert.equal(await b.page.locator(MISSION).count(), 0);
+    assert.equal(await b.page.locator('[data-quantora-study-session-resume="available"]').count(), 0);
+    assert.ok(records.get(sourceKey)?.checkpoint, 'The other account must still have a cloud lesson to isolate.');
+    if (mobile) await b.page.setViewportSize({ width: 1440, height: 1000 });
+    await b.page.locator('[data-quantora-advisor="education"]').first().click();
+    await b.page.waitForFunction(() => document.documentElement.dataset.quantoraDomain === 'education');
+    if (mobile) await b.page.setViewportSize({ width: 390, height: 844 });
+    const newAccountCalls = b.calls;
+    const newAccountInput = b.page.locator('.app-shell--studio textarea').first();
+    await newAccountInput.fill('Teach me motion graphs'); await newAccountInput.press('Enter');
     await b.page.locator('[data-quantora-study-board="true"]').waitFor({ state: 'visible' });
     history = await compass(b.page);
     assert.equal(await history.locator('[data-quantora-study-cloud-resume="true"]').count(), 0);
+    assert.equal(b.calls, newAccountCalls + 1, 'Only the new account’s explicit lesson request may call the model.');
     assert.equal(b.assessments, 0);
     console.log(`Study cloud continuity passed: ${mobile ? 'mobile' : 'desktop'} — independent browser + new chat, fresh pre-resume check, discard tombstone, account isolation, partial history, zero automatic model/assessment calls.`);
   } catch (error) {
