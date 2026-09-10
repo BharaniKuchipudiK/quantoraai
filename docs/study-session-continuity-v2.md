@@ -13,8 +13,10 @@ learner-model, assessment, evidence or durable agent-runtime authority.
   learner explicitly chooses Resume lesson or Discard saved position.
 - Scope is account + saved chat + matching lesson topic. A record lasts at most
   seven days; only twelve saved chats per account are retained.
-- Prior hint use is a bounded historical observation with a twenty-minute
-  display window. It is never injected as fresh working state or mastery.
+- The live recovery hook does not copy the global hint/working-state snapshot: it
+  lacks account/chat provenance. Historical hint continuity remains pending. The
+  checkpoint parser bounds optional historical observations but they are not
+  written by this slice and never become fresh working state or mastery.
 - Resume uses the existing mission reducer. Review resumes at verified_check,
   not at a claimed pass. Attempt IDs, grades, answers, mastery, and confirmed
   misconceptions are never restored. Stored canonical concept keys are not
@@ -37,7 +39,11 @@ source of those verified facts; browser checkpoints are not a substitute.
 Pure checkpoint tests cover scope isolation, retention, corrupt storage,
 allowlisted fields, safe progress-only replay, support expiry and quota failure.
 Integration tests replay saved phases through the actual mission reducer and
-check the mounted session/hook wiring. Full repository CI and an actual browser
-reload/resume journey are release requirements, not inferred from unit tests.
+check the mounted session/hook wiring, including exclusion of unscoped hint
+state. The existing blocking Electricity browser gate imports a real built-app
+continuity journey: start, actual save, reload, keyboard/touch Resume, discard,
+tampered grade rejection, a fresh explicitly requested check and account
+isolation. API responses are fixtures; they are not real model generation.
+Full repository CI and this browser journey must pass for the release head.
 Live-model acceptance remains NOT RUN under the spending pause. This change
 must not close #677 or be described as completion of all PR12 requirements.

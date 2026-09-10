@@ -6,8 +6,6 @@ import {
   saveStudyContinuity,
   studyContinuityResumeEvents,
 } from '../lib/study-session-continuity.js';
-import { readStudyWorkingState } from '../lib/study-working-state.js';
-import { STUDY_LEARNING_INTERACTION_EVENT } from '../lib/study-learning-interactions.js';
 
 function browserStorage() {
   try { return window.localStorage; } catch { return null; }
@@ -55,7 +53,9 @@ export function useStudySessionContinuity({ sessionId, topic, mission, dispatchM
       const current = currentMission.current;
       if (current?.status === 'active') {
         const saved = makeStudyContinuityCheckpoint({
-          mission: current, sessionId, workingState: readStudyWorkingState(),
+          // The global working-state snapshot has no authenticated chat
+          // provenance. Do not copy another chat's hint history into this one.
+          mission: current, sessionId,
         });
         if (saved && saveStudyContinuity(browserStorage(), identity, saved)) activeScope.current = scopeId;
       } else if (current?.status === 'completed' || activeScope.current === scopeId) {
@@ -66,8 +66,7 @@ export function useStudySessionContinuity({ sessionId, topic, mission, dispatchM
       }
     };
     persist();
-    window.addEventListener(STUDY_LEARNING_INTERACTION_EVENT, persist);
-    return () => window.removeEventListener(STUDY_LEARNING_INTERACTION_EVENT, persist);
+    return undefined;
   }, [identity, mission, scopeId, sessionId]);
 
   const resume = useCallback(() => {

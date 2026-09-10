@@ -38,4 +38,5 @@ test('session identity reaches the mounted shell and both resume controls are wi
   assert.match(hook, /currentMission.current\?\.status !== 'idle'/);
   assert.match(hook, /active = false; controller.abort\(\)/);
   assert.doesNotMatch(hook, /\/api\/chat|\/api\/study-assessment|onSend|onAsk|VERIFIED_RESULT/);
+  assert.doesNotMatch(hook, /readStudyWorkingState|STUDY_LEARNING_INTERACTION_EVENT/, 'Global observations without account/chat provenance must not enter checkpoints.');
 });
