@@ -24,7 +24,7 @@ test('mission goal is a short title, not a Help-me prompt dump', () => {
     messages: [{ sender: 'user', text: raw }],
     hasPreview: false,
   });
-  assert.equal(mission.lead, 'Building');
+  assert.equal(mission.lead, 'Project');
   assert.equal(mission.goal, goal);
   assert.ok(mission.goal.length < raw.length / 2);
 });

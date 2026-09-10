@@ -30,12 +30,31 @@
  * THE RULE
  *
  * Once this session has asked for something to be built, later turns belong to
- * that build unless they are plainly a question. Questions stay chat, so "how
- * does this work?" gets an answer rather than a rebuild. Everything else is
- * work on the thing we are making.
+ * that build unless they are plainly a question or an acknowledgement.
+ * Remembering the project does not authorize changing it: "Excellent work"
+ * is gratitude, while "Excellent work — now add a filter" is still work.
  */
 
-/** Pure questions keep their answer. Everything else in a build session is work. */
+/**
+ * A complete acknowledgement, not a positive keyword anywhere in a request.
+ * Keep confirmations (yes/okay/proceed) out: they may answer a pending action.
+ * Unknown words, questions and mixed praise + instructions fall through.
+ * Bounded before matching so this small grammar cannot scan a whole document.
+ */
+const ACK_PHRASE = '(?:(?:thanks|thank you)(?: so much| a lot)?(?: for (?:your )?(?:help|work|support))?|(?:excellent|great|good|nice|amazing|brilliant|awesome)(?: work| job)?|well done|perfect|looks good|(?:i )?(?:really )?appreciate (?:it|your (?:help|work)))';
+const BUILD_ACKNOWLEDGEMENT = new RegExp(`^(?:${ACK_PHRASE})(?: (?:and )?(?:${ACK_PHRASE}))*(?: (?:bro|mate))?$`, 'i');
+
+export function isBuildAcknowledgement(text = '') {
+  if (typeof text !== 'string' || !text.trim() || text.length > 240 || /[?？]/u.test(text)) return false;
+  const normalized = text
+    .replace(/(?:👍|🙏|👏|🙌|🎉)(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}])?/gu, ' ')
+    .replace(/[.!,:;…—–-]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return BUILD_ACKNOWLEDGEMENT.test(normalized);
+}
+
+/** Pure questions keep their answer; acknowledgements never authorize a build. */
 const QUESTION_ONLY = /^(how|what|why|when|where|which|who|whose|should|could|would|is|are|was|were|do|does|did|can|will|explain|tell me|help me understand)\b/i;
 
 /**
@@ -168,7 +187,7 @@ export function isBuildSessionActive({
 export function turnBelongsToBuild({ text = '', buildSessionActive = false } = {}) {
   if (!buildSessionActive) return false;
   const t = String(text || '').trim();
-  if (!t) return false;
+  if (!t || isBuildAcknowledgement(t)) return false;
   if (!QUESTION_ONLY.test(t)) return true;
   /*
    * A question about the work is still about the work — but it has to BE about
