@@ -51,11 +51,12 @@ function active(representation: StudyActiveLearningContext['representationCapabi
 }
 
 const linearLab = {
-  version: 'study-representation-capability-2026-09-09.3',
-  conceptFamily: 'linear_function',
+  version: 'study-representation-capability-2026-09-10.1',
   representation: 'simulation_or_lab',
   rendererKind: 'linear-function-lab',
   reason: 'linear_function_lab',
+  deliveryClass: 'interactive_lab',
+  renderCaption: null,
 } as StudyActiveLearningContext['representationCapability'];
 
 test('verified learner truth remains the highest pedagogy authority', () => {
