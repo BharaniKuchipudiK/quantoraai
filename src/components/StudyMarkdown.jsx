@@ -10,6 +10,7 @@ import StudyNativeLabBoundary from './StudyNativeLabBoundary.jsx';
 import StudyTutorNudge from './StudyTutorNudge.jsx';
 import StudyOpticsDiagram from './StudyOpticsDiagram.jsx';
 import { studyMicroVisualKind } from '../lib/study-micro-visuals.js';
+import { stripFalseNativeCapabilityDenial } from '../lib/study-native-capability-prose.js';
 import { decorateStudyMessage, enforceStudyRendererContract, splitStudySegments } from '../lib/study-pictures.js';
 import {
   studyActiveConcept,
@@ -60,7 +61,10 @@ function StudyReadingBlock({ text, textColor, components, blockKey }) {
 }
 
 export default function StudyMarkdown({ text = '', topic = '', studyRouting = null, isLight = false, textColor, components }) {
-  const routedText = enforceStudyRendererContract(text, studyRouting);
+  const routedText = stripFalseNativeCapabilityDenial(
+    enforceStudyRendererContract(text, studyRouting),
+    studyRouting,
+  );
   const polished = polishStudyTutorText(routedText);
   const nudge = studyTutorNudge(polished);
   const activeTopic = studyActiveConcept(topic, polished);
