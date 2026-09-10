@@ -18,8 +18,8 @@
  * and billed twice. So each diagnosis now carries its matched repair:
  *
  *   - behavioral failure (the model ignored the artifact contract)
- *       → same engine, ONE STRENGTHENED BRIEF: emit one self-contained HTML
- *         document so the browser and server cannot disagree about the entry.
+ *       → same engine, ONE STRENGTHENED BRIEF: preserve the requested format;
+ *         default to self-contained HTML only for an unspecified web page.
  *   - transport failure (route dead, gateway 5xx, stream dropped)
  *       → same brief, DIFFERENT ENGINE: `switchModel` tells the caller to
  *         re-run on a fallback. The notice names that engine only when the
@@ -83,10 +83,11 @@ const FATAL_STATUS = new Set([401, 402, 403]);
 const REFUSED_STATUS = new Set([429]);
 
 /**
- * The memory a rebuild attempt carries about the attempt that failed. The
- * repair deliberately collapses to ONE HTML entrypoint. A prior version asked
- * for "html/css/js files" and a model could satisfy those words with CSS alone;
- * the server then saw browser code while Coding Desk had no page to mount.
+ * The memory a rebuild attempt carries about the attempt that failed.
+ * useChatStream appends this to the original request. A mandatory HTML-only
+ * repair contradicted explicit React VFS requests (and non-web deliverables).
+ * Preserve their format; keep the complete-HTML fallback for an unspecified
+ * web page so a CSS-only reply still cannot masquerade as a runnable page.
  */
 function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
   const detail = String(failureDetail || '').trim();
@@ -107,9 +108,13 @@ function buildContractRetryBrief(failureDetail, hasExistingProject = false) {
     + (detail ? `: ${detail}` : '.')
     + ' This is the ONE automatic artifact repair for this turn.'
     + storageRepair
-    + ' Do not answer with prose, a plan, CSS-only, JS-only, or native source.'
+    + " Preserve the original request's language, runtime, framework, required filenames and project layout."
+    + ' When files or a framework were specified, return the complete corrected files in separate fenced code blocks with filepath attributes.'
+    + ' Do not replace a requested multi-file project or non-web deliverable with a webpage displaying its code.'
+    + ' Do not answer with prose, a plan, or incomplete file fragments.'
+    + ' Only for a web page request with no specified framework or file layout:'
     + ' Return EXACTLY one complete self-contained HTML document in a single ```html code fence.'
-    + ' Inline the CSS and JavaScript needed for the page so Quantora Preview has one unambiguous runnable entrypoint.'
+    + ' Inline the CSS and JavaScript needed for that page; do not return CSS-only or JS-only output in this case.'
   );
 }
 
@@ -224,7 +229,7 @@ export function resolveTurnRecovery({
       retryBrief: buildContractRetryBrief(failureDetail, hasExistingProject),
       notice: hasExistingProject
         ? 'That edit could not be applied. Repairing the change once while keeping the existing project…'
-        : 'Those files could not run in Preview. Rebuilding once as a self-contained page…',
+        : 'Those files failed verification. Repairing once while preserving the requested format…',
       reason: 'build-contract',
     };
   }
