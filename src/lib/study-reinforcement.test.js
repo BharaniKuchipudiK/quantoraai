@@ -67,16 +67,16 @@ test('transfer recognition requires a distinct server target, not a renamed curr
 
 test('a historical resolved misconception code does not celebrate another repair', () => {
   const result = grade();
-  result.learnerModel.misconception = { state: 'cleared', code: null, signalCount: 0, lastResolvedCode: 'representation_misread' };
+  result.learnerModel.misconception = { state: 'none_observed', code: null, signalCount: 2, reasonCodes: ['targeted_independent_correction'], lastResolvedCode: 'representation_misread' };
   assert.equal(recognition(result), null);
 });
 
-test('only an observed confirmed-to-cleared transition acknowledges misconception correction', () => {
+test('the canonical server correction projection acknowledges an observed confirmed-to-corrected transition', () => {
   const before = grade(1, { correct: false });
   before.learnerModel.misconception = { state: 'signal_observed', code: 'representation_misread', signalCount: 2 };
   const state = step(createStudyReinforcementState(scopeKey), 1, { result: before });
   const after = grade(2);
-  after.learnerModel.misconception = { state: 'cleared', code: null, signalCount: 0, lastResolvedCode: 'representation_misread' };
+  after.learnerModel.misconception = { state: 'none_observed', code: null, signalCount: 2, reasonCodes: ['targeted_independent_correction'], lastResolvedCode: 'representation_misread' };
   const repaired = step(state, 2, { result: after });
   assert.equal(repaired.feedback?.kind, 'repair');
   const later = grade(3);
@@ -86,12 +86,42 @@ test('only an observed confirmed-to-cleared transition acknowledges misconceptio
   assert.equal(step(state, 2, { result: after }).feedback, null);
 });
 
+test('correction requires the explicit server reason and no active misconception code', () => {
+  const before = grade(1, { correct: false });
+  before.learnerModel.misconception = { state: 'signal_observed', code: 'representation_misread', signalCount: 2 };
+  const state = step(createStudyReinforcementState(scopeKey), 1, { result: before });
+  const after = grade(2);
+  after.learnerModel.misconception = {
+    state: 'none_observed', code: null, signalCount: 2,
+    reasonCodes: ['targeted_independent_correction'], lastResolvedCode: 'representation_misread',
+  };
+  assert.equal(step(state, 2, { result: after }).feedback?.kind, 'repair');
+  for (const changes of [
+    { reasonCodes: undefined }, { reasonCodes: [] }, { reasonCodes: 'targeted_independent_correction' },
+    { reasonCodes: ['unrelated_success'] }, { code: 'representation_misread' },
+    { state: 'cleared' }, { state: 'needs_confirmation' },
+  ]) {
+    const result = structuredClone(after);
+    Object.assign(result.learnerModel.misconception, changes);
+    assert.equal(step(state, 2, { result }).feedback, null);
+  }
+});
+
+test('correction metadata is reduced to a bounded flag, not retained as raw reason text', () => {
+  const result = grade(1);
+  result.learnerModel.misconception.reasonCodes = ['targeted_independent_correction', 'PRIVATE REASON TEXT'];
+  const state = step(createStudyReinforcementState(scopeKey), 1, { result });
+  assert.equal(state.previous.targetedCorrection, true);
+  assert.equal(state.feedback, null);
+  assert.doesNotMatch(JSON.stringify(state), /PRIVATE REASON TEXT|reasonCodes/);
+});
+
 test('one candidate or same-count replay cannot become a confirmed repair', () => {
   const before = grade(1, { correct: false });
   before.learnerModel.misconception = { state: 'signal_observed', code: 'sign_direction', signalCount: 1 };
   const state = step(createStudyReinforcementState(scopeKey), 1, { result: before });
   const after = grade(2);
-  after.learnerModel.misconception = { state: 'cleared', lastResolvedCode: 'sign_direction' };
+  after.learnerModel.misconception = { state: 'none_observed', code: null, signalCount: 2, reasonCodes: ['targeted_independent_correction'], lastResolvedCode: 'sign_direction' };
   assert.equal(step(state, 2, { result: after }).feedback, null);
   before.learnerModel.misconception.signalCount = 2;
   const confirmed = step(createStudyReinforcementState(scopeKey), 1, { result: before });
