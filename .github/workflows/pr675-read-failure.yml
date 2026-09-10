@@ -1,0 +1,38 @@
+name: PR 675 failure diagnostics
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/pr675-read-failure.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  read-failure:
+    if: github.event.pull_request.number == 675
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read existing failed test output without rerunning tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/BharaniKuchipudiK/quantoraai/actions/jobs/102709241995/logs' \
+            -o "$RUNNER_TEMP/pr675-failure.log"
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          lines = Path(os.environ['RUNNER_TEMP'], 'pr675-failure.log').read_text(errors='replace').splitlines()
+          failed = [i for i, line in enumerate(lines) if re.search(r'\bnot ok\b|ERR_ASSERTION|error TS\d+|Error:|##\[error\]', line)]
+          print('Matching failure lines:', len(failed))
+          selected = set()
+          for i in failed:
+              selected.update(range(max(0, i - 2), min(len(lines), i + 48)))
+          text = '\n'.join(lines[i] for i in sorted(selected))
+          print(text[:24000])
+          print('\n--- FINAL TEST SUMMARY ---\n' + '\n'.join(lines[-60:])[:7000])
+          PY
