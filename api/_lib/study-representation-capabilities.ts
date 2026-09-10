@@ -4,6 +4,7 @@ export type StudyRepresentationRendererKind =
   | 'physics-motion'
   | 'newton-lab'
   | 'linear-function-lab'
+  | 'circuit-lab'
   | 'electricity-circuit'
   | 'field-lines'
   | 'algebra-balance'
@@ -21,7 +22,7 @@ export type StudyRepresentationCapability = {
   version: typeof STUDY_REPRESENTATION_CAPABILITY_VERSION;
   representation: 'annotated_diagram' | 'graph' | 'process_flow' | 'timeline' | 'number_line' | 'simulation_or_lab';
   rendererKind: StudyRepresentationRendererKind;
-  reason: 'mechanics' | 'newton_animation' | 'linear_function_lab' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line' | 'fraction' | 'state_change';
+  reason: 'mechanics' | 'newton_animation' | 'linear_function_lab' | 'circuit_lab' | 'electricity' | 'field' | 'algebra' | 'geometry' | 'biology' | 'chemistry' | 'graph_semantics' | 'process' | 'timeline' | 'number_line' | 'fraction' | 'state_change';
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
@@ -44,6 +45,9 @@ const TIMELINE = /\b(?:timeline|chronolog|year|era|history)\b/i;
 const NUMBER_LINE = /\bnumber line\b/i;
 const FRACTION = /\b(?:fraction|fractions|fractional|numerator|denominator|equivalent fractions?|proportion|proportions)\b/i;
 const BEFORE_AFTER = /\bbefore\s*(?:\/|and)\s*after\b|\bstate[- ]change\b|\bchanges?\s+from\b.{0,60}\bto\b/i;
+const SIMPLE_DC = /\b(?:battery|batteries|circuits?|return (?:wire|path)|direct current|conventional current|ohm(?:'s|’s)? law|internal resistance|terminal voltage)\b/i;
+const SIMPLE_DC_KEY = /(?:^|[._ -])(?:electricity|circuits?|dc|emf|current|resistance|voltage)(?:[._ -]|$)/i;
+const OUTSIDE_DC_MODEL = /\b(?:ac|alternating|capacitors?|capacitance|inductors?|inductance|rlc|rc|rl|transients?|parallel|series circuits?|networks?|coils?|magnetic|electromagnetic|propagation|transmission|antennas?|neural|neurons?|logic|digital|diodes?|transistors?|semiconductors?|electrochemistry|electrolysis|charging|discharging)\b/i;
 
 function capability(representation: StudyRepresentationCapability['representation'], rendererKind: StudyRepresentationRendererKind, reason: StudyRepresentationCapability['reason']): StudyRepresentationCapability {
   return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation, rendererKind, reason };
@@ -65,6 +69,17 @@ function requestsLinearFunctionLab(context = '', conceptKey = ''): boolean {
   return isLinearFunction && directlyRequestsLab;
 }
 
+function requestsSimpleDcLab(context = '', conceptKey = ''): boolean {
+  // The native circuit is one resistive DC loop, not a general circuit solver.
+  // A canonical identity cannot be overridden by an unrelated free-text label.
+  const key = String(conceptKey || '').trim().toLowerCase();
+  const text = String(context || '');
+  if (key && !SIMPLE_DC_KEY.test(key)) return false;
+  if (OUTSIDE_DC_MODEL.test(`${key.replace(/[_.-]+/g, ' ')} ${text}`) || FIELD.test(text)) return false;
+  return (ANIMATION_REQUEST.test(text) || LAB_REQUEST.test(text))
+    && (key ? SIMPLE_DC_KEY.test(key) : SIMPLE_DC.test(text));
+}
+
 /**
  * Text resolver retained as a discovery/bootstrap fallback. Downstream planners
  * should prefer resolveStudyRepresentationCapabilityForConcept() so the same
@@ -74,6 +89,7 @@ export function resolveStudyRepresentationCapability(contextText?: string | null
   const context = String(contextText || '').trim();
   if (!context) return null;
 
+  if (requestsSimpleDcLab(context)) return capability('simulation_or_lab', 'circuit-lab', 'circuit_lab');
   if (requestsNewtonThirdLawLab(context)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
   if (requestsLinearFunctionLab(context)) return capability('simulation_or_lab', 'linear-function-lab', 'linear_function_lab');
   if (NUMBER_LINE.test(context)) return capability('number_line', 'number-line', 'number_line');
@@ -107,6 +123,7 @@ export function resolveStudyRepresentationCapabilityForConcept(input: {
   const fallback = String(input.fallbackText || '').trim();
   const discoveryText = `${label}\n${fallback}`.trim();
 
+  if (requestsSimpleDcLab(discoveryText, key)) return capability('simulation_or_lab', 'circuit-lab', 'circuit_lab');
   if (requestsNewtonThirdLawLab(discoveryText, key)) return capability('simulation_or_lab', 'newton-lab', 'newton_animation');
   if (requestsLinearFunctionLab(discoveryText, key)) return capability('simulation_or_lab', 'linear-function-lab', 'linear_function_lab');
 
@@ -124,5 +141,6 @@ export function resolveStudyRepresentationCapabilityForConcept(input: {
     if (/chemistry|atom|molecule|bond|reaction|periodic|acid|base/.test(key)) return capability('annotated_diagram', 'chemistry-bond', 'chemistry');
   }
 
-  return resolveStudyRepresentationCapability(discoveryText);
+  const discovered = resolveStudyRepresentationCapability(discoveryText);
+  return key && discovered?.rendererKind === 'circuit-lab' ? null : discovered;
 }

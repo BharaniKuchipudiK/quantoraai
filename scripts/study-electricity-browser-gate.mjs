@@ -141,3 +141,6 @@ try {
 } finally {
   await browser.close();
 }
+
+// Keep the existing static EMF proof and also enforce real native-lab delivery.
+await import('./study-native-lab-browser-proof.mjs');

@@ -1,0 +1,63 @@
+.study-circuit-lab {
+  --circuit-surface: #102332;
+  --circuit-ink: #eff8ff;
+  --circuit-muted: #bbd0de;
+  --circuit-line: #7599ad;
+  --circuit-accent: #65deed;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 540px;
+  min-width: 0;
+  margin: 14px 0 20px;
+  padding: 18px;
+  border: 1px solid #3d748b;
+  border-radius: 20px;
+  background: var(--circuit-surface);
+  color: var(--circuit-ink);
+  font-family: var(--font-study-body), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.study-circuit-lab--light {
+  --circuit-surface: #f3fbff;
+  --circuit-ink: #163447;
+  --circuit-muted: #3e6176;
+  --circuit-line: #47758e;
+  --circuit-accent: #087d94;
+  border-color: #9ccdd9;
+}
+.study-circuit-lab__header { display: flex; gap: 12px; align-items: center; }
+.study-circuit-lab__header strong { display: block; font-size: 16px; }
+.study-circuit-lab__header small { display: block; color: var(--circuit-muted); }
+.study-circuit-lab__badge { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: #20556c; font-size: 23px; flex-shrink: 0; }
+.study-circuit-lab__prediction { color: var(--circuit-ink); margin: 12px 0 0; }
+.study-circuit-lab svg { display: block; width: 100%; height: auto; overflow: visible; }
+.study-circuit-lab svg text { fill: var(--circuit-ink); font-family: inherit; font-size: 15px; }
+.study-circuit-lab svg .study-circuit-lab__value { fill: var(--circuit-muted); font-size: 13px; }
+.study-circuit-lab__wire, .study-circuit-lab__switch { stroke: var(--circuit-line); stroke-width: 5; fill: none; stroke-linecap: round; }
+.study-circuit-lab__switch--open { stroke: #ee987b; }
+.study-circuit-lab__contact { fill: var(--circuit-accent); }
+.study-circuit-lab__battery { stroke: var(--circuit-accent); stroke-width: 5; }
+.study-circuit-lab svg .study-circuit-lab__polarity { fill: var(--circuit-accent); font-weight: 700; font-size: 20px; }
+.study-circuit-lab__lamp { fill: var(--circuit-surface); stroke: #d5a749; stroke-width: 3; }
+.study-circuit-lab__lamp[data-circuit-lamp="on"] { fill: #ffd46c; }
+.study-circuit-lab__glow { fill: #ffd46c; }
+.study-circuit-lab__filament { stroke: #966212; stroke-width: 3; fill: none; }
+.study-circuit-lab__direction { stroke: var(--circuit-accent); stroke-width: 2; fill: none; }
+.study-circuit-lab__marker { fill: var(--circuit-accent); stroke: var(--circuit-surface); stroke-width: 1.5; }
+.study-circuit-lab__readouts { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; border-top: 1px solid var(--circuit-line); }
+.study-circuit-lab__readouts > span { white-space: nowrap; font-size: 13px; }
+.study-circuit-lab__readouts strong { color: var(--circuit-accent); }
+.study-circuit-lab__controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
+.study-circuit-lab__controls button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--circuit-line); border-radius: 10px; color: var(--circuit-ink); background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
+.study-circuit-lab__controls .study-circuit-lab__primary { background: #147187; color: #fff; border-color: #2996aa; }
+.study-circuit-lab button:focus-visible, .study-circuit-lab input:focus-visible, .study-circuit-lab summary:focus-visible { outline: 3px solid var(--circuit-accent); outline-offset: 3px; }
+.study-circuit-lab button:disabled { opacity: 0.5; cursor: not-allowed; }
+.study-circuit-lab__observation { margin: 12px 0; }
+.study-circuit-lab__adjust { border-top: 1px solid var(--circuit-line); padding-top: 10px; }
+.study-circuit-lab__adjust summary { cursor: pointer; min-height: 32px; color: var(--circuit-accent); }
+.study-circuit-lab__adjust label { display: block; margin: 9px 0; }
+.study-circuit-lab__adjust input { display: block; width: 100%; min-height: 32px; accent-color: var(--circuit-accent); }
+.study-circuit-lab__note { color: var(--circuit-muted); font-size: 12px; margin: 12px 0 0; }
+@media (max-width: 480px) { .study-circuit-lab { padding: 12px; border-radius: 15px; } }
+@media (prefers-reduced-motion: reduce) { .study-circuit-lab, .study-circuit-lab * { animation: none !important; transition: none !important; } }
