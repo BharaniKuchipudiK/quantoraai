@@ -56,3 +56,32 @@ test('plain self-contained HTML stays on the lightweight iframe path', () => {
   assert.equal(isInlineReactRuntimeCode('<!doctype html><html><body>ok</body></html>'), false);
   assert.equal(createInlineReactRuntimeVfs('<!doctype html><html><body>ok</body></html>', {}), null);
 });
+
+test('complete HTML with Excel XML export strings is not misclassified as React', () => {
+  const html = `<!DOCTYPE html>
+<html>
+<body>
+  <button id="export">Export</button>
+  <script>
+    const workbookXml = '<Workbook><Worksheet><Table></Table></Worksheet></Workbook>';
+    const reactLookingText = 'useState(' + ' createRoot(';
+    document.getElementById('export').onclick = () => workbookXml + reactLookingText;
+  </script>
+</body>
+</html>`;
+
+  assert.equal(isInlineReactRuntimeCode(html), false);
+  assert.equal(createInlineReactRuntimeVfs(html, {}), null);
+});
+
+test('capitalized XML text inside a genuine React snippet does not suppress React routing', () => {
+  const reactWithExportPayload = `
+import React from 'react';
+export default function ExportPanel() {
+  const workbookXml = '<Workbook><Worksheet /></Workbook>';
+  return <button>{workbookXml}</button>;
+}`;
+
+  assert.equal(isInlineReactRuntimeCode(reactWithExportPayload), true);
+  assert.ok(createInlineReactRuntimeVfs(reactWithExportPayload, {}));
+});
