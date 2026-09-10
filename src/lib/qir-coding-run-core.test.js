@@ -331,12 +331,111 @@ test('[was-red] compaction is automatic, not a method someone must remember to c
   const source = readFileSync(new URL('./qir-coding-run-core.js', import.meta.url), 'utf8');
   const returned = source.slice(source.lastIndexOf('  return {'));
   assert.doesNotMatch(returned, /compactWorkingContext/, 'it must NOT be exported for someone to remember');
-  assert.equal(
-    (source.match(/void compactWorkingContext\(/g) || []).length,
-    2,
-    'both paths where the Run advances — promotion and runtime observation — must compact',
-  );
 });
+
+// Exercise the real client at every compaction branch. Counting call sites
+// rejects legitimate new recovery paths without proving that any path works.
+for (const scenario of [
+  { name: 'runtime success', report: { kind: 'runtime', status: 'clean' }, expectedStatus: 'VERIFYING', expectedCalls: ['runtime:success', 'compact'] },
+  { name: 'runtime failure', report: { kind: 'runtime', status: 'failed' }, expectedStatus: 'REPAIRING', expectedCalls: ['runtime:failure', 'compact'] },
+  { name: 'quality promotion', report: { kind: 'quality', passed: true, score: 95 }, expectedStatus: 'COMPLETE', expectedCalls: ['runtime:success', 'promote', 'compact'] },
+  { name: 'missing requested deliverables', report: { kind: 'quality', passed: true, score: 95 }, missing: true, expectedStatus: 'REPAIRING', expectedCalls: ['runtime:success', 'verification:failure', 'compact'] },
+]) {
+  test(`compaction follows ${scenario.name} without blocking or overwriting the Run`, async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    const published = [];
+    const errors = [];
+    const code = '<html><body>SENTINEL_PRIVATE_FILE_BYTES</body></html>';
+    const vfs = scenario.missing ? { 'index.html': code } : {
+      'index.html': code, 'parser.py': 'import csv', 'cleaner.py': 'import json', 'README.md': '# Utility',
+    };
+    const originalVfs = { ...vfs };
+    const artifact = { artifactId: 'coding-desk-vfs', generation: 1, ref: 'coding-desk://candidate#sha256=abc' };
+    let snapshot = { ...EXECUTING_RUN, artifacts: [artifact] };
+    let releaseContext;
+    const heldContext = new Promise((resolve) => { releaseContext = resolve; });
+    let pendingReport;
+    globalThis.fetch = async (url, init) => {
+      const body = init?.body ? JSON.parse(init.body) : null;
+      if (String(url) === '/api/qir-context') {
+        calls.push({ label: 'compact', body, committedStatus: snapshot.status });
+        await heldContext;
+        // A late bookkeeping response must never replace the newer Run.
+        return { ok: true, status: 200, json: async () => ({ run: EXECUTING_RUN }) };
+      }
+      assert.ok(String(url).startsWith('/api/qir-runs'), 'no unrelated route may be called');
+      if (body?.action === 'coding.observe') {
+        const observation = body.observation;
+        calls.push({ label: `${observation.kind}:${observation.status}`, body });
+        assert.equal(observation.actionId, EXECUTING_RUN.cursor.actionId);
+        assert.equal(observation.artifactId, artifact.artifactId);
+        assert.equal(observation.artifactGeneration, artifact.generation);
+        snapshot = { ...snapshot, status: observation.status === 'failure' ? 'REPAIRING' : 'VERIFYING' };
+      } else if (body?.action === 'coding.promote') {
+        calls.push({ label: 'promote', body });
+        assert.equal(snapshot.status, 'VERIFYING', 'observation must precede promotion');
+        snapshot = { ...snapshot, status: 'COMPLETE' };
+      } else {
+        assert.ok(!body?.action, 'the fixture must not silently accept an unexpected action');
+      }
+      return { ok: true, json: async () => ({ run: snapshot }) };
+    };
+    try {
+      const client = createQirCodingRunClient({
+        onRun: (next) => published.push(next),
+        onError: (error) => errors.push(error),
+        readOptions: () => ({
+          enabled: true, sessionId: `compaction-${scenario.name}`,
+          goal: 'Build a 3-file utility (parser.py, cleaner.py and README.md). No UI, no website.',
+          code, vfs, job: { title: 'Python utility' },
+        }),
+      });
+      assert.equal(client.compactWorkingContext, undefined, 'compaction is automatic, not a caller responsibility');
+      await client.sync();
+      pendingReport = client.reportPreviewStatus(scenario.report);
+      const blocked = Symbol('waiting for compaction');
+      const settled = await Promise.race([
+        pendingReport,
+        new Promise((resolve) => { setImmediate(() => resolve(blocked)); }),
+      ]);
+      assert.notEqual(settled, blocked, 'an unresolved compaction request must not block the result');
+      assert.deepEqual(errors, []);
+      assert.equal(settled?.status, scenario.expectedStatus);
+      assert.deepEqual(calls.map((call) => call.label), scenario.expectedCalls);
+      const compaction = calls.at(-1);
+      assert.equal(compaction.committedStatus, scenario.expectedStatus, 'compact only after the transition commits');
+      assert.equal(compaction.body.runId, EXECUTING_RUN.runId);
+      assert.deepEqual(compaction.body.projectState.files, Object.keys(vfs).sort());
+      assert.doesNotMatch(JSON.stringify(compaction.body), /SENTINEL_PRIVATE_FILE_BYTES/);
+      assert.deepEqual(vfs, originalVfs, 'verification must preserve the generated files');
+      if (scenario.missing) {
+        const failure = calls.find((call) => call.label === 'verification:failure').body.observation;
+        assert.equal(failure.error.code, 'VERIFICATION_FAILURE');
+        assert.equal(failure.error.retryable, true);
+        assert.equal(failure.evidence[0].kind, 'artifact.requested_deliverables_missing');
+        for (const path of ['parser.py', 'cleaner.py', 'README.md']) assert.ok(failure.error.message.includes(path));
+      }
+      const repeated = await client.reportPreviewStatus(scenario.report);
+      assert.equal(repeated.status, scenario.expectedStatus);
+      assert.deepEqual(calls.map((call) => call.label), scenario.expectedCalls, 'a late duplicate callback must not write again');
+      const publicationCount = published.length;
+      releaseContext();
+      await new Promise((resolve) => { setImmediate(resolve); });
+      assert.equal(published.length, publicationCount, 'late compaction must not publish a stale snapshot');
+      assert.equal(published.at(-1).status, scenario.expectedStatus);
+      assert.deepEqual(errors, []);
+    } finally {
+      releaseContext();
+      try {
+        await pendingReport;
+        await new Promise((resolve) => { setImmediate(resolve); });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  });
+}
 
 test('[was-red] compaction is never on the path the user is waiting for', async () => {
   /*
