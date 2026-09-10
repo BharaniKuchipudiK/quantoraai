@@ -1,16 +1,39 @@
 name: Study native deployed visuals
 
-# Exercise the actual deployed SVG/component chunks without model spend or
-# writes to learner data. This supplements, never replaces, the existing
-# live-API golden transactions and protected pre-merge browser gates.
+# Automatic deployed-component checks remain deterministic and spend-free.
+# Live acceptance costs at most five turns: opt-in PRs, explicit dispatches,
+# and main changes to the visual contract, never every unrelated deployment.
 on:
   deployment_status:
+  workflow_dispatch:
+    inputs:
+      deployment_sha:
+        description: Exact deployed commit to test (supports before/after proof)
+        required: true
+        type: string
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'api/_lib/study-representation-capabilities.ts'
+      - 'api/_lib/study-cognitive-routing.ts'
+      - 'shared/study-native-labs.js'
+      - 'scripts/study-live-animation-browser-proof.mjs'
+      - '.github/workflows/study-native-deployed-visuals.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'api/_lib/study-representation-capabilities.ts'
+      - 'api/_lib/study-cognitive-routing.ts'
+      - 'shared/study-native-labs.js'
+      - 'scripts/study-live-animation-browser-proof.mjs'
+      - '.github/workflows/study-native-deployed-visuals.yml'
 
 permissions:
   contents: read
+  deployments: read
 
 concurrency:
-  group: study-native-deployed-${{ github.event.deployment.environment }}-${{ github.event.deployment.ref }}
+  group: study-native-deployed-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.deployment_sha || github.event.deployment.environment || github.ref }}-${{ github.event.deployment.ref }}
   cancel-in-progress: true
 
 env:
@@ -61,6 +84,72 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: study-native-deployed-${{ github.event.deployment.sha }}
+          path: artifacts/e2e
+          if-no-files-found: error
+          retention-days: 14
+
+  live-routing:
+    name: Live Study conversation to native visuals
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.title, '[study:live]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the requested proof revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Resolve the immutable deployment for the requested SHA
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ inputs.deployment_sha || github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full lowercase commit SHA is required'; exit 1; }
+          for attempt in $(seq 1 60); do
+            id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$TARGET_SHA&per_page=20" --jq '[.[] | select(.environment == "Production" or .environment == "Preview")][0].id // empty')
+            if [ -n "$id" ]; then
+              url=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=10" --jq '[.[] | select(.state == "success")][0].environment_url // empty')
+              if [ -n "$url" ]; then
+                [[ "$url" =~ ^https://quantora-platform-[a-z0-9]+-sartho\.vercel\.app/?$ ]] || { echo 'Unexpected deployment origin'; exit 1; }
+                echo "url=$url" >> "$GITHUB_OUTPUT"
+                echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'No successful exact-SHA deployment was available'; exit 1
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
+      - name: Install browser binary
+        run: npx playwright install chromium
+      - name: Prove real Study routing and interactions (five live turns maximum)
+        env:
+          QUANTORA_E2E_BASE_URL: ${{ steps.target.outputs.url }}
+          QUANTORA_DEPLOYMENT_SHA: ${{ steps.target.outputs.sha }}
+          QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/study-live-animation-browser-proof.mjs
+      - name: Upload live routing verdict and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: study-live-${{ steps.target.outputs.sha }}-${{ github.run_id }}
           path: artifacts/e2e
           if-no-files-found: error
           retention-days: 14
