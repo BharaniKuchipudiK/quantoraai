@@ -1,89 +1,39 @@
 name: Deployed Golden Transactions
 
+# Owner-requested emergency cost containment, 2026-09-10.
+# Automatic events retain deployed readiness, durable-store and fixture checks.
+# Real generation (including the Gemini probe, critics, repairs and fallbacks)
+# runs ONLY on a deliberate dispatch with spending confirmed for that run.
+# Skipped live tests are NOT release evidence. Do not release application changes
+# claiming live verification while this containment policy is in effect.
 on:
-  # NO `synchronize`. This gate drives REAL model turns against a deployment,
-  # so every trigger spends the platform's own Gemini credit — and on
-  # 2026-09-07 that bill arrived. In one day: 66 successful pull_request runs
-  # across six PRs, about eleven per PR, because `synchronize` fires on every
-  # push and a working session pushes constantly. At the PR limit of two
-  # transactions that is 132 production builds, next to 120 from the fifteen
-  # production deployments that are what this gate is actually for.
-  #
-  # SEPARATION, NOT SUPPRESSION (doctrine §5). Nothing here is muted. What is
-  # dropped is the re-run on each intermediate commit of a branch nobody has
-  # finished yet. `opened` and `ready_for_review` still cover the PR itself, and
-  # `[golden:all]` in a PR title still forces the whole roster.
-  #
-  # THIS HEADER USED TO SAY the suite still checks exactly what it checked, and
-  # that the full eight transactions run on every Production deployment_status.
-  # Both stopped being true on 2026-09-07, when the transaction limit below
-  # became '2' for every event that is not a [golden:all] pull request — a
-  # deployment_status carries no pull_request, so PRODUCTION RUNS TWO. The
-  # trade is deliberate and its cost is argued at the limit itself; the header
-  # was simply not updated with it, and a reader of this file would have
-  # believed production behavioural coverage was four times what it is.
-  # Correcting the record rather than the behaviour: §3, out loud.
-  #
-  # What is unchanged is the part that matters most: deployed-readiness-gate.mjs
-  # still runs on EVERY deployment, blocking, and it is the signal that caught
-  # three dead API functions on 2026-08-31. Liveness is checked every time.
-  # BEHAVIOUR is now sampled at two of eight, and the limit's own comment says
-  # that trade should be revisited the day real users are on the platform.
-  #
-  # The cost of the trade, stated plainly: a commit pushed AFTER a PR is marked
-  # ready is not golden-checked until it reaches Production. That is later than
-  # ideal and it is still caught, by the deployment gate, before any user has
-  # been on the deployment long.
   pull_request:
     types: [opened, reopened, ready_for_review]
   deployment_status:
-  # NO workflow_dispatch here, deliberately. It was added alongside ci.yml's and
-  # taken straight back out: this job's own `if:` requires a pull_request or a
-  # successful Production deployment_status, and its checkout resolves the ref
-  # from one of those two events. A dispatch has neither, so the run would be
-  # created and immediately skipped — a trigger that cannot fire, which is the
-  # §4 case dressed as a convenience. This gate already runs on every
-  # production deployment, which is the thing it is actually about.
+  workflow_dispatch:
+    inputs:
+      confirm_live_model_spend:
+        description: 'I authorize this one run to spend provider credit on two live build tests and their probe/verification/repair calls.'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   deployments: read
 
-# Cache key only. The version itself lives in package.json, pinned exactly, and
-# must be bumped in step with this or the gates restore a cache built for a
-# different browser build. ci.yml carries the same pair.
 env:
   PLAYWRIGHT_VERSION: 1.55.1
 
-# Keyed on the PR, not the commit. With head.sha in the group every push
-# opened a group of its own, so cancel-in-progress had nothing to cancel and
-# every superseded commit ran this job to completion — on 2026-08-31 a single
-# branch paid for five full runs against commits that were already obsolete.
-# The job checks out the PR head itself, so cancelling an older run loses
-# nothing: the run that replaces it tests the newer commit.
-#
-# deployment_status keeps its own key. Deployment ids are already unique, and
-# each deployment is a distinct thing worth testing.
-# Keyed on the PR, or on the ENVIRONMENT — never on the deployment id.
-#
-# `github.event.deployment.id` is unique per deployment, so every production
-# deployment opened a concurrency group of its own and cancel-in-progress had
-# nothing to cancel. That is the same defect the comment above records for
-# pull requests, left in place on the deployment half: on 2026-09-07 fifteen
-# production goldens ran in a day, several against deployments that were no
-# longer live by the time they finished.
-#
-# Only the CURRENTLY LIVE deployment is worth checking. A golden still running
-# against a superseded one is answering a question nobody has any more, on the
-# platform's own model credit.
 concurrency:
   group: deployed-golden-${{ github.event.pull_request.number || github.event.deployment.environment }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   golden-transactions:
-    name: Deployed golden transactions
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_live_model_spend == true && 'Deployed golden transactions' || 'Deployed non-model checks (live tests NOT RUN)' }}
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       (github.event.deployment_status.state == 'success' &&
       github.event.deployment.environment == 'Production' &&
@@ -91,12 +41,11 @@ jobs:
       github.event.deployment.ref != '')
     runs-on: ubuntu-latest
     timeout-minutes: 25
-
     steps:
       - name: Check out the exact deployed commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.deployment.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.deployment.sha || github.sha }}
 
       - name: Resolve the exact deployed target
         id: deployment
@@ -105,7 +54,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_URL: ${{ github.event.deployment_status.environment_url }}
           EVENT_SHA: ${{ github.event.deployment.sha }}
-          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'Production' || 'Preview' }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "deployment_status" ]; then
@@ -113,9 +63,8 @@ jobs:
             echo "sha=$EVENT_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           for attempt in $(seq 1 60); do
-            deployment_id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$PR_SHA&environment=Preview&per_page=10" --jq '.[0].id // empty')
+            deployment_id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$PR_SHA&environment=$TARGET_ENVIRONMENT&per_page=10" --jq '.[0].id // empty')
             if [ -n "$deployment_id" ]; then
               deployed_url=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=10" --jq 'map(select(.state == "success" and (.environment_url // "") != ""))[0].environment_url // empty')
               if [[ "$deployed_url" == https://* ]]; then
@@ -126,7 +75,7 @@ jobs:
             fi
             sleep 10
           done
-          echo "No successful Vercel Preview was published for $PR_SHA within 10 minutes." >&2
+          echo "No successful $TARGET_ENVIRONMENT deployment was published for $PR_SHA within 10 minutes." >&2
           exit 1
 
       - name: Set up Node.js
@@ -134,48 +83,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
-
-      # `npm ci` above already installed Playwright from the lockfile. This step
-      # used to reinstall it as playwright@1.55.0 with --no-save
-      # --package-lock=false, which silently downgraded the locked version to
-      # the one carrying GHSA-7mvr-c777-76hp — browsers downloaded without
-      # verifying certificate authenticity — and kept it out of package.json,
-      # and so out of the audit gate. Only the browser binary is fetched here
-      # now, and the cache usually already holds it.
       - name: Restore Playwright browser cache
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ env.PLAYWRIGHT_VERSION }}-${{ runner.os }}
-
       - name: Install browser binary
         run: npx playwright install chromium
 
-      # BLOCKING, and deliberately first. Deterministic assertions only — no
-      # browser, no model, no provider spend — so a failure here has exactly
-      # one meaning: the deployment is broken. That precision is the point.
-      # It is what makes this gate safe to block on, and it is why the muting
-      # below can never swallow it again. See the header of the script.
       - name: Deployed readiness (inference ready, every function boots)
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/deployed-readiness-gate.mjs
-      # BLOCKING, and deterministic: no browser, no model, no provider spend.
-      #
-      # Phase 2's criterion is "prove a run survives worker termination and
-      # browser refresh". The browser half is proven over the real reducers by
-      # qir-coding-resume-browser-gate.mjs — but that drives a SYNTHETIC store,
-      # so the journal itself had never been tested. That is how durable
-      # persistence sat as a production no-op for two days with every gate green.
-      #
-      # This writes a Run with one request and reads it back with another that
-      # shares nothing but the run id, against the real database.
       - name: Deployed QIR durability (a Run outlives the worker that made it)
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
@@ -183,63 +107,20 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/deployed-qir-durability-gate.mjs
 
-
-      # BLOCKING as of 2026-09-04. It went non-blocking with a stated end
-      # condition — "once a run proves it green this becomes blocking and
-      # continue-on-error comes out" — and that condition is met:
-      #
-      #   933b259  GOLDEN_CHAT_OUTCOME: success   (desk auto-open fix)
-      #   10504cf  GOLDEN_CHAT_OUTCOME: success   (tool accounting)
-      #
-      # Two consecutive greens on two different commits. One pass is not
-      # evidence of stability; the second is what earns this.
-      #
-      # The end condition mattered more than the mute. This step was muted for
-      # "historical flakiness" that turned out to be a permanently stale
-      # locator, and while it was muted three production API functions died
-      # behind a green check. A mute with no way to end is how that happens.
       - name: Prove prompt to rendered calculator and website
         id: golden_chat
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_live_model_spend == true }}
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.deployment.outputs.url }}
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
-          # A pull request proves the deployment answers and builds (two
-          # transactions); a production deploy proves the whole roster. The
-          # five on every push of every PR were two thirds of the month's
-          # Gemini bill. '99' is "everything": the plan clamps to the roster,
-          # so the roster stays the only place a transaction is counted. A
-          # pull request whose title carries [golden:all] runs everything
-          # once — that is how a change to the golden itself is proven on a
-          # preview before it reaches production.
-          # TWO EVERYWHERE, and the whole roster only when asked for by name.
-          #
-          # A production deployment planned all eight. At the measured cost of a
-          # build that is SGD 0.60 per deployment, and on 2026-09-07 fifteen
-          # deployments spent SGD 9 in a day — against a prepaid Gemini balance
-          # of SGD 29 that has to last a fortnight and also carry real users.
-          #
-          # WHAT IS NOT GIVEN UP. deployed-readiness-gate.mjs still runs on every
-          # deployment, blocking, and it is a plain fetch that costs nothing: it
-          # is the gate that catches a function dying before its handler runs,
-          # which is the class that took three API endpoints down on 2026-08-31.
-          # Liveness is still checked on every deployment. What is now sampled
-          # rather than exhaustive is BEHAVIOUR — and the first two transactions
-          # are the core build journeys, not an arbitrary pair.
-          #
-          # `[golden:all]` in a pull request title still runs the whole roster,
-          # which is the way to exercise all eight before a risky change.
-          #
-          # This is a pre-revenue trade and it should be revisited the day real
-          # users are on the platform: a behavioural regression now costs a
-          # rebuild, and then it will cost somebody's afternoon.
+          # Retain the existing roster contract. A manual dispatch has no PR
+          # title and therefore selects two; a title cannot authorize spending.
           QUANTORA_GOLDEN_TRANSACTION_LIMIT: ${{ contains(github.event.pull_request.title, '[golden:all]') && '99' || '2' }}
         run: node scripts/deployed-golden-transactions.mjs
 
-      # if: always() so a failing golden above does not TAKE THIS SIGNAL WITH
-      # IT (§5 — never mute a signal, separate it). Still blocking: always()
-      # forces the step to run, it does not forgive its result.
+      # Fixtures, not generation. Preserve this independent failure signal.
       - name: Prove deployed shop Preview paints photos and cart increments
         id: shop_act
         if: always()
@@ -249,7 +130,6 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           QUANTORA_DEPLOYMENT_SHA: ${{ steps.deployment.outputs.sha }}
         run: node scripts/deployed-shop-preview-gate.mjs
-
       - name: Upload deployed transaction evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -258,23 +138,22 @@ jobs:
           path: artifacts/e2e
           if-no-files-found: error
           retention-days: 14
-
       - name: Report deployed golden chat outcome
         if: always()
         env:
           GOLDEN_CHAT_OUTCOME: ${{ steps.golden_chat.outcome }}
         run: |
           echo "deployed calculator/website golden outcome=$GOLDEN_CHAT_OUTCOME"
-          # The verdict LAST, so it is the final line of the job log.
-          #
-          # The golden script already prints it, but that print sits above the
-          # shop gate, the artifact upload and this step — about forty lines of
-          # tail — and reading it over the log API kept landing past it. A
-          # diagnosis nobody can find is not a diagnosis (rule 8), and shorter
-          # was not the same as findable.
+          if [ "$GOLDEN_CHAT_OUTCOME" = "skipped" ]; then
+            echo "::notice::LIVE MODEL VERIFICATION NOT RUN: automatic provider spending is paused by the owner. Non-model checks are not proof of live generation."
+            echo "### Live model verification: NOT RUN (owner-requested spending pause)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Readiness, persistence and fixture checks are separate evidence. Do not use their success to claim live model verification." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ -f artifacts/e2e/golden-verdict.txt ]; then
             cat artifacts/e2e/golden-verdict.txt
           fi
           if [ "$GOLDEN_CHAT_OUTCOME" != "success" ]; then
-            echo "::error::Deployed calculator/website golden failed and this step is BLOCKING. This is NOT 'just flaky' — read the GOLDEN VERDICT line above before dismissing it."
+            echo "::error::The requested live model verification did not pass. Do not merge or promote application changes."
+            exit 1
           fi
