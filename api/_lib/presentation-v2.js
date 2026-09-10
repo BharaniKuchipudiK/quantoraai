@@ -716,7 +716,7 @@ function addFinancialCase(slide, spec, s) {
       x: 0.78, y: 3.55, w: 7.25, h: 2.6,
       barDir: 'col', chartColors: [C.accent], showLegend: false, showTitle: false, showValue: true,
       catAxisLabelFontSize: 9, valAxisLabelFontSize: 8, showCatName: false, showValAxisTitle: false,
-      showCatAxisTitle: false, showValue: true, dataLabelColor: C.ink, dataLabelFontSize: 9,
+      showCatAxisTitle: false, dataLabelColor: C.ink, dataLabelFontSize: 9,
     });
   } else if (s.bullets.length) {
     addBullets(slide, s.bullets, 0.82, 3.55, 6.95, 2.6, 12.4);
