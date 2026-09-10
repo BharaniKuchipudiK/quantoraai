@@ -52,7 +52,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' blob: https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' blob: https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io https://*.webcontainer-api.io https://*.local-coep.webcontainer-api.io wss://*.webcontainer-api.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io https://*.webcontainer.io https://*.webcontainer-api.io; object-src 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' blob: https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' blob: https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.supabase.co https://*.codesandbox.io https://*.webcontainer-api.io https://*.local-coep.webcontainer-api.io wss://*.webcontainer-api.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io https://*.webcontainer.io https://*.webcontainer-api.io; object-src 'none'; base-uri 'self'; form-action 'self';"
         },
         {
           "key": "Strict-Transport-Security",
@@ -89,7 +89,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.codesandbox.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io; object-src 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com https://va.vercel-scripts.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://accounts.google.com https://vitals.vercel-insights.com https://*.supabase.co https://*.codesandbox.io; frame-src 'self' blob: https://accounts.google.com https://www.youtube-nocookie.com https://www.youtube.com https://*.codesandbox.io; object-src 'none'; base-uri 'self'; form-action 'self';"
         },
         {
           "key": "Strict-Transport-Security",

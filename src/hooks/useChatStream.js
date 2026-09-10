@@ -579,7 +579,11 @@ export function useChatStream({
 
     updateActiveMessages(prev => [...prev, userMsg]);
     if (!textToSend) setInputText('');
-    setAttachments([]);
+    const privateUploadCandidates = attachments.filter((attachment) => (
+      attachment?.type === 'document'
+      && Number.parseFloat(String(attachment?.size || '0')) > 3 * 1024
+    ));
+    setAttachments(privateUploadCandidates);
 
     // Coding Turn Planner owns the turn: analyse → skills → interrupt | execute.
     if (turnPlan.mode === 'interrupt' && turnPlan.interrupt) {
@@ -1195,6 +1199,12 @@ export function useChatStream({
     // Documents stay with the conversation — the build turn after the
     // designer's question must still have them (see carryDocuments).
     const attachedDocuments = carryDocuments(carriedDocumentsRef, owningSessionId, partitioned.documents);
+    if (privateUploadCandidates.length) {
+      const pendingUploadNames = new Set(
+        excluded.filter((entry) => entry.reason === 'uploading').map((entry) => entry.name),
+      );
+      setAttachments(privateUploadCandidates.filter((attachment) => pendingUploadNames.has(attachment?.name)));
+    }
 
     if (!text.trim() && !attachedImages.length && !attachedDocuments.length) {
       updateActiveMessages((prev) => [...prev, {

@@ -7,19 +7,26 @@
  * to get them. This module is the one place that decides what is sent, so the
  * composer, the send path and the copy the user reads cannot disagree.
  *
- * Pure: no React, no fetch. The server reads documents (api/_lib/attachment-text.ts).
+ * The one intentional browser side effect here is the large-document intake
+ * hook. AiStudio already calls attachmentKindForFile with the real File before
+ * FileReader runs. For a supported document above the inline 3 MiB envelope,
+ * that call starts a direct private upload; classification itself still returns
+ * only image/document/unsupported and synthetic File-like tests stay pure.
  */
+
+import { claimLargeDocumentUpload, registerLargeDocumentUpload } from './large-document-upload.js';
 
 export const READABLE_DOCUMENT_EXTENSIONS = ['pdf', 'xlsx', 'xlsm', 'docx', 'pptx', 'csv', 'tsv', 'txt', 'md', 'markdown', 'json', 'log', 'xml', 'yaml', 'yml', 'html', 'htm'];
 
 export const MAX_ATTACHED_IMAGES = 4;
 export const MAX_ATTACHED_DOCUMENTS = 4;
-/** Encoded sizes: keep the JSON body under Vercel's 4.5MB request limit. */
+/** Encoded sizes: inline payloads stay under Vercel's 4.5MB request limit. */
 export const MAX_ATTACHED_IMAGE_CHARS = 3_500_000;
 export const MAX_ATTACHED_DOCUMENT_CHARS = 3_500_000;
 export const MAX_ATTACHED_TOTAL_CHARS = 4_000_000;
 export const MAX_IMAGE_FILE_BYTES = 3 * 1024 * 1024;
-export const MAX_DOCUMENT_FILE_BYTES = 3 * 1024 * 1024;
+/** Documents above the inline envelope travel through private Storage. */
+export const MAX_DOCUMENT_FILE_BYTES = 5 * 1024 * 1024;
 
 export const READABLE_TYPES_COPY = 'images (PNG/JPG), PDFs, Word, Excel, PowerPoint, CSV and plain-text files';
 
@@ -47,14 +54,23 @@ export function attachmentKindForFile(file) {
   const type = String(file?.type || '').toLowerCase();
   if (type.startsWith('image/')) return 'image';
   const ext = extensionOf(file?.name);
-  if (READABLE_DOCUMENT_EXTENSIONS.includes(ext)) return 'document';
-  if (type === 'application/pdf' || type.startsWith('text/') || type === 'application/json') return 'document';
+  const document = READABLE_DOCUMENT_EXTENSIONS.includes(ext)
+    || type === 'application/pdf'
+    || type.startsWith('text/')
+    || type === 'application/json';
+  if (document) {
+    // Real browser Files take the direct-storage lane only when needed.
+    // registerLargeDocumentUpload refuses non-Blob test doubles and all <=3 MiB files.
+    registerLargeDocumentUpload(file);
+    return 'document';
+  }
   return 'unsupported';
 }
 
 /**
  * Split the composer's attachments into what the request carries.
- * @returns {{ images: string[], documents: Array<{name:string, mimeType:string, dataUrl:string}>, excluded: Array<{name:string, reason:string}> }}
+ * Large documents carry a tiny opaque storageRef instead of their base64 data.
+ * @returns {{ images: string[], documents: Array<{name:string, mimeType:string, dataUrl?:string, storageRef?:string}>, excluded: Array<{name:string, reason:string}> }}
  */
 export function partitionAttachments(attachments) {
   const images = [];
@@ -78,6 +94,15 @@ export function partitionAttachments(attachments) {
     }
     if (item.type === 'document' && url.startsWith('data:')) {
       if (documents.length >= MAX_ATTACHED_DOCUMENTS) { excluded.push({ name: item.name, reason: 'count' }); continue; }
+
+      const stored = claimLargeDocumentUpload(item);
+      if (stored?.status === 'pending') { excluded.push({ name: item.name, reason: 'uploading' }); continue; }
+      if (stored?.status === 'failed') { excluded.push({ name: item.name, reason: 'upload' }); continue; }
+      if (stored?.status === 'ready' && stored.storageRef) {
+        documents.push({ name: item.name, mimeType: item.mimeType || '', storageRef: stored.storageRef });
+        continue;
+      }
+
       if (documentChars + url.length > MAX_ATTACHED_DOCUMENT_CHARS || totalChars + url.length > MAX_ATTACHED_TOTAL_CHARS) { excluded.push({ name: item.name, reason: 'size' }); continue; }
       documentChars += url.length; totalChars += url.length;
       documents.push({ name: item.name, mimeType: item.mimeType || '', dataUrl: url });
@@ -99,7 +124,11 @@ export function describeExcludedAttachments(excluded) {
   const tooLarge = list.filter((e) => e.reason === 'size');
   const unsupported = list.filter((e) => e.reason === 'unsupported');
   const overCount = list.filter((e) => e.reason === 'count');
-  if (tooLarge.length) parts.push(`${namesOf(tooLarge) || 'one file'} (too large to send — files need to be roughly 3MB or smaller)`);
+  const uploading = list.filter((e) => e.reason === 'uploading');
+  const uploadFailed = list.filter((e) => e.reason === 'upload');
+  if (tooLarge.length) parts.push(`${namesOf(tooLarge) || 'one file'} (too large to send — images need to be about 3 MiB or smaller and documents 5 MiB or smaller)`);
+  if (uploading.length) parts.push(`${namesOf(uploading) || 'one file'} (still uploading — send again when the upload finishes)`);
+  if (uploadFailed.length) parts.push(`${namesOf(uploadFailed) || 'one file'} (private upload failed — remove it and attach it again)`);
   if (unsupported.length) parts.push(`${namesOf(unsupported) || 'one file'} (not a type I can read — I read ${READABLE_TYPES_COPY})`);
   if (overCount.length) parts.push(`${namesOf(overCount) || 'the rest'} (only ${MAX_ATTACHED_IMAGES} images and ${MAX_ATTACHED_DOCUMENTS} documents per turn)`);
   return `Heads up — I could not send ${parts.join(' and ')}. I am answering on what did go through.`;
@@ -108,9 +137,13 @@ export function describeExcludedAttachments(excluded) {
 /** The error when an attachment-only turn has nothing left to send. */
 export function explainNothingToSend(excluded) {
   const list = Array.isArray(excluded) ? excluded : [];
+  const uploading = list.filter((e) => e.reason === 'uploading');
+  const uploadFailed = list.filter((e) => e.reason === 'upload');
   const tooLarge = list.filter((e) => e.reason === 'size');
   const unsupported = list.filter((e) => e.reason === 'unsupported');
-  if (tooLarge.length) return `${namesOf(tooLarge) || 'That file'} is too large to send — files need to be roughly 3MB or smaller. Try a smaller copy, or tell me what you need and I will help.`;
+  if (uploading.length) return `${namesOf(uploading) || 'That file'} is still uploading. Send again in a moment.`;
+  if (uploadFailed.length) return `${namesOf(uploadFailed) || 'That file'} could not be uploaded privately. Remove it and attach it again.`;
+  if (tooLarge.length) return `${namesOf(tooLarge) || 'That file'} is too large to send — images need to be about 3 MiB or smaller and documents 5 MiB or smaller.`;
   if (unsupported.length) return `I can read ${READABLE_TYPES_COPY}, but not ${namesOf(unsupported) || 'that file'} — describe what you need and I will help.`;
   return 'Add a message so I know what you would like me to do.';
 }
@@ -121,11 +154,9 @@ export const CARRIED_DOCUMENT_TURNS = 8;
 export const CARRIED_IMAGE_TURNS = 3;
 /**
  * Hard browser-memory bound for transient source carry.
- *
- * One source partition is already capped by MAX_ATTACHED_TOTAL_CHARS (~4 MB of
- * encoded data). Keeping only the four most recently used attachment sessions
- * therefore prevents the per-session continuity feature from becoming an
- * unbounded heap cache when a learner opens, archives, or abandons many chats.
+ * Inline source partitions are capped by MAX_ATTACHED_TOTAL_CHARS; stored
+ * documents are only tiny opaque refs, so the same four-session LRU remains a
+ * strict bound while allowing larger source files without larger chat payloads.
  */
 export const MAX_CARRIED_ATTACHMENT_SESSIONS = 4;
 
@@ -183,8 +214,8 @@ function readAttachmentSession(sessions, sessionId) {
  * make transient attachment data grow without bound in the browser heap.
  *
  * Fresh source attachments replace older carried source context for that same
- * session. If the new source could not be sent (unsupported/oversize), that
- * session's old carried context is cleared rather than silently substituted.
+ * session. If the new source could not be sent (unsupported/oversize/uploading),
+ * that session's old carried context is cleared rather than silently substituted.
  *
  * On a no-attachment follow-up, recent images take precedence over documents
  * from the same fresh source. This keeps the combined request inside the
