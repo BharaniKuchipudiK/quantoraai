@@ -1,0 +1,23 @@
+/* The Study focus is a flex child above the composer. Its nowrap control row
+ * must scroll inside the available width, not make the recovery copy wider
+ * than a phone. Do not hide overflow to make the layout assertion pass. */
+.study-h1-focus[data-quantora-study-board="true"] {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: min(720px, 100%);
+}
+
+.study-h1-focus[data-quantora-study-board="true"] > section {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-quantora-study-session-resume] {
+  min-width: 0;
+  max-width: 100%;
+  margin-block: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

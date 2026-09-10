@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { ArrowRight, Check, Lightbulb, RotateCcw, X } from 'lucide-react';
+import { useStudySessionContinuity } from '../hooks/useStudySessionContinuity.js';
 import {
   studyActionVisibleText,
   studyLessonAsk,
@@ -42,6 +43,7 @@ function normalizedConceptKey(value) {
  * than competing with the lesson for permanent screen space.
  */
 export default function StudyTutorShell({
+  sessionId,
   brief,
   onAsk,
   onSend,
@@ -68,6 +70,16 @@ export default function StudyTutorShell({
   const verifiedResult = assessment?.result || null;
   const learnerModel = verifiedResult?.learnerModel || null;
   const completedCheck = Boolean(loop?.completedQuestionIds?.length);
+  const continuity = useStudySessionContinuity({ sessionId, topic, mission, dispatchMission });
+
+  // A saved-chat switch must reset transient mission/attempt state even if a
+  // caller keeps this component mounted. The prior chat's checkpoint survives.
+  useEffect(() => {
+    missionCheckAttemptRef.current = '';
+    missionReviewResultRef.current = null;
+    dispatchMission({ type: 'RESET' });
+    setActivity(null);
+  }, [sessionId]);
 
   // StudyTutorWorkspace deliberately keeps this shell mounted across concept
   // changes so an Adaptive Mission can survive a Compass prerequisite handoff.
@@ -433,6 +445,19 @@ export default function StudyTutorShell({
             <X size={16} />
           </button>
         </div>
+
+        {continuity.checkpoint ? (
+          <div data-quantora-study-session-resume="available" className="study-h1-next-move" role="status">
+            <div>An unfinished lesson on {continuity.checkpoint.label} is saved on this device.</div>
+            {continuity.checkpoint.priorSupport ? <div>You previously used hints here. That is context, not a learning score.</div> : null}
+            <div>Resume the lesson position; any verified check must be opened again.</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '7px' }}>
+              <button type="button" className="study-h1-action study-h1-action--primary" data-quantora-study-resume-action="resume" onClick={continuity.resume}>Resume lesson</button>
+              <button type="button" className="study-h1-action" data-quantora-study-resume-action="discard" onClick={continuity.discard}>Discard saved position</button>
+            </div>
+          </div>
+        ) : null}
+        {continuity.restored ? <div data-quantora-study-session-resume="restored" className="study-h1-next-move" role="status">Lesson position restored. No assessment result or mastery was restored from this device.</div> : null}
 
         {mission.status !== 'idle' ? (
           <div
