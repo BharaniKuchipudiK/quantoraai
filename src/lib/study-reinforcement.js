@@ -151,5 +151,5 @@ export function advanceStudyReinforcement(state, event) {
 
 export function shouldSuppressStudyReinforcement(session) {
   return session?.feedback === 'at_end'
-    && session.phase !== 'setup' && session.phase !== 'summary';
+    && session.phase !== 'setup';
 }

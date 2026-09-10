@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { serialize, deserialize } from 'node:v8';
 import {
   advanceStudyReinforcement,
   createStudyReinforcementState,
   deriveStudyReinforcement,
   shouldSuppressStudyReinforcement,
 } from './study-reinforcement.js';
+
+// Test-only value cloning preserves undefined fields without browser-only APIs.
+const cloneFixture = (value) => deserialize(serialize(value));
 
 const conceptKey = 'physics.kinematics.motion-graphs';
 const scopeKey = JSON.stringify(['session-a', conceptKey]);
@@ -101,7 +105,7 @@ test('correction requires the explicit server reason and no active misconception
     { reasonCodes: ['unrelated_success'] }, { code: 'representation_misread' },
     { state: 'cleared' }, { state: 'needs_confirmation' },
   ]) {
-    const result = structuredClone(after);
+    const result = cloneFixture(after);
     Object.assign(result.learnerModel.misconception, changes);
     assert.equal(step(state, 2, { result }).feedback, null);
   }
@@ -163,7 +167,7 @@ test('attempt and item identities each prevent replay, even with fresh object id
   const e = event(1, { result: grade(1, { evidenceKind: 'retrieval' }) });
   const state = advanceStudyReinforcement(createStudyReinforcementState(scopeKey), e);
   assert.equal(state.feedback?.kind, 'retrieval');
-  assert.equal(advanceStudyReinforcement(state, structuredClone(e)), state);
+  assert.equal(advanceStudyReinforcement(state, cloneFixture(e)), state);
   const switched = step(state, 2, { itemRef: e.itemRef });
   assert.equal(switched.feedback, null);
   assert.equal(advanceStudyReinforcement(switched, e).feedback, null);
@@ -186,9 +190,21 @@ test('at-end feedback is consumed without rendering and never reappears on close
   assert.equal(state.feedback, null);
   assert.equal(state.attempts.length, 1);
   assert.equal(advanceStudyReinforcement(state, { ...e, suppressed: false }).feedback, null);
-  for (const phase of ['loading', 'running', 'batch']) assert.equal(shouldSuppressStudyReinforcement({ feedback: 'at_end', phase }), true);
-  for (const phase of ['setup', 'summary']) assert.equal(shouldSuppressStudyReinforcement({ feedback: 'at_end', phase }), false);
+  for (const phase of ['loading', 'running', 'batch', 'summary']) assert.equal(shouldSuppressStudyReinforcement({ feedback: 'at_end', phase }), true);
+  for (const phase of ['setup']) assert.equal(shouldSuppressStudyReinforcement({ feedback: 'at_end', phase }), false);
   assert.equal(shouldSuppressStudyReinforcement({ feedback: 'after_each', phase: 'running' }), false);
+});
+
+test('a batch grade arriving together with the at-end summary cannot reveal feedback', () => {
+  const state = step(createStudyReinforcementState(scopeKey), 1);
+  const result = grade(2, { masteryUpdated: true, mastery: { status: 'established', learningState: 'verified_understanding' } });
+  result.learnerModel.understanding.state = 'verified';
+  const suppressed = shouldSuppressStudyReinforcement({ feedback: 'at_end', phase: 'summary' });
+  assert.equal(suppressed, true);
+  const consumed = step(state, 2, { result, suppressed });
+  assert.equal(consumed.feedback, null);
+  assert.equal(consumed.attempts.length, 2);
+  assert.equal(step(consumed, 2, { result, suppressed: false }).feedback, null);
 });
 
 test('session or topic change cannot inherit a run or display the previous scope before reset', () => {
@@ -239,7 +255,7 @@ test('presentation is deterministic, non-mutating, and never retains answer text
   const e = event(1, { result: { ...grade(), explanation: 'PRIVATE LEARNER ANSWER' } });
   e.result.learnerModel.privateLabel = 'PRIVATE LEARNER LABEL';
   const state = createStudyReinforcementState(scopeKey);
-  const saved = structuredClone({ state, e });
+  const saved = cloneFixture({ state, e });
   const a = advanceStudyReinforcement(state, e);
   assert.deepEqual(a, advanceStudyReinforcement(state, e));
   assert.deepEqual({ state, e }, saved);
