@@ -1,4 +1,5 @@
 import { describeQirPersistDiagnosis } from '../../shared/qir-persist-diagnosis.js';
+import { missingRequestedDeliverables, requestedDeliverablePaths } from './requested-deliverables.js';
 
 /**
  * What the desk should say about the durable Run — including when there isn't one.
@@ -31,11 +32,29 @@ export const QIR_STORAGE_UNCONFIGURED = 'storage-unconfigured';
 export const QIR_PERSIST_FAILED = 'persist-failed';
 
 /**
- * @param {{ run?: object|null, error?: (Error & { reason?: string })|null }} input
+ * @param {{ run?: object|null, error?: (Error & { reason?: string })|null, workspace?: { goal?: string, vfs?: object }|null }} input
  * @returns {{ label: string, detail: string, recording: boolean }|null}
  *   null means "say nothing" — the honest answer when there is simply no Run yet.
  */
-export function describeQirDurability({ run = null, error = null } = {}) {
+export function describeQirDurability({ run = null, error = null, workspace = null } = {}) {
+  // A restored COMPLETE Run is historical evidence, not permission to certify
+  // files absent from the current desk. Reuse the existing file contract;
+  // this is only a veto on the outward claim, never a new promotion authority.
+  if (run?.status === 'COMPLETE' && workspace?.vfs
+    && typeof workspace.vfs === 'object' && !Array.isArray(workspace.vfs)) {
+    const brief = requestedDeliverablePaths(workspace.goal).length
+      ? workspace.goal : run.goal?.statement || '';
+    const missing = missingRequestedDeliverables(brief, workspace.vfs);
+    if (missing.length) {
+      return {
+        label: 'Run · INCOMPLETE',
+        detail: `Current workspace is missing requested files: ${missing.join(', ')}. `
+          + `Durable Run ${run.runId || ''} retains its historical COMPLETE status; `
+          + 'it does not certify the current file delivery. Generated work is unchanged.',
+        recording: true,
+      };
+    }
+  }
   if (run && run.status) {
     return {
       label: `Run · ${run.status}`,
