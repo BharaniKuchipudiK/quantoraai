@@ -144,3 +144,6 @@ try {
 
 // Keep the existing static EMF proof and also enforce real native-lab delivery.
 await import('./study-native-lab-browser-proof.mjs');
+
+// PR12: the same blocking Study gate now exercises actual saved-chat recovery.
+await import('./study-session-continuity-browser-proof.mjs');
