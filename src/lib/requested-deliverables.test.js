@@ -54,3 +54,123 @@ test('paths are bounded to the project and unsafe traversal is never a requested
   assert.equal(normalizeRequestedDeliverablePath('../secret.py'), '');
   assert.equal(normalizeRequestedDeliverablePath('https://example.com/a.py'), '');
 });
+
+function pythonFiles() {
+  return {
+    'parser.py': { content: 'def parse(rows):\n    return list(rows)\n' },
+    'cleaner.py': { content: 'def clean(rows):\n    return [row for row in rows if row is not None]\n' },
+    'README.md': { content: '# Pipeline\nRun with Python 3.\n' },
+  };
+}
+
+for (const [label, entry] of [
+  ['null', null],
+  ['undefined', undefined],
+  ['boolean', false],
+  ['number', 7],
+  ['filename-only object', { language: 'python' }],
+  ['non-text content', { content: 7 }],
+  ['null content', { content: null }],
+  ['code field instead of file content', { code: 'def parse(rows): return rows' }],
+]) {
+  test(`[was-red] Python deliverables reject ${label}, not merely count its filename`, () => {
+    const vfs = pythonFiles();
+    vfs['parser.py'] = entry;
+    assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py']);
+  });
+}
+
+for (const [label, source] of [
+  ['doctype document', '<!DOCTYPE html><html><body><pre>def parse(): pass</pre></body></html>'],
+  ['HTML root', '<html lang="en"><body>Python utility</body></html>'],
+  ['BOM and whitespace', '\uFEFF \n<!doctype html><html><body>Python utility</body></html>'],
+  ['leading HTML comment', '<!-- Generated utility -->\n<!doctype html><html><body>Code panel</body></html>'],
+]) {
+  test(`[was-red] ${label} saved as parser.py is not a Python source deliverable`, () => {
+    const vfs = pythonFiles();
+    vfs['parser.py'] = { content: source };
+    vfs['index.html'] = { content: '<html><body>Working companion</body></html>' };
+    assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py']);
+  });
+}
+
+test('[was-red] a README entry without text is not a delivered file', () => {
+  const vfs = pythonFiles();
+  vfs['README.md'] = {};
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['README.md']);
+});
+
+test('explicitly requested empty Python scaffolds remain files, not verified implementations', () => {
+  const prompt = 'Create a 3-file Python utility scaffold (parser.py, cleaner.py and README.md), leaving all files empty.';
+  assert.deepEqual(missingRequestedDeliverables(prompt, {
+    'parser.py': { content: '' }, 'cleaner.py': '', 'README.md': { content: ' \n' },
+  }), []);
+});
+
+test('Python source containing HTML or Excel XML strings remains a source file', () => {
+  const vfs = pythonFiles();
+  vfs['parser.py'] = { content: '"""<!DOCTYPE html><html>Example</html>"""\ndef parse(rows):\n    return rows\n' };
+  vfs['cleaner.py'] = { content: '# <html> is documentation, not the source format\nWORKBOOK = "<Workbook><Worksheet /></Workbook>"\n' };
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), []);
+});
+
+test('plain-text VFS entries and normalized paths retain their existing support', () => {
+  const vfs = Object.fromEntries(Object.entries(pythonFiles()).map(([path, entry]) => [`./${path}`, entry.content]));
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), []);
+});
+
+test('an intentionally empty Python package initializer is still a real file', () => {
+  const prompt = 'Create a 3-file Python utility (pipeline/__init__.py, pipeline/parser.py and README.md).';
+  const vfs = {
+    'pipeline/__init__.py': { content: '' },
+    'pipeline/parser.py': { content: 'def parse(rows): return rows\n' },
+    'README.md': { content: '# Package\n' },
+  };
+  assert.deepEqual(missingRequestedDeliverables(prompt, vfs), []);
+  // Empty is a real initializer; an absent content field is not a file.
+  vfs['pipeline/__init__.py'] = {};
+  assert.deepEqual(missingRequestedDeliverables(prompt, vfs), ['pipeline/__init__.py']);
+});
+
+test('the first source-content guard does not change website or React file contracts', () => {
+  for (const [prompt, vfs] of [
+    ['Create a 3-file website (index.html, styles.css and script.js).', {
+      'index.html': { content: '<html><body>Existing site</body></html>' },
+      'styles.css': { content: '' }, 'script.js': { content: '' },
+    }],
+    ['Create a 3-file React project (src/App.jsx, src/main.jsx and package.json).', {
+      'src/App.jsx': { content: 'export default function App() { return <main>Working</main>; }' },
+      'src/main.jsx': { content: 'import App from "./App.jsx";' },
+      'package.json': { content: '{"dependencies":{"react":"^18.2.0"}}' },
+    }],
+  ]) {
+    assert.deepEqual(missingRequestedDeliverables(prompt, vfs), []);
+    const first = Object.keys(vfs)[0];
+    delete vfs[first];
+    assert.deepEqual(missingRequestedDeliverables(prompt, vfs), [first]);
+  }
+});
+
+test('source inspection never rewrites a file, drops the working preview, or certifies execution', () => {
+  const vfs = pythonFiles();
+  vfs['parser.py'] = { content: '<html><body>Wrong format</body></html>' };
+  vfs['index.html'] = { content: '<html><body>Previous working preview</body></html>' };
+  for (const entry of Object.values(vfs)) Object.freeze(entry);
+  Object.freeze(vfs);
+  const before = JSON.stringify(vfs);
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py']);
+  assert.equal(JSON.stringify(vfs), before);
+  // This contract does not parse Python or attest that a supplied program ran.
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, {
+    ...pythonFiles(), 'parser.py': { content: 'not valid Python syntax' },
+  }), []);
+});
+
+
+test('leading model-controlled HTML comments are bounded and cannot conceal a document', () => {
+  const vfs = pythonFiles();
+  vfs['parser.py'] = { content: '<!-- note -->\n'.repeat(5000) + '<html><body>Not Python</body></html>' };
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py']);
+  vfs['parser.py'] = { content: '<!-- unfinished HTML comment' };
+  assert.deepEqual(missingRequestedDeliverables(PYTHON_ASK, vfs), ['parser.py']);
+});
