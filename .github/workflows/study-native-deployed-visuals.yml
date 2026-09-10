@@ -1,7 +1,8 @@
 name: Study native deployed visuals
 
 # Automatic deployed-component checks remain deterministic and spend-free.
-# Live model acceptance is an explicit, bounded dispatch, not every push/deploy.
+# Live acceptance costs at most five turns: opt-in PRs, explicit dispatches,
+# and main changes to the visual contract, never every unrelated deployment.
 on:
   deployment_status:
   workflow_dispatch:
@@ -10,13 +11,29 @@ on:
         description: Exact deployed commit to test (supports before/after proof)
         required: true
         type: string
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'api/_lib/study-representation-capabilities.ts'
+      - 'api/_lib/study-cognitive-routing.ts'
+      - 'shared/study-native-labs.js'
+      - 'scripts/study-live-animation-browser-proof.mjs'
+      - '.github/workflows/study-native-deployed-visuals.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'api/_lib/study-representation-capabilities.ts'
+      - 'api/_lib/study-cognitive-routing.ts'
+      - 'shared/study-native-labs.js'
+      - 'scripts/study-live-animation-browser-proof.mjs'
+      - '.github/workflows/study-native-deployed-visuals.yml'
 
 permissions:
   contents: read
   deployments: read
 
 concurrency:
-  group: study-native-deployed-${{ github.event_name }}-${{ inputs.deployment_sha || github.event.deployment.environment }}-${{ github.event.deployment.ref }}
+  group: study-native-deployed-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.deployment_sha || github.event.deployment.environment || github.ref }}-${{ github.event.deployment.ref }}
   cancel-in-progress: true
 
 env:
@@ -73,17 +90,23 @@ jobs:
 
   live-routing:
     name: Live Study conversation to native visuals
-    if: github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.title, '[study:live]'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out the requested proof revision
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Resolve the immutable deployment for the requested SHA
         id: target
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ inputs.deployment_sha }}
+          TARGET_SHA: ${{ inputs.deployment_sha || github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full lowercase commit SHA is required'; exit 1; }
@@ -126,7 +149,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: study-live-${{ inputs.deployment_sha }}-${{ github.run_id }}
+          name: study-live-${{ steps.target.outputs.sha }}-${{ github.run_id }}
           path: artifacts/e2e
           if-no-files-found: error
           retention-days: 14
