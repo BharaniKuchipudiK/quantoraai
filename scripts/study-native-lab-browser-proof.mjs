@@ -39,6 +39,19 @@ async function scenario({ name, theme, reduced = false, mobile = false, assetFai
     viewport: { width: 1440, height: 1000 }, reducedMotion: reduced ? 'reduce' : 'no-preference',
     colorScheme: theme, hasTouch: mobile,
   });
+  // Production proof uses the exact deployed frontend, with the same fixtures.
+  // Scope Vercel credentials to this origin; never send them to third parties.
+  // Page-level API fixtures and deliberate chunk failures take precedence.
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (bypass) {
+    const origin = new URL(BASE_URL).origin;
+    await context.route('**/*', (route) => {
+      const request = route.request();
+      return new URL(request.url()).origin === origin
+        ? route.continue({ headers: { ...request.headers(), 'x-vercel-protection-bypass': bypass } })
+        : route.continue();
+    });
+  }
   const page = await context.newPage();
   page.setDefaultTimeout(12_000);
   await page.addInitScript(({ theme }) => {
