@@ -32,6 +32,8 @@ function snapshot(result) {
     misconceptionCode: key(model.misconception?.code, 64),
     misconceptionSignals: model.misconception?.signalCount,
     resolvedCode: key(model.misconception?.lastResolvedCode, 64),
+    targetedCorrection: Array.isArray(model.misconception?.reasonCodes)
+      && model.misconception.reasonCodes.includes('targeted_independent_correction'),
   };
 }
 
@@ -42,7 +44,9 @@ export function deriveStudyReinforcement(result, { previous = null, hintDepth = 
   const advanced = current && previous && current.conceptKey === previous.conceptKey
     && current.evidenceCount > previous.evidenceCount && current.observedAt >= previous.observedAt;
 
-  if (advanced && current.misconceptionState === 'cleared' && previous.misconceptionCode
+  // The canonical server projection clears the active code, not the state enum.
+  if (advanced && current.misconceptionState === 'none_observed'
+    && !current.misconceptionCode && current.targetedCorrection && previous.misconceptionCode
     && previous.misconceptionSignals >= 2 && current.resolvedCode === previous.misconceptionCode
     && ['signal_observed', 'needs_confirmation'].includes(previous.misconceptionState)) {
     return {
