@@ -75,7 +75,9 @@ test('[was-red] a pretty HTML viewer cannot complete a Run that owes three real 
     const refusal = testHarness.posted.filter((body) => body.action === 'coding.observe').at(-1)?.observation;
     assert.equal(refusal?.kind, 'verification');
     assert.equal(refusal?.status, 'failure');
-    assert.equal(refusal?.error?.code, 'REQUESTED_DELIVERABLES_MISSING');
+    assert.equal(refusal?.error?.code, 'VERIFICATION_FAILURE');
+    assert.equal(refusal?.evidence?.[0]?.source, 'verifier');
+    assert.equal(refusal?.evidence?.[0]?.kind, 'artifact.requested_deliverables_missing');
     assert.match(refusal?.error?.message || '', /parser\.py/);
     assert.match(refusal?.error?.message || '', /cleaner\.py/);
     assert.match(refusal?.error?.message || '', /README\.md/);
