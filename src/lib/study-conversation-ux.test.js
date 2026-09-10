@@ -86,7 +86,10 @@ test('Study responses carry subtle tutor illustration cues rather than a chatbot
 test('Study removes robotic response labels without changing other domain renderers', () => {
   const markdown = read('src/components/StudyMarkdown.jsx');
   const studio = read('src/components/AiStudio.jsx');
-  assert.match(markdown, /enforceStudyRendererContract\(text, studyRouting\)/);
+  // Static delivery prepares the same message before native-lab enforcement;
+  // both stages must remain wired, followed by the existing tutor-text polish.
+  assert.match(markdown, /const staticPreparedText = enforceStudyStaticVisualText\(text, studyRouting\);/);
+  assert.match(markdown, /const routedText = enforceStudyRendererContract\(staticPreparedText, studyRouting\);/);
   assert.match(markdown, /polishStudyTutorText\(routedText\)/);
   assert.match(studio, /String\(tool\)\.startsWith\('study-'\)[\s\S]*visibleUserText: action\.visibleText/);
   assert.match(studio, /String\(tool\)\.startsWith\('travel-'\)[\s\S]*handleSendMessage\(action\.text\)/);

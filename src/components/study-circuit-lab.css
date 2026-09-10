@@ -1,10 +1,3 @@
-/* The Study message body is a flex item beside its avatar. Its automatic
- * minimum can retain the lab's intrinsic width after a desktop-to-mobile
- * resize. Let that body shrink; the circuit then uses its container width.
- * Scoped to Study, not Coding or the rest of the application's message rows. */
-html[data-quantora-domain="education"] .app-shell--studio .animate-slide-up > div:last-child {
-  min-width: 0;
-}
 .study-circuit-lab {
   --circuit-surface: #102332;
   --circuit-ink: #eff8ff;

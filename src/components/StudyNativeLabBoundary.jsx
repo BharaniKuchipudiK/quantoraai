@@ -11,7 +11,7 @@ export default class StudyNativeLabBoundary extends React.Component {
 
   render() {
     if (this.state.failed) {
-      return <p role="status" data-quantora-study-lab-unavailable="true">
+      return this.props.fallback || <p role="status" data-quantora-study-lab-unavailable="true">
         The interactive view could not load. The written lesson is still available.
       </p>;
     }
