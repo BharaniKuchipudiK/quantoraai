@@ -61,7 +61,3 @@ export function missingRequestedDeliverables(prompt = '', vfs = {}) {
   const present = new Set(Object.keys(vfs || {}).map(normalizeRequestedDeliverablePath).filter(Boolean));
   return requested.filter((path) => !present.has(path));
 }
-
-export function requestedDeliverablesSatisfied(prompt = '', vfs = {}) {
-  return missingRequestedDeliverables(prompt, vfs).length === 0;
-}
