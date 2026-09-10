@@ -1,12 +1,17 @@
 name: Study native deployed visuals
 
 # Automatic deployed-component checks remain deterministic and spend-free.
-# Live acceptance costs at most five turns: opt-in PRs, explicit dispatches,
-# and main changes to the visual contract, never every unrelated deployment.
+# Paid live acceptance is paused on automatic events at the owner's request.
+# A manual dispatch needs explicit spending confirmation for that run.
 on:
   deployment_status:
   workflow_dispatch:
     inputs:
+      confirm_live_model_spend:
+        description: 'I authorize this one live Study check to spend provider credit (up to five turns).'
+        required: true
+        default: false
+        type: boolean
       deployment_sha:
         description: Exact deployed commit to test (supports before/after proof)
         required: true
@@ -90,11 +95,7 @@ jobs:
 
   live-routing:
     name: Live Study conversation to native visuals
-    if: >-
-      github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.title, '[study:live]'))
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_live_model_spend == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

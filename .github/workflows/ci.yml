@@ -89,25 +89,7 @@ jobs:
       # deliberately separate. test:ci carries the remaining test:all coverage
       # once, so CI does not execute imports, hook-order, wiring or journeys twice.
       - name: Run all remaining tests
-        run: |
-          mkdir -p artifacts/ci
-          if npm run test:ci > artifacts/ci/test-ci.log 2>&1; then
-            result=0
-          else
-            result=$?
-          fi
-          tail -n 80 artifacts/ci/test-ci.log
-          echo "test:ci exit code: $result (complete output in the CI test log artifact)"
-          exit "$result"
-
-      - name: Upload complete test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-test-log-${{ github.sha }}-${{ github.run_attempt }}
-          path: artifacts/ci/test-ci.log
-          if-no-files-found: ignore
-          retention-days: 7
+        run: npm run test:ci
 
       - name: Finance judgment gate
         run: npm run test:judgment

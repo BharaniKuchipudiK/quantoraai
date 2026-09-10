@@ -1,27 +1,15 @@
-# DESK EVAL — drive real prompts at the deployment and record what breaks.
-#
-# WHY THIS EXISTS. All 36 browser release gates stub the model, so they prove
-# the platform and not the product; the deployed golden runs real turns but a
-# fixed handful. Between them, nothing drove a SPREAD of prompts and checked
-# whether the desk built what was asked for — so the platform's defects were
-# being found by its owner, one screenshot at a time.
-#
-# COST IS THE WHOLE DESIGN CONSTRAINT. Every case is a live model turn against
-# a real deployment and spends real provider credit. So:
-#   - the schedule runs only `smoke` (4 turns, roughly $0.12)
-#   - anything larger is a deliberate manual dispatch
-#   - the script prints the case count, turn count and dollar estimate BEFORE
-#     it runs anything
-# This repo lost about six dollars in twelve hours to a gate whose spend nobody
-# had counted. A number you have to read is the cheapest guard there is.
-#
-# The run uses the golden canary token, which is exempt from the daily turn
-# budget — an eval must never consume a student's day.
+# Each evaluation case spends real provider credit. The daily schedule was
+# removed at the owner's request; each manual run now needs spending consent.
 name: Desk Eval
 
 on:
   workflow_dispatch:
     inputs:
+      confirm_live_model_spend:
+        description: 'I authorize this one evaluation run to spend provider credit for the selected tier.'
+        required: true
+        default: false
+        type: boolean
       tier:
         description: 'smoke (4 turns) | standard (8) | full (18) | adversarial (7)'
         required: true
@@ -37,9 +25,6 @@ on:
         required: false
         default: '0'
         type: string
-  schedule:
-    # 06:10 UTC daily. Smoke only. Delete this block to stop the nightly spend.
-    - cron: '10 6 * * *'
 
 concurrency:
   group: desk-eval
@@ -47,27 +32,19 @@ concurrency:
 
 jobs:
   eval:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_live_model_spend == true }}
     runs-on: ubuntu-latest
-    # A full run is 18 turns at up to 180s each -- 54 minutes of turns alone,
-    # before checkout, npm ci, browser install and page loads. At 45 the job
-    # could be killed BEFORE the report was written, precisely when widespread
-    # failure makes it most valuable. The driver now also persists after every
-    # case, so a kill loses at most the case in flight rather than everything.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install locked dependencies
         run: npm ci
-
       - name: Install browser binary
         run: npx playwright install chromium
-
       - name: Resolve the target deployment
         id: target
         env:
@@ -80,15 +57,14 @@ jobs:
             exit 1
           fi
           echo "url=${url%/}" >> "$GITHUB_OUTPUT"
-
       - name: Run the desk eval
         env:
           QUANTORA_E2E_BASE_URL: ${{ steps.target.outputs.url }}
           QUANTORA_GOLDEN_CANARY_TOKEN: ${{ secrets.QUANTORA_GOLDEN_CANARY_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: node scripts/desk-eval.mjs --tier "${{ inputs.tier || 'smoke' }}" --floor "${{ inputs.floor || '0' }}"
-
-      # Always: a run that failed is exactly the run whose evidence is wanted.
+          EVAL_TIER: ${{ inputs.tier || 'smoke' }}
+          EVAL_FLOOR: ${{ inputs.floor || '0' }}
+        run: node scripts/desk-eval.mjs --tier "$EVAL_TIER" --floor "$EVAL_FLOOR"
       - name: Upload the report and failure screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,10 +73,6 @@ jobs:
           path: artifacts/desk-eval
           if-no-files-found: ignore
           retention-days: 30
-
-      # The report is the deliverable. Putting it in the job summary means the
-      # findings are readable from the run page without downloading a zip --
-      # an unread report is a gate nobody is running (§8).
       - name: Put the report in the job summary
         if: always()
         run: cat artifacts/desk-eval/report.md >> "$GITHUB_STEP_SUMMARY" || true
