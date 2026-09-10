@@ -1,4 +1,4 @@
-export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-09.3';
+export const STUDY_REPRESENTATION_CAPABILITY_VERSION = 'study-representation-capability-2026-09-10.2';
 
 export type StudyRepresentationRendererKind =
   | 'physics-motion'
@@ -26,14 +26,14 @@ export type StudyRepresentationCapability = {
 };
 
 const MECHANICS = /\b(?:newton|force|motion|velocity|acceleration|friction|gravity|projectile|inertia|free[- ]?body|momentum)\b/i;
-const NEWTON_THIRD = /\b(?:newton(?:'s|’s)?\s+third\s+law|third\s+law\s+of\s+motion|action\s+and\s+reaction)\b/i;
+const NEWTON_THIRD = /\b(?:newton(?:'s|’s)?\s+(?:third|3rd)\s+law|(?:third|3rd)\s+law\s+of\s+motion|action\s+and\s+reaction)\b/i;
 const NEWTON_THIRD_KEY = /(?:newton(?:s)?[-_. ]*third[-_. ]*law|third[-_. ]*law)/i;
-const LINEAR_FUNCTION = /\b(?:linear function|slope[- ]intercept|gradient[- ]intercept|straight[- ]line graph|y[- ]intercept)\b|\by\s*=\s*m\s*\*?\s*x\s*(?:[+-]\s*b)?\b/i;
+const LINEAR_FUNCTION = /\b(?:linear functions?|slope[- ]intercept|gradient[- ]intercept|straight[- ]line graphs?|y[- ]intercept)\b|\by\s*=\s*m\s*\*?\s*x\s*(?:[+-]\s*b)?\b/i;
 const LINEAR_FUNCTION_KEY = /(?:linear[-_. ]*function|slope[-_. ]*intercept|gradient[-_. ]*intercept)/i;
 const ANIMATION_REQUEST = /\b(?:animation|animate|animated|simulation|interactive(?:\s+(?:animation|demonstration|simulation|lab))?)\b/i;
 const LAB_REQUEST = /\b(?:lab|experiment)\b/i;
 const DIRECT_VISUAL_REQUEST = /\b(?:show|draw|sketch)\b.{0,80}\b(?:image|picture|diagram|visual(?:ly)?)\b|\bexplain\b.{0,60}\bvisually\b/i;
-const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
+const ELECTRICITY = /\b(?:electric(?:ity|al)?|circuit(?:s|ry)?|battery|emf|electromotive force|terminal (?:potential difference|voltage)|potential difference|internal resistance|resistor|ampere|voltage|volt|ohm(?:'s)? law|conventional current|electric(?:al)? current|current (?:flows?|through|in|around|of|is|=))\b/i;
 const FIELD = /\b(?:electric field|field lines?|equipotential|electrostatic field|magnetic field|magnetic flux|north pole|south pole|right[- ]hand rule)\b/i;
 const GEOMETRY = /\b(?:pythagoras|pythagorean|right[- ]angled triangle|right triangle|hypotenuse|geometry)\b/i;
 const ALGEBRA = /\b(?:algebra|equation|variable|unknown|polynomial|quadratic|factoris(?:e|ation)|factoriz(?:e|ation))\b|\bx\b/i;
@@ -45,9 +45,9 @@ const TIMELINE = /\b(?:timeline|chronolog|year|era|history)\b/i;
 const NUMBER_LINE = /\bnumber line\b/i;
 const FRACTION = /\b(?:fraction|fractions|fractional|numerator|denominator|equivalent fractions?|proportion|proportions)\b/i;
 const BEFORE_AFTER = /\bbefore\s*(?:\/|and)\s*after\b|\bstate[- ]change\b|\bchanges?\s+from\b.{0,60}\bto\b/i;
-const SIMPLE_DC = /\b(?:battery|batteries|circuits?|return (?:wire|path)|direct current|conventional current|ohm(?:'s|’s)? law|internal resistance|terminal voltage)\b/i;
-const SIMPLE_DC_KEY = /(?:^|[._ -])(?:electricity|circuits?|dc|emf|current|resistance|voltage)(?:[._ -]|$)/i;
-const OUTSIDE_DC_MODEL = /\b(?:ac|alternating|capacitors?|capacitance|inductors?|inductance|rlc|rc|rl|transients?|parallel|series circuits?|networks?|coils?|magnetic|electromagnetic|propagation|transmission|antennas?|neural|neurons?|logic|digital|diodes?|transistors?|semiconductors?|electrochemistry|electrolysis|charging|discharging)\b/i;
+const SIMPLE_DC = /\b(?:battery|batteries|circuit(?:s|ry)?|return (?:wire|path)|direct current|conventional current|ohm(?:'s|’s)? law|internal resistance|terminal voltage)\b/i;
+const SIMPLE_DC_KEY = /(?:^|[._ -])(?:electricity|circuit(?:s|ry)?|dc|emf|current|resistance|voltage)(?:[._ -]|$)/i;
+const OUTSIDE_DC_MODEL = /\b(?:ac|alternating|capacitors?|capacitance|inductors?|inductance|rlc|rc|rl|transients?|parallel|series circuit(?:s|ry)?|networks?|coils?|magnetic|electromagnetic|propagation|transmission|antennas?|neural|neurons?|logic|digital|diodes?|transistors?|semiconductors?|electrochemistry|electrolysis|charging|discharging)\b/i;
 
 function capability(representation: StudyRepresentationCapability['representation'], rendererKind: StudyRepresentationRendererKind, reason: StudyRepresentationCapability['reason']): StudyRepresentationCapability {
   return { version: STUDY_REPRESENTATION_CAPABILITY_VERSION, representation, rendererKind, reason };
