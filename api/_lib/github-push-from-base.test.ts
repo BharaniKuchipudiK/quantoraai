@@ -55,6 +55,7 @@ test('a missing work branch is created at the selected base before the desk comm
   );
 
   assert.equal(result.branch, 'quantora-desk');
+  assert.equal(result.createdBranch, true, 'the UI must be told that Quantora created the PR work branch');
   const branchCreate = mutations.find((entry) => entry.method === 'POST' && entry.url.endsWith('/git/refs'));
   assert.equal(branchCreate?.body.ref, 'refs/heads/quantora-desk');
   assert.equal(branchCreate?.body.sha, 'mainsha', 'work branch must start at the selected base commit');
