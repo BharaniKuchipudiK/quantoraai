@@ -384,6 +384,11 @@ jobs:
           QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
         run: node scripts/coding-desk-python-browser-gate.mjs
 
+      - name: Verify project navigation and progress before response text
+        env:
+          QUANTORA_E2E_BASE_URL: http://127.0.0.1:4173
+        run: node scripts/studio-navigation-progress-browser-gate.mjs
+
       # The 2026-09-01 boutique class: a first-turn website ask must get its
       # designer question (modal, no false failure, no burned retry), and the
       # answer must land a build. Neither deployed golden covers guided intake.

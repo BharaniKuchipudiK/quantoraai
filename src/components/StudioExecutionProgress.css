@@ -1,0 +1,17 @@
+.studio-progress { --progress-muted: #a3a3a3; border: 1px solid #303030; background: #151515; border-radius: 12px; padding: 14px 16px; color: #ededed; font-size: .8rem; line-height: 1.5; margin-top: 12px; min-width: 0; }
+.studio-progress.is-light { --progress-muted: #666; color: #222; background: #fafafa; border-color: #dedede; }
+.studio-progress__heading { display: flex; justify-content: space-between; gap: 16px; color: var(--progress-muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.studio-progress__heading > :first-child { font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
+.studio-progress__current { margin-top: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.studio-progress__events { list-style: none; padding: 0; margin: 12px 0 0; max-height: 200px; overflow: auto; }
+.studio-progress__events li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; padding: 5px 0; color: var(--progress-muted); overflow-wrap: anywhere; }
+.studio-progress__events li[aria-current] { color: inherit; }
+.studio-progress__dot { width: 6px; height: 6px; border-radius: 50%; background: #737373; }
+.studio-progress__events li[aria-current] .studio-progress__dot { background: #f97316; }
+.studio-progress__events time { font-size: .7rem; font-variant-numeric: tabular-nums; }
+.studio-progress__note { font-size: .7rem; color: var(--progress-muted); margin: 10px 0 0; }
+.studio-progress summary { cursor: pointer; font-size: .74rem; color: var(--progress-muted); }
+.studio-sidebar-backdrop { display: none; }
+@media (max-width: 767px) {
+  .studio-sidebar-backdrop { display: block; position: absolute; inset: 0; z-index: 209; background: rgb(0 0 0 / 45%); border: 0; }
+}

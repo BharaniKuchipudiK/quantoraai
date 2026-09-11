@@ -1437,7 +1437,9 @@ export function useChatStream({
 
     const aiMsgId = createMessageId('ai');
     if (!stillCurrent()) return;
-    const initialExecutionStatus = turnPlan.statusLabel ? { label: turnPlan.statusLabel, phase: 'plan', state: 'accepted' } : null;
+    const initialExecutionStatus = turnPlan.statusLabel
+      ? { label: turnPlan.statusLabel, phase: 'plan', state: 'accepted' }
+      : { label: 'Request prepared. Waiting for the server…', phase: 'request', state: 'prepared' };
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',

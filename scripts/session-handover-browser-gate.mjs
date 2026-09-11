@@ -113,7 +113,7 @@ async function visibleFrame(selector, timeout = 20_000) {
   return null;
 }
 
-const sidebarChatCount = () => page.locator('[data-quantora-sidebar-history-list="true"] [data-quantora-sidebar-chat]').count();
+const sidebarChatCount = () => page.locator('[data-quantora-sidebar-navigation="true"] [data-quantora-sidebar-chat]').count();
 
 try {
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });

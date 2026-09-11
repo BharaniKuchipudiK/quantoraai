@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
+import StudioExecutionProgress from './StudioExecutionProgress.jsx';
 import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor, codingFailureContinues } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
@@ -69,7 +70,7 @@ import { describeQirDurability } from '../lib/qir-durability.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
-import { chatsForWorkspace, useStudioSession, DEFAULT_PROJECT_ID } from '../hooks/useStudioSession.js';
+import { chatsForWorkspace, workspaceOfSession, useStudioSession, DEFAULT_PROJECT_ID } from '../hooks/useStudioSession.js';
 import {
   loadStudioSidebarSections,
   persistStudioSidebarSections,
@@ -3001,21 +3002,8 @@ Paused — ${autoPauseRef.current}.`
                         </div>
                       )}
 
-                      {msg.sender === 'ai' && Array.isArray(msg.executionHistory) && msg.executionHistory.length > 1 ? (
-                        <details
-                          data-quantora-execution-history="true"
-                          open={isActiveGenerating || undefined}
-                          style={{ marginTop: '10px', fontSize: '0.72rem', color: subtextColor }}
-                        >
-                          <summary style={{ cursor: 'pointer', fontWeight: 650, color: textColor }}>
-                            Progress · {msg.executionHistory.length} observed steps
-                          </summary>
-                          <ol style={{ margin: '7px 0 0 18px', padding: 0, lineHeight: 1.55 }}>
-                            {msg.executionHistory.map((event, index) => (
-                              <li key={`${event.at}-${index}`}>{event.label}</li>
-                            ))}
-                          </ol>
-                        </details>
+                      {msg.sender === 'ai' && !isActiveGenerating ? (
+                        <StudioExecutionProgress history={msg.executionHistory} isLight={isLight} />
                       ) : null}
 
                       {/* Minimalist Message Footer */}
@@ -3743,25 +3731,20 @@ Paused — ${autoPauseRef.current}.`
     () => visibleChats(filterChatSessions(allChatSessions, chatQuery)),
     [allChatSessions, chatQuery],
   );
-  const archivedChatSessions = useMemo(() => archivedChats(allChatSessions), [allChatSessions]);
-  const namedProjects = useMemo(
-    () => projects.filter((project) => project.id !== DEFAULT_PROJECT_ID),
-    [projects],
+  const archivedChatSessions = useMemo(
+    () => archivedChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === activeProjectId)),
+    [allChatSessions, activeProjectId],
   );
-  // Chats in the default Personal Workspace read as plain, project-free chats.
+  // Workspace chats already appear under their workspace. General chats are
+  // the remaining conversations in the selected project, without duplicates.
   const personalChatSessions = useMemo(
-    () => visibleChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === DEFAULT_PROJECT_ID)),
-    [allChatSessions],
-  );
-  const chatsForProject = useCallback(
-    (projectId) => visibleChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === projectId)),
-    [allChatSessions],
+    () => visibleChats(allChatSessions.filter((session) => (session.projectId || DEFAULT_PROJECT_ID) === activeProjectId && !workspaceOfSession(session))),
+    [allChatSessions, activeProjectId],
   );
 
   /*
-   * One chat row, used in three places — inside an open project folder, in the
-   * project-free Chats list, and in flat search results — so the row cannot
-   * drift apart between them. Clicking opens the chat wherever it lives.
+   * Shared rows for workspace chats, general chats, archives and global search.
+   * Clicking opens the chat in its owning project and workspace.
    */
   const renderChatRow = (session) => {
     const isActive = session.id === activeSessionId;
@@ -3771,16 +3754,29 @@ Paused — ${autoPauseRef.current}.`
       <div
         key={session.id}
         data-quantora-sidebar-chat={session.id}
-        onClick={() => openChatSession(session.id)}
+        role="button"
+        tabIndex={0}
+        aria-current={isActive ? 'page' : undefined}
+        title={session.title || 'New Chat'}
+        onKeyDown={(event) => {
+          if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            openChatSession(session.id);
+          }
+        }}
+        onClick={() => {
+          openChatSession(session.id);
+          if (window.innerWidth < 768) setSidebarOpen(false);
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
           gap: '6px',
           minWidth: 0,
           flexShrink: 0,
-          fontSize: '0.85rem',
+          fontSize: '0.78rem',
           ...navRowStyle(isActive),
         }}
         onMouseEnter={(e) => {
@@ -3869,7 +3865,12 @@ Paused — ${autoPauseRef.current}.`
                 ) : null;
               })()}
             </span>
-            {resume?.next ? (
+            {chatQuery.trim() ? (
+              <span data-quantora-search-project="true" style={{ display: 'block', color: subtextColor, fontSize: '.68rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {(session.projectId || DEFAULT_PROJECT_ID) === DEFAULT_PROJECT_ID ? 'Personal' : projects.find((project) => project.id === session.projectId)?.name || 'Project'}
+              </span>
+            ) : null}
+            {isActive && resume?.next ? (
               <span style={{
                 display: 'block',
                 whiteSpace: 'nowrap',
@@ -3890,7 +3891,7 @@ Paused — ${autoPauseRef.current}.`
           style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, marginLeft: 'auto', minWidth: 0 }}
           onClick={(event) => event.stopPropagation()}
         >
-          {showResumeChip ? (
+          {showResumeChip && isActive ? (
             <span
               data-quantora-sidebar-resume-chip="true"
               title="Latest outcome in this project"
@@ -3939,7 +3940,6 @@ Paused — ${autoPauseRef.current}.`
    * project. A chat opened here never moves to another desk, whatever it says.
    */
   const WORKSPACE_FOLD_KEY = 'quantora_workspace_collapsed_v1';
-  const PROJECT_FOLD_KEY = 'quantora.sidebar.projectFold';
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(WORKSPACE_FOLD_KEY) || '{}');
@@ -3952,27 +3952,6 @@ Paused — ${autoPauseRef.current}.`
     setCollapsedWorkspaces((prev) => {
       const next = { ...prev, [workspace]: !prev[workspace] };
       try { localStorage.setItem(WORKSPACE_FOLD_KEY, JSON.stringify(next)); } catch { /* storage is a convenience */ }
-      return next;
-    });
-  }, []);
-  /*
-   * A project's chats fold independently of which project is ACTIVE. Clicking
-   * the name switches project (where New Chat lands); the chevron only hides
-   * the list. Before this the open project's chats could not be collapsed at
-   * all, so a project with twenty chats pushed Chats off a laptop screen.
-   */
-  const [collapsedProjects, setCollapsedProjects] = useState(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(PROJECT_FOLD_KEY) || '{}');
-      return stored && typeof stored === 'object' ? stored : {};
-    } catch {
-      return {};
-    }
-  });
-  const toggleProjectFold = useCallback((projectId) => {
-    setCollapsedProjects((prev) => {
-      const next = { ...prev, [projectId]: !prev[projectId] };
-      try { localStorage.setItem(PROJECT_FOLD_KEY, JSON.stringify(next)); } catch { /* storage is a convenience */ }
       return next;
     });
   }, []);
@@ -4051,20 +4030,13 @@ Paused — ${autoPauseRef.current}.`
     );
   };
   const renderWorkspaceChats = (workspace) => {
+    if (chatQuery.trim()) return null;
     if (collapsedWorkspaces[workspace] === true) return null;
-    const chats = chatsForWorkspace(allChatSessions, workspace, activeProject?.id).slice(0, 20);
+    const chats = visibleChats(chatsForWorkspace(allChatSessions, workspace, activeProject?.id));
     if (!chats.length) return null;
     return (
-      /*
-       * FOUR ROWS, THEN SCROLL (2026-09-07).
-       *
-       * A desk with a dozen chats pushed every workspace below it off the
-       * screen, so finding Research Analyst meant scrolling past someone
-       * else's chat history. The list keeps its own scrollbar instead: the
-       * desks stay a fixed, scannable column whatever is inside them.
-       * ~34px a row, so this is four rows and a hint of the fifth.
-       */
-      <div data-quantora-workspace-chats={workspace} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', marginBottom: '2px', maxHeight: '150px', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+      // One navigation scroll area; workspace headings can collapse long lists.
+      <div data-quantora-workspace-chats={workspace} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '10px', margin: '2px 0 10px 12px', borderLeft: `1px solid ${isLight ? '#dedede' : '#303030'}` }}>
         {chats.map((session) => renderChatRow(session))}
       </div>
     );
@@ -4229,22 +4201,44 @@ Paused — ${autoPauseRef.current}.`
         </div>
       ) : null}
       {/* Left Navigation Sidebar — New Chat + footer stay; Chat History is the scroll region. */}
+      {sidebarOpen && !deskFullscreen && <button className="studio-sidebar-backdrop" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
       <div
+        className={`ai-studio-sidebar${sidebarOpen && !deskFullscreen ? ' is-open' : ''}`}
         data-quantora-studio-sidebar="true"
+        onKeyDown={(event) => { if (event.key === 'Escape' && !event.target.matches('input, textarea, select')) setSidebarOpen(false); }}
         style={{
         // deskFullscreen folds the sidebar without touching sidebarOpen, so
         // leaving full screen restores whatever the user had chosen.
-        width: sidebarOpen && !deskFullscreen ? (isIdeLayout ? '220px' : '260px') : '0px',
+        width: sidebarOpen && !deskFullscreen ? '272px' : '0px',
         opacity: sidebarOpen && !deskFullscreen ? 1 : 0,
         pointerEvents: sidebarOpen && !deskFullscreen ? 'auto' : 'none',
         transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         ...studioSidebarFrameStyle(),
         background: isLight ? '#f5f5f5' : '#111111',
         border: 'none',
-        borderRadius: isIdeLayout ? '16px' : '0 24px 24px 0',
+        borderRadius: isIdeLayout ? '12px' : '0',
         padding: sidebarOpen && !deskFullscreen ? '14px 12px' : '0px',
         flexShrink: 0
       }}>
+        <div data-quantora-sidebar-projects="true" style={{ flexShrink: 0, padding: '2px 4px 14px' }}>
+          <label htmlFor="studio-project-context" style={{ color: subtextColor, fontSize: '.68rem', fontWeight: 650, letterSpacing: '.06em', textTransform: 'uppercase' }}>Project</label>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '6px' }}>
+            <select
+              id="studio-project-context"
+              data-quantora-project-selector="true"
+              value={activeProjectId}
+              onChange={(event) => setActiveProjectId(event.target.value)}
+              style={{ flex: 1, minWidth: 0, padding: '9px 8px', borderRadius: '8px', background: isLight ? '#fff' : '#202020', color: textColor, border: `1px solid ${isLight ? '#ddd' : '#333'}`, font: 'inherit', fontSize: '.82rem' }}
+            >
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.id === DEFAULT_PROJECT_ID ? 'Personal' : project.name}</option>)}
+            </select>
+            <button type="button" aria-label="New Project" title="New Project" style={{ ...workspaceIconButtonStyle, padding: '8px' }} onClick={() => {
+              const name = window.prompt('What should we call this project?', 'New project');
+              if (name?.trim()) handleCreateProject({ name: name.trim() });
+            }}><FolderPlus size={17} /></button>
+          </div>
+          <div style={{ color: subtextColor, fontSize: '.68rem', marginTop: '6px' }}>Workspaces and chats in this project</div>
+        </div>
         {/* Sidebar Header — New Chat, then search + collapse as quiet icons.
             Where a new chat lands is tooltip detail, not a paragraph in the nav. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px', marginBottom: '10px', flexShrink: 0 }}>
@@ -4362,7 +4356,7 @@ Paused — ${autoPauseRef.current}.`
                   setChatSearchOpen(false);
                 }
               }}
-              placeholder="Search chats"
+              placeholder="Search all projects"
               aria-label="Search chats"
               style={{
                 width: '100%',
@@ -4380,8 +4374,9 @@ Paused — ${autoPauseRef.current}.`
           </div>
         )}
 
-        {/* Specialized Agents — collapsible, open by default so desks stay discoverable for gates. */}
-        <div data-quantora-sidebar-agents="true" style={studioSidebarYieldingSectionStyle({ marginBottom: sidebarSections.agents ? '18px' : '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' })}>
+        <div data-quantora-sidebar-navigation="true" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        {/* Project-scoped workspace navigation and chat history share one scroll area. */}
+        <div data-quantora-sidebar-agents="true" style={studioSidebarYieldingSectionStyle({ marginBottom: '12px', display: 'flex', flexDirection: 'column' })}>
           <button
             type="button"
             data-quantora-sidebar-section="agents"
@@ -4405,11 +4400,11 @@ Paused — ${autoPauseRef.current}.`
               flexShrink: 0,
             }}
           >
-            <span>Agents</span>
+            <span>Workspaces</span>
             {sidebarSections.agents ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {sidebarSections.agents ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', flex: '1 1 auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px' }}>
           {/*
             The "+" and the fold sit BESIDE the row, never inside it. As
             siblings, a click aimed at the row cannot land on them: the
@@ -4422,6 +4417,10 @@ Paused — ${autoPauseRef.current}.`
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             <div
               data-quantora-coding-desk-nav="true"
+              role="button"
+              tabIndex={0}
+              aria-current={isCodingDesk ? 'page' : undefined}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCodingDesk(); } }}
               onClick={openCodingDesk}
               style={{
                 display: 'flex',
@@ -4451,6 +4450,10 @@ Paused — ${autoPauseRef.current}.`
             <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             <div
               data-quantora-advisor={card.domain}
+              role="button"
+              tabIndex={0}
+              aria-current={selected ? 'page' : undefined}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openAdvisorWorkspace(card.domain); } }}
               data-quantora-active-specialist={selected ? card.domain : undefined}
               onClick={() => {
                 openAdvisorWorkspace(card.domain);
@@ -4487,17 +4490,13 @@ Paused — ${autoPauseRef.current}.`
           ) : null}
         </div>
 
-        {/* Projects & Chats — one scrolling tree, Antigravity-style. Named
-            projects are folders; the open project shows its chats nested
-            beneath it. Chats in the default Personal Workspace are plain,
-            project-free chats and live in the flat list below — a conversation
-            does not have to belong to a project. While searching, the tree
-            gives way to one flat result list across every project. */}
+        {/* General chats belong to the selected project but no workspace.
+            Search replaces grouped chats with one list across all projects. */}
         <div
           data-quantora-sidebar-history="true"
-          style={studioSidebarHistoryPaneStyle()}
+          style={{ ...studioSidebarHistoryPaneStyle(), flex: '0 0 auto', minHeight: 0, overflow: 'visible' }}
         >
-          <div data-quantora-sidebar-history-list="true" style={studioSidebarHistoryListStyle()}>
+          <div data-quantora-sidebar-history-list="true" style={{ ...studioSidebarHistoryListStyle(), overflow: 'visible' }}>
             {chatQuery.trim() ? (
               searchedChatSessions.length === 0 ? (
                 <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '8px 4px' }}>
@@ -4506,136 +4505,19 @@ Paused — ${autoPauseRef.current}.`
               ) : searchedChatSessions.map((session) => renderChatRow(session))
             ) : (
               <>
-                <div data-quantora-sidebar-projects="true" style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '0 4px', marginBottom: '4px' }}>
-                    <span style={{ color: subtextColor, fontSize: '0.68rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Projects
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const name = window.prompt('What should we call this project?', 'New project');
-                        if (name && name.trim()) handleCreateProject({ name: name.trim() });
-                      }}
-                      title="New Project"
-                      aria-label="New Project"
-                      style={{
-                        flexShrink: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'transparent',
-                        color: subtextColor,
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '2px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                  {namedProjects.length === 0 ? (
-                    <div style={{ color: subtextColor, fontSize: '0.72rem', lineHeight: 1.4, padding: '0 4px 6px' }}>
-                      Group related chats into a project with +
-                    </div>
-                  ) : namedProjects.map((project) => {
-                    const isOpenProject = project.id === activeProjectId;
-                    const projectChats = chatsForProject(project.id);
-                    const projectFolded = collapsedProjects[project.id] === true;
-                    return (
-                      <div key={project.id} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', minWidth: 0 }}>
-                        <button
-                          type="button"
-                          data-quantora-sidebar-project={project.id}
-                          /*
-                           * SELECTING IS NOT DISCLOSING (2026-09-06).
-                           *
-                           * This button used to carry aria-expanded because the
-                           * chat list appeared whenever the project was active.
-                           * Now that the list has its own fold, that made two
-                           * controls report contradictory states for the SAME
-                           * list — the name saying expanded while the chevron
-                           * beside it said collapsed — and a screen-reader user
-                           * activating the name could not reveal anything,
-                           * because this handler is a no-op for the active
-                           * project. Disclosure belongs to the chevron alone.
-                           * What this button conveys is which project is
-                           * current, which is what aria-current says.
-                           */
-                          aria-current={isOpenProject ? 'true' : undefined}
-                          onClick={() => { if (!isOpenProject) setActiveProjectId(project.id); }}
-                          title={project.goal || project.description || project.name}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '9px',
-                            width: '100%',
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            background: 'transparent',
-                            border: '1px solid transparent',
-                            color: textColor,
-                            fontSize: '0.82rem',
-                            fontWeight: isOpenProject ? '700' : '500',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            minWidth: 0,
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = isLight ? '#fafafa' : 'rgba(255, 255, 255, 0.05)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent';
-                          }}
-                        >
-                          {isOpenProject
-                            ? <FolderOpen size={15} style={{ flexShrink: 0 }} />
-                            : <Folder size={15} color={subtextColor} style={{ flexShrink: 0 }} />}
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                            {project.name}
-                          </span>
-                        </button>
-                        {isOpenProject && projectChats.length > 0 ? (
-                          <button
-                            type="button"
-                            data-quantora-project-collapse={project.id}
-                            aria-expanded={!projectFolded}
-                            title={projectFolded ? `Show ${project.name} chats` : `Hide ${project.name} chats`}
-                            aria-label={projectFolded ? `Show ${project.name} chats` : `Hide ${project.name} chats`}
-                            onClick={(event) => { event.stopPropagation(); toggleProjectFold(project.id); }}
-                            style={workspaceIconButtonStyle}
-                          >
-                            {projectFolded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-                          </button>
-                        ) : null}
-                        </div>
-                        {isOpenProject && !projectFolded && (
-                          <div data-quantora-project-chats={project.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '14px', flexShrink: 0 }}>
-                            {projectChats.length === 0 ? (
-                              <div style={{ color: subtextColor, fontSize: '0.74rem', lineHeight: 1.4, padding: '2px 10px 6px' }}>
-                                No chats in this project yet.
-                              </div>
-                            ) : projectChats.map((session) => renderChatRow(session))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
 
-                {/* Chats that belong to no project (the default Personal Workspace). */}
+                {/* Non-workspace chats in the selected project. */}
                 <div
                   data-quantora-sidebar-history-title="true"
-                  title={studioSidebarHistoryTitle(projects.find((project) => project.id === DEFAULT_PROJECT_ID)?.name)}
+                  title={studioSidebarHistoryTitle(activeProject?.name)}
+                  aria-label={studioSidebarHistoryHint(personalChatSessions.length, 'General chats')}
                   style={{ color: subtextColor, fontSize: '0.68rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 4px', margin: '12px 0 4px', flexShrink: 0 }}
                 >
-                  Chats
+                  General chats
                 </div>
                 {personalChatSessions.length === 0 ? (
                   <div style={{ color: subtextColor, fontSize: '0.78rem', lineHeight: 1.4, padding: '2px 4px' }}>
-                    {studioSidebarHistoryHint(0, 'Personal Workspace', { isNewChatDestination: activeProjectId === DEFAULT_PROJECT_ID })}
+                    No general chats yet. Use New Chat above.
                   </div>
                 ) : personalChatSessions.map((session) => renderChatRow(session))}
 
@@ -4685,6 +4567,7 @@ Paused — ${autoPauseRef.current}.`
           </div>
         </div>
 
+        </div>
         {/*
           Product feedback: always available, never the point. An icon with a
           name, not a sentence — "Feedback & Suggestions" spelled out was the
@@ -5117,13 +5000,14 @@ Paused — ${autoPauseRef.current}.`
                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Sparkles size={18} className="animate-spin" color="#f97316" />
                 </div>
-                <div style={{ flex: 1, color: '#f97316', fontSize: '0.95rem', paddingTop: '8px', fontWeight: 500, lineHeight: 1.45 }}>
-                  <div>{partnerStatus?.now || generatingStatus || 'Working on a result you can actually use…'}</div>
-                  {partnerStatus?.next ? (
-                    <div style={{ fontSize: '0.82rem', color: subtextColor, fontWeight: 500, marginTop: '4px' }}>
-                      {partnerStatus.next}
-                    </div>
-                  ) : null}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <StudioExecutionProgress
+                    active
+                    history={messages.at(-1)?.sender === 'ai' ? lastAiMessage?.executionHistory : []}
+                    label={messages.at(-1)?.sender === 'ai' ? generatingStatus || partnerStatus?.now : 'Preparing your request…'}
+                    elapsedSec={thinkingTime}
+                    isLight={isLight}
+                  />
                 </div>
               </div>
             )}

@@ -375,15 +375,15 @@ export const JOURNEYS = Object.freeze([
       'data-quantora-new-chat',
       'data-quantora-chat-rename',
       'data-quantora-sidebar-search-toggle',
-      'data-quantora-sidebar-project',
+      'data-quantora-project-selector',
       'data-quantora-sidebar-archived-toggle',
     ],
     gates: {
       deterministic: ['src/lib/project-store.test.js', 'src/lib/session-desks.test.js', 'src/lib/session-activity.test.js'],
-      browser: ['scripts/desk-job-review-browser-gate.mjs', 'scripts/second-transaction-browser-gate.mjs'],
+      browser: ['scripts/desk-job-review-browser-gate.mjs', 'scripts/second-transaction-browser-gate.mjs', 'scripts/studio-navigation-progress-browser-gate.mjs'],
       deployed: ['golden:simple-website'],
     },
-    note: 'New Chat is proven. Rename, search, archive and projects are helpers only.',
+    note: 'Browser coverage includes new chats, project selection and isolation, global search returning to the owning project, duplicate-free workspace lists, move/archive/restore, mobile navigation, and activity before response text. Rename retains helper coverage.',
   }),
   journey({
     id: 'workspace-owns-its-chats',
