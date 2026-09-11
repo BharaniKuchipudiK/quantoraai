@@ -13,6 +13,7 @@ import githubConnectCallback from "./_lib/handlers/auth-github-connect-callback.
 import providers from "./_lib/handlers/auth-providers.js";
 import desktopGrant from "./_lib/handlers/auth-desktop-grant.js";
 import desktopExchange from "./_lib/handlers/auth-desktop-exchange.js";
+import releaseFlags from "./_lib/handlers/auth-release-flags.js";
 
 /**
  * Single auth entrypoint for Vercel Hobby function budget.
@@ -22,7 +23,7 @@ import desktopExchange from "./_lib/handlers/auth-desktop-exchange.js";
 /*
  * WHY THIS FUNCTION MAY NEVER THROW (2026-09-07).
  *
- * Fourteen auth routes are collapsed behind this one function to fit the Hobby
+ * Fifteen auth/release routes are collapsed behind this one function to fit the
  * function budget, and it is the first thing every new person touches: the
  * frontend calls `?route=session` on page load before anything else renders.
  *
@@ -74,5 +75,6 @@ async function route(req: any, res: any) {
   if (route === "providers") return providers(req, res);
   if (route === "desktop-grant") return desktopGrant(req, res);
   if (route === "desktop-exchange") return desktopExchange(req, res);
+  if (route === "release-flags") return releaseFlags(req, res);
   return res.status(404).json({ error: "Unknown auth route." });
 }

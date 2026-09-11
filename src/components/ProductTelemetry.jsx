@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { track } from '@vercel/analytics';
 import {
   PRODUCT_TELEMETRY_EVENT,
-  authStateFromSession,
   buildFirstWorkspaceEventData,
   buildVisitEventData,
   claimFirstWorkspaceOpen,
@@ -21,16 +20,11 @@ let claimedThisDocument = false;
  * view stream. This component intentionally owns no product state and sends no
  * identity or learner content.
  *
- * Vercel Analytics gives us page/visitor measurement. These two custom events
- * answer the Quantora-specific questions the default stream cannot:
- *   - was this app load signed in or signed out?
- *   - is this browser returning on a later day?
- *   - did a signed-in browser reach the real Studio workspace for the first
- *     time on this device?
- *
- * The session observation below is explicitly side-effect-free: the normal App
- * bootstrap owns the signed-out website hit counter, while this read only asks
- * the server for coarse auth state. /api/auth/session remains the authority.
+ * The custom event stream is release-controlled server-side by Vercel Flags.
+ * The browser never receives the SDK key, targeting rules or raw identity; it
+ * gets only an allow-listed boolean plus the coarse authenticated bit needed by
+ * the event label. If flag evaluation is unavailable, this observer fails
+ * closed while Vercel's existing page-view Analytics continues normally.
  */
 export default function ProductTelemetry() {
   useEffect(() => {
@@ -51,10 +45,15 @@ export default function ProductTelemetry() {
       }
     };
 
-    fetch('/api/auth/session?purpose=product-telemetry', { credentials: 'same-origin' })
+    fetch('/api/auth?route=release-flags', { credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
-        const authState = authStateFromSession(payload);
+        if (payload?.flags?.productTelemetryV1 !== true) return;
+
+        const authState = payload?.audience?.authenticated === true
+          ? 'signed_in'
+          : 'signed_out';
+
         emit(PRODUCT_TELEMETRY_EVENT.VISIT, buildVisitEventData({
           authState,
           visitType,
@@ -73,11 +72,8 @@ export default function ProductTelemetry() {
         }
       })
       .catch(() => {
-        emit(PRODUCT_TELEMETRY_EVENT.VISIT, buildVisitEventData({
-          authState: 'unknown',
-          visitType,
-          surface,
-        }));
+        // Release flags fail closed. Default Vercel page analytics remain
+        // active; only these optional product custom events stay disabled.
       });
 
     return undefined;
