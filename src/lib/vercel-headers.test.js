@@ -103,6 +103,17 @@ test('app pages use X-Frame-Options: SAMEORIGIN, consistent with frame-ancestors
   }
 });
 
+test('app pages allow WebAssembly compilation without allowing general eval', () => {
+  // Pyodide powers Coding Desk Python verification in a worker. Production CSP
+  // must permit WebAssembly compilation, while continuing to forbid JavaScript
+  // eval/new Function via the broader and less safe `unsafe-eval` source.
+  for (const path of ['/desk', '/', '/studio']) {
+    const csp = resolveHeadersForPath(config, path)['content-security-policy'];
+    assert.match(csp, /script-src[^;]*'wasm-unsafe-eval'/, `${path} must allow Pyodide WASM`);
+    assert.doesNotMatch(csp, /script-src[^;]*'unsafe-eval'/, `${path} must not allow JS eval`);
+  }
+});
+
 test('contract check catches an X-Frame-Options: DENY on the framed shell', () => {
   // Guard the guard: a config that puts DENY on /preview/* must be flagged.
   const broken = JSON.parse(JSON.stringify(config));
