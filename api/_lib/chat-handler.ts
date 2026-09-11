@@ -24,6 +24,8 @@ import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { shouldEnableTravelTools } from './agent-tools.js';
 import { shouldEnableGithubTools } from './github-agent-tools.js';
+import { shouldEnableVercelTools } from './vercel-agent-tools.js';
+import { resolveVercelToken } from './vercel-deployments.js';
 /*
  * Phase 4. The handler imports the REGISTRY, not the families: no declaration
  * list, no executor, and no isGithubToolName. Which family a call belongs to is
@@ -1312,6 +1314,16 @@ export default async function handler(req: any, res: any) {
     const githubToolsEnabled = shouldEnableGithubTools({ hasGithubConnection: Boolean(githubPrincipal) })
       && Boolean(effectiveGeminiKey);
     /*
+     * The platform's shared Vercel token, read once per turn for the same
+     * reason the GitHub principal is: a tool loop that re-reads it per call
+     * would pay the credential-broker round trip on every step. Unlike GitHub
+     * this is not per-user — resolveVercelToken() answers "is Vercel
+     * configured on this platform at all?", not "for this signed-in user".
+     */
+    const vercelToken = await resolveVercelToken().catch(() => null);
+    const vercelToolsEnabled = shouldEnableVercelTools({ vercelConfigured: Boolean(vercelToken) })
+      && Boolean(effectiveGeminiKey);
+    /*
      * THE turn's tool context. Every question about tools — what to declare,
      * whether a call is legitimate, who executes it — is asked of the registry
      * with this, so the three answers cannot disagree with each other.
@@ -1326,6 +1338,7 @@ export default async function handler(req: any, res: any) {
     const activeToolContext: QuantoraToolContext = {
       studioDomain: normalizedStudioDomain,
       githubPrincipal: githubToolsEnabled ? githubPrincipal : null,
+      vercelToken: vercelToolsEnabled ? vercelToken : null,
       get travelToolsPermitted() { return travelToolsEnabled; },
       toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
     };

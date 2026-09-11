@@ -65,6 +65,11 @@ import {
   shouldEnableGithubTools,
 } from "./github-agent-tools.js";
 import type { GithubPrincipal } from "./github-principal.js";
+import {
+  vercelFunctionDeclarations,
+  executeVercelToolCall,
+  shouldEnableVercelTools,
+} from "./vercel-agent-tools.js";
 
 /** Everything an enablement rule or an executor is allowed to see. */
 export interface QuantoraToolContext {
@@ -72,6 +77,8 @@ export interface QuantoraToolContext {
   studioDomain?: unknown;
   /** The signed-in user's GitHub principal, when they have connected one. */
   githubPrincipal?: GithubPrincipal | null;
+  /** The platform's shared Vercel token (deploy:vercel), when configured. */
+  vercelToken?: string | null;
   /** Whether the platform independently decided travel tools may run. */
   travelToolsPermitted?: boolean;
   /** Recent user turns, used by travel tools to resolve an implied location. */
@@ -175,6 +182,11 @@ export function classifyGithubToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
 }
 
+/** Vercel tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifyVercelToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
 /*
  * Travel providers are held to 6s per attempt, flights to two attempts with a
  * short backoff. 20s is that plus headroom for the second provider hop, not a
@@ -189,6 +201,14 @@ const TRAVEL_TOOL_BUDGET_MS = 20_000;
  * slow read short is its own wrong answer.
  */
 const GITHUB_TOOL_BUDGET_MS = 45_000;
+
+/*
+ * read_vercel_deployment makes two Vercel hops (deployment detail, then build
+ * log) that this file runs in parallel, not sequentially like GitHub's PR
+ * read — so its budget does not need GitHub's multiplier. 20s matches the
+ * travel budget: headroom for one slow provider hop plus a retry-shaped delay.
+ */
+const VERCEL_TOOL_BUDGET_MS = 20_000;
 
 const TRAVEL_TOOLS: QuantoraToolDefinition[] = travelFunctionDeclarations.map((declaration) => ({
   name: String(declaration.name),
@@ -251,6 +271,31 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
   },
 }));
 
+const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "vercel",
+  declaration,
+  budgetMs: VERCEL_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `Vercel did not answer in time — ${reason}.`,
+      note: "Tell the user the read timed out and offer to try again. Do not describe the deployment's state or build log from memory; you did not read it.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableVercelTools({ vercelConfigured: Boolean(context.vercelToken) });
+  },
+  async execute(args, context) {
+    const raw = await executeVercelToolCall(this.name, args, {
+      vercelToken: context.vercelToken || null,
+      ...(context.abortSignal ? { fetchImpl: budgetedFetch(context.abortSignal) } : {}),
+    });
+    return { family: "vercel", raw, classify: () => classifyVercelToolResult(raw) };
+  },
+}));
+
 /**
  * THE registry. Every tool the model can be offered appears here exactly once.
  *
@@ -261,7 +306,7 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
  */
 function buildRegistry(): Map<string, QuantoraToolDefinition> {
   const registry = new Map<string, QuantoraToolDefinition>();
-  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS]) {
+  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...VERCEL_TOOLS]) {
     const existing = registry.get(tool.name);
     if (existing) {
       throw new Error(
