@@ -1,25 +1,34 @@
 #!/usr/bin/env node
 /*
- * Standalone QIR worker process — Phase 1.
+ * Standalone QIR worker process.
  *
- * This is a NEW, optional entry point. Nothing else in the repo starts it
- * automatically, imports it, or depends on it existing. server.ts and every
- * Vercel function keep running exactly as before; this proves a Run CAN be
- * driven outside a browser tab and outside a request, not that anything
- * today requires it to be.
+ * The process is still OPTIONAL: nothing in the repo starts it automatically,
+ * imports it from server.ts, or moves production Coding ownership away from
+ * the browser/request path. The executor is still the Phase-1 heartbeat proof
+ * executor; this slice only lets the process use the same durable production
+ * Run journal as the request path when an operator explicitly selects it.
  *
- * Usage (proof/dev only right now):
+ * Local crash/resume proof (default, unchanged):
  *   QIR_WORKER_STORE_DIR=/tmp/qir-proof QIR_WORKER_USER_SUB=u1 \
  *     QIR_WORKER_RUN_ID=run-1 node --loader tsx worker.ts
  *
- * It uses the local file-based dev/proof store (api/_lib/qir-local-file-store.ts)
- * and the placeholder heartbeat executor (api/_lib/qir-worker-runtime.ts) —
- * see those files' own doc comments for exactly what is and is not proven by
- * this. It does not talk to Supabase and it does not run on Railway; both are
- * later, separately-gated phases.
+ * Explicit production-store bridge (manual only; still heartbeat execution):
+ *   QIR_WORKER_STORE=supabase SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+ *     QIR_WORKER_USER_SUB=u1 QIR_WORKER_RUN_ID=run-1 node --loader tsx worker.ts
+ *
+ * `supabase` uses qir-run-store.ts through qir-supabase-worker-store.ts. It
+ * does not duplicate persistence or bypass the production CAS/idempotency
+ * contract. Railway hosting, run discovery/leasing and a real Coding executor
+ * remain later phases.
  */
 import { createLocalFileQirStore } from "./api/_lib/qir-local-file-store.js";
-import { heartbeatStepExecutor, runQirWorkerLoop } from "./api/_lib/qir-worker-runtime.js";
+import { isQirRunStoreConfigured } from "./api/_lib/qir-run-store.js";
+import { createSupabaseQirWorkerStore } from "./api/_lib/qir-supabase-worker-store.js";
+import {
+  heartbeatStepExecutor,
+  runQirWorkerLoop,
+  type QirDurableStorePort,
+} from "./api/_lib/qir-worker-runtime.js";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -30,8 +39,23 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function resolveWorkerStore(): QirDurableStorePort {
+  const selected = String(process.env.QIR_WORKER_STORE || "local").trim().toLowerCase();
+  if (selected === "local") {
+    return createLocalFileQirStore(requiredEnv("QIR_WORKER_STORE_DIR"));
+  }
+  if (selected === "supabase") {
+    if (!isQirRunStoreConfigured()) {
+      console.error("worker.ts: QIR_WORKER_STORE=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+      process.exit(1);
+    }
+    return createSupabaseQirWorkerStore();
+  }
+  console.error(`worker.ts: unsupported QIR_WORKER_STORE ${selected}; expected local or supabase`);
+  process.exit(1);
+}
+
 async function main() {
-  const storeDir = requiredEnv("QIR_WORKER_STORE_DIR");
   const userSub = requiredEnv("QIR_WORKER_USER_SUB");
   const runId = requiredEnv("QIR_WORKER_RUN_ID");
   const maxSteps = process.env.QIR_WORKER_MAX_STEPS ? Number(process.env.QIR_WORKER_MAX_STEPS) : undefined;
@@ -41,7 +65,7 @@ async function main() {
   // finishes a multi-step run in milliseconds. Never set outside a proof.
   const stepDelayMs = process.env.QIR_WORKER_STEP_DELAY_MS ? Number(process.env.QIR_WORKER_STEP_DELAY_MS) : undefined;
 
-  const store = createLocalFileQirStore(storeDir);
+  const store = resolveWorkerStore();
   const executor = heartbeatStepExecutor({
     onStepStart: (stepId, actionId) => {
       // One line per step to stdout — this is what the crash/resume proof
