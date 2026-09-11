@@ -328,6 +328,7 @@ export function useChatStream({
   onCodingTurnExecute = null,
   onToolInvoked = null,
   onTurnBudget = null,
+  onCodingSourceFilesReceived = null,
   onCodingTurnProved = null,
   qirCoding = null,
   onDeskRename = null,
@@ -2276,6 +2277,13 @@ export function useChatStream({
               ...artifactBaseVfs,
               ...(assembled.vfs || {}),
             };
+            // Python proof can cold-start a multi-megabyte runtime. The files
+            // are already structurally validated at this point, so put them on
+            // the desk immediately and keep verification visibly in progress.
+            // Invalid Python stays available to repair, but never earns a pass.
+            if (turnPlan.intent?.kind === 'python_build' && typeof onCodingSourceFilesReceived === 'function') {
+              try { onCodingSourceFilesReceived(seedVfs, turnPlan, owningSessionId); } catch { /* proof still runs */ }
+            }
             codingRuntimeEvidence = await import('../lib/python-runtime.js')
               .then(({ verifyPythonWorkspace }) => verifyPythonWorkspace(
                 seedVfs,

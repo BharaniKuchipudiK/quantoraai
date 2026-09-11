@@ -106,6 +106,12 @@ test("build policy preserves named Python deliverables instead of inventing a we
   assert.match(prompt, /runs pytest when test files are present/);
 });
 
+test("shop checkout points at the live canonical application domain", () => {
+  const prompt = buildConversationSystemPrompt({ buildMode: true });
+  assert.match(prompt, /https:\/\/quantoraai\.app\/api\/checkout/);
+  assert.doesNotMatch(prompt, /quantoraai\.vercel\.app/);
+});
+
 test("build mode tells the model to ship working tools immediately", () => {
   const prompt = buildConversationSystemPrompt({
     buildMode: true,
