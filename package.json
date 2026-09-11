@@ -25,7 +25,7 @@
     "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
     "test:ts": "node scripts/run-ts-tests.mjs",
     "test:node": "node scripts/run-node-tests.mjs",
-    "test:all": "npm run test:imports && npm run test:hook-order && npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes && npm run test:journeys",
+    "test:all": "npm run test:imports && npm run test:hook-order && npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes && npm run test:journeys && npm run test:qir-worker-crash-resume",
     "test:ci": "npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'",
     "test:wiring": "node scripts/wiring-gate.mjs",
@@ -47,7 +47,8 @@
     "test:framed-preview": "node scripts/framed-preview-headers-gate.mjs",
     "test:function-region": "node scripts/function-region-gate.mjs",
     "test:image-parsers": "node scripts/image-parser-dos-gate.mjs",
-    "test:advisories": "node scripts/dependency-advisory-gate.mjs"
+    "test:advisories": "node scripts/dependency-advisory-gate.mjs",
+    "test:qir-worker-crash-resume": "node scripts/qir-worker-crash-resume-proof.mjs"
   },
   "dependencies": {
     "@duffel/api": "^4.28.0",
