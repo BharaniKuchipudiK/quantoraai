@@ -3,9 +3,11 @@ import type {
   QirWorkerLeaseClaimResult,
 } from "./qir-worker-lease.js";
 
+type QirWorkerLeaseBusyClaim = Extract<QirWorkerLeaseClaimResult, { status: "busy" }>;
+
 export type QirWorkerLeaseRunResult<T> =
   | { status: "completed"; result: T }
-  | { status: "busy"; claim: QirWorkerLeaseClaimResult }
+  | { status: "busy"; claim: QirWorkerLeaseBusyClaim }
   | { status: "lease-lost" }
   | { status: "unavailable"; diagnosis?: string | null };
 
