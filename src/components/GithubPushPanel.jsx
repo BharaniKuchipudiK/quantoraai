@@ -92,7 +92,11 @@ export default function GithubPushPanel({
   const [createdUrl, setCreatedUrl] = useState('');
 
   const files = useMemo(() => deskFilesForPush(studioWorkspaceFileEntries(vfs)), [vfs]);
-  const canPush = files.length > 0 && !busy && (mode === 'new' || Boolean(targetRepoUrl));
+  const writeBlocked = mode === 'existing' && chosen?.canPush === false;
+  const canPush = files.length > 0
+    && !busy
+    && !writeBlocked
+    && (mode === 'new' || Boolean(targetRepoUrl));
 
   /*
    * The destination can be selected after this lazy panel mounted. Keep the
@@ -130,6 +134,10 @@ export default function GithubPushPanel({
   }
 
   async function run() {
+    if (writeBlocked) {
+      setError('This repository is read-only for your connected GitHub account. You can review its checked-out code, but GitHub will not accept a commit from this account.');
+      return;
+    }
     setBusy(true);
     setError('');
     setStatus('');
@@ -236,6 +244,12 @@ export default function GithubPushPanel({
         </div>
       )}
 
+      {writeBlocked ? (
+        <div data-quantora-github-push-readonly="true" style={{ color: '#fbbf24', lineHeight: 1.45 }}>
+          Read-only repository: the code is available for review, but this GitHub account cannot commit or open a PR from it.
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <label htmlFor="quantora-push-branch" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>
           {mode === 'existing' ? 'Work branch' : 'Branch'}
@@ -269,6 +283,7 @@ export default function GithubPushPanel({
           data-quantora-github-push-run="true"
           disabled={!canPush}
           onClick={run}
+          title={writeBlocked ? 'Your connected GitHub account has read access only.' : undefined}
           style={{ ...buttonStyle, opacity: canPush ? 1 : 0.5, cursor: canPush ? 'pointer' : 'not-allowed' }}
         >
           {busy ? 'Working…' : mode === 'new' ? 'Create and push' : 'Commit to GitHub'}
