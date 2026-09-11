@@ -73,9 +73,11 @@ export async function pushFilesToRepositoryFromBase(
     fetchImpl,
     body: { ref: `refs/heads/${targetBranch}`, sha: baseSha },
   });
+  let createdWorkBranch = false;
   if (created.status === 422) {
     // A race can create the branch between our GET and POST. Re-read it; if it
-    // now exists, continue through the normal fast-forward guarded push.
+    // now exists, continue through the normal fast-forward guarded push. This
+    // call did not create it, so the result correctly reports createdBranch=false.
     const raced = await githubRequest(
       `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(targetBranch)}`,
       { token, fetchImpl },
@@ -85,7 +87,10 @@ export async function pushFilesToRepositoryFromBase(
     }
   } else if (!created.ok) {
     throw new Error(`GitHub could not create work branch "${targetBranch}" from "${baseBranch}" (HTTP ${created.status}). Nothing was pushed.`);
+  } else {
+    createdWorkBranch = true;
   }
 
-  return pushFilesToRepository(context, request);
+  const result = await pushFilesToRepository(context, request);
+  return createdWorkBranch ? { ...result, createdBranch: true } : result;
 }
