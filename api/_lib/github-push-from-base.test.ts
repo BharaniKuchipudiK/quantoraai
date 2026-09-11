@@ -4,6 +4,43 @@ import { pushFilesToRepositoryFromBase } from './github-push-from-base.js';
 
 const principal = { userSub: 'u', login: 'octo', token: 'gho_x', scopes: ['repo'], connectedAt: '' };
 
+test('pushFilesToRepositoryFromBase refuses read-only access before any mutation', async () => {
+  const mutations: Array<{ url: string; method: string }> = [];
+  const fetchImpl = async (url: string, init: any = {}) => {
+    const method = String(init.method || 'GET').toUpperCase();
+    if (method !== 'GET') mutations.push({ url, method });
+    const reply = (status: number, payload: unknown) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => JSON.stringify(payload),
+    });
+    if (/\/repos\/acme\/widget$/.test(url)) {
+      return reply(200, {
+        name: 'widget',
+        owner: { login: 'acme' },
+        default_branch: 'main',
+        archived: false,
+        permissions: { pull: true },
+      });
+    }
+    return reply(404, { message: 'Not Found' });
+  };
+
+  await assert.rejects(
+    () => pushFilesToRepositoryFromBase(
+      { principal, owner: 'acme', repo: 'widget', fetchImpl },
+      {
+        branch: 'quantora-desk',
+        baseBranch: 'main',
+        message: 'must not write',
+        files: [{ path: 'src/App.jsx', content: 'export default null;' }],
+      },
+    ),
+    /not enough to write/,
+  );
+  assert.deepEqual(mutations, [], 'read-only access must send zero mutating GitHub requests');
+});
+
 test('a missing work branch is created at the selected base before the desk commit', async () => {
   let workBranchExists = false;
   const mutations: Array<{ url: string; method: string; body: any }> = [];
