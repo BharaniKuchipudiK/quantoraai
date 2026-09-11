@@ -24,50 +24,35 @@
  * reversible by closing it; merging is not, in the ordinary case, without a
  * human review of what is about to land on the default branch. A human clicks
  * merge. This file cannot change that no matter what the model decides.
- *
- * WHAT AUTHORIZES THESE
- *
- * The signed-in user's own GitHub connection — the same sealed principal
- * `github-agent-tools.ts` reads with. There is no Quantora token and no
- * service account here either.
  */
 import {
   createPullRequest,
-  pushFilesToRepository,
   type GithubWriteContext,
 } from "./github-actions.js";
+import { pushFilesToRepositoryFromBase } from './github-push-from-base.js';
 import type { FetchLike, GithubPrincipal } from "./github-principal.js";
 import { checkFilesParse } from "./code-syntax-guard.js";
 
 /**
  * Tools are offered only when BOTH are true: a GitHub connection exists, and
- * the user has separately turned on autonomous writes. Connecting GitHub only
- * ever grants Quantora the ability to act as the user for READS by default —
- * it must not also silently grant permission to write without being asked.
- * `autoPrOptedIn` is that second, explicit decision, read from its own
- * opt-in flag (github_connections.auto_pr_enabled), never inferred from the
- * connection existing.
+ * the user has separately turned on autonomous writes.
  */
 export function shouldEnableGithubWriteTools(input: { hasGithubConnection?: boolean; autoPrOptedIn?: boolean } = {}): boolean {
   return input.hasGithubConnection === true && input.autoPrOptedIn === true;
 }
 
-/*
- * DESCRIPTIONS ARE PROMISES — see github-agent-tools.ts for the incident this
- * rule closes. `github-write-tool-promise.test.ts` checks these strings
- * against the shapes the executor really returns.
- */
 export const githubWriteFunctionDeclarations: any[] = [
   {
     name: "push_files_to_repository",
     description:
-      "Commit one or more files to a branch on the signed-in user's GitHub repository, as one commit. Creates the branch from the repository's default branch if it does not already exist. REQUIRED before create_pull_request when the head branch is not already on GitHub. Before writing, every JS/TS/JSX/TSX/JSON file is checked for a real parse error (a syntax error that would break any build) and the commit is refused if one is found — this is NOT a test run and does NOT check that the code behaves correctly, only that it parses. Returns: the new commit SHA, the branch name, how many files were committed, whether the branch was just created, and the commit's URL. Does NOT open a pull request — call create_pull_request for that. Fails closed if the signed-in user cannot write to this repository; it never silently commits as someone else.",
+      "Commit one or more files to a branch on the signed-in user's GitHub repository, as one commit. If the work branch does not exist, it is created from baseBranch (or the repository default branch when baseBranch is omitted), so the commit has shared history and can be opened as a normal pull request. Before writing, every JS/TS/JSX/TSX/JSON file is checked for a real parse error and the commit is refused if one is found. Returns: the new commit SHA, branch, file count, whether the branch was created, and its URL. Does NOT open a pull request — call create_pull_request next. This tool never merges.",
     parameters: {
       type: "object",
       properties: {
         owner: { type: "string", description: "Repository owner (user or organisation login)." },
         repo: { type: "string", description: "Repository name, without the owner prefix." },
-        branch: { type: "string", description: "Branch to commit to. Created from the default branch if it does not exist." },
+        branch: { type: "string", description: "Work branch to commit to. Use a branch different from the PR base." },
+        baseBranch: { type: "string", description: "Branch the work branch should be created from when it does not yet exist. Defaults to the repository default branch." },
         message: { type: "string", description: "The commit message. Must describe what changed." },
         files: {
           type: "array",
@@ -88,7 +73,7 @@ export const githubWriteFunctionDeclarations: any[] = [
   {
     name: "create_pull_request",
     description:
-      "Open a pull request on the signed-in user's GitHub repository, from a branch that already exists on GitHub (push it first with push_files_to_repository if it does not). Returns: the pull request's number, URL, state, and the permission GitHub reported for this write. Does NOT merge, comment, or request review — it only opens the pull request. Merging always requires the human to click merge themselves; no tool exists here that can do it. Fails closed if the signed-in user cannot write to this repository.",
+      "Open a pull request on the signed-in user's GitHub repository, from a branch that already exists on GitHub (push it first with push_files_to_repository if it does not). Returns: the pull request's number, URL, state, and the permission GitHub reported for this write. Does NOT merge, comment, or request review — it only opens the pull request. Merging always requires the human to click merge themselves; no autonomous merge tool exists here.",
     parameters: {
       type: "object",
       properties: {
@@ -110,11 +95,6 @@ function requireText(value: unknown, field: string): string {
   return text;
 }
 
-/**
- * A failure the MODEL reads, and therefore a failure the USER reads. Says
- * what was attempted and what GitHub said, and never softens a refusal into
- * something that sounds like it happened anyway.
- */
 function toolFailure(action: string, error: unknown) {
   const detail = error instanceof Error ? error.message : String(error || "unknown error");
   return {
@@ -133,8 +113,6 @@ export async function executeGithubWriteToolCall(
 ): Promise<any> {
   const principal = context?.principal;
   if (!principal) {
-    // Reached only if the enable-gate and the call-site guard both let this
-    // through. Fails closed and says the actionable thing.
     return {
       ok: false,
       status: "not_connected",
@@ -152,12 +130,6 @@ export async function executeGithubWriteToolCall(
         const repo = requireText(args?.repo, "repo");
         const writeContext: GithubWriteContext = { principal, owner, repo, fetchImpl };
         const filesToWrite = Array.isArray(args?.files) ? args.files : [];
-        /*
-         * The one real, free check available without a git clone or npm: does
-         * every file even PARSE. Run before any network call reaches GitHub —
-         * a syntax error caught here costs nothing; caught after push it is
-         * already a commit someone has to notice and revert.
-         */
         const syntaxCheck = checkFilesParse(filesToWrite);
         if (!syntaxCheck.ok) {
           return {
@@ -168,10 +140,11 @@ export async function executeGithubWriteToolCall(
             note: "Nothing was written to GitHub. Fix the syntax error(s) listed and call push_files_to_repository again. This check only confirms the file parses — it is not a test run.",
           };
         }
-        const result = await pushFilesToRepository(writeContext, {
+        const result = await pushFilesToRepositoryFromBase(writeContext, {
           files: filesToWrite,
           message: String(args?.message || ""),
           branch: typeof args?.branch === "string" ? args.branch : undefined,
+          baseBranch: typeof args?.baseBranch === "string" ? args.baseBranch : undefined,
         });
         return {
           ok: true,
@@ -193,9 +166,6 @@ export async function executeGithubWriteToolCall(
           head: String(args?.head || ""),
           base: typeof args?.base === "string" ? args.base : undefined,
           body: typeof args?.body === "string" ? args.body : undefined,
-          // Opened as ready-for-review, not draft: a fix that has already
-          // passed the model's own reasoning is being handed to a human to
-          // merge, not parked for the user to remember to un-draft.
           draft: false,
         });
         return {
