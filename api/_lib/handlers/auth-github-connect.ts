@@ -12,7 +12,13 @@
 import { applyCors } from "../rate-limit.js";
 import { oauthOrigin } from "../app-origin.js";
 import { resolveGithubOAuthClientId } from "../auth-env.js";
-import { appendSetCookie, getSessionUser, githubConnectStateCookie } from "../session.js";
+import {
+  appendSetCookie,
+  getSessionUser,
+  githubConnectReturnCookie,
+  githubConnectStateCookie,
+  isSafeGithubConnectReturnPath,
+} from "../session.js";
 import { GITHUB_CONNECT_SCOPE_PARAM, mintConnectState } from "../github-principal.js";
 import { isGithubConnectionStoreConfigured } from "../github-connection-store.js";
 
@@ -63,5 +69,14 @@ export default async function handler(req: any, res: any) {
   });
 
   appendSetCookie(res, githubConnectStateCookie(state));
+
+  // The frontend passes ?return=<path it was on> so the callback can send the
+  // browser back there instead of the homepage. Only ever stored if it is
+  // provably a same-origin path — see isSafeGithubConnectReturnPath.
+  const requestedReturn = String(req.query?.return || "");
+  if (isSafeGithubConnectReturnPath(requestedReturn)) {
+    appendSetCookie(res, githubConnectReturnCookie(requestedReturn));
+  }
+
   return res.redirect(302, `${GITHUB_AUTHORIZE}?${params.toString()}`);
 }

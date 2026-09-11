@@ -5,6 +5,7 @@ import {
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
   checkStateLabel,
+  githubConnectUrl,
   githubConnectionNotice,
   githubReconnectPrompt,
   isGithubTokenRejected,
@@ -96,6 +97,27 @@ test('the reconnect prompt points at the connect route, not at prose', () => {
   // The old copy told the reader to reconnect "in Quantora" and gave them
   // nowhere to do it. The prompt carries the destination itself.
   assert.match(prompt.href, /^\/api\//);
+});
+
+// Before this, the connect flow always sent the browser back to bare "/" —
+// the marketing homepage — regardless of what workspace or chat the click
+// came from, which read as "it kicked me out of my project" to someone
+// mid-task. githubConnectUrl is the one place every "Connect GitHub" link in
+// the app builds its href, so a `return` path travels with the click.
+
+test('githubConnectUrl carries the current location through as a query param', () => {
+  assert.equal(githubConnectUrl('/desk/my-project?tab=hub'), `${GITHUB_CONNECT_URL}?return=${encodeURIComponent('/desk/my-project?tab=hub')}`);
+});
+
+test('githubConnectUrl omits the query param for the homepage or an empty location', () => {
+  assert.equal(githubConnectUrl('/'), GITHUB_CONNECT_URL);
+  assert.equal(githubConnectUrl(''), GITHUB_CONNECT_URL);
+  assert.equal(githubConnectUrl(undefined), GITHUB_CONNECT_URL);
+});
+
+test('the reconnect prompt carries the current location too, when given one', () => {
+  const prompt = githubReconnectPrompt('/desk/my-project');
+  assert.equal(prompt.href, `${GITHUB_CONNECT_URL}?return=${encodeURIComponent('/desk/my-project')}`);
 });
 
 // The connect flow always redirects back to `/?github=…`. Before this was

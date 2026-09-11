@@ -14,6 +14,25 @@
 export const GITHUB_CONNECT_URL = '/api/auth/github/connect';
 
 /*
+ * The connect flow used to always send the browser back to bare "/" once it
+ * finished — the marketing homepage — no matter what workspace or chat the
+ * click came from. The connection itself was never lost, only the page you
+ * were looking at, which reads as "it kicked me out of my project" to someone
+ * mid-task even though nothing was destroyed.
+ *
+ * api/_lib/handlers/auth-github-connect.ts now stores a validated `return`
+ * path server-side (never trusted blind — see isSafeGithubConnectReturnPath
+ * there) and the callback sends the browser back to it instead of "/". This
+ * is the one place that builds the link carrying that path, so every
+ * "Connect GitHub" entry point in the app gets the fix for free.
+ */
+export function githubConnectUrl(currentLocation) {
+  const location = typeof currentLocation === 'string' ? currentLocation : '';
+  if (!location || location === '/') return GITHUB_CONNECT_URL;
+  return `${GITHUB_CONNECT_URL}?return=${encodeURIComponent(location)}`;
+}
+
+/*
  * A rejected token is not a failed action, and must not be shown as one.
  *
  * The server says "GitHub rejected your connected token. Reconnect your GitHub
@@ -36,12 +55,12 @@ export function isGithubTokenRejected(message) {
 }
 
 /** What to tell someone whose stored authorization GitHub no longer accepts. */
-export function githubReconnectPrompt() {
+export function githubReconnectPrompt(currentLocation) {
   return {
     title: 'GitHub rejected your saved authorization',
     detail: 'It was revoked or it expired. Reconnecting takes a few seconds and keeps your work.',
     action: 'Reconnect GitHub',
-    href: GITHUB_CONNECT_URL,
+    href: githubConnectUrl(currentLocation),
   };
 }
 

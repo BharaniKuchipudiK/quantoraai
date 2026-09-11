@@ -19,20 +19,24 @@ import { oauthOrigin } from "../app-origin.js";
 import { resolveGithubOAuthClientId, resolveGithubOAuthClientSecret } from "../auth-env.js";
 import {
   appendSetCookie,
+  clearGithubConnectReturnCookie,
   clearGithubConnectStateCookie,
   getSessionUser,
+  GITHUB_CONNECT_RETURN_COOKIE,
   GITHUB_CONNECT_STATE_COOKIE,
+  isSafeGithubConnectReturnPath,
   readRequestCookies,
 } from "../session.js";
 import { connectStateMatches, GITHUB_CONNECT_SCOPES } from "../github-principal.js";
 import { saveGithubConnection } from "../github-connection-store.js";
 
-function back(req: any, res: any, query: string) {
-  return res.redirect(302, `${oauthOrigin(req)}/?${query}`);
+function back(req: any, res: any, query: string, basePath: string) {
+  const separator = basePath.includes("?") ? "&" : "?";
+  return res.redirect(302, `${oauthOrigin(req)}${basePath}${separator}${query}`);
 }
 
-function fail(req: any, res: any, message: string) {
-  return back(req, res, `github=error&message=${encodeURIComponent(message)}`);
+function fail(req: any, res: any, message: string, basePath: string) {
+  return back(req, res, `github=error&message=${encodeURIComponent(message)}`, basePath);
 }
 
 async function exchangeAndIdentify(code: string, req: any): Promise<{ token: string; login: string; scopes: string[] } | null> {
@@ -89,23 +93,27 @@ export default async function handler(req: any, res: any) {
   const expectedState = cookies[GITHUB_CONNECT_STATE_COOKIE];
   appendSetCookie(res, clearGithubConnectStateCookie());
 
+  const requestedReturn = cookies[GITHUB_CONNECT_RETURN_COOKIE];
+  appendSetCookie(res, clearGithubConnectReturnCookie());
+  const basePath = requestedReturn && isSafeGithubConnectReturnPath(requestedReturn) ? requestedReturn : "/";
+
   const sessionUser = getSessionUser(req);
-  if (!sessionUser) return fail(req, res, "Your Quantora session expired before GitHub could be connected. Sign in and try again.");
+  if (!sessionUser) return fail(req, res, "Your Quantora session expired before GitHub could be connected. Sign in and try again.", basePath);
 
   const code = String(req.query?.code || "");
   const state = String(req.query?.state || "");
   const stateSecret = process.env.SESSION_SECRET || "";
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return fail(req, res, "Connecting GitHub was cancelled.");
+    return fail(req, res, "Connecting GitHub was cancelled.", basePath);
   }
   if (!connectStateMatches(state, sessionUser.sub, stateSecret)) {
-    return fail(req, res, "That GitHub authorization was started by a different Quantora account. Nothing was connected.");
+    return fail(req, res, "That GitHub authorization was started by a different Quantora account. Nothing was connected.", basePath);
   }
 
   try {
     const identity = await exchangeAndIdentify(code, req);
-    if (!identity) return fail(req, res, "GitHub did not return a usable authorization. Nothing was connected.");
+    if (!identity) return fail(req, res, "GitHub did not return a usable authorization. Nothing was connected.", basePath);
 
     const saved = await saveGithubConnection({
       userSub: sessionUser.sub,
@@ -114,12 +122,12 @@ export default async function handler(req: any, res: any) {
       scopes: identity.scopes,
     });
     if (!saved) {
-      return fail(req, res, "Quantora could not store your GitHub authorization, so it was discarded. Revoke it in GitHub settings if you prefer, and try again later.");
+      return fail(req, res, "Quantora could not store your GitHub authorization, so it was discarded. Revoke it in GitHub settings if you prefer, and try again later.", basePath);
     }
 
-    return back(req, res, `github=connected&login=${encodeURIComponent(identity.login)}`);
+    return back(req, res, `github=connected&login=${encodeURIComponent(identity.login)}`, basePath);
   } catch (err: any) {
     console.error("GitHub connect callback failed:", err?.message || err);
-    return fail(req, res, "Connecting GitHub failed. Nothing was stored.");
+    return fail(req, res, "Connecting GitHub failed. Nothing was stored.", basePath);
   }
 }

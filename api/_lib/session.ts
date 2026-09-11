@@ -250,6 +250,44 @@ export function clearGithubConnectStateCookie(): string {
   return `${GITHUB_CONNECT_STATE_COOKIE}=; ${cookieAttributes(0)}`;
 }
 
+/*
+ * Where to send the browser back to once the connect flow finishes.
+ *
+ * Without this, the callback always redirected to bare "/" — the marketing
+ * homepage — no matter what workspace or chat the person clicked "Connect
+ * GitHub" from. The connection itself was never lost, only the page you were
+ * looking at, which reads as "it kicked me out" to someone mid-task even
+ * though nothing was destroyed.
+ *
+ * The value is attacker-controllable input (it starts life as a query param
+ * on a link the frontend renders), so it is stored, not trusted blind: only
+ * an already-validated safe local path is ever written here, and the same
+ * validator runs again on read in case a cookie were ever tampered with.
+ */
+export const GITHUB_CONNECT_RETURN_COOKIE = "quantora_github_connect_return";
+
+/**
+ * A same-origin path only: must start with exactly one "/", never "//" (which
+ * a browser resolves as protocol-relative, i.e. a different host) and must
+ * contain no "://" (an absolute URL to somewhere else). Anything else is
+ * rejected rather than sanitized, so this can never become an open redirect.
+ */
+export function isSafeGithubConnectReturnPath(value: string): boolean {
+  if (typeof value !== "string" || !value) return false;
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  if (value.includes("://")) return false;
+  if (value.includes("\\")) return false;
+  return true;
+}
+
+export function githubConnectReturnCookie(path: string, maxAge = 600): string {
+  return `${GITHUB_CONNECT_RETURN_COOKIE}=${encodeURIComponent(path)}; ${cookieAttributes(maxAge)}`;
+}
+
+export function clearGithubConnectReturnCookie(): string {
+  return `${GITHUB_CONNECT_RETURN_COOKIE}=; ${cookieAttributes(0)}`;
+}
+
 /** Cookie jar for a request, tolerant of one malformed neighbour. */
 export function readRequestCookies(req: any): Record<string, string> {
   return parseCookies(req?.headers?.cookie);

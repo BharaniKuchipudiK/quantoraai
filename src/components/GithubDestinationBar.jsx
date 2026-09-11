@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, GitBranch, Github } from 'lucide-react';
 import {
-  GITHUB_CONNECT_URL,
+  githubConnectUrl,
   githubReconnectPrompt,
   isGithubTokenRejected,
   GITHUB_ENDPOINTS,
@@ -231,7 +231,7 @@ export default function GithubDestinationBar({
     if (!isGithubTokenRejected(error)) {
       return <div style={{ ...itemStyle, color: '#fca5a5' }}>{error}</div>;
     }
-    const prompt = githubReconnectPrompt();
+    const prompt = githubReconnectPrompt(typeof window !== 'undefined' ? window.location.pathname + window.location.search : '');
     return (
       <a
         href={prompt.href}
@@ -259,7 +259,7 @@ export default function GithubDestinationBar({
   if (!connection || connection.connected !== true) {
     return (
       <a
-        href={GITHUB_CONNECT_URL}
+        href={githubConnectUrl(typeof window !== 'undefined' ? window.location.pathname + window.location.search : '')}
         data-quantora-github-destination="disconnected"
         data-quantora-github-destination-connect="true"
         title="Connect GitHub to choose where this build is saved"
