@@ -64,6 +64,15 @@ export function requestedDeliverablePaths(prompt = '') {
 }
 
 /**
+ * The server and browser must agree on whether a turn owes Python source.
+ * Derive this from the user's explicit deliverables, not only from a planner
+ * label that may be broad or stale.
+ */
+export function hasRequestedPythonSource(prompt = '') {
+  return requestedDeliverablePaths(prompt).some((path) => /\.py$/i.test(path));
+}
+
+/**
  * Source availability, not syntax or execution proof. Keep this first content
  * guard limited to explicitly requested Python bundles and their documentation;
  * website/React contracts retain their existing behavior.

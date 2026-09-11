@@ -69,4 +69,7 @@ def test_sample_output(tmp_path):
 };
 export const response = Object.entries(files).map(([path, content]) =>
   '```' + (path.endsWith('.py') ? 'python' : path.endsWith('.csv') ? 'csv' : 'markdown') + ` filepath="${path}"\n${content}\n` + '```',
-).join('\n\n');
+).join('\n\n')
+  // Evidence requested by the user is not another source file. This is the
+  // exact production shape that previously tripped source-path-invalid.
+  + '\n\n```text\n2 passed\n```\n\n```csv\nname,email\nAlice,alice@example.com\nBob,bob@example.com\nCarol,carol@example.com\n```';

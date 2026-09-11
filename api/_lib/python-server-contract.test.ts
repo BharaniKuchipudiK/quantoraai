@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { requestedDeliverablePaths } from '../../src/lib/requested-deliverables.js';
+import { requestedDeliverablePaths, hasRequestedPythonSource } from '../../src/lib/requested-deliverables.js';
 import { validateBuildArtifactResponse, recoverInterruptedBuildArtifactResponse } from './build-artifact-contract.js';
 import { prompt, response } from '../../scripts/fixtures/python-csv-contract.mjs';
 import { invokePythonChatHandler } from '../../scripts/fixtures/python-chat-handler.mjs';
@@ -11,6 +11,11 @@ test('Python source admission follows the explicit source list, not generated ou
   assert.equal(validateBuildArtifactResponse(response, null, options).ok, true);
   assert.equal(validateBuildArtifactResponse(response).detailCode, 'browser-preview-missing', 'web contracts remain strict');
   assert.equal(validateBuildArtifactResponse(response, 'simple-website', options).ok, false, 'web canaries cannot bypass their contract');
+  assert.equal(hasRequestedPythonSource(prompt), true);
+});
+test('Python admission ignores unlabelled execution evidence fences', () => {
+  const withEvidence = `${response}\n\n\`\`\`text\n2 passed\n\`\`\`\n\`\`\`csv\nname,email\nAlice,alice@example.com\n\`\`\``;
+  assert.deepEqual(validateBuildArtifactResponse(withEvidence, null, options), { ok: true, detailCode: 'python-source-files-valid' });
 });
 test('Python source validation refuses missing, unsafe, and disguised files', () => {
   for (const invalid of [
@@ -22,7 +27,8 @@ test('Python source validation refuses missing, unsafe, and disguised files', ()
 });
 test('interrupted Python recovery requires the full requested bundle', () => {
   assert.equal(recoverInterruptedBuildArtifactResponse(response + '\nunfinished explanation', null, options), response.trim());
-  assert.equal(recoverInterruptedBuildArtifactResponse(response.slice(0, response.lastIndexOf('```')), null, options), null);
+  const incomplete = response.replace(/```markdown filepath="README\.md"[\s\S]*$/, '```markdown filepath="README.md"\n# incomplete');
+  assert.equal(recoverInterruptedBuildArtifactResponse(incomplete, null, options), null);
 });
 test('real /api/chat handler delivers Python source on the first attempt', async () => {
   const result = await invokePythonChatHandler({ message: prompt, modelId: 'openai/gpt-4o-mini', buildMode: true, studioMode: 'build', studioModeExplicit: true, taskCategory: 'coding' }, response);
