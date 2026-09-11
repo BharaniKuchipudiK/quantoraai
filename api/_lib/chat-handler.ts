@@ -27,6 +27,8 @@ import { shouldEnableGithubTools } from './github-agent-tools.js';
 import { shouldEnableGithubWriteTools } from './github-write-agent-tools.js';
 import { shouldEnableVercelTools } from './vercel-agent-tools.js';
 import { resolveVercelToken } from './vercel-deployments.js';
+import { shouldEnableSandboxTools } from './sandbox-agent-tools.js';
+import { resolveSandboxCredentials } from './sandbox-credentials.js';
 /*
  * Phase 4. The handler imports the REGISTRY, not the families: no declaration
  * list, no executor, and no isGithubToolName. Which family a call belongs to is
@@ -1344,6 +1346,18 @@ export default async function handler(req: any, res: any) {
     const vercelToolsEnabled = shouldEnableVercelTools({ vercelConfigured: Boolean(vercelToken) })
       && Boolean(effectiveGeminiKey);
     /*
+     * Vercel Sandbox credentials — a DIFFERENT credential shape from
+     * vercelToken above (see sandbox-credentials.ts for why). Resolved once
+     * per turn for the same round-trip reason. Gated on a real GitHub
+     * connection too: there is no legitimate reason to spin up a sandbox with
+     * nothing to clone.
+     */
+    const sandboxCredentials = resolveSandboxCredentials();
+    const sandboxToolsEnabled = shouldEnableSandboxTools({
+      hasGithubConnection: Boolean(githubPrincipal),
+      sandboxConfigured: Boolean(sandboxCredentials),
+    }) && Boolean(effectiveGeminiKey);
+    /*
      * THE turn's tool context. Every question about tools — what to declare,
      * whether a call is legitimate, who executes it — is asked of the registry
      * with this, so the three answers cannot disagree with each other.
@@ -1357,9 +1371,10 @@ export default async function handler(req: any, res: any) {
      */
     const activeToolContext: QuantoraToolContext = {
       studioDomain: normalizedStudioDomain,
-      githubPrincipal: (githubToolsEnabled || githubWriteToolsEnabled) ? githubPrincipal : null,
+      githubPrincipal: (githubToolsEnabled || githubWriteToolsEnabled || sandboxToolsEnabled) ? githubPrincipal : null,
       githubWriteToolsEnabled,
       vercelToken: vercelToolsEnabled ? vercelToken : null,
+      sandboxCredentials: sandboxToolsEnabled ? sandboxCredentials : null,
       get travelToolsPermitted() { return travelToolsEnabled; },
       toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
     };
@@ -2327,20 +2342,38 @@ export default async function handler(req: any, res: any) {
 - Build logs are capped (most recent lines kept, oldest dropped) and can be filtered to errors only. A short or empty log after filtering means little was captured or nothing matched the filter — it does NOT mean the build had no errors. Say when a log was truncated rather than reporting silence as success.
 - These tools cannot see a repository or its code; they only see what Vercel already ran. Pair them with GitHub tools to connect a failing deployment to the commit and files that caused it.` : '';
       /*
+       * Sandbox is the one tool that can turn "I changed this" into "I ran
+       * this and it passed" — a REAL cloned repository, REAL commands, a REAL
+       * exit code. Only rendered when the tool is actually offered, same
+       * truncated-capability rule as every other persona here: telling the
+       * model it can run a check it does not currently hold is the exact
+       * invented-capability failure this file's other directives exist to
+       * prevent, just aimed at a tool instead of a boundary.
+       */
+      const sandboxPersona = sandboxToolsEnabled ? `\n\nSANDBOX TOOL DIRECTIVE:
+- run_repository_check clones a REAL repository into a REAL, temporary cloud machine and runs REAL shell commands in it (install, build, test — whatever the repository actually uses). It returns each command's real exit code and output. The machine is destroyed after every call, whether commands passed or failed.
+- Use it BEFORE claiming a fix "works", "passes", or is "verified" — a syntax check alone (push_files_to_repository's built-in parse guard) is NOT a test run, and neither is your own reasoning about the code. If you have not called run_repository_check and read a passing result, do not say the fix was tested or confirmed; say what you changed and why, not that you verified the outcome.
+- It runs for at most 4 minutes and stops at the first command that exits non-zero — later commands in that call never ran. Report exactly which command failed and its real exit code; never guess at what a later, unrun command would have done.
+- This tool never pushes, commits, deploys, or merges anything. It only runs commands you give it and reports what happened. Running it commits nothing.` : '';
+      /*
        * The workflow this session exists to ask for: diagnose a Vercel failure
        * with the tools above, then actually fix it. Only rendered when the
        * model holds every tool the flow needs, so a partial toolset never gets
        * instructions for a chain it cannot finish — a truncated capability
        * describing a whole capability is exactly the failure mode this file's
        * other directives exist to prevent.
+       *
+       * The sandbox step is inserted between "identify the fix" and "push it"
+       * ONLY when sandboxToolsEnabled — without it, the honest instruction
+       * remains what it always was: never claim the fix was tested.
        */
       const deployFixPersona = (vercelToolsEnabled && githubWriteToolsEnabled) ? `\n\nDIAGNOSE-AND-FIX DIRECTIVE:
-- When asked to fix a failing Vercel build, deployment, or PR check: (1) call list_vercel_deployments / read_vercel_deployment to read the actual failure and its build log — never guess at the cause from the project name or the user's description alone; (2) identify the real file(s) and change needed from what the log actually says; (3) call push_files_to_repository with that fix, to a new branch; (4) call create_pull_request to open it. Tell the user what you found in the log, what you changed and why, and that the pull request is open for their review — never that it is merged or deployed.
+- When asked to fix a failing Vercel build, deployment, or PR check: (1) call list_vercel_deployments / read_vercel_deployment to read the actual failure and its build log — never guess at the cause from the project name or the user's description alone; (2) identify the real file(s) and change needed from what the log actually says; (3) call push_files_to_repository with that fix, to a new branch;${sandboxToolsEnabled ? ` (3b) call run_repository_check on that branch with the repository's real install/build/test commands, and read the real result before going further;` : ``} (4) call create_pull_request to open it. Tell the user what you found in the log, what you changed and why${sandboxToolsEnabled ? `, what run_repository_check actually reported` : ``}, and that the pull request is open for their review — never that it is merged or deployed.
 - If the log does not point at a clear cause, say so and ask before pushing a speculative change. A guess committed as a pull request still costs the user a review; do not spend that on a change you are not reasonably sure fixes the read failure.
 - This chain is only ever a pull request. Nothing you can call merges it or promotes it to production.
-- You have NO way to run the user's test suite or build locally before pushing — there is no sandbox tool for that here. Never claim you "validated", "tested", or "confirmed" the fix works before pushing it; say what the log showed and what you changed, not that you verified the outcome in advance.
+${sandboxToolsEnabled ? `- You DO have a way to actually run the fix before pushing: run_repository_check. Use it and read its real result before telling the user the fix works; if it fails, fix the real cause it reports rather than pushing anyway.` : `- You have NO way to run the user's test suite or build locally before pushing — there is no sandbox tool for that here. Never claim you "validated", "tested", or "confirmed" the fix works before pushing it; say what the log showed and what you changed, not that you verified the outcome in advance.`}
 - After opening the pull request, if the turn's remaining time allows one more check: call list_vercel_deployments again and look for a new deployment on the branch you just pushed. If Vercel has already started building it, call read_vercel_deployment and tell the user its real state (READY, ERROR, BUILDING, or not started yet) — this is the closest thing to proof you have, and it is still only ever a preview deployment's state, never a merge or a production promise. If none has started yet, say plainly that you have not seen a result yet rather than assuming one.` : '';
-      const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona + githubDisconnectedPersona + vercelPersona + deployFixPersona;
+      const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona + githubDisconnectedPersona + vercelPersona + sandboxPersona + deployFixPersona;
       const contents = buildGeminiContents(boundedHistory, messageForModel, visionImages);
       let fullReply = '';
       let legacyFinishReason: string | null = null;

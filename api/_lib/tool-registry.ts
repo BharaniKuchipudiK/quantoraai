@@ -75,6 +75,14 @@ import {
   executeVercelToolCall,
   shouldEnableVercelTools,
 } from "./vercel-agent-tools.js";
+import {
+  sandboxFunctionDeclarations,
+  executeSandboxToolCall,
+  shouldEnableSandboxTools,
+  type SandboxFactory,
+} from "./sandbox-agent-tools.js";
+import type { SandboxCredentials } from "./sandbox-credentials.js";
+import { createRealSandbox } from "./sandbox-factory.js";
 
 /** Everything an enablement rule or an executor is allowed to see. */
 export interface QuantoraToolContext {
@@ -92,6 +100,10 @@ export interface QuantoraToolContext {
   githubWriteToolsEnabled?: boolean;
   /** The platform's shared Vercel token (deploy:vercel), when configured. */
   vercelToken?: string | null;
+  /** Vercel Sandbox credentials (token+teamId+projectId), when configured. Distinct from vercelToken — see sandbox-credentials.ts. */
+  sandboxCredentials?: SandboxCredentials | null;
+  /** Injectable Sandbox factory; defaults to the real `@vercel/sandbox`-backed one. Overridable so tests never touch the network. */
+  sandboxFactory?: SandboxFactory;
   /** Whether the platform independently decided travel tools may run. */
   travelToolsPermitted?: boolean;
   /** Recent user turns, used by travel tools to resolve an implied location. */
@@ -205,6 +217,11 @@ export function classifyVercelToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
 }
 
+/** Sandbox tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifySandboxToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
 /*
  * Travel providers are held to 6s per attempt, flights to two attempts with a
  * short backoff. 20s is that plus headroom for the second provider hop, not a
@@ -238,6 +255,17 @@ const GITHUB_WRITE_TOOL_BUDGET_MS = 60_000;
  * travel budget: headroom for one slow provider hop plus a retry-shaped delay.
  */
 const VERCEL_TOOL_BUDGET_MS = 20_000;
+
+/*
+ * run_repository_check clones a repository, then runs up to 6 caller-chosen
+ * commands sequentially (install, build, test — real work, not a read). A
+ * genuine `npm ci && npm run build && npm test` on a small repo easily takes
+ * a minute or two; 100s leaves headroom under the turn's own 120s tool-time
+ * ceiling (TOOL_TIME_BUDGET_MS in chat-handler.ts) while still being large
+ * enough that a legitimate check is not cut off mid-way, which would leave
+ * the model unable to say whether the fix actually works.
+ */
+const SANDBOX_TOOL_BUDGET_MS = 100_000;
 
 const TRAVEL_TOOLS: QuantoraToolDefinition[] = travelFunctionDeclarations.map((declaration) => ({
   name: String(declaration.name),
@@ -353,6 +381,35 @@ const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((d
   },
 }));
 
+const SANDBOX_TOOLS: QuantoraToolDefinition[] = sandboxFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "sandbox",
+  declaration,
+  budgetMs: SANDBOX_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `The sandbox check did not finish in time — ${reason}.`,
+      note: "Tell the user the check timed out. Do not describe any command as having passed or failed — nothing was confirmed either way.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableSandboxTools({
+      hasGithubConnection: Boolean(context.githubPrincipal),
+      sandboxConfigured: Boolean(context.sandboxCredentials),
+    });
+  },
+  async execute(args, context) {
+    const raw = await executeSandboxToolCall(this.name, args, {
+      principal: context.githubPrincipal || null,
+      credentials: context.sandboxCredentials || null,
+      sandboxFactory: context.sandboxFactory || createRealSandbox,
+    });
+    return { family: "sandbox", raw, classify: () => classifySandboxToolResult(raw) };
+  },
+}));
+
 /**
  * THE registry. Every tool the model can be offered appears here exactly once.
  *
@@ -363,7 +420,7 @@ const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((d
  */
 function buildRegistry(): Map<string, QuantoraToolDefinition> {
   const registry = new Map<string, QuantoraToolDefinition>();
-  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...GITHUB_WRITE_TOOLS, ...VERCEL_TOOLS]) {
+  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...GITHUB_WRITE_TOOLS, ...VERCEL_TOOLS, ...SANDBOX_TOOLS]) {
     const existing = registry.get(tool.name);
     if (existing) {
       throw new Error(

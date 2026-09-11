@@ -70,3 +70,20 @@ test("the diagnose-and-fix directive never lets the model claim it tested the fi
   assert.match(block, /never claim you "validated", "tested", or "confirmed"/i, "must forbid claiming pre-push verification that never happened");
   assert.match(block, /call list_vercel_deployments again/i, "must instruct checking the real deployment result after opening the PR, not just declaring victory at push time");
 });
+
+test("the sandbox persona exists, is gated on sandboxToolsEnabled, and is wired into the system prompt", () => {
+  const block = extractConst("sandboxPersona");
+  assert.match(block, /sandboxToolsEnabled \? `/, "must only render when sandbox tools are actually offered this turn");
+  assert.match(block, /REAL repository/i);
+  assert.match(block, /destroyed after every call/i, "must state plainly the sandbox is torn down, not a persistent machine");
+  assert.match(block, /never pushes, commits, deploys, or merges/i, "must forbid the model from treating a check as a write");
+
+  const wiring = RAW.slice(RAW.indexOf("const injectedSystemPrompt ="));
+  assert.match(wiring.slice(0, 250), /sandboxPersona/, "sandboxPersona is computed but never concatenated into injectedSystemPrompt — the model would never see it");
+});
+
+test("the diagnose-and-fix directive only claims a sandbox check exists when sandboxToolsEnabled is true", () => {
+  const block = extractConst("deployFixPersona");
+  assert.match(block, /sandboxToolsEnabled \? `- You DO have a way to actually run the fix/, "the 'you can run it' branch must be conditioned on sandboxToolsEnabled");
+  assert.match(block, /You have NO way to run the user's test suite/, "the honest fallback sentence must still exist for when sandboxToolsEnabled is false");
+});
