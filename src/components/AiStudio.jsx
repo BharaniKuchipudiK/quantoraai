@@ -1969,13 +1969,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return true;
   }, [commitDeskVfs]);
 
-  const onCodingTurnProved = useCallback((verdict, _plan = null, owningSessionId = null) => {
-    if (!verdict?.vfs || !Object.keys(verdict.vfs).length) return;
+  const commitCodingSourceFiles = useCallback((nextVfs, _plan = null, owningSessionId = null) => {
+    if (!nextVfs || !Object.keys(nextVfs).length) return;
     // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
     // open) — only when the commit was actually accepted.
-    if (!commitDeskVfs(verdict.vfs, owningSessionId)) return;
+    if (!commitDeskVfs(nextVfs, owningSessionId)) return;
     if (owningSessionId && owningSessionId !== activeSessionIdRef.current) return;
-    const entry = pickPreviewEntry(verdict.vfs);
+    const entry = pickPreviewEntry(nextVfs);
     if (entry) {
       setWorkspaceCode(entry);
       setWorkspaceActiveTab('preview');
@@ -1983,6 +1983,10 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       setIsWorkspaceMode(true);
     }
   }, [commitDeskVfs]);
+
+  const onCodingTurnProved = useCallback((verdict, plan = null, owningSessionId = null) => {
+    commitCodingSourceFiles(verdict?.vfs, plan, owningSessionId);
+  }, [commitCodingSourceFiles]);
 
   const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
   const previewActiveEntry = useMemo(
@@ -2035,6 +2039,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
      */
     onToolInvoked: qirCoding.reportToolUse,
     onTurnBudget: setTurnBudget,
+    onCodingSourceFilesReceived: commitCodingSourceFiles,
     onCodingTurnProved,
     qirCoding,
     onDeskRename,

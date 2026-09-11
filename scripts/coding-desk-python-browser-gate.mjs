@@ -9,6 +9,7 @@ const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
 const page = await context.newPage();
+const coldStartDelayMs = Number(process.env.QUANTORA_PYTHON_COLD_START_DELAY_MS || 0);
 mkdirSync('artifacts/e2e', { recursive: true });
 
 const response = [
@@ -50,6 +51,12 @@ function sse(text) {
 }
 
 await page.addInitScript(() => localStorage.setItem('quantora_hide_welcome', 'true'));
+if (coldStartDelayMs > 0) {
+  await page.route('**/pyodide/pyodide.asm.wasm', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, coldStartDelayMs));
+    await route.continue();
+  });
+}
 await page.route('**/api/**', async (route) => {
   const path = new URL(route.request().url()).pathname;
   if (path === '/api/auth/session') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { sub: 'python-gate', name: 'Python Gate', email: 'python@quantora.test' } }) });
@@ -69,7 +76,7 @@ try {
   const prompt = page.locator('.app-shell--studio textarea').first();
   await prompt.fill('Create four files: parser.py, verify.py, test_parser.py and README.md. No TODOs.');
   await prompt.press('Enter');
-  await page.waitForFunction(() => /verify\.py/.test(document.querySelector('[data-quantora-file-tree="true"]')?.innerText || ''), null, { timeout: 20_000 });
+  await page.waitForFunction(() => /verify\.py/.test(document.querySelector('[data-quantora-file-tree="true"]')?.innerText || ''), null, { timeout: coldStartDelayMs > 0 ? 8_000 : 20_000 });
   await page.waitForFunction(() => /Python verification passed: pytest -q/.test(document.body.innerText || ''), null, { timeout: 35_000 });
   const progress = page.locator('[data-quantora-execution-history="true"]');
   await progress.waitFor({ state: 'attached', timeout: 10_000 });
