@@ -114,6 +114,20 @@ test('app pages allow WebAssembly compilation without allowing general eval', ()
   }
 });
 
+test('the Python worker can fetch pinned pytest packages under its own CSP', () => {
+  // A module worker follows the CSP on its /assets/* response, not only the
+  // document that created it. Pyodide's pinned pytest wheel and dependencies
+  // come from this exact versioned registry; omitting it makes plain scripts
+  // run while every pytest command fails with "No module named pytest".
+  const workerCsp = resolveHeadersForPath(
+    config,
+    '/assets/python-runtime.worker-production.js',
+  )['content-security-policy'];
+  assert.match(workerCsp, /connect-src[^;]*https:\/\/cdn\.jsdelivr\.net/);
+  assert.match(workerCsp, /script-src[^;]*'wasm-unsafe-eval'/);
+  assert.doesNotMatch(workerCsp, /script-src[^;]*'unsafe-eval'/);
+});
+
 test('contract check catches an X-Frame-Options: DENY on the framed shell', () => {
   // Guard the guard: a config that puts DENY on /preview/* must be flagged.
   const broken = JSON.parse(JSON.stringify(config));
