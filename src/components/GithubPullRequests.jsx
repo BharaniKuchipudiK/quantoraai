@@ -42,6 +42,8 @@ async function postStage(endpoint, payload) {
 
 export default function GithubPullRequests({ repoUrl = '', headBranch = '', baseBranch = 'main' }) {
   const [connection, setConnection] = useState(null);
+  const [autoPrEnabled, setAutoPrEnabled] = useState(false);
+  const [autoPrBusy, setAutoPrBusy] = useState(false);
   const [pullRequests, setPullRequests] = useState([]);
   const [brief, setBrief] = useState(null);
   const [comment, setComment] = useState('');
@@ -56,6 +58,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       return null;
     }
     setConnection(parsed.data);
+    setAutoPrEnabled(Boolean(parsed.data?.autoPrEnabled));
     return parsed.data;
   }, []);
 
@@ -137,6 +140,27 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
     setStatus(`Draft pull request #${parsed.data.number} opened as ${parsed.data.actedAs}.`);
   });
 
+  /*
+   * A SEPARATE decision from connecting GitHub. Connecting only ever grants
+   * Quantora the ability to act as the user for reads (list/read a PR,
+   * comment) — this switch is the one thing that additionally lets the
+   * Coding Desk push a fix and open it as a pull request on its own,
+   * unprompted, when it diagnoses a broken build or deployment. It starts
+   * OFF, and merging a pull request is never covered by it — that stays a
+   * human clicking merge, on GitHub, no matter what this switch says.
+   */
+  const toggleAutoPr = () => run(async () => {
+    setAutoPrBusy(true);
+    try {
+      const next = !autoPrEnabled;
+      const parsed = await postStage(GITHUB_ENDPOINTS.autoPr, { enabled: next });
+      if (!parsed.ok) throw new Error(parsed.error);
+      setAutoPrEnabled(Boolean(parsed.data?.autoPrEnabled));
+    } finally {
+      setAutoPrBusy(false);
+    }
+  });
+
   const mergeCurrent = () => run(async () => {
     const parsed = await postStage(GITHUB_ENDPOINTS.mergePullRequest, {
       repoUrl,
@@ -179,6 +203,24 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       </div>
 
       {notice ? <div data-quantora-github-notice="true" style={{ color: '#94a3b8', lineHeight: 1.45 }}>{notice}</div> : null}
+      {connected ? (
+        <label
+          data-quantora-github-auto-pr-toggle="true"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', cursor: autoPrBusy ? 'wait' : 'pointer' }}
+        >
+          <input
+            type="checkbox"
+            data-quantora-github-auto-pr-checkbox="true"
+            checked={autoPrEnabled}
+            disabled={autoPrBusy}
+            onChange={toggleAutoPr}
+          />
+          <span>
+            Let Quantora push fixes and open pull requests on its own when it diagnoses a build or deployment failure.
+            Merging always stays a click you make yourself.
+          </span>
+        </label>
+      ) : null}
       {!repoUrl ? (
         <div style={{ color: '#94a3b8' }}>Import a repository in the composer to point this panel at one.</div>
       ) : null}

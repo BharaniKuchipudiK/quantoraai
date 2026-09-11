@@ -39,13 +39,16 @@ import {
 import type { FetchLike, GithubPrincipal } from "./github-principal.js";
 
 /**
- * Tools are offered only to a user who has actually connected GitHub — same
- * rule as the read tools, for the same reason: a model holding a tool that
- * always errors starts explaining the error as though it were a fact about
- * the repository.
+ * Tools are offered only when BOTH are true: a GitHub connection exists, and
+ * the user has separately turned on autonomous writes. Connecting GitHub only
+ * ever grants Quantora the ability to act as the user for READS by default —
+ * it must not also silently grant permission to write without being asked.
+ * `autoPrOptedIn` is that second, explicit decision, read from its own
+ * opt-in flag (github_connections.auto_pr_enabled), never inferred from the
+ * connection existing.
  */
-export function shouldEnableGithubWriteTools(input: { hasGithubConnection?: boolean } = {}): boolean {
-  return input.hasGithubConnection === true;
+export function shouldEnableGithubWriteTools(input: { hasGithubConnection?: boolean; autoPrOptedIn?: boolean } = {}): boolean {
+  return input.hasGithubConnection === true && input.autoPrOptedIn === true;
 }
 
 /*

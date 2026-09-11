@@ -84,9 +84,10 @@ export interface QuantoraToolContext {
   githubPrincipal?: GithubPrincipal | null;
   /**
    * Whether GitHub WRITE tools (push, open a pull request) may be offered
-   * this turn. Kept independent of `githubPrincipal` so a future policy —
-   * a feature flag, a per-user opt-in — can turn writes off without
-   * touching whether reads are offered.
+   * this turn. This IS the per-user opt-in (github_connections.auto_pr_enabled),
+   * resolved once by the caller; kept independent of `githubPrincipal` so a
+   * future policy can turn writes off without touching whether reads are
+   * offered.
    */
   githubWriteToolsEnabled?: boolean;
   /** The platform's shared Vercel token (deploy:vercel), when configured. */
@@ -313,8 +314,10 @@ const GITHUB_WRITE_TOOLS: QuantoraToolDefinition[] = githubWriteFunctionDeclarat
     };
   },
   isEnabled(context) {
-    return shouldEnableGithubWriteTools({ hasGithubConnection: Boolean(context.githubPrincipal) })
-      && context.githubWriteToolsEnabled === true;
+    return shouldEnableGithubWriteTools({
+      hasGithubConnection: Boolean(context.githubPrincipal),
+      autoPrOptedIn: context.githubWriteToolsEnabled === true,
+    });
   },
   async execute(args, context) {
     const raw = await executeGithubWriteToolCall(this.name, args, {

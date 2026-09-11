@@ -108,9 +108,10 @@ test("no connection fails closed, and says the actionable thing", async () => {
   assert.equal(result.status, "not_connected");
 });
 
-test("tools are offered only to a connected account", () => {
-  assert.equal(shouldEnableGithubWriteTools({ hasGithubConnection: true }), true);
-  assert.equal(shouldEnableGithubWriteTools({ hasGithubConnection: false }), false);
+test("tools are offered only to a connected account that has separately opted in", () => {
+  assert.equal(shouldEnableGithubWriteTools({ hasGithubConnection: true, autoPrOptedIn: true }), true);
+  assert.equal(shouldEnableGithubWriteTools({ hasGithubConnection: true, autoPrOptedIn: false }), false);
+  assert.equal(shouldEnableGithubWriteTools({ hasGithubConnection: false, autoPrOptedIn: true }), false);
   assert.equal(shouldEnableGithubWriteTools(), false);
 });
 

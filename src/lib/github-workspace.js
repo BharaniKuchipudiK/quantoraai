@@ -48,6 +48,7 @@ export function githubReconnectPrompt() {
 export const GITHUB_ENDPOINTS = Object.freeze({
   connection: '/api/github/connection',
   disconnect: '/api/github/disconnect',
+  autoPr: '/api/github/auto-pr',
   listPullRequests: '/api/github/list-prs',
   readPullRequest: '/api/github/read-pr',
   listIssues: '/api/github/list-issues',
@@ -64,6 +65,7 @@ export const GITHUB_ENDPOINTS = Object.freeze({
 const STAGE_BY_ENDPOINT = Object.freeze({
   [GITHUB_ENDPOINTS.connection]: 'github-connection',
   [GITHUB_ENDPOINTS.disconnect]: 'github-disconnect',
+  [GITHUB_ENDPOINTS.autoPr]: 'github-auto-pr',
   [GITHUB_ENDPOINTS.listPullRequests]: 'github-list-prs',
   [GITHUB_ENDPOINTS.readPullRequest]: 'github-read-pr',
   [GITHUB_ENDPOINTS.listIssues]: 'github-list-issues',
