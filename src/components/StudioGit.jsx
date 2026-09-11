@@ -43,8 +43,27 @@ export default function StudioGit({
   const isolated = typeof window !== 'undefined' && window.crossOriginIsolated === true;
   const fileCount = studioGitFileCount(vfs);
   const blocker = studioGitBlocker({ isolated, fileCount });
-  const baseBranch = (githubBaseBranch && String(githubBaseBranch).trim()) || 'main';
-  const compareUrl = githubCompareUrl(githubRepoUrl, prHead || 'quantora-desk', baseBranch);
+
+  /*
+   * A repository selected in the composer is already a real GitHub repository,
+   * even when it was chosen through the new destination bar rather than the
+   * legacy Import Repository flow. Before this fallback, checkout could load a
+   * working copy into the desk while the Git/PR pane still received an empty
+   * githubRepoUrl and behaved as if no repository existed. That split is the
+   * reason a user could see owner/repo/branch chips and still be told to import
+   * or push from their own machine.
+   */
+  const destinationRepoUrl = githubDestination?.owner && githubDestination?.repo
+    ? `https://github.com/${githubDestination.owner}/${githubDestination.repo}`
+    : '';
+  const activeRepoUrl = String(githubRepoUrl || destinationRepoUrl || '').trim();
+  const baseBranch = String(
+    githubDestination?.branch
+      || githubDestination?.defaultBranch
+      || githubBaseBranch
+      || 'main',
+  ).trim() || 'main';
+  const compareUrl = githubCompareUrl(activeRepoUrl, prHead || 'quantora-desk', baseBranch);
   // What this desk is a working copy of, when it was opened from a repository.
   const workingCopyBase = deskGitBase(workspaceKey);
 
@@ -101,7 +120,7 @@ export default function StudioGit({
     if (!compareUrl) {
       setLog((prev) => [
         ...prev,
-        'Open on GitHub needs an imported repository URL (use Import Repository in the composer). Desk git still does not push.',
+        'Open on GitHub needs a repository selected in the composer or imported into the desk.',
       ]);
       return;
     }
@@ -109,7 +128,7 @@ export default function StudioGit({
     setLog((prev) => [
       ...prev,
       `$ open ${compareUrl}`,
-      'Opened GitHub compare. Push the head branch from your machine first — desk git cannot push to Quantora’s GitHub.',
+      'Opened the GitHub compare for this desk repository.',
     ]);
   }
 
@@ -143,7 +162,7 @@ export default function StudioGit({
         </div>
       ) : null}
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Save to GitHub, below, is the one thing that leaves — it writes these files to a repository on your own connected account, and Quantora asks GitHub whether you may write before it does.
+        Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Save to GitHub, below, writes these files to a branch on your own connected account after GitHub confirms you may write. The Pull Requests panel can then open a PR from that branch.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>
@@ -167,7 +186,7 @@ export default function StudioGit({
           Open on GitHub
         </button>
       </div>
-      {githubRepoUrl ? (
+      {activeRepoUrl ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <label htmlFor="quantora-pr-head" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>Head branch</label>
           <input
@@ -189,9 +208,9 @@ export default function StudioGit({
         </div>
       ) : null}
       <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading GitHub…</div>}>
-        <GithubPushPanel vfs={vfs} githubRepoUrl={githubRepoUrl} githubDestination={githubDestination} projectName={projectName} />
+        <GithubPushPanel vfs={vfs} githubRepoUrl={activeRepoUrl} githubDestination={githubDestination} projectName={projectName} />
         <GithubPullRequests
-          repoUrl={githubRepoUrl}
+          repoUrl={activeRepoUrl}
           headBranch={prHead || 'quantora-desk'}
           baseBranch={baseBranch}
         />
