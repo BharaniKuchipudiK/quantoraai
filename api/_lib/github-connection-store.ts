@@ -97,10 +97,15 @@ export async function deleteGithubConnection(userSub: string): Promise<boolean> 
   return Boolean(response);
 }
 
-async function readRow(userSub: string): Promise<any | null> {
+/**
+ * Read the load-bearing connection fields first. Optional feature columns must
+ * never make a valid GitHub token disappear from the UI merely because a DB
+ * migration is rolling out behind the application deployment.
+ */
+async function readCoreRow(userSub: string): Promise<any | null> {
   if (!userSub) return null;
   const response = await request(
-    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=github_login,sealed_token,scopes,connected_at,auto_pr_enabled&limit=1`,
+    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=github_login,sealed_token,scopes,connected_at&limit=1`,
     { method: "GET" },
   );
   if (!response) return null;
@@ -109,6 +114,30 @@ async function readRow(userSub: string): Promise<any | null> {
     return Array.isArray(rows) && rows.length ? rows[0] : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Enrich the core row with optional flags when their migration is present.
+ * If the optional select fails (for example while production is one migration
+ * behind), the connection remains usable and the feature safely defaults off.
+ */
+async function readRow(userSub: string): Promise<any | null> {
+  const row = await readCoreRow(userSub);
+  if (!row) return null;
+
+  const optional = await request(
+    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=auto_pr_enabled&limit=1`,
+    { method: "GET" },
+  );
+  if (!optional) return { ...row, auto_pr_enabled: false };
+
+  try {
+    const rows = await optional.json();
+    const featureRow = Array.isArray(rows) && rows.length ? rows[0] : null;
+    return { ...row, auto_pr_enabled: Boolean(featureRow?.auto_pr_enabled) };
+  } catch {
+    return { ...row, auto_pr_enabled: false };
   }
 }
 
