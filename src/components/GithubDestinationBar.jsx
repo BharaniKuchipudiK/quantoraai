@@ -15,34 +15,12 @@ import {
 /*
  * Where this work is going to sit, chosen before it starts.
  *
- * The question a builder asks first is not "what model" but "where does this
- * end up". Answering it up front is also the only point at which the answer is
- * cheap: a repository you cannot write to costs nothing to swap now, and costs
- * the whole build to discover at the push.
- *
- * Not choosing is a first-class answer. The default is no repository at all,
- * and the bar says so in words rather than showing an empty slot — most builds
- * never want one, and a picker that blocks the composer until it is satisfied
- * would be a worse product than no picker.
- *
- * ---------------------------------------------------------------------------
- * PRESENTATION: this lives IN the composer's bottom toolbar, beside Engine.
- *
- * The first version put it in its own row above the textarea as outlined blue
- * pills. Two things were wrong and both were visible in one screenshot:
- *
- * 1. It read as an alert, not a setting. A loud bordered pill above the prompt
- *    competes with the thing the user came to type. The destination is the same
- *    class of control as the engine picker — quiet until you look for it — so it
- *    is styled exactly like it and sits in the same row.
- *
- * 2. The label was cut mid-word: "Connect GitHub to choose where th". That was
- *    not merely a long string. `text-overflow: ellipsis` DOES NOTHING on a flex
- *    container, and the button was `display: inline-flex` with `overflow:
- *    hidden` — so the browser hard-clipped and drew no ellipsis. Truncation has
- *    to happen on a block-level child, which is what `truncate` below is for.
- *    The copy is also short now, because a control that needs a sentence is a
- *    control in the wrong place.
+ * Selecting a repository is also the point at which the coding desk should get
+ * a real working copy. A selected owner/repo/branch that remains only toolbar
+ * state is actively misleading: the user sees GitHub connected while the model
+ * still has no source to review. The picker therefore loads the chosen branch
+ * through the existing checkout path immediately; the explicit refresh control
+ * remains for pulling the branch again later.
  */
 
 async function postStage(endpoint, payload = {}) {
@@ -133,22 +111,31 @@ export default function GithubDestinationBar({
   }
 
   function chooseRepository(row) {
-    onChange?.({
+    const next = {
       owner: row.owner,
       repo: row.repo,
       defaultBranch: row.defaultBranch,
       branch: row.defaultBranch,
       canPush: row.canPush,
       isPrivate: row.isPrivate,
-    });
+    };
+    onChange?.(next);
     setBranches([]);
     setOpen('');
+    // Selecting a repository means "work on this repository", not merely
+    // "remember this name for a later push". The existing checkout callback
+    // owns the real clone/pull semantics and protects unsaved desk work.
+    if (onOpenInDesk) void onOpenInDesk(next);
   }
 
   function chooseBranch(name) {
     if (!target) return;
-    onChange?.({ ...target, branch: name });
+    const next = { ...target, branch: name };
+    onChange?.(next);
     setOpen('');
+    // A branch switch is a pull of that branch into the working copy. Without
+    // this, the chip changes while the desk still contains the previous branch.
+    if (onOpenInDesk) void onOpenInDesk(next);
   }
 
   const muted = subtextColor || (isLight ? '#64748b' : '#94a3b8');
@@ -157,12 +144,6 @@ export default function GithubDestinationBar({
   const surface = isLight ? '#ffffff' : '#0b1220';
   const activeBackground = isLight ? '#f5f5f5' : 'rgba(255, 255, 255, 0.1)';
 
-  /*
-   * The Engine button's exact idiom: transparent until it is open, then the
-   * same wash and the same orange. Matching it by copy rather than by a shared
-   * token is deliberate — there is no token, and inventing one here would style
-   * this control to a standard nothing else in the toolbar follows.
-   */
   const control = (active, tone) => ({
     display: 'flex',
     alignItems: 'center',
@@ -180,7 +161,6 @@ export default function GithubDestinationBar({
     transition: 'all 0.2s ease',
   });
 
-  // Ellipsis needs a block box. On the flex parent it does nothing at all.
   const truncate = {
     display: 'block',
     minWidth: 0,
@@ -221,11 +201,6 @@ export default function GithubDestinationBar({
     cursor: 'pointer',
   };
 
-  /*
-    Shown in place of the inert red line when GitHub has refused the stored
-    token. The remedy the server names has to be reachable from where the
-    refusal is read — see isGithubTokenRejected.
-  */
   const renderError = () => {
     if (!error) return null;
     if (!isGithubTokenRejected(error)) {
@@ -247,27 +222,6 @@ export default function GithubDestinationBar({
     );
   };
 
-  // An UNRESOLVED connection is not a connected one. This guard used to read
-  // `connection && connection.connected !== true`, so while /api/github/connection
-  // was still in flight — connection null — it fell through to the chips below and
-  // showed a signed-out user a destination bar implying a repository was chosen.
-  // Locally that window is milliseconds; on a loaded CI runner the destination gate
-  // read the bar inside it and reported `data-quantora-github-destination="true"`
-  // with GitHub not connected. Unknown takes the same branch as not-connected, which
-  // is what `!== true` already meant everywhere else: never claim a destination that
-  // has not been confirmed.
-  /*
-   * readGithubConnectionSummary (api/_lib/github-connection-store.ts) can
-   * return connected:false WITH a reason — e.g. "The stored GitHub
-   * authorization could not be opened with this deployment's key. Reconnect
-   * your GitHub account." or "GitHub connections are not configured on this
-   * deployment." Before this, that reason was fetched into `connection` and
-   * then silently dropped: someone whose working connection had since broken
-   * saw the exact same bare "GitHub" chip as someone who had never connected
-   * at all, with no hint anything had changed. Clicking it restarts the whole
-   * OAuth dance, which — for a deployment-config cause — fails again for the
-   * identical reason, and reads as "it just doesn't work" on repeat.
-   */
   if (!connection || connection.connected !== true) {
     const reason = connection && !connection.connected ? String(connection.reason || '') : '';
     return (
@@ -276,7 +230,7 @@ export default function GithubDestinationBar({
         data-quantora-github-destination="disconnected"
         data-quantora-github-destination-connect="true"
         data-quantora-github-destination-reason={reason || undefined}
-        title={reason || 'Connect GitHub to choose where this build is saved'}
+        title={reason || 'Connect GitHub to load a repository into the coding desk'}
         style={{ ...control(false), textDecoration: 'none' }}
       >
         <Github size={15} color={reason ? '#f97316' : undefined} />
@@ -298,10 +252,10 @@ export default function GithubDestinationBar({
             onClick={() => toggle(chip.id === 'owner' ? 'repo' : chip.id)}
             style={control(open === chip.id || (open === 'repo' && chip.id === 'owner'), chip.tone)}
             title={chip.id === 'branch'
-              ? `Branch this build is saved to: ${chip.label}`
+              ? `Working branch: ${chip.label}`
               : chip.id === 'owner'
                 ? `Signed in to GitHub as ${chip.label}`
-                : 'Repository this build is saved to'}
+                : 'Repository loaded into the coding desk and used for GitHub writes'}
           >
             {chip.id === 'branch' ? <GitBranch size={15} /> : <Github size={15} />}
             <span style={truncate}>{chip.label}</span>
@@ -311,8 +265,8 @@ export default function GithubDestinationBar({
           {open === 'repo' && chip.id === 'repo' ? (
             <div style={menuStyle} data-quantora-github-destination-menu="repo">
               <button type="button" style={{ ...itemStyle, color: muted }} onClick={() => { onChange?.(null); setOpen(''); }}>
-                <span style={{ fontWeight: 600 }}>Don&apos;t save to GitHub</span>
-                <span style={{ fontSize: '0.7rem' }}>Build here only. You can choose a repository later.</span>
+                <span style={{ fontWeight: 600 }}>No GitHub repository</span>
+                <span style={{ fontSize: '0.7rem' }}>Keep the current desk local only.</span>
               </button>
               {busy ? <div style={{ ...itemStyle, color: muted }}>Loading your repositories…</div> : null}
               {renderError()}
@@ -325,15 +279,16 @@ export default function GithubDestinationBar({
                   type="button"
                   data-quantora-github-destination-repo={row.fullName}
                   data-quantora-github-destination-writable={row.canPush ? 'true' : 'false'}
-                  disabled={!row.canPush}
                   onClick={() => chooseRepository(row)}
-                  style={{ ...itemStyle, opacity: row.canPush ? 1 : 0.45, cursor: row.canPush ? 'pointer' : 'not-allowed' }}
-                  title={row.canPush ? undefined : 'You have read access to this repository, not write.'}
+                  style={itemStyle}
+                  title={row.canPush
+                    ? 'Load this repository into the coding desk'
+                    : 'Read-only: Quantora can load and review it, but GitHub will refuse pushes.'}
                 >
                   <span style={{ fontWeight: 600 }}>{row.fullName}</span>
                   <span style={{ fontSize: '0.7rem', color: muted }}>
                     {row.isPrivate ? 'Private' : 'Public'} · {row.defaultBranch}
-                    {row.canPush ? '' : ' · read only'}
+                    {row.canPush ? ' · read/write' : ' · read only'}
                   </span>
                 </button>
               ))}
@@ -371,18 +326,12 @@ export default function GithubDestinationBar({
           data-quantora-github-destination-open="true"
           onClick={() => onOpenInDesk(target)}
           style={control(false)}
-          title={`Load ${target.owner}/${target.repo} at ${target.branch} into the desk`}
+          title={`Pull the latest ${target.owner}/${target.repo} at ${target.branch} into the desk`}
         >
-          <span style={truncate}>Open in desk</span>
+          <span style={truncate}>Pull latest</span>
         </button>
       ) : null}
 
-      {/*
-        * The one case that still gets a colour: a repository the user cannot
-        * write to. It is a warning about work that is going to be lost, so it
-        * does not get to be quiet — but it is a tooltip-width sentence on a
-        * toolbar, so it is truncated with the full text in `title`.
-        */}
       {blocker ? (
         <span
           data-quantora-github-destination-blocker="true"
