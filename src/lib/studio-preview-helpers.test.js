@@ -57,6 +57,29 @@ test('the turn gate accepts ten successive patches against the current project, 
   assert.equal(assessCodingReply(missing, vfs).detailCode, 'patch-conflict');
 });
 
+test('the turn gate accepts an explicitly requested Python-only bundle', () => {
+  const brief = 'Create three files: parser.py, cleaner.py and README.md.';
+  const reply = [
+    '```python filepath="parser.py"\ndef parse(): return []\n```',
+    '```python filepath="cleaner.py"\ndef clean(): return []\n```',
+    '```markdown filepath="README.md"\n# Utility\n```',
+  ].join('\n');
+  const result = assessCodingReply(reply, {}, brief);
+  assert.equal(result.accepted, true);
+  assert.equal(result.detailCode, 'artifact-accepted');
+  assert.equal(result.assembled.code, '');
+});
+
+test('the Python-only turn gate rejects prose over an unchanged old bundle', () => {
+  const brief = 'Update parser.py, cleaner.py and README.md.';
+  const old = {
+    'parser.py': { content: 'def parse(): return []' },
+    'cleaner.py': { content: 'def clean(): return []' },
+    'README.md': { content: '# Utility' },
+  };
+  assert.equal(assessCodingReply('Done.', old, brief).accepted, false);
+});
+
 test('assembled preview keeps HTML as the entry and sibling CSS/JS in the VFS', () => {
   const assembled = assembleStudioPreview(splitApp);
   assert.match(assembled.code, /<!DOCTYPE html>/);

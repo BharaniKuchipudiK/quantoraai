@@ -610,9 +610,15 @@ export const JOURNEYS = Object.freeze([
       'data-quantora-desk-publish-menu',
     ],
     gates: {
+      deterministic: [
+        'src/lib/python-runtime-command.test.js',
+        'src/lib/requested-python-proof.test.js',
+        'src/lib/execution-progress.test.js',
+      ],
       browser: [
         'scripts/desk-rail-smoke-browser-gate.mjs',
         'scripts/coding-desk-chrome-browser-gate.mjs',
+        'scripts/coding-desk-python-browser-gate.mjs',
         'scripts/studio-regression-browser-gate.mjs',
       ],
     },

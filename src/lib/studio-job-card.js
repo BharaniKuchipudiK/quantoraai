@@ -24,6 +24,19 @@ const NAMED_JOBS = [
   },
 ];
 
+function namedJobMatches(named, text) {
+  if (named.purpose !== 'A to-do list') return named.re.test(text);
+  // A quality constraint such as “No TODOs or placeholder implementations” is
+  // not a request to replace the product with a to-do app. Remove only bounded
+  // negated code-quality phrases; a real “build a todo list, with no TODOs” ask
+  // still retains its positive occurrence.
+  const withoutNegatedQuality = String(text || '').replace(
+    /\b(?:no|without|avoid|remove|zero)\s+(?:code\s+)?todo(?:s)?\b/gi,
+    ' ',
+  );
+  return named.re.test(withoutNegatedQuality);
+}
+
 function vfsLooksLikeShopFiles(vfs = {}) {
   const files = Object.values(vfs || {});
   for (const file of files) {
@@ -66,7 +79,7 @@ function looksLikeNewJob(brief, existing) {
   const existingIsShop = /\b(shop|boutique|storefront|e-?commerce|saree|sari)\b/i.test(existing.purpose || '');
   const briefKeepsShop = /\b(shop|boutique|storefront|store|saree|sari|catalog|cart|bag)\b/i.test(text);
   for (const named of NAMED_JOBS) {
-    if (named.re.test(text) && named.purpose !== existing.purpose) {
+    if (namedJobMatches(named, text) && named.purpose !== existing.purpose) {
       // “Add a shipping calculator to the boutique” is still a shop job.
       if (existingIsShop && briefKeepsShop) continue;
       return true;
@@ -99,7 +112,7 @@ export function isStudioProductSwitch(brief, existing = null) {
 }
 
 function namedPurposeMatch(text, purpose) {
-  return NAMED_JOBS.some((named) => named.purpose === purpose && named.re.test(text));
+  return NAMED_JOBS.some((named) => named.purpose === purpose && namedJobMatches(named, text));
 }
 
 export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {}) {
@@ -123,7 +136,7 @@ export function buildStudioJobCard({ brief = '', vfs = {}, existing = null } = {
   if (prev && !switchingProduct) return prev;
 
   for (const named of NAMED_JOBS) {
-    if (named.re.test(text)) return { purpose: named.purpose, mustWork: named.mustWork };
+    if (namedJobMatches(named, text)) return { purpose: named.purpose, mustWork: named.mustWork };
   }
 
   // Intentional product switch: the brief owns the job. Leftover boutique

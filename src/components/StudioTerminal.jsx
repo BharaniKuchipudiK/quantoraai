@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { studioFileCount, studioTerminalBlocker } from '../lib/studio-terminal.js';
 import { runCommandInWorkspace } from '../lib/webcontainer.js';
+import { isPythonRuntimeCommand } from '../lib/python-runtime-command.js';
 
 export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextColor }) {
   const [lines, setLines] = useState([]);
@@ -19,7 +20,8 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
     event?.preventDefault?.();
     const line = command.trim();
     if (!line || busy) return;
-    if (blocker) {
+    const python = isPythonRuntimeCommand(line);
+    if (blocker && !python) {
       setLines((prev) => [...prev, `$ ${line}`, blocker]);
       setCommand('');
       return;
@@ -28,7 +30,9 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
     setLines((prev) => [...prev, `$ ${line}`]);
     setCommand('');
     try {
-      const result = await runCommandInWorkspace(vfs, line);
+      const result = python
+        ? await import('../lib/python-runtime.js').then(({ runPythonCommandInWorkspace }) => runPythonCommandInWorkspace(vfs, line))
+        : await runCommandInWorkspace(vfs, line);
       setLines((prev) => [...prev, result.output || '(no output)']);
     } catch (error) {
       setLines((prev) => [...prev, error?.message || 'The shell could not start.']);
@@ -59,6 +63,11 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
             Shell runs against the files on this desk. Real output only.
           </div>
         )}
+        {fileCount > 0 ? (
+          <div data-quantora-python-runtime="available" style={{ color: '#94a3b8', marginBottom: '12px' }}>
+            Python 3 runs locally in an isolated browser worker. Use python3 file.py, python -m unittest, or pytest.
+          </div>
+        ) : null}
         <div data-quantora-studio-terminal-log="true">
         {lines.map((line, index) => (
           <div key={`${index}-${line.slice(0, 24)}`} style={{ color: line.startsWith('$ ') ? '#fdba74' : '#e2e8f0' }}>
@@ -75,7 +84,7 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
           value={command}
           disabled={busy}
           onChange={(event) => setCommand(event.target.value)}
-          placeholder={blocker ? 'Shell is not available yet' : 'ls'}
+          placeholder={fileCount ? 'python3 file.py' : (blocker ? 'Build files first' : 'ls')}
           style={{
             flex: 1,
             background: 'transparent',

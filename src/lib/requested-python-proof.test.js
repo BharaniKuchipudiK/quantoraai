@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateProofEvidence } from './proof-control-plane.js';
+import { evaluateProofEvidence, proofFailureCopy } from './proof-control-plane.js';
 
 const brief = 'Write a 3-file Python utility (parser.py, cleaner.py and README.md).';
 const plan = { isCodingTurn: true, mode: 'execute', intent: { kind: 'app_build' }, displayUserText: brief };
@@ -26,25 +26,61 @@ for (const [label, entry] of [
     assert.equal(result.evidence.hasHtml, true);
     assert.equal(result.ok, false);
     assert.deepEqual(result.missingDeliverables, ['parser.py']);
-    assert.deepEqual(result.gaps, ['requested deliverable parser.py']);
+    assert.deepEqual(result.gaps, [
+      'requested deliverable parser.py',
+      'Python execution verification not run',
+    ]);
     assert.equal(JSON.stringify(vfs), before);
   });
 }
 
-test('valid source files plus a companion retain their existing structural proof result', () => {
+test('valid source files plus a companion still require Python execution evidence', () => {
   const result = evaluateProofEvidence(plan, { vfs: files(), brief, embedReady: true });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.deepEqual(result.missingDeliverables, []);
+  assert.deepEqual(result.gaps, ['Python execution verification not run']);
 });
 
-test('source availability does not invent Python execution or bypass the existing preview requirement', () => {
+test('source availability does not invent Python execution', () => {
   const vfs = files();
   delete vfs['index.html'];
   const result = evaluateProofEvidence(plan, { vfs, brief });
   assert.deepEqual(result.missingDeliverables, []);
   assert.equal(result.evidence.hasHtml, false);
   assert.equal(result.ok, false);
-  assert.deepEqual(result.gaps, ['runnable Preview (HTML or React VFS)']);
+  assert.deepEqual(result.gaps, [
+    'runnable Preview (HTML or React VFS)',
+    'Python execution verification not run',
+  ]);
+});
+
+test('real Python execution evidence replaces the irrelevant browser Preview requirement', () => {
+  const vfs = files();
+  delete vfs['index.html'];
+  const runtimeEvidence = {
+    ok: true,
+    runtime: 'Python 3.14 (Pyodide)',
+    level: 'syntax',
+    command: 'python -m py_compile parser.py cleaner.py',
+    files: ['parser.py', 'cleaner.py'],
+  };
+  const result = evaluateProofEvidence(plan, { vfs, brief, runtimeEvidence });
+  assert.equal(result.ok, true);
+  assert.equal(result.evidence.hasHtml, false);
+  assert.equal(result.evidence.python, runtimeEvidence);
+  assert.deepEqual(result.gaps, []);
+});
+
+test('failed Python execution remains a failed proof even beside a working companion page', () => {
+  const result = evaluateProofEvidence(plan, {
+    vfs: files(),
+    brief,
+    runtimeEvidence: { ok: false, level: 'syntax', output: 'SyntaxError' },
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.gaps, ['Python execution verification failed']);
+  assert.match(proofFailureCopy(result, plan), /Python proof did not pass/);
+  assert.match(proofFailureCopy(result, plan), /will not call them working until Python executes successfully/);
 });
 
 test('website and React proof use the unchanged browser contract', () => {

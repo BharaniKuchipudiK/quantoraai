@@ -34,14 +34,20 @@ test('[was-red] runnable HTML that only displays requested filenames is not comp
   assert.match(proofFailureCopy(verdict, plan), /rendered page cannot stand in for files/i);
 });
 
-test('the same runnable companion may pass once the requested files really exist', () => {
+test('the same runnable companion may pass once the requested files exist and Python ran', () => {
   const vfs = {
     'parser.py': { content: 'class FinancialParser: pass' },
     'cleaner.py': { content: 'class FinancialCleaner: pass' },
     'README.md': { content: '# Financial Pipeline' },
     'index.html': { content: '<!DOCTYPE html><html><body>Companion preview</body></html>' },
   };
-  const verdict = proveCodingTurn({ plan, vfs, brief: ASK, allowRepair: false });
+  const verdict = proveCodingTurn({
+    plan,
+    vfs,
+    brief: ASK,
+    allowRepair: false,
+    runtimeEvidence: { ok: true, level: 'syntax', command: 'python -m py_compile parser.py cleaner.py' },
+  });
   assert.equal(verdict.ok, true);
   assert.equal(verdict.status, 'pass');
   assert.equal(codingTurnMayClaimSuccess(verdict), true);

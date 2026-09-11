@@ -12,6 +12,9 @@
  * cannot wait that long without a test backdoor. The browser proves the same
  * ownership seams: Study never speaks Preview recovery, and a Coding first
  * failure journals QIR and heals without a Retry chip.
+ * A terminal Coding failure also keeps its explicit manual recovery action:
+ * clicking it sends one request on the engine named by the button. All API
+ * calls are intercepted; this gate never calls a paid provider.
  */
 import { mkdirSync } from 'node:fs';
 import process from 'node:process';
@@ -230,8 +233,51 @@ try {
     },
   });
 
+  await runJourney('coding-manual-recovery', {
+    onChat(route, state) {
+      state.chatCalls += 1;
+      const body = route.request().postDataJSON();
+      if (state.chatCalls === 1) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ error: { message: 'Synthetic terminal failure', retryable: false } })}\n\ndata: [DONE]\n\n`,
+        });
+      }
+      state.retryModelId = body.modelId;
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sseBody(HEALED_PAGE),
+      });
+    },
+    async drive(page, state) {
+      await enterSignedInStudio(page);
+      const prompt = page.locator('.app-shell--studio textarea').first();
+      await visible(prompt, 'Coding composer is missing.');
+      await prompt.fill(CODING_ASK);
+      await prompt.press('Enter');
+      const retry = page.getByRole('button', { name: /^Retry on DeepSeek V4 Flash$/ });
+      await visible(retry, 'The failed turn promises recovery but hides its retry button.');
+      if (state.chatCalls !== 1) throw new Error('Displaying recovery must not start another request.');
+      // The shell retains its built-in available models alongside the fixture.
+      const expectedModel = 'deepseek/deepseek-v4-flash-0731';
+      if (await page.getByRole('button', { name: /Add real product photos|Add a payment gateway|Domestic or international/ }).count()) {
+        throw new Error('A failed turn offered feature suggestions instead of only recovery.');
+      }
+      await retry.click();
+      await page.waitForFunction(() => /Factory Schedule/.test(document.body.innerText), null, { timeout: 30_000 });
+      if (state.chatCalls !== 2 || state.retryModelId !== expectedModel) {
+        throw new Error(`Manual recovery did not use the displayed engine: ${JSON.stringify(state)}`);
+      }
+      if (await page.getByRole('button', { name: /^Retry on DeepSeek V4 Flash$/ }).count()) {
+        throw new Error('The previous failed turn still offers recovery after a new answer.');
+      }
+    },
+  });
+
   mkdirSync('artifacts/e2e', { recursive: true });
-  console.log('QIR production recovery browser gate passed: Study kept its own failure; Coding healed and journaled.');
+  console.log('QIR production recovery browser gate passed: Study isolation, Coding auto-recovery, and explicit retry on the displayed engine.');
 } catch (error) {
   console.error('QIR production recovery browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;

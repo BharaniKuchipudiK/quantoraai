@@ -99,6 +99,13 @@ test("an explicit implementation request is allowed to proceed", () => {
   assert.match(prompt, /without asking for permission again/);
 });
 
+test("build policy preserves named Python deliverables instead of inventing a web replica", () => {
+  const prompt = buildConversationSystemPrompt({ buildMode: true });
+  assert.match(prompt, /PYTHON SOURCE OVERRIDE/);
+  assert.match(prompt, /Do not invent index\.html or a browser replica/);
+  assert.match(prompt, /runs pytest when test files are present/);
+});
+
 test("build mode tells the model to ship working tools immediately", () => {
   const prompt = buildConversationSystemPrompt({
     buildMode: true,

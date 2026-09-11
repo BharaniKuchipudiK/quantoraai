@@ -15,7 +15,7 @@ import remarkGfm from 'remark-gfm';
 import PlainCodeBlock from './PlainCodeBlock.jsx';
 import LivePreviewCanvas from './LivePreviewCanvas';
 import StudioInlineSuggestions from './StudioInlineSuggestions';
-import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor } from '../lib/outcome-gap-detection.js';
+import { detectOutcomeGaps, injectGapContinues, filterContinuesForOffice, filterContinuesForAdvisor, codingFailureContinues } from '../lib/outcome-gap-detection.js';
 import { resolveStudioPartnerStatus, studioPreviewRunLabel, assistantClaimsImagesReady, assistantClaimsShopUiReady, previewShellIsWarming } from '../lib/studio-partner-status.js';
 import { assessShopBuildAsk, shopPhotoTurnFailureCopy, messageLooksLikeShopBuild } from '../lib/shop-catalog-scale.js';
 import { buildStudioJobCard, studioJobCardLabel, jobCardForCheckout } from '../lib/studio-job-card.js';
@@ -2252,7 +2252,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     return candidates.find((m) => /flash|mini|fast|lite/i.test(`${m.id} ${m.name}`)) || candidates[0];
   };
 
-  const handleSendMessage = (overrideText = null, sendOptions = null) => {
+  const handleSendMessage = (overrideText = null, sendOptions = null, targetModelOverride = null) => {
     const textToSend = overrideText || inputText;
     if (!textToSend.trim() && !attachments.length) return;
 
@@ -2315,7 +2315,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     }
 
     // Provider health/failover is handled below the UX surface. Keep model choice manual, never block a send.
-    streamSendMessage(overrideText, null, sendOptions);
+    streamSendMessage(overrideText, targetModelOverride, sendOptions);
   };
 
   const commitStudySyllabusChip = (item) => {
@@ -2996,6 +2996,23 @@ Paused — ${autoPauseRef.current}.`
                         </div>
                       )}
 
+                      {msg.sender === 'ai' && Array.isArray(msg.executionHistory) && msg.executionHistory.length > 1 ? (
+                        <details
+                          data-quantora-execution-history="true"
+                          open={isActiveGenerating || undefined}
+                          style={{ marginTop: '10px', fontSize: '0.72rem', color: subtextColor }}
+                        >
+                          <summary style={{ cursor: 'pointer', fontWeight: 650, color: textColor }}>
+                            Progress · {msg.executionHistory.length} observed steps
+                          </summary>
+                          <ol style={{ margin: '7px 0 0 18px', padding: 0, lineHeight: 1.55 }}>
+                            {msg.executionHistory.map((event, index) => (
+                              <li key={`${event.at}-${index}`}>{event.label}</li>
+                            ))}
+                          </ol>
+                        </details>
+                      ) : null}
+
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (() => {
                         // Actions are DERIVED from the message content — not a
@@ -3037,9 +3054,16 @@ Paused — ${autoPauseRef.current}.`
                             studioDomain,
                           )
                           : null;
+                        const recoveryContinues = codingFailureContinues({
+                          message: msg,
+                          latestAiId,
+                          dismissedContinueId,
+                          studioDomain,
+                          officeKind: officeKindForChips,
+                        });
                         const continueSet = studySyllabusSet && msg.id === latestAiId
                           ? studySyllabusSet
-                          : advisorContinues;
+                          : recoveryContinues || advisorContinues;
                         return (
                         <>
                         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -3204,7 +3228,7 @@ Paused — ${autoPauseRef.current}.`
                                 }]);
                                 return;
                               }
-                              feedHandleSendMessage(item.value, overrideModel);
+                              feedHandleSendMessage(item.value, null, overrideModel);
                             }}
                             onDismiss={() => {
                               if (studySyllabusSet && msg.id === latestAiId) {
