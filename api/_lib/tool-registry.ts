@@ -64,6 +64,11 @@ import {
   executeGithubToolCall,
   shouldEnableGithubTools,
 } from "./github-agent-tools.js";
+import {
+  githubWriteFunctionDeclarations,
+  executeGithubWriteToolCall,
+  shouldEnableGithubWriteTools,
+} from "./github-write-agent-tools.js";
 import type { GithubPrincipal } from "./github-principal.js";
 import {
   vercelFunctionDeclarations,
@@ -77,6 +82,13 @@ export interface QuantoraToolContext {
   studioDomain?: unknown;
   /** The signed-in user's GitHub principal, when they have connected one. */
   githubPrincipal?: GithubPrincipal | null;
+  /**
+   * Whether GitHub WRITE tools (push, open a pull request) may be offered
+   * this turn. Kept independent of `githubPrincipal` so a future policy —
+   * a feature flag, a per-user opt-in — can turn writes off without
+   * touching whether reads are offered.
+   */
+  githubWriteToolsEnabled?: boolean;
   /** The platform's shared Vercel token (deploy:vercel), when configured. */
   vercelToken?: string | null;
   /** Whether the platform independently decided travel tools may run. */
@@ -182,6 +194,11 @@ export function classifyGithubToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
 }
 
+/** GitHub write tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifyGithubWriteToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
 /** Vercel tools answer with an `ok` flag too; same mapping, same reason. */
 export function classifyVercelToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
@@ -201,6 +218,17 @@ const TRAVEL_TOOL_BUDGET_MS = 20_000;
  * slow read short is its own wrong answer.
  */
 const GITHUB_TOOL_BUDGET_MS = 45_000;
+
+/*
+ * push_files_to_repository makes up to PUSH_MAX_FILES+3 sequential GitHub
+ * hops (ref read, tree read, one blob per file, tree write, commit write,
+ * branch update) at GITHUB_TIMEOUT_MS each. A large push is a real slow
+ * write, not a stuck one, so its budget is the longest here — long enough
+ * that a legitimate multi-file commit is not cut off mid-write, which would
+ * leave the branch in an unknown state the model would then have to guess
+ * about.
+ */
+const GITHUB_WRITE_TOOL_BUDGET_MS = 60_000;
 
 /*
  * read_vercel_deployment makes two Vercel hops (deployment detail, then build
@@ -271,6 +299,32 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
   },
 }));
 
+const GITHUB_WRITE_TOOLS: QuantoraToolDefinition[] = githubWriteFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "github_write",
+  declaration,
+  budgetMs: GITHUB_WRITE_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `GitHub did not answer in time — ${reason}.`,
+      note: "Tell the user the write timed out. Do not describe it as succeeded or failed, and do not invent a commit, branch or pull request — check by reading the repository or pull request before saying anything happened.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableGithubWriteTools({ hasGithubConnection: Boolean(context.githubPrincipal) })
+      && context.githubWriteToolsEnabled === true;
+  },
+  async execute(args, context) {
+    const raw = await executeGithubWriteToolCall(this.name, args, {
+      principal: context.githubPrincipal || null,
+      ...(context.abortSignal ? { fetchImpl: budgetedFetch(context.abortSignal) } : {}),
+    });
+    return { family: "github_write", raw, classify: () => classifyGithubWriteToolResult(raw) };
+  },
+}));
+
 const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((declaration) => ({
   name: String(declaration.name),
   family: "vercel",
@@ -306,7 +360,7 @@ const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((d
  */
 function buildRegistry(): Map<string, QuantoraToolDefinition> {
   const registry = new Map<string, QuantoraToolDefinition>();
-  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...VERCEL_TOOLS]) {
+  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...GITHUB_WRITE_TOOLS, ...VERCEL_TOOLS]) {
     const existing = registry.get(tool.name);
     if (existing) {
       throw new Error(

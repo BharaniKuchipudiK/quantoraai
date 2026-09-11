@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   budgetedFetch,
   classifyGithubToolResult,
+  classifyGithubWriteToolResult,
   classifyTravelToolResult,
   classifyVercelToolResult,
   dispatchToolCall,
@@ -227,9 +228,11 @@ test("every tool declares a budget and an expiry its own classifier can read", (
     const expired = tool.expired("it did not finish in time");
     const state = tool.family === "github"
       ? classifyGithubToolResult(expired)
-      : tool.family === "vercel"
-        ? classifyVercelToolResult(expired)
-        : classifyTravelToolResult(expired, { committed: false });
+      : tool.family === "github_write"
+        ? classifyGithubWriteToolResult(expired)
+        : tool.family === "vercel"
+          ? classifyVercelToolResult(expired)
+          : classifyTravelToolResult(expired, { committed: false });
     assert.equal(state, "unavailable", `${tool.name}: an expired call does not read as unavailable`);
     const words = JSON.stringify(expired);
     assert.match(words, /did not finish in time/, `${tool.name}: the expiry does not say what happened`);

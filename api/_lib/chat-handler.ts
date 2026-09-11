@@ -24,6 +24,7 @@ import { readModelRegistryCached, readModelQualitySummaryCached } from "./model-
 import { DIRECT_MODELS, CURATED_MODELS, discoverAnthropicFlagships, fetchOpenRouterCatalogCached } from "./model-catalog.js";
 import { shouldEnableTravelTools } from './agent-tools.js';
 import { shouldEnableGithubTools } from './github-agent-tools.js';
+import { shouldEnableGithubWriteTools } from './github-write-agent-tools.js';
 import { shouldEnableVercelTools } from './vercel-agent-tools.js';
 import { resolveVercelToken } from './vercel-deployments.js';
 /*
@@ -1314,6 +1315,15 @@ export default async function handler(req: any, res: any) {
     const githubToolsEnabled = shouldEnableGithubTools({ hasGithubConnection: Boolean(githubPrincipal) })
       && Boolean(effectiveGeminiKey);
     /*
+     * Writes get their own gate rather than reusing githubToolsEnabled,
+     * because the roadmap that decided this (per the product owner: the model
+     * may open a pull request on its own, merging always stays a human click)
+     * treats it as a separate decision from reads — same connection, same
+     * user, different willingness to let the model act rather than only look.
+     */
+    const githubWriteToolsEnabled = shouldEnableGithubWriteTools({ hasGithubConnection: Boolean(githubPrincipal) })
+      && Boolean(effectiveGeminiKey);
+    /*
      * The platform's shared Vercel token, read once per turn for the same
      * reason the GitHub principal is: a tool loop that re-reads it per call
      * would pay the credential-broker round trip on every step. Unlike GitHub
@@ -1337,7 +1347,8 @@ export default async function handler(req: any, res: any) {
      */
     const activeToolContext: QuantoraToolContext = {
       studioDomain: normalizedStudioDomain,
-      githubPrincipal: githubToolsEnabled ? githubPrincipal : null,
+      githubPrincipal: (githubToolsEnabled || githubWriteToolsEnabled) ? githubPrincipal : null,
+      githubWriteToolsEnabled,
       vercelToken: vercelToolsEnabled ? vercelToken : null,
       get travelToolsPermitted() { return travelToolsEnabled; },
       toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
