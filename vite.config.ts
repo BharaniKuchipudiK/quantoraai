@@ -15,6 +15,36 @@ function copyMonacoAssets() {
   };
 }
 
+const PYODIDE_RUNTIME_FILES = [
+  'pyodide.mjs',
+  'pyodide.asm.mjs',
+  'pyodide.asm.wasm',
+  'python_stdlib.zip',
+  'pyodide-lock.json',
+];
+
+function copyPythonRuntimeAssets() {
+  const source = path.resolve('node_modules/pyodide');
+  const copy = () => {
+    const destination = path.resolve('dist/pyodide');
+    fs.mkdirSync(destination, { recursive: true });
+    for (const file of PYODIDE_RUNTIME_FILES) fs.copyFileSync(path.join(source, file), path.join(destination, file));
+  };
+  return {
+    name: 'copy-python-runtime-assets',
+    closeBundle: copy,
+    configureServer(server) {
+      server.middlewares.use('/pyodide', (req, res, next) => {
+        const file = String(req.url || '').split('?')[0].replace(/^\//, '');
+        if (!PYODIDE_RUNTIME_FILES.includes(file)) return next();
+        const types = { '.wasm': 'application/wasm', '.zip': 'application/zip', '.json': 'application/json', '.mjs': 'text/javascript' };
+        res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream');
+        fs.createReadStream(path.join(source, file)).pipe(res);
+      });
+    },
+  };
+}
+
 /*
  * Serve the SAME cross-origin isolation headers vercel.json serves, derived
  * from that file rather than hand-copied here.
@@ -65,7 +95,7 @@ function vercelParityHeaders() {
 
 export default defineConfig(() => {
   return {
-    plugins: [vercelParityHeaders(), react(), tailwindcss(), copyMonacoAssets()],
+    plugins: [vercelParityHeaders(), react(), tailwindcss(), copyMonacoAssets(), copyPythonRuntimeAssets()],
     /*
      * State the browsers this app actually runs on.
      *
@@ -89,6 +119,10 @@ export default defineConfig(() => {
      */
     build: {
       target: ['es2022', 'chrome93', 'edge93', 'firefox92', 'safari15.4'],
+    },
+    worker: {
+      // Pyodide's module worker loads its WebAssembly support as ES modules.
+      format: 'es' as const,
     },
     resolve: {
       alias: {

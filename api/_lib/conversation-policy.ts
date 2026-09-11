@@ -176,6 +176,7 @@ CHAT (visible to the user — required):
 
 ARTIFACT (routed to Live Preview — not read in chat):
 - This section OVERRIDES the React VFS runtime contract above unless the user explicitly asked for React.
+- PYTHON SOURCE OVERRIDE: when the user explicitly requests named .py files, emit every requested file in its own fenced block with a filepath attribute. Do not invent index.html or a browser replica. Coding Desk executes Python 3 in an isolated worker and runs pytest when test files are present; never claim execution or passing tests yourself. This override takes precedence over the web-only artifact rules below.
 - After your explanation, output EXACTLY ONE complete, self-contained HTML document inside a single \`\`\`html code block.
 - STYLE IS NOT OPTIONAL: put a comprehensive design system in a <style> block in <head> — a real color palette (background, surface, text, accent), web-font typography scale, generous spacing/layout (flex or grid), hover/focus states, and responsive @media rules. The result must look like a designed product, never a bare white page of default-styled HTML. The Preview sandbox blocks external CDNs, so do NOT rely on Tailwind CDN or any CSS framework loaded from an external <script>/<link>; write the CSS directly (self-contained). Google Fonts <link> is the one allowed exception.
 - Inline all JavaScript. It must run as a single .html file: no build step, no bundler, no server, and no bare module imports.
@@ -193,7 +194,7 @@ ARTIFACT (routed to Live Preview — not read in chat):
 - After a shop, boutique, or catalog website, the chat explanation MUST end with ONE follow-up that would change how the business runs — payments, domestic vs international shipping, appointments, or inventory. Do not assume those answers. Then append quantora-continues (2–3 taps). This is required even though HTML is in the same reply.
 - Optional session-memory HTML comment after the code block only.
 - TOOLS AND WIDGETS: If they asked for a self-contained tool (calculator, timer, todo, game, converter, quiz), implement a WORKING one immediately. Do not ask for a business name, brochure vs shop, brand vibe, or other website-intake questions.
-- NATIVE APPS / AGENTS (iOS / Android / Windows / macOS / Python): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica or dashboard as \`\`\`html (or index.html + styles.css + script.js). Do not use .swift, .kt, .py, or Xcode/Android project files as the only preview artifact.`;
+- NATIVE APPS / AGENTS (iOS / Android / Windows / macOS): Live Preview can only run HTML/CSS/JS or a React VFS. Emit a glossy browser replica or dashboard as \`\`\`html (or index.html + styles.css + script.js). Python is the exception described above: named .py deliverables stay Python and are verified by the desk.`;
 
 /*
  * Guided build directive. For a fresh "make me a website/app" request, Quantora
@@ -240,7 +241,7 @@ WHEN IMPLEMENTING (after confirmation or a specific change request):
 - You MUST emit that HTML block on this turn. Never say you added currency, cart, photos, or any control unless those tags exist in the HTML.
 - If DESK CONTEXT / LIVE PREVIEW FACTS are present, they override memory of earlier chat. Do not claim a catalog item, photo, cart, or converter that FACTS mark as missing.
 - Prefer editing the current files (index.html, products.json, script.js) over inventing a different product.
-- PREVIEW ENTRY RULE: Live Preview only runs the web entry (index.html, App.jsx, or styles.css/script.js linked from it). Never ship a UI change as .py / .swift / .kt alone — those files never run in the browser Preview. For calculator or other widget refinements (e.g. "make it scientific"), you MUST patch the Preview entry with the new controls (sin/cos, DEG/RAD, etc.) and keep data-testid="calculator-display" plus a digit key (data-testid="calculator-one" or visible 0–9 buttons).
+- PREVIEW ENTRY RULE: Live Preview runs web entries; the terminal separately runs requested Python files. Never substitute .py / .swift / .kt for an existing web UI change. For an explicitly requested Python project, edit its .py files and let the desk verify them. For a web calculator or other widget refinement (e.g. "make it scientific"), you MUST patch the Preview entry with the new controls (sin/cos, DEG/RAD, etc.) and keep data-testid="calculator-display" plus a digit key (data-testid="calculator-one" or visible 0–9 buttons).
 - Code is shown in the preview panel; chat stays readable.`;
 
 const FEATURE_SUGGEST_DIRECTIVE = `FEATURE SUGGESTION MODE

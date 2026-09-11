@@ -2996,6 +2996,23 @@ Paused — ${autoPauseRef.current}.`
                         </div>
                       )}
 
+                      {msg.sender === 'ai' && Array.isArray(msg.executionHistory) && msg.executionHistory.length > 1 ? (
+                        <details
+                          data-quantora-execution-history="true"
+                          open={isActiveGenerating || undefined}
+                          style={{ marginTop: '10px', fontSize: '0.72rem', color: subtextColor }}
+                        >
+                          <summary style={{ cursor: 'pointer', fontWeight: 650, color: textColor }}>
+                            Progress · {msg.executionHistory.length} observed steps
+                          </summary>
+                          <ol style={{ margin: '7px 0 0 18px', padding: 0, lineHeight: 1.55 }}>
+                            {msg.executionHistory.map((event, index) => (
+                              <li key={`${event.at}-${index}`}>{event.label}</li>
+                            ))}
+                          </ol>
+                        </details>
+                      ) : null}
+
                       {/* Minimalist Message Footer */}
                       {msg.sender === 'ai' && !isActiveGenerating && (() => {
                         // Actions are DERIVED from the message content — not a

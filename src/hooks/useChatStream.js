@@ -75,6 +75,7 @@ import {
   buildTruthNote,
 } from '../lib/proof-control-plane.js';
 import { sanitizePartnerBuildStatus } from '../lib/partner-build-status.js';
+import { appendExecutionProgress } from '../lib/execution-progress.js';
 import { describeSilentTurn, turnIsSilent } from '../lib/turn-never-silent.js';
 import {
   correlationHeaders,
@@ -1435,6 +1436,7 @@ export function useChatStream({
 
     const aiMsgId = createMessageId('ai');
     if (!stillCurrent()) return;
+    const initialExecutionStatus = turnPlan.statusLabel ? { label: turnPlan.statusLabel, phase: 'plan', state: 'accepted' } : null;
     updateActiveMessages(prev => [...prev, {
       id: aiMsgId,
       sender: 'ai',
@@ -1446,9 +1448,8 @@ export function useChatStream({
       latencyMs: 0,
       provider: targetModel.name,
       liveConnected: false,
-      executionStatus: turnPlan.statusLabel
-        ? { label: turnPlan.statusLabel }
-        : null,
+      executionStatus: initialExecutionStatus,
+      executionHistory: appendExecutionProgress([], initialExecutionStatus),
       ...(turnPlan.isCodingTurn ? {
         codingTurnPlan: {
           intent: turnPlan.intent,
@@ -1596,6 +1597,7 @@ export function useChatStream({
         ...m,
         isError: false,
         executionStatus: { label: notice },
+        executionHistory: appendExecutionProgress(m.executionHistory, { label: notice, phase: 'recovery', state: 'running' }),
       } : m));
     };
 
@@ -1847,6 +1849,7 @@ export function useChatStream({
                   ...m,
                   executionStatus: nextStatus,
                   modelUsed: activeEngineName || m.modelUsed,
+                  executionHistory: appendExecutionProgress(m.executionHistory, nextStatus),
                 } : m));
               }
               if (parsed.text) {
@@ -1870,6 +1873,9 @@ export function useChatStream({
                   provider: parsed.provider,
                   latencyMs: parsed.latencyMs || 0,
                   executionStatus: null,
+                  executionHistory: appendExecutionProgress(m.executionHistory, {
+                    phase: 'inference', state: 'completed', label: 'Model response received.',
+                  }),
                   ...(parsed.modelId ? {
                     modelUsed: parsed.modelId,
                     resolvedModelId: parsed.modelId,
@@ -2118,7 +2124,7 @@ export function useChatStream({
            * guided-intake-browser-gate.mjs exists.
            */
           const artifactAssessment = codingSpineOwns && !guidedIntakeTurn && !planTurn
-            ? assessCodingReply(currentText, artifactBaseVfs) : null;
+            ? assessCodingReply(currentText, artifactBaseVfs, turnPlan?.messageForModel || visibleUserText) : null;
           if (artifactAssessment) {
             void recordClientBoundary(responseCorrelationId, 'browser.artifact-validation', artifactAssessment.accepted ? 'succeeded' : 'failed', {
               detailCode: artifactAssessment.detailCode,
@@ -2258,6 +2264,7 @@ export function useChatStream({
 
           // Proof Control Plane owns success — skills + repair + evidence, not chat claims.
           let codingProof = null;
+          let codingRuntimeEvidence = null;
           // A failed proof annotates the turn; it never replaces it. See below.
           let proofNote = '';
           let proofChips = [];
@@ -2269,6 +2276,11 @@ export function useChatStream({
               ...artifactBaseVfs,
               ...(assembled.vfs || {}),
             };
+            codingRuntimeEvidence = await import('../lib/python-runtime.js')
+              .then(({ verifyPythonWorkspace }) => verifyPythonWorkspace(
+                seedVfs,
+                turnPlan.messageForModel || visibleUserText,
+              ));
             codingProof = proveCodingTurn({
               plan: turnPlan,
               vfs: seedVfs,
@@ -2276,6 +2288,7 @@ export function useChatStream({
               brief: turnPlan.messageForModel || visibleUserText,
               allowRepair: true,
               sessionId: activeSessionId,
+              runtimeEvidence: codingRuntimeEvidence,
             });
             if (typeof onCodingTurnProved === 'function') {
               try {
@@ -2304,6 +2317,10 @@ export function useChatStream({
                 value: chip.value,
                 priority: chip.priority,
               }));
+            } else if (codingRuntimeEvidence?.ok) {
+              proofNote = codingRuntimeEvidence.level === 'tests'
+                ? `Python verification passed: ${codingRuntimeEvidence.command}.`
+                : `Python 3 verified every requested source file compiles. No behavioral test files were provided, so behavior was not claimed as tested.`;
             }
 
             /*
@@ -2364,6 +2381,13 @@ export function useChatStream({
               ? `${withTravelDegradedNotice(displayWithIntake, travelDegraded) || ''}\n\n---\n\n${[historyNotice, proofNote].filter(Boolean).join('\n\n')}`.trim()
               : withTravelDegradedNotice(displayWithIntake, travelDegraded),
             executionStatus: null,
+            executionHistory: appendExecutionProgress(m.executionHistory, codingProof ? {
+              phase: 'verification',
+              state: codingProof.ok ? 'completed' : 'failed',
+              label: codingRuntimeEvidence?.ok
+                ? (codingRuntimeEvidence.level === 'tests' ? 'Python tests passed.' : 'Python source compilation passed.')
+                : (codingProof.ok ? 'Desk verification passed.' : 'Desk verification found unresolved gaps.'),
+            } : null),
             ...(codingProof ? {
               // The real verdict. This was hardcoded to pass, which was true only
               // because a failure returned before reaching here. Now that a failed

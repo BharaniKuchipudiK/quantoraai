@@ -62,6 +62,19 @@ test('ordinary calculator build is feasible execute with preview proof', () => {
   assert.ok(plan.proof.mustHave.some((item) => /Preview/i.test(item)));
 });
 
+test('explicit Python bundle plans native execution proof without demanding a fake web preview', () => {
+  const plan = planCodingTurn({
+    message: 'Create three files: parser.py, test_parser.py and README.md.',
+    codingDeskOpen: true,
+    availableModels: [{ id: 'gemini-flash-latest', name: 'Gemini Flash', available: true }],
+  });
+  assert.equal(plan.mode, 'execute');
+  assert.equal(plan.intent.kind, 'python_build');
+  assert.ok(plan.skillsRequired.some((s) => s.id === 'python_runtime'));
+  assert.ok(!plan.skillsRequired.some((s) => s.id === 'preview_html'));
+  assert.ok(plan.proof.mustHave.some((item) => /Python execution evidence/i.test(item)));
+});
+
 test('non-coding advisor turns pass through without planner interrupt', () => {
   const plan = planCodingTurn({
     message: 'What is the capital of France?',

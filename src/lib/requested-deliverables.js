@@ -12,7 +12,9 @@
  * evidence about the page, not evidence that requested deliverables were made.
  */
 
-const FILE_TOKEN = /(?:^|[\s(`'"[,;:])((?:\.?\/?[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.(?:py|md|txt|csv|json|ya?ml|toml|ini|cfg|js|jsx|mjs|cjs|ts|tsx|css|scss|html?|sql|sh|bash|zsh|ps1|java|kt|kts|swift|go|rs|rb|php|c|cc|cpp|h|hpp))(?![A-Za-z0-9_.-])/gi;
+// A full stop after a filename is sentence punctuation, not part of the path.
+// Keep dot out of the trailing guard so "README.md." is still captured.
+const FILE_TOKEN = /(?:^|[\s(`'"[,;:])((?:\.?\/?[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.(?:py|md|txt|csv|json|ya?ml|toml|ini|cfg|js|jsx|mjs|cjs|ts|tsx|css|scss|html?|sql|sh|bash|zsh|ps1|java|kt|kts|swift|go|rs|rb|php|c|cc|cpp|h|hpp))(?![A-Za-z0-9_-])/gi;
 const MULTI_FILE_CUE = /\b(?:\d+\s*[- ]?file|multi[- ]?file|files?\s+(?:named|called|including|include)|(?:write|create|generate|produce|deliver|build|implement|package|update|modify)\b[^\n.]{0,180}\b(?:files?|utility|project|package|module|codebase))\b/i;
 const NEGATION_NEAR_FILE = /\b(?:do\s+not|don't|dont|must\s+not|without|avoid|leave|keep)\b[^\n.]{0,55}$/i;
 

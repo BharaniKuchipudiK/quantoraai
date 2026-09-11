@@ -12,6 +12,13 @@ test('[was-red] extracts the exact three Python utility deliverables from the ob
   assert.deepEqual(requestedDeliverablePaths(PYTHON_ASK), ['parser.py', 'cleaner.py', 'README.md']);
 });
 
+test('sentence punctuation after the final filename does not erase that deliverable', () => {
+  assert.deepEqual(
+    requestedDeliverablePaths('Create two files: broken.py and README.md.'),
+    ['broken.py', 'README.md'],
+  );
+});
+
 test('[was-red] a web page that merely displays the requested filenames does not satisfy the contract', () => {
   const vfs = {
     'index.html': {

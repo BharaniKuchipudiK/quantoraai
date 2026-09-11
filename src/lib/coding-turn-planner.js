@@ -18,10 +18,17 @@ import { assessPartnerInterrupt } from './studio-partner-interrupt.js';
 import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-intent.js';
 import { isBuildAcknowledgement, isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
+import { requestedDeliverablePaths } from './requested-deliverables.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
 
 export const CODING_SKILLS = Object.freeze({
+  python_runtime: {
+    id: 'python_runtime',
+    label: 'Python 3 execution in an isolated browser worker',
+    available: true,
+    why: 'Requested Python files can be executed and verified without substituting a web page.',
+  },
   preview_html: {
     id: 'preview_html',
     label: 'Runnable HTML/CSS/JS in Preview',
@@ -106,6 +113,12 @@ function summarizeIntent({
       summary: `Oversize merchandise ask (${shopAsk.userAsked} unique images) — not feasible in one turn.`,
     };
   }
+  if (requestedDeliverablePaths(message).some((path) => /\.py$/i.test(path))) {
+    return {
+      kind: 'python_build',
+      summary: 'Build and verify the explicitly requested Python files.',
+    };
+  }
   if (messageLooksLikeShopBuild(message) || shopAsk?.imageAskCount) {
     return {
       kind: 'shop_build',
@@ -119,7 +132,9 @@ function summarizeIntent({
 }
 
 function requiredSkillsForIntent(intent, shopAsk) {
-  const required = [skill('preview_html'), skill('multi_file_vfs')];
+  const required = intent.kind === 'python_build'
+    ? [skill('python_runtime'), skill('multi_file_vfs')]
+    : [skill('preview_html'), skill('multi_file_vfs')];
   if (intent.kind === 'shop_oversize' || intent.kind === 'shop_build' || intent.kind === 'shop_catalog_slice') {
     required.push(skill('shop_catalog_photos'), skill('shop_commerce_ui'));
   }
@@ -130,6 +145,12 @@ function requiredSkillsForIntent(intent, shopAsk) {
 }
 
 function proofForIntent(intent) {
+  if (intent.kind === 'python_build') {
+    return {
+      mustHave: ['Every requested Python/source file on the desk', 'Successful Python execution evidence'],
+      how: ['Write the requested files to the VFS', 'Run pytest when tests exist; otherwise compile every requested Python source file'],
+    };
+  }
   if (intent.kind.startsWith('shop')) {
     return {
       mustHave: [
@@ -180,6 +201,8 @@ export function planCodingTurn({
   const intakeAccept = expandShopIntakeAccept(raw, prior);
   const displayUserText = raw;
   const messageForModel = intakeAccept.expanded ? intakeAccept.text : raw;
+  const hasExplicitPythonDeliverable = requestedDeliverablePaths(messageForModel)
+    .some((path) => /\.py$/i.test(path));
   const hints = lessonsToPlannerHints(lessons);
 
   // Feasibility gate must see oversize / partner interrupts even when the ask
@@ -247,6 +270,7 @@ export function planCodingTurn({
     || turnBelongsToBuild({ text: messageForModel, buildSessionActive })
     || Boolean(shopAsk?.oversize)
     || Boolean(interrupt?.blockModel)
+    || hasExplicitPythonDeliverable
   ) && !advisorBlocksPreviewBuild(studioDomain);
 
   if (!isCodingTurn) {

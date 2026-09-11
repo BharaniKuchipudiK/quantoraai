@@ -18,7 +18,7 @@ import { lessonKindFromOutcome } from './coding-turn-lesson-kinds.js';
 import { createInlineReactRuntimeVfs, isProjectRuntimeVfs } from './project-runtime-preview.js';
 import { describeBuildTruth, inspectBuildTruth } from './build-truth.js';
 import { describeRepair, repairBuild } from './build-repair.js';
-import { missingRequestedDeliverables } from './requested-deliverables.js';
+import { missingRequestedDeliverables, requestedDeliverablePaths } from './requested-deliverables.js';
 
 /** @typedef {'pending'|'pass'|'repair'|'fail'} ProofStatus */
 
@@ -120,6 +120,7 @@ export function evaluateProofEvidence(plan, {
   brief = '',
   embedReady = null,
   liveFacts = null,
+  runtimeEvidence = null,
 } = {}) {
   const shopTurn = isShopPlan(plan);
   const target = photoTargetFor(plan);
@@ -134,6 +135,9 @@ export function evaluateProofEvidence(plan, {
   const hasRunnable = shopTurn ? hasHtmlDoc : (hasHtmlDoc || hasReactRuntime);
   const deliverableBrief = brief || plan?.messageForModel || plan?.displayUserText || '';
   const missingDeliverables = missingRequestedDeliverables(deliverableBrief, vfs);
+  const requestedPython = requestedDeliverablePaths(deliverableBrief).filter((candidate) => /\.py$/i.test(candidate));
+  const pythonTurn = requestedPython.length > 0;
+  const pythonVerified = pythonTurn && runtimeEvidence?.ok === true;
 
   const livePhotoCount = liveFacts && typeof liveFacts.photoCount === 'number'
     ? liveFacts.photoCount
@@ -162,14 +166,18 @@ export function evaluateProofEvidence(plan, {
     shopTurn,
     embedReady: embedReady == null ? undefined : Boolean(embedReady),
     livePhotoCount,
+    python: pythonTurn ? runtimeEvidence || { ok: false, level: 'not-run', files: requestedPython } : undefined,
   };
 
   const gaps = [];
-  if (!hasRunnable) {
+  if (!hasRunnable && !pythonVerified) {
     gaps.push(shopTurn ? 'runnable Preview HTML' : 'runnable Preview (HTML or React VFS)');
   }
   for (const deliverable of missingDeliverables) {
     gaps.push(`requested deliverable ${deliverable}`);
+  }
+  if (pythonTurn && !runtimeEvidence?.ok) {
+    gaps.push(runtimeEvidence ? 'Python execution verification failed' : 'Python execution verification not run');
   }
   if (shopTurn) {
     const effectivePhotos = livePhotoCount != null ? Math.max(photos, livePhotoCount) : photos;
@@ -196,6 +204,7 @@ export function proveCodingTurn({
   brief = '',
   embedReady = null,
   liveFacts = null,
+  runtimeEvidence = null,
   allowRepair = true,
   sessionId = null,
 } = {}) {
@@ -261,6 +270,7 @@ export function proveCodingTurn({
     brief,
     embedReady,
     liveFacts,
+    runtimeEvidence,
   });
 
   if (!evalResult.ok && allowRepair && isShopPlan(plan)) {
@@ -286,6 +296,7 @@ export function proveCodingTurn({
       brief,
       embedReady,
       liveFacts,
+      runtimeEvidence,
     });
   }
 
@@ -353,11 +364,15 @@ export function proveCodingTurn({
 export function proofFailureCopy(verdict, plan = null) {
   const gaps = (verdict?.gaps || []).join(', ') || 'required completion proof';
   const deliverableGap = (verdict?.gaps || []).some((gap) => String(gap).startsWith('requested deliverable '));
+  const pythonGap = Boolean(verdict?.evidence?.python)
+    && (verdict?.gaps || []).some((gap) => String(gap).startsWith('Python execution verification'));
   const lines = [
-    `**${deliverableGap ? 'Completion' : 'Preview'} proof did not pass** — missing: ${gaps}.`,
+    `**${deliverableGap ? 'Completion' : pythonGap ? 'Python' : 'Preview'} proof did not pass** — missing: ${gaps}.`,
     '',
     deliverableGap
       ? 'The generated work is still available, but a rendered page cannot stand in for files the request explicitly asked for. Nothing was removed.'
+      : pythonGap
+      ? 'The generated files are still available, but the desk will not call them working until Python executes successfully. Nothing was removed.'
       : 'The build above is exactly what the model produced. Nothing was replaced or removed. Open Preview and judge it yourself — this is a warning about what I could not verify, not a verdict on the work.',
   ];
   if (isShopPlan(plan)) {

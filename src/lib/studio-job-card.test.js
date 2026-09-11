@@ -16,6 +16,18 @@ test('a calculator brief becomes a calculator job, not a generic website', () =>
   assert.match(studioJobCardLabel(job), /calculator/i);
 });
 
+test('No TODOs is a quality constraint, not a request for a to-do application', () => {
+  const brief = 'Create parser.py, cleaner.py and README.md. No TODOs, placeholders, or omitted sections.';
+  const job = buildStudioJobCard({ brief });
+  assert.doesNotMatch(job.purpose, /to-do list/i);
+  assert.doesNotMatch(job.mustWork.join(' '), /Items can still be added/i);
+});
+
+test('a real to-do request remains a to-do job even when it also forbids TODO stubs', () => {
+  const job = buildStudioJobCard({ brief: 'Build a working todo list. No TODOs or placeholder code.' });
+  assert.equal(job.purpose, 'A to-do list');
+});
+
 test('a follow-up does not replace the calculator with a new product', () => {
   const existing = buildStudioJobCard({ brief: 'Build me a simple calculator' });
   const next = buildStudioJobCard({

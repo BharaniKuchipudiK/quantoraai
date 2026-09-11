@@ -15,6 +15,7 @@ import { buildStudioJobCard, isStudioProductSwitch, normalizeStudioJobCard } fro
 // SHOP_CATALOG_CAP from its own module rather than through preview-images:
 // re-exporting a constant through an unrelated file hides the dependency.
 import { SHOP_CATALOG_CAP, shopCatalogScaleNote } from './shop-catalog-scale.js';
+import { missingRequestedDeliverables, requestedDeliverablePaths } from './requested-deliverables.js';
 
 const NATIVE_SIDECAR_RE = /\.(py|swift|kt|kts|java|cs|cpp|c|m|mm|rs|go|rb)$/i;
 const PREVIEW_ASSEMBLY_RE = /\.(html|css|js|jsx|tsx|json)$/i;
@@ -151,10 +152,17 @@ export function studioAssemblyBase(currentVfs = {}, brief = '', job = null) {
   return isStudioProductSwitch(brief, job) ? {} : currentVfs;
 }
 
-export function assessCodingReply(rawText, currentVfs = {}) {
+export function assessCodingReply(rawText, currentVfs = {}, brief = '') {
   const assembled = assembleStudioPreview(rawText, currentVfs);
+  const requested = requestedDeliverablePaths(brief);
+  const sourceBundle = requested.some((path) => /\.py$/i.test(path))
+    && requested.every((path) => /\.(?:py|md|txt)$/i.test(path));
+  const changed = new Set(changedVfsPaths(currentVfs, assembled.vfs));
+  const deliveredSourceBundle = sourceBundle
+    && missingRequestedDeliverables(brief, assembled.vfs).length === 0
+    && requested.some((path) => changed.has(path));
   const detailCode = assembled.patchFailures?.length ? 'patch-conflict'
-    : assembled.code ? 'artifact-accepted' : 'browser-preview-missing';
+    : assembled.code || deliveredSourceBundle ? 'artifact-accepted' : 'browser-preview-missing';
   return { accepted: detailCode === 'artifact-accepted', detailCode, assembled };
 }
 
