@@ -256,16 +256,30 @@ export default function GithubDestinationBar({
   // with GitHub not connected. Unknown takes the same branch as not-connected, which
   // is what `!== true` already meant everywhere else: never claim a destination that
   // has not been confirmed.
+  /*
+   * readGithubConnectionSummary (api/_lib/github-connection-store.ts) can
+   * return connected:false WITH a reason — e.g. "The stored GitHub
+   * authorization could not be opened with this deployment's key. Reconnect
+   * your GitHub account." or "GitHub connections are not configured on this
+   * deployment." Before this, that reason was fetched into `connection` and
+   * then silently dropped: someone whose working connection had since broken
+   * saw the exact same bare "GitHub" chip as someone who had never connected
+   * at all, with no hint anything had changed. Clicking it restarts the whole
+   * OAuth dance, which — for a deployment-config cause — fails again for the
+   * identical reason, and reads as "it just doesn't work" on repeat.
+   */
   if (!connection || connection.connected !== true) {
+    const reason = connection && !connection.connected ? String(connection.reason || '') : '';
     return (
       <a
         href={githubConnectUrl(typeof window !== 'undefined' ? window.location.pathname + window.location.search : '')}
         data-quantora-github-destination="disconnected"
         data-quantora-github-destination-connect="true"
-        title="Connect GitHub to choose where this build is saved"
+        data-quantora-github-destination-reason={reason || undefined}
+        title={reason || 'Connect GitHub to choose where this build is saved'}
         style={{ ...control(false), textDecoration: 'none' }}
       >
-        <Github size={15} />
+        <Github size={15} color={reason ? '#f97316' : undefined} />
         <span style={truncate}>GitHub</span>
       </a>
     );
