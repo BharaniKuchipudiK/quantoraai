@@ -2299,6 +2299,23 @@ export default async function handler(req: any, res: any) {
 - You cannot read CI log contents, only their URLs, and you cannot read arbitrary files at a commit. Say so rather than guessing what a log contains.
 ` : '';
       /*
+       * The signed-in-but-toolless case: no connection, or a connection with
+       * no usable model key. Silence here is not neutral — a model asked to
+       * fix a repository with zero grounding on what it can and cannot do
+       * reaches for its base training, and that training's answer is the
+       * fabrication this repo's own history opened with: "I cannot access
+       * your GitHub, no repo token, no shell on your machine" — followed by a
+       * shell command for the user to run locally, when the actual and much
+       * simpler fact is that GitHub is not yet connected in Settings. Naming
+       * the plain fact here is cheaper than the invented one, same principle
+       * as githubWriteDirective above, just for the empty-toolset case that
+       * had no directive at all before this.
+       */
+      const githubDisconnectedPersona = (!githubToolsEnabled && activeSessionUser?.sub) ? `\n\nGITHUB CONNECTION DIRECTIVE:
+- You have NO GitHub tools active this turn: no ability to read, push, commit, comment, open, or merge anything on any repository, and no shell or filesystem access to the user's computer — you never have shell or filesystem access to a user's machine, connected or not.
+- If asked to fix a repository, open a pull request, or diagnose a deployment, say plainly that GitHub tools are not available right now and point them to Settings → GitHub connection (or the Pull Requests panel) to connect it. Do not invent a technical reason ("no repo token", "no shell access") as if it were a fixed platform limitation, and do not hand them a shell command to run on their own machine — Quantora does not need one, it acts through your own GitHub tools once connected.
+` : '';
+      /*
        * Vercel tools are read-only diagnostics: what deployed, what its build
        * log said, nothing more. The directive exists for the same reason the
        * GitHub one does — an empty or truncated log is not "no errors", and a
@@ -2321,7 +2338,7 @@ export default async function handler(req: any, res: any) {
 - When asked to fix a failing Vercel build, deployment, or PR check: (1) call list_vercel_deployments / read_vercel_deployment to read the actual failure and its build log — never guess at the cause from the project name or the user's description alone; (2) identify the real file(s) and change needed from what the log actually says; (3) call push_files_to_repository with that fix, to a new branch; (4) call create_pull_request to open it. Tell the user what you found in the log, what you changed and why, and that the pull request is open for their review — never that it is merged or deployed.
 - If the log does not point at a clear cause, say so and ask before pushing a speculative change. A guess committed as a pull request still costs the user a review; do not spend that on a change you are not reasonably sure fixes the read failure.
 - This chain is only ever a pull request. Nothing you can call merges it or promotes it to production.` : '';
-      const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona + vercelPersona + deployFixPersona;
+      const injectedSystemPrompt = finalSystemPrompt + travelPersona + githubPersona + githubDisconnectedPersona + vercelPersona + deployFixPersona;
       const contents = buildGeminiContents(boundedHistory, messageForModel, visionImages);
       let fullReply = '';
       let legacyFinishReason: string | null = null;
