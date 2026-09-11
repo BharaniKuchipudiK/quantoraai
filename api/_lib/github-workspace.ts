@@ -15,7 +15,7 @@ import { requireActiveSession } from "./authz.js";
 import { isRateLimited } from "./rate-limit.js";
 import { parseGithubRepositoryUrl } from "./repository-preview.js";
 import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection, readGithubAutoPrEnabled, setGithubAutoPrEnabled } from "./github-connection-store.js";
-import { listBranches, listIssues, listPullRequests, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
+import { listBranches, listIssues, listPullRequests, listRepositories, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
 import {
   commentOnPullRequest,
   createPullRequest,
@@ -84,8 +84,6 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
   if (!auth.ok) return;
   const sessionUser = auth.value.sessionUser!;
 
-  // GitHub's own rate limit is per token; this one protects Quantora from being
-  // the thing that burns a user's hourly budget in ten seconds.
   if (isRateLimited(`github:${sessionUser.sub}`, 60, 60_000)) {
     res.status(429).json({ error: "Too many GitHub requests. Wait a minute and try again." });
     return;
@@ -142,8 +140,6 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
     try {
       const owner = String(req.body?.owner || principal.login);
       const name = String(req.body?.name || "");
-      // A deployment narrowed to specific repositories must not be able to
-      // create its way out of that boundary.
       assertRepositoryWithinDeploymentBoundary(owner, name);
       const created = await createRepository({ principal }, {
         owner,
@@ -168,14 +164,9 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
   }
 
   try {
-    // Reads are bounded by the user's own GitHub permissions and need no
-    // deployment allowlist. Writes may additionally be narrowed by one.
     if (isGithubWriteStage(stage)) assertRepositoryWithinDeploymentBoundary(owner, repo);
     await dispatch({ stage, req, res, principal, owner, repo });
   } catch (error: any) {
-    // A refusal is not an outage. Everything thrown below this line is either
-    // GitHub declining or Quantora declining on GitHub's behalf, and both are
-    // 400-class answers the user can act on.
     res.status(400).json({ error: error?.message || "The GitHub action did not complete.", repository: `${owner}/${repo}` });
   }
 }
@@ -218,7 +209,6 @@ async function dispatch(input: {
     });
     res.status(200).json({
       ...checkout,
-      // The caller must be able to say what is missing without recomputing it.
       notice: describeCheckoutOmissions(checkout),
     });
     return;
