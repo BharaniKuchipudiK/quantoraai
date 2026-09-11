@@ -37,6 +37,7 @@ import {
   type GithubWriteContext,
 } from "./github-actions.js";
 import type { FetchLike, GithubPrincipal } from "./github-principal.js";
+import { checkFilesParse } from "./code-syntax-guard.js";
 
 /**
  * Tools are offered only when BOTH are true: a GitHub connection exists, and
@@ -60,7 +61,7 @@ export const githubWriteFunctionDeclarations: any[] = [
   {
     name: "push_files_to_repository",
     description:
-      "Commit one or more files to a branch on the signed-in user's GitHub repository, as one commit. Creates the branch from the repository's default branch if it does not already exist. REQUIRED before create_pull_request when the head branch is not already on GitHub. Returns: the new commit SHA, the branch name, how many files were committed, whether the branch was just created, and the commit's URL. Does NOT open a pull request — call create_pull_request for that. Fails closed if the signed-in user cannot write to this repository; it never silently commits as someone else.",
+      "Commit one or more files to a branch on the signed-in user's GitHub repository, as one commit. Creates the branch from the repository's default branch if it does not already exist. REQUIRED before create_pull_request when the head branch is not already on GitHub. Before writing, every JS/TS/JSX/TSX/JSON file is checked for a real parse error (a syntax error that would break any build) and the commit is refused if one is found — this is NOT a test run and does NOT check that the code behaves correctly, only that it parses. Returns: the new commit SHA, the branch name, how many files were committed, whether the branch was just created, and the commit's URL. Does NOT open a pull request — call create_pull_request for that. Fails closed if the signed-in user cannot write to this repository; it never silently commits as someone else.",
     parameters: {
       type: "object",
       properties: {
@@ -150,8 +151,25 @@ export async function executeGithubWriteToolCall(
         const owner = requireText(args?.owner, "owner");
         const repo = requireText(args?.repo, "repo");
         const writeContext: GithubWriteContext = { principal, owner, repo, fetchImpl };
+        const filesToWrite = Array.isArray(args?.files) ? args.files : [];
+        /*
+         * The one real, free check available without a git clone or npm: does
+         * every file even PARSE. Run before any network call reaches GitHub —
+         * a syntax error caught here costs nothing; caught after push it is
+         * already a commit someone has to notice and revert.
+         */
+        const syntaxCheck = checkFilesParse(filesToWrite);
+        if (!syntaxCheck.ok) {
+          return {
+            ok: false,
+            status: "syntax_error",
+            failures: syntaxCheck.failures,
+            error: `${syntaxCheck.failures.length} file(s) do not parse and were NOT pushed.`,
+            note: "Nothing was written to GitHub. Fix the syntax error(s) listed and call push_files_to_repository again. This check only confirms the file parses — it is not a test run.",
+          };
+        }
         const result = await pushFilesToRepository(writeContext, {
-          files: Array.isArray(args?.files) ? args.files : [],
+          files: filesToWrite,
           message: String(args?.message || ""),
           branch: typeof args?.branch === "string" ? args.branch : undefined,
         });

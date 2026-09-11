@@ -129,6 +129,24 @@ test("push_files_to_repository returns exactly what its description promises, an
   assert.ok(!requests.some((r) => /\/pulls$/.test(r.url)), "no pull request endpoint should be touched by a push");
 });
 
+test("a file that does not parse is refused before a single request reaches GitHub", async () => {
+  const { impl, requests } = fakeGithub({ permissions: { push: true } });
+  const result = await executeGithubWriteToolCall(
+    "push_files_to_repository",
+    {
+      owner: "acme",
+      repo: "widget",
+      message: "Fix the build",
+      files: [{ path: "api/broken.ts", content: "export function f() {\n  return 1;\n" }],
+    },
+    { principal, fetchImpl: impl },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "syntax_error");
+  assert.equal(result.failures[0].path, "api/broken.ts");
+  assert.equal(requests.length, 0, "no GitHub call of any kind may happen once a file fails to parse");
+});
+
 test("create_pull_request returns an OPEN pull request and says so, never a merged one", async () => {
   const { impl, requests } = fakeGithub({ permissions: { push: true } });
   const result = await executeGithubWriteToolCall(
