@@ -11,12 +11,7 @@ import StudioDeskReviewHunks from './StudioDeskReviewHunks.jsx';
  * Security issue #452 is resolved rather than contained: Quantora no longer
  * holds a shared credential that can write to GitHub, and every pull request
  * action now runs on the signed-in user's own GitHub authorization, checked
- * against that repository on each request. The single "Create PR" button that
- * was disabled here is replaced by a panel that can also read the pull requests
- * already in flight — which is where most of the value was all along.
- *
- * Desk git itself is unchanged and still local-only: status, diff, commit, no
- * push. Nothing below should imply otherwise.
+ * against that repository on each request.
  */
 const GithubPullRequests = lazy(() => import('./GithubPullRequests.jsx'));
 const GithubPushPanel = lazy(() => import('./GithubPushPanel.jsx'));
@@ -44,15 +39,6 @@ export default function StudioGit({
   const fileCount = studioGitFileCount(vfs);
   const blocker = studioGitBlocker({ isolated, fileCount });
 
-  /*
-   * A repository selected in the composer is already a real GitHub repository,
-   * even when it was chosen through the new destination bar rather than the
-   * legacy Import Repository flow. Before this fallback, checkout could load a
-   * working copy into the desk while the Git/PR pane still received an empty
-   * githubRepoUrl and behaved as if no repository existed. That split is the
-   * reason a user could see owner/repo/branch chips and still be told to import
-   * or push from their own machine.
-   */
   const destinationRepoUrl = githubDestination?.owner && githubDestination?.repo
     ? `https://github.com/${githubDestination.owner}/${githubDestination.repo}`
     : '';
@@ -64,7 +50,6 @@ export default function StudioGit({
       || 'main',
   ).trim() || 'main';
   const compareUrl = githubCompareUrl(activeRepoUrl, prHead || 'quantora-desk', baseBranch);
-  // What this desk is a working copy of, when it was opened from a repository.
   const workingCopyBase = deskGitBase(workspaceKey);
 
   useEffect(() => {
@@ -162,33 +147,19 @@ export default function StudioGit({
         </div>
       ) : null}
       <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', lineHeight: 1.45 }}>
-        Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Save to GitHub, below, writes these files to a branch on your own connected account after GitHub confirms you may write. The Pull Requests panel can then open a PR from that branch.
+        Git is for this app’s files on the desk: status, diff, and commit run locally and stay here. Commit to GitHub, below, writes these files to a work branch on your own connected account. The Pull Requests panel opens that same branch against the branch you pulled.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>
-          Status
-        </button>
-        <button type="button" data-quantora-studio-git-diff="true" disabled={busy} onClick={() => runAction('diff')} style={gitButtonStyle}>
-          Diff
-        </button>
+        <button type="button" data-quantora-studio-git-status="true" disabled={busy} onClick={() => runAction('status')} style={gitButtonStyle}>Status</button>
+        <button type="button" data-quantora-studio-git-diff="true" disabled={busy} onClick={() => runAction('diff')} style={gitButtonStyle}>Diff</button>
         {needsInit ? (
-          <button type="button" data-quantora-studio-git-init="true" disabled={busy} onClick={() => runAction('init')} style={gitButtonStyle}>
-            Start git in this app
-          </button>
+          <button type="button" data-quantora-studio-git-init="true" disabled={busy} onClick={() => runAction('init')} style={gitButtonStyle}>Start git in this app</button>
         ) : null}
-        <button
-          type="button"
-          data-quantora-studio-git-open-github="true"
-          disabled={busy}
-          onClick={openOnGithub}
-          style={gitButtonStyle}
-        >
-          Open on GitHub
-        </button>
+        <button type="button" data-quantora-studio-git-open-github="true" disabled={busy} onClick={openOnGithub} style={gitButtonStyle}>Open on GitHub</button>
       </div>
       {activeRepoUrl ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <label htmlFor="quantora-pr-head" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>Head branch</label>
+          <label htmlFor="quantora-pr-head" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>PR work branch</label>
           <input
             id="quantora-pr-head"
             data-quantora-studio-git-pr-head="true"
@@ -205,10 +176,17 @@ export default function StudioGit({
               font: 'inherit',
             }}
           />
+          <span style={{ color: '#64748b' }}>→ {baseBranch}</span>
         </div>
       ) : null}
       <Suspense fallback={<div style={{ padding: '10px 12px', color: '#94a3b8' }}>Loading GitHub…</div>}>
-        <GithubPushPanel vfs={vfs} githubRepoUrl={activeRepoUrl} githubDestination={githubDestination} projectName={projectName} />
+        <GithubPushPanel
+          vfs={vfs}
+          githubRepoUrl={activeRepoUrl}
+          githubDestination={githubDestination}
+          projectName={projectName}
+          onBranchChange={setPrHead}
+        />
         <GithubPullRequests
           repoUrl={activeRepoUrl}
           headBranch={prHead || 'quantora-desk'}
@@ -225,8 +203,7 @@ export default function StudioGit({
               color: '#94a3b8',
               padding: '0 0 8px',
               textTransform: 'uppercase',
-            }}
-            >
+            }}>
               This turn
             </div>
             {review.map((row) => (
@@ -250,9 +227,7 @@ export default function StudioGit({
                     font: 'inherit',
                   }}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {studioFileLabel(row.path)}
-                  </span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studioFileLabel(row.path)}</span>
                   {row.exact === false ? (
                     <span style={{ fontSize: '0.62rem', color: '#94a3b8' }}>changed</span>
                   ) : (
@@ -263,32 +238,21 @@ export default function StudioGit({
                     </span>
                   )}
                 </button>
-                <StudioDeskReviewHunks
-                  path={row.path}
-                  hunks={row.hunks}
-                  note={row.note}
-                  subtextColor="#94a3b8"
-                />
+                <StudioDeskReviewHunks path={row.path} hunks={row.hunks} note={row.note} subtextColor="#94a3b8" />
               </div>
             ))}
           </div>
         ) : null}
-        {blocker ? (
-          <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div>
-        ) : null}
+        {blocker ? <div style={{ color: '#fbbf24', marginBottom: '12px' }}>{blocker}</div> : null}
         <div data-quantora-studio-git-log="true">
-        {log.flatMap((entry, index) => String(entry).split('\n').map((line, lineIndex) => {
-          const kind = classifyDeskGitLine(line);
-          return (
-            <div
-              key={`${index}-${lineIndex}-${line.slice(0, 24)}`}
-              data-quantora-studio-git-line={kind}
-              style={{ color: GIT_LINE_COLORS[kind], minHeight: '1.15em' }}
-            >
-              {line}
-            </div>
-          );
-        }))}
+          {log.flatMap((entry, index) => String(entry).split('\n').map((line, lineIndex) => {
+            const kind = classifyDeskGitLine(line);
+            return (
+              <div key={`${index}-${lineIndex}-${line.slice(0, 24)}`} data-quantora-studio-git-line={kind} style={{ color: GIT_LINE_COLORS[kind], minHeight: '1.15em' }}>
+                {line}
+              </div>
+            );
+          }))}
         </div>
         {busy ? <div style={{ color: '#94a3b8' }}>running…</div> : null}
       </div>
@@ -314,9 +278,7 @@ export default function StudioGit({
             padding: '10px 12px',
           }}
         />
-        <button type="submit" data-quantora-studio-git-commit="true" disabled={busy || Boolean(blocker)} style={{ ...gitButtonStyle, margin: '8px 10px' }}>
-          Commit
-        </button>
+        <button type="submit" data-quantora-studio-git-commit="true" disabled={busy || Boolean(blocker)} style={{ ...gitButtonStyle, margin: '8px 10px' }}>Commit</button>
       </form>
     </div>
   );
