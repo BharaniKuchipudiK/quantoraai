@@ -9,6 +9,7 @@ import {
   githubReconnectPrompt,
   isGithubTokenRejected,
   mergeBlockedReason,
+  parseGithubConnectReturn,
   pullRequestStateLabel,
 } from './github-workspace.js';
 
@@ -95,4 +96,45 @@ test('the reconnect prompt points at the connect route, not at prose', () => {
   // The old copy told the reader to reconnect "in Quantora" and gave them
   // nowhere to do it. The prompt carries the destination itself.
   assert.match(prompt.href, /^\/api\//);
+});
+
+// The connect flow always redirects back to `/?github=…`. Before this was
+// wired up, nothing in the app read that query string: a real refusal from
+// the server ("Sign in to Quantora before connecting GitHub.") landed on the
+// home page and was thrown away, so clicking the still-disconnected chip
+// again reproduced the identical silent bounce — read by a real user as an
+// infinite loop, not as the one-line answer the server had already given.
+
+test('a bare visit carries no connect notice', () => {
+  assert.deepEqual(parseGithubConnectReturn(''), { present: false, tone: '', message: '' });
+  assert.deepEqual(parseGithubConnectReturn('?auth=success'), { present: false, tone: '', message: '' });
+});
+
+test('a successful connect names who was connected', () => {
+  const result = parseGithubConnectReturn('?github=connected&login=octocat');
+  assert.equal(result.present, true);
+  assert.equal(result.tone, 'good');
+  assert.match(result.message, /octocat/);
+});
+
+test('a successful connect with no login still reads as success', () => {
+  const result = parseGithubConnectReturn('?github=connected');
+  assert.equal(result.present, true);
+  assert.equal(result.tone, 'good');
+  assert.match(result.message, /connected/i);
+});
+
+test('a failed connect surfaces the exact server message, not a generic one', () => {
+  const message = 'Sign in to Quantora before connecting GitHub.';
+  const result = parseGithubConnectReturn(`?github=error&message=${encodeURIComponent(message)}`);
+  assert.equal(result.present, true);
+  assert.equal(result.tone, 'bad');
+  assert.equal(result.message, message);
+});
+
+test('a failed connect with no message still reads as an error, not nothing', () => {
+  const result = parseGithubConnectReturn('?github=error');
+  assert.equal(result.present, true);
+  assert.equal(result.tone, 'bad');
+  assert.ok(result.message.length > 0);
 });

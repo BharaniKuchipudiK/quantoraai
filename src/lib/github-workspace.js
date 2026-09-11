@@ -45,6 +45,35 @@ export function githubReconnectPrompt() {
   };
 }
 
+/*
+ * The connect flow (api/_lib/handlers/auth-github-connect*.ts) always ends by
+ * sending the browser back to `/?github=connected&login=…` or
+ * `/?github=error&message=…`. Nothing in the app ever read those two params —
+ * the redirect landed, the query string sat there unparsed, and the person
+ * who clicked "Connect GitHub" saw only "it sent me back to the home page"
+ * with no word of why. Clicking the still-disconnected chip again reproduced
+ * the exact same silent bounce, which is what read as an infinite loop: the
+ * server was doing its job (refusing and saying why) but no one was listening.
+ *
+ * This is the one function that listens. It is pure so the App.jsx effect
+ * that calls it and the test that proves it stay looking at the same words.
+ */
+export function parseGithubConnectReturn(search) {
+  const params = new URLSearchParams(typeof search === 'string' ? search : '');
+  const outcome = params.get('github');
+  if (outcome === 'connected') {
+    const login = params.get('login') || '';
+    return { present: true, tone: 'good', message: login ? `Connected to GitHub as ${login}.` : 'GitHub connected.' };
+  }
+  if (outcome === 'error') {
+    // URLSearchParams already percent-decodes .get() results once; the server
+    // encodeURIComponent()'d the message exactly once, so decoding it again
+    // here would corrupt any message that happens to contain a literal '%'.
+    return { present: true, tone: 'bad', message: params.get('message') || 'Connecting GitHub failed.' };
+  }
+  return { present: false, tone: '', message: '' };
+}
+
 export const GITHUB_ENDPOINTS = Object.freeze({
   connection: '/api/github/connection',
   disconnect: '/api/github/disconnect',

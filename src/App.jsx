@@ -17,6 +17,7 @@ import {
 } from './lib/studio-isolation.js';
 import AuthModal from './components/AuthModal';
 import { authModalOverlayStyle } from './lib/auth-modal-styles.js';
+import { parseGithubConnectReturn } from './lib/github-workspace.js';
 import {
   clearPasswordResetToken,
   peekPasswordResetToken,
@@ -180,6 +181,7 @@ export default function App() {
     return hasOAuthReturnPending();
   });
   const [loginError, setLoginError] = useState('');
+  const [githubConnectNotice, setGithubConnectNotice] = useState(null);
   const buildGoogleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const [authProviders, setAuthProviders] = useState({
     google: Boolean(buildGoogleClientId),
@@ -194,7 +196,7 @@ export default function App() {
   const clearAuthQueryParams = useCallback(() => {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
-    ['signin', 'reset', 'auth', 'message', 'next'].forEach((key) => url.searchParams.delete(key));
+    ['signin', 'reset', 'auth', 'message', 'next', 'github', 'login'].forEach((key) => url.searchParams.delete(key));
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
@@ -297,6 +299,22 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, [buildGoogleClientId]);
+
+  // The GitHub connect flow (api/_lib/handlers/auth-github-connect*.ts) always
+  // finishes by redirecting back here with `?github=connected&login=…` or
+  // `?github=error&message=…`. Before this effect existed, that redirect
+  // landed and nothing read it: the person who clicked "Connect GitHub" saw
+  // the app bounce to the home page with no explanation, and clicking the
+  // still-disconnected chip again reproduced the identical silent bounce —
+  // which is what reads as an infinite loop, even though the server had
+  // already said exactly why (most often "sign in to Quantora first").
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const result = parseGithubConnectReturn(window.location.search);
+    if (!result.present) return;
+    setGithubConnectNotice(result);
+    clearAuthQueryParams();
+  }, [clearAuthQueryParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -584,6 +602,44 @@ export default function App() {
       transition: 'background 0.3s ease, color 0.3s ease'
     }}>
 
+      {githubConnectNotice && (
+        <div
+          data-quantora-github-connect-notice={githubConnectNotice.tone}
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'relative',
+            zIndex: 40,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '10px 16px',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            color: '#ffffff',
+            background: githubConnectNotice.tone === 'good' ? '#15803d' : '#b91c1c',
+          }}
+        >
+          <span>{githubConnectNotice.message}</span>
+          <button
+            type="button"
+            onClick={() => setGithubConnectNotice(null)}
+            aria-label="Dismiss"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#ffffff',
+              fontSize: '1rem',
+              lineHeight: 1,
+              cursor: 'pointer',
+              padding: '2px 6px',
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Main View Router */}
       {activeTab === 'landing' ? (
