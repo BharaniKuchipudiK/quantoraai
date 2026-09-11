@@ -42,6 +42,7 @@ import { TURN_BUILD, TURN_CHAT, endSessionWork, sendBlockedReason, startSessionW
 import { shouldRefineRunningDesk } from '../lib/workspace-intent.js';
 import { buildCodingTurnPacket, codingTurnRequestFields } from '../lib/studio-desk-context.js';
 import { resolveBudgetedTurnRecovery } from '../lib/turn-recovery.js';
+import { hasRequestedPythonSource } from '../lib/requested-deliverables.js';
 import { MIN_VIABLE_ATTEMPT_MS, mayRunAttempt, planTurnEscalation } from '../lib/turn-escalation.js';
 import { orderEnginesForMission, planMissionContinuation, rerouteBurnedEngine } from '../lib/mission-continuation.js';
 import {
@@ -525,6 +526,10 @@ export function useChatStream({
       lessons: readCodingTurnLessons(activeSessionId),
       allowPaid: Boolean(openRouterApiKeyHint),
     });
+    // The planner label is useful for UX, but the server contract is driven by
+    // the user's explicit files. Keep recovery on the Python path even when a
+    // planner classification is stale or too broad.
+    const pythonBuildRequested = hasRequestedPythonSource(visibleUserText);
     const intakeAccept = turnPlan.intakeAccept || { expanded: false, catalogTarget: null, userAsked: 0 };
     if (turnPlan.mode === 'execute' || turnPlan.mode === 'interrupt') {
       text = turnPlan.messageForModel || text;
@@ -1543,7 +1548,7 @@ export function useChatStream({
       const recovery = resolveBudgetedTurnRecovery({
         ...input,
         artifactRepairCount,
-        artifactTarget: turnPlan?.intent?.kind === 'python_build' ? 'python' : 'web',
+        artifactTarget: turnPlan?.intent?.kind === 'python_build' || pythonBuildRequested ? 'python' : 'web',
         hasExistingProject: Object.keys(artifactBaseVfs).length > 0,
       }, remaining);
       void recordClientBoundary(turnCorrelationId, 'browser.turn-attempt', 'failed', {

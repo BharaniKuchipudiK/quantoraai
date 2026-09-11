@@ -40,3 +40,15 @@ test('Python contract failures get one repair, not a paid ladder of identical re
   assert.match(outcome.text, /requested-source-files-missing/);
   assert.doesNotMatch(outcome.text, /connection to the model died|catalog photos|no healthy AI route/);
 });
+test('Python recovery remains bounded when the planner label is missing', () => {
+  const stopped = resolveTurnRecovery({
+    code: 'BUILD_ARTIFACT_CONTRACT',
+    artifactTarget: 'python',
+    artifactRepairCount: 1,
+    attempt: 2,
+    maxAttempts: 5,
+    fallbackEngineName: 'Another engine',
+  });
+  assert.equal(stopped.retry, false);
+  assert.equal(stopped.reason, 'source-repair-exhausted');
+});

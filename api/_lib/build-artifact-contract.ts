@@ -274,8 +274,12 @@ export function validateBuildArtifactResponse(
     // Admission is source availability, NOT execution proof. Use the same
     // parser as the client, and leave Python syntax/tests to its isolated VM.
     // A web wrapper or a filename in prose cannot stand in for a real file.
-    if (!files.length) return { ok: false, detailCode: 'code-fences-missing' };
-    if (files.some((file) => !file.path || !isValidWorkspaceRelativePath(file.path))) {
+    // Models often show pytest/stdout/CSV evidence in unlabelled fences after
+    // the source bundle. Those fences are evidence, not workspace files; only
+    // fences carrying an explicit filepath participate in source admission.
+    const sourceFiles = files.filter((file) => file.path.trim());
+    if (!sourceFiles.length) return { ok: false, detailCode: 'code-fences-missing' };
+    if (sourceFiles.some((file) => !isValidWorkspaceRelativePath(file.path))) {
       return { ok: false, detailCode: 'source-path-invalid' };
     }
     const parsed = parseVFSWithReport(source, {});

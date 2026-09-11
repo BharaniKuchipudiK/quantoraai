@@ -35,7 +35,7 @@ function recoverThroughActualHook(existing = false) {
   const recover = new Function(
     'resolveBudgetedTurnRecovery', 'escalationNow', 'artifactRepairCount', 'artifactBaseVfs',
     'recordClientBoundary', 'turnCorrelationId', 'attemptEngineId', 'targetModel',
-    'turnStartedAt', 'nextFallbackEngine', 'turnPlan',
+    'turnStartedAt', 'nextFallbackEngine', 'turnPlan', 'pythonBuildRequested',
     `return (input) => {${body[1]}\n};`,
   )(
     resolveBudgetedTurnRecovery,
@@ -43,7 +43,7 @@ function recoverThroughActualHook(existing = false) {
     0, existing ? { 'src/App.jsx': { content: 'existing source' } } : {},
     (...args: unknown[]) => { events.push(args); return Promise.resolve(); },
     'format-contract-fixture', () => 'fixture-engine', { id: 'fixture-engine' },
-    Date.now(), () => ({ id: 'fixture-fallback' }), { intent: { kind: 'app_build' } },
+    Date.now(), () => ({ id: 'fixture-fallback' }), { intent: { kind: 'app_build' } }, false,
   );
   const result = recover({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT', failureDetail: 'calculator-interaction-missing' });
   assert.equal(events.length, 2, 'existing attempt and recovery evidence still travels');
@@ -61,6 +61,12 @@ test('[was-red] the wired recovery preserves the original multi-file request in 
   assert.match(payload, /Preserve the original request's language, runtime, framework, required filenames and project layout/);
   assert.match(payload, /Only for a web page request with no specified framework or file layout: Return EXACTLY one/);
   assert.doesNotMatch(result.notice, /Rebuilding once as a self-contained page/);
+});
+
+test('the wired recovery treats explicit Python deliverables as Python even when the planner says app_build', () => {
+  const source = readFileSync(new URL('../../src/hooks/useChatStream.js', import.meta.url), 'utf8');
+  assert.match(source, /hasRequestedPythonSource\(visibleUserText\)/);
+  assert.match(source, /turnPlan\?\.intent\?\.kind === 'python_build' \|\| pythonBuildRequested/);
 });
 
 test('the wired existing-project branch still requests patches instead of a replacement application', () => {
