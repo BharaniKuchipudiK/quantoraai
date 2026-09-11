@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  GITHUB_CONNECT_URL,
+  githubConnectUrl,
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
   checkStateLabel,
@@ -189,7 +189,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
         ) : (
           <a
             data-quantora-github-connect="true"
-            href={GITHUB_CONNECT_URL}
+            href={githubConnectUrl(typeof window !== 'undefined' ? window.location.pathname + window.location.search : '')}
             style={{ ...buttonStyle, textDecoration: 'none', display: 'inline-block' }}
           >
             Connect GitHub
