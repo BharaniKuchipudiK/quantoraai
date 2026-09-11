@@ -63,3 +63,10 @@ test("the connected-tools directive and the disconnected directive cannot both f
   assert.match(connected, /githubToolsEnabled \? `/);
   assert.match(disconnected, /!githubToolsEnabled/);
 });
+
+test("the diagnose-and-fix directive never lets the model claim it tested the fix, and checks the real result after pushing", () => {
+  const block = extractConst("deployFixPersona");
+  assert.match(block, /NO way to run the user's test suite or build locally/i, "must state plainly there is no local test/build sandbox");
+  assert.match(block, /never claim you "validated", "tested", or "confirmed"/i, "must forbid claiming pre-push verification that never happened");
+  assert.match(block, /call list_vercel_deployments again/i, "must instruct checking the real deployment result after opening the PR, not just declaring victory at push time");
+});
