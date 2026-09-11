@@ -1,6 +1,8 @@
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { pickPreviewEntryPath } from '../../src/lib/preview-utils.js';
 import { posix as path } from 'node:path';
+import { isValidWorkspaceRelativePath } from '../../shared/desk-runtime-contract.js';
+import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
 
 export type BuildArtifactContractResult = {
   ok: boolean;
@@ -263,10 +265,29 @@ function recoveredDependenciesAreClosed(source: string): boolean {
 export function validateBuildArtifactResponse(
   text: unknown,
   transaction: string | null = null,
-  options: { allowIntake?: boolean } = {},
+  options: { allowIntake?: boolean; requestedFiles?: string[]; requestBrief?: string } = {},
 ): BuildArtifactContractResult {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);
+  const pythonRequested = !transaction && options.requestedFiles?.some((file) => /\.py$/i.test(file));
+  if (pythonRequested) {
+    // Admission is source availability, NOT execution proof. Use the same
+    // parser as the client, and leave Python syntax/tests to its isolated VM.
+    // A web wrapper or a filename in prose cannot stand in for a real file.
+    if (!files.length) return { ok: false, detailCode: 'code-fences-missing' };
+    if (files.some((file) => !file.path || !isValidWorkspaceRelativePath(file.path))) {
+      return { ok: false, detailCode: 'source-path-invalid' };
+    }
+    const parsed = parseVFSWithReport(source, {});
+    const missing = missingRequestedDeliverables(options.requestBrief || '', parsed.vfs);
+    if (missing.length || options.requestedFiles?.some((file) => !Object.hasOwn(parsed.vfs, file))) {
+      return { ok: false, detailCode: 'requested-source-files-missing' };
+    }
+    // Mixed web/Python requests still owe the existing web safeguards.
+    if (!options.requestedFiles?.some((file) => /\.(?:html?|jsx|tsx|css)$/i.test(file))) {
+      return { ok: true, detailCode: 'python-source-files-valid' };
+    }
+  }
   if (!files.length && !isHtmlDocument(source)) {
     /*
      * THE GUIDED-INTAKE CONTRADICTION (2026-09-01). GUIDED_BUILD_DIRECTIVE
@@ -335,7 +356,7 @@ export function validateBuildArtifactResponse(
 export function recoverInterruptedBuildArtifactResponse(
   text: unknown,
   transaction: string | null = null,
-  options: { allowIntake?: boolean } = {},
+  options: { allowIntake?: boolean; requestedFiles?: string[]; requestBrief?: string } = {},
 ): string | null {
   const source = typeof text === 'string' ? text : '';
   const files = fencedFiles(source);

@@ -35,7 +35,7 @@ function recoverThroughActualHook(existing = false) {
   const recover = new Function(
     'resolveBudgetedTurnRecovery', 'escalationNow', 'artifactRepairCount', 'artifactBaseVfs',
     'recordClientBoundary', 'turnCorrelationId', 'attemptEngineId', 'targetModel',
-    'turnStartedAt', 'nextFallbackEngine',
+    'turnStartedAt', 'nextFallbackEngine', 'turnPlan',
     `return (input) => {${body[1]}\n};`,
   )(
     resolveBudgetedTurnRecovery,
@@ -43,7 +43,7 @@ function recoverThroughActualHook(existing = false) {
     0, existing ? { 'src/App.jsx': { content: 'existing source' } } : {},
     (...args: unknown[]) => { events.push(args); return Promise.resolve(); },
     'format-contract-fixture', () => 'fixture-engine', { id: 'fixture-engine' },
-    Date.now(), () => ({ id: 'fixture-fallback' }),
+    Date.now(), () => ({ id: 'fixture-fallback' }), { intent: { kind: 'app_build' } },
   );
   const result = recover({ attempt: 1, code: 'BUILD_ARTIFACT_CONTRACT', failureDetail: 'calculator-interaction-missing' });
   assert.equal(events.length, 2, 'existing attempt and recovery evidence still travels');

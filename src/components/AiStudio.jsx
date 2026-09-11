@@ -70,6 +70,7 @@ import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
 import { proveCodingTurn, codingTurnMayClaimSuccess } from '../lib/proof-control-plane.js';
 import { usePCLMemory } from '../hooks/usePCLMemory';
 import { chatsForWorkspace, useStudioSession, DEFAULT_PROJECT_ID } from '../hooks/useStudioSession.js';
+import { mergePythonOutputFiles } from '../lib/python-workspace-results.js';
 import {
   loadStudioSidebarSections,
   persistStudioSidebarSections,
@@ -386,6 +387,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     forkChatFromMessage,
     conversationContext,
     updateActiveSession,
+    updateSessionById,
   } = useStudioSession({ user, selectedModel });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1321,6 +1323,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       vfsRef.current = liveDesk.vfs;
       setVfs(liveDesk.vfs);
       setWorkspaceCode(liveDesk.workspaceCode || pickPreviewEntry(liveDesk.vfs) || '');
+      if (!pickPreviewEntry(liveDesk.vfs)) setWorkspaceActiveTab(Object.keys(liveDesk.vfs).find((path) => /\.py$/i.test(path)) || 'preview');
       setDeskCheckpoints(recordDeskCheckpoint([], liveDesk.vfs, { label: 'Session opened', origin: 'baseline' }));
       setDeskReview(liveDesk.review || []);
       setDeskJob(liveDesk.job || null);
@@ -1351,7 +1354,7 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     // earlier visits is in-memory only and does not survive a reload.
     setDeskCheckpoints(recordDeskCheckpoint([], restored.vfs, { label: 'Session opened', origin: 'baseline' }));
     setWorkspaceCode(restored.workspaceCode);
-    setWorkspaceActiveTab('preview');
+    setWorkspaceActiveTab(!pickPreviewEntry(restored.vfs) ? Object.keys(restored.vfs).find((path) => /\.py$/i.test(path)) || 'preview' : 'preview');
     setIsWorkspaceMode(true);
     setCodingDeskOpen(restored.codingDeskOpen);
     setLastProcessedMessageId(restored.lastProcessedMessageId);
@@ -1970,23 +1973,55 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   }, [commitDeskVfs]);
 
   const commitCodingSourceFiles = useCallback((nextVfs, _plan = null, owningSessionId = null) => {
-    if (!nextVfs || !Object.keys(nextVfs).length) return;
+    if (!nextVfs || !Object.keys(nextVfs).length) return false;
     // Do not adopt state derived from a rejected VFS (Code tab / Preview / desk
     // open) — only when the commit was actually accepted.
-    if (!commitDeskVfs(nextVfs, owningSessionId)) return;
-    if (owningSessionId && owningSessionId !== activeSessionIdRef.current) return;
+    if (!commitDeskVfs(nextVfs, owningSessionId)) return false;
+    if (_plan?.intent?.kind === 'python_build') {
+      const snapshot = buildStudioDeskSnapshot({ vfs: nextVfs, codingDeskOpen: true });
+      if (snapshot.ok) updateSessionById(owningSessionId || activeSessionIdRef.current, { desk: snapshot.snapshot });
+    }
+    if (owningSessionId && owningSessionId !== activeSessionIdRef.current) return true;
     const entry = pickPreviewEntry(nextVfs);
     if (entry) {
       setWorkspaceCode(entry);
       setWorkspaceActiveTab('preview');
       setCodingDeskOpen(true);
       setIsWorkspaceMode(true);
+    } else if (_plan?.intent?.kind === 'python_build') {
+      setWorkspaceActiveTab(Object.keys(nextVfs).find((path) => /\.py$/i.test(path)) || 'terminal');
+      setCodingDeskOpen(true);
+      setIsWorkspaceMode(true);
     }
-  }, [commitDeskVfs]);
+    return true;
+  }, [commitDeskVfs, updateSessionById]);
 
-  const onCodingTurnProved = useCallback((verdict, plan = null, owningSessionId = null) => {
-    commitCodingSourceFiles(verdict?.vfs, plan, owningSessionId);
+  const onCodingTurnProved = useCallback((verdict, plan = null, owningSessionId = null, verifiedBase = null) => {
+    let nextVfs = verdict?.vfs;
+    if (verifiedBase && plan?.intent?.kind === 'python_build') {
+      const target = resolveWriteTarget({ desks: desksRef.current, owningSessionId, activeSessionId: activeSessionIdRef.current });
+      if (!target.ok) return false;
+      const current = target.isVisible ? vfsRef.current : target.desk.vfs;
+      const content = (entry) => typeof entry === 'string' ? entry : entry?.content;
+      // Execution proved this source snapshot, not edits made while it ran.
+      if (Object.keys(verifiedBase).some((path) => content(current?.[path]) !== content(verifiedBase[path]))) return false;
+      const merged = mergePythonOutputFiles(verifiedBase, current || {}, Object.entries(nextVfs || {}).map(([path, entry]) => ({ path, content: content(entry) })));
+      if (!merged.ok) return false;
+      nextVfs = merged.vfs;
+    }
+    return commitCodingSourceFiles(nextVfs, plan, owningSessionId);
   }, [commitCodingSourceFiles]);
+
+  const commitPythonOutputs = useCallback((files, baseVfs, owningSessionId) => {
+    const target = resolveWriteTarget({ desks: desksRef.current, owningSessionId, activeSessionId: activeSessionIdRef.current });
+    if (!target.ok) return false;
+    const current = target.isVisible ? vfsRef.current : target.desk.vfs;
+    const merged = mergePythonOutputFiles(baseVfs, current || {}, files);
+    if (!merged.ok || !commitDeskVfs(merged.vfs, owningSessionId)) return false;
+    const snapshot = buildStudioDeskSnapshot({ vfs: merged.vfs, codingDeskOpen: true });
+    if (snapshot.ok) updateSessionById(owningSessionId, { desk: snapshot.snapshot });
+    return snapshot.ok;
+  }, [commitDeskVfs, updateSessionById]);
 
   const previewEntryChoiceList = useMemo(() => previewEntryChoices(vfs), [vfs]);
   const previewActiveEntry = useMemo(
@@ -3015,6 +3050,24 @@ Paused — ${autoPauseRef.current}.`
                               <li key={`${event.at}-${index}`}>{event.label}</li>
                             ))}
                           </ol>
+                        </details>
+                      ) : null}
+
+                      {msg.sender === 'ai' && msg.codingProof?.evidence?.python?.executions?.length ? (
+                        <details data-quantora-python-evidence="true" open style={{ marginTop: '12px', fontSize: '.78rem' }}>
+                          <summary>Python execution evidence</summary>
+                          {msg.codingProof.evidence.python.executions.map((execution, index) => (
+                            <div key={index} style={{ marginTop: '8px' }}>
+                              <div>{execution.command} — exit {execution.exitCode}</div>
+                              <pre style={{ whiteSpace: 'pre-wrap', maxHeight: '200px', overflow: 'auto' }}>{execution.output || '(no output)'}</pre>
+                            </div>
+                          ))}
+                          {(msg.codingProof.evidence.python.outputFiles || []).map((file) => (
+                            <div key={file.path}>
+                              <div>Runtime output: {file.path} (first 4,000 characters)</div>
+                              <pre style={{ whiteSpace: 'pre-wrap', maxHeight: '200px', overflow: 'auto' }}>{file.content}</pre>
+                            </div>
+                          ))}
                         </details>
                       ) : null}
 
@@ -6425,7 +6478,10 @@ Paused — ${autoPauseRef.current}.`
              ) : workspaceActiveTab === 'terminal' ? (
                <Suspense fallback={<div style={{ flex: 1, minHeight: 0, background: isLight ? '#fafafa' : '#111111' }} />}>
                <StudioTerminal
+                 key={activeSessionId}
                  vfs={shellVfs}
+                 workspaceKey={activeSessionId || ''}
+                 onFilesProduced={commitPythonOutputs}
                  isLight={isLight}
                  textColor={textColor}
                  subtextColor={subtextColor}

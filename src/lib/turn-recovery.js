@@ -177,6 +177,7 @@ export function resolveTurnRecovery({
    *  claims an engine switch only when this is set. */
   fallbackEngineName = null,
   hasExistingProject = false,
+  artifactTarget = 'web',
 } = {}) {
   const no = (reason) => ({ retry: false, resume: false, notice: '', reason });
 
@@ -214,6 +215,7 @@ export function resolveTurnRecovery({
       ? Math.max(0, Number(attempt) - 1)
       : Math.max(0, Number(artifactRepairCount) || 0);
     if (repairsStarted >= 1) {
+      if (artifactTarget === 'python') return no('source-repair-exhausted');
       if (!fallbackEngineName) return no('build-repair-exhausted');
       return {
         retry: true,

@@ -37,8 +37,14 @@ export function normalizeRequestedDeliverablePath(value = '') {
  * into a hidden completion contract.
  */
 export function requestedDeliverablePaths(prompt = '') {
-  const source = String(prompt || '').slice(0, 20_000);
+  let source = String(prompt || '').slice(0, 20_000);
   if (!source || !MULTI_FILE_CUE.test(source)) return [];
+
+  // An explicit file list defines inputs to generation. Filenames in later
+  // run/read instructions (for example generated CSV output) are not source
+  // files that the model must fabricate before execution.
+  const list = source.match(/\b(?:create|write|generate|produce|deliver)\b[^\n]{0,120}\bfiles\b[^\n]*:\s*\n((?:[ \t]*(?:\d+[.)]|[-*])\s+[^\n]+\n?)+)/i);
+  if (list) source = list[1];
 
   const found = [];
   FILE_TOKEN.lastIndex = 0;
@@ -88,7 +94,7 @@ export function missingRequestedDeliverables(prompt = '', vfs = {}) {
   const requested = requestedDeliverablePaths(prompt);
   if (!requested.length) return [];
   const inspectPythonBundle = requested.some((path) => /\.py$/i.test(path))
-    && requested.every((path) => /\.(?:py|md|txt)$/i.test(path));
+    && requested.every((path) => /\.(?:py|md|txt|csv|json|ya?ml|toml|ini|cfg)$/i.test(path));
   const present = new Set(Object.keys(vfs || {})
     .filter((path) => !inspectPythonBundle
       || hasPythonBundleContent(normalizeRequestedDeliverablePath(path), vfs[path]))

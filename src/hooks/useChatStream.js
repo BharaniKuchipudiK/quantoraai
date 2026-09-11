@@ -1488,6 +1488,7 @@ export function useChatStream({
     const spentEngineIds = new Set();
     let retryBrief = '';
     let artifactRepairCount = 0;
+    let lastArtifactFailure = '';
     /*
      * Take the server at its word about what it actually ran.
      *
@@ -1542,6 +1543,7 @@ export function useChatStream({
       const recovery = resolveBudgetedTurnRecovery({
         ...input,
         artifactRepairCount,
+        artifactTarget: turnPlan?.intent?.kind === 'python_build' ? 'python' : 'web',
         hasExistingProject: Object.keys(artifactBaseVfs).length > 0,
       }, remaining);
       void recordClientBoundary(turnCorrelationId, 'browser.turn-attempt', 'failed', {
@@ -1914,6 +1916,7 @@ export function useChatStream({
           if (!stillCurrent()) return;
           let resumeAfterFailure = false;
           if (streamedError || !receivedDone) {
+            if (streamedError?.code === 'BUILD_ARTIFACT_CONTRACT') lastArtifactFailure = streamedError.message || streamedError.detailCode || 'Generated files failed validation.';
             const recovery = recoverTurn({
               attempt,
               code: streamedError?.code,
@@ -1999,14 +2002,14 @@ export function useChatStream({
                   return;
                 }
               }
-              qirFail('transport', streamedError?.message || 'no healthy AI route', missionSpent());
+              qirFail(lastArtifactFailure ? 'contract' : 'transport', lastArtifactFailure || streamedError?.message || 'no healthy AI route', missionSpent());
               const providerOutcome = resolveCodingTurnOutcome({
-                kind: 'provider-dead',
-                errorMessage: artifactFailed
+                kind: lastArtifactFailure ? 'artifact-invalid' : 'provider-dead',
+                errorMessage: lastArtifactFailure || (artifactFailed
                   ? streamedError.message
                   : (currentText
                     ? 'provider handoff failed after a partial reply'
-                    : 'no healthy AI route'),
+                    : 'no healthy AI route')),
                 shopIntakeAsk,
                 attemptsMade: Math.max(attempt, spentEngineIds.size),
                 triedEngines,
@@ -2281,14 +2284,24 @@ export function useChatStream({
             // are already structurally validated at this point, so put them on
             // the desk immediately and keep verification visibly in progress.
             // Invalid Python stays available to repair, but never earns a pass.
+            const pythonVerificationBase = turnPlan.intent?.kind === 'python_build' ? { ...seedVfs } : null;
             if (turnPlan.intent?.kind === 'python_build' && typeof onCodingSourceFilesReceived === 'function') {
               try { onCodingSourceFilesReceived(seedVfs, turnPlan, owningSessionId); } catch { /* proof still runs */ }
             }
+            if (turnPlan.intent?.kind === 'python_build') void recordClientBoundary(responseCorrelationId, 'browser.python-verification', 'started', { detailCode: 'python-execution-started' });
             codingRuntimeEvidence = await import('../lib/python-runtime.js')
               .then(({ verifyPythonWorkspace }) => verifyPythonWorkspace(
                 seedVfs,
                 turnPlan.messageForModel || visibleUserText,
               ));
+            if (codingRuntimeEvidence?.vfs) Object.assign(seedVfs, codingRuntimeEvidence.vfs);
+            if (codingRuntimeEvidence) {
+              void recordClientBoundary(responseCorrelationId, 'browser.python-verification', codingRuntimeEvidence.ok ? 'succeeded' : 'failed', {
+                detailCode: codingRuntimeEvidence.ok ? 'python-execution-passed' : 'python-execution-failed',
+                fileCount: Object.keys(seedVfs).length,
+                modelId: attemptEngineId(targetModel),
+              });
+            }
             codingProof = proveCodingTurn({
               plan: turnPlan,
               vfs: seedVfs,
@@ -2296,12 +2309,25 @@ export function useChatStream({
               brief: turnPlan.messageForModel || visibleUserText,
               allowRepair: true,
               sessionId: activeSessionId,
-              runtimeEvidence: codingRuntimeEvidence,
+              runtimeEvidence: codingRuntimeEvidence ? {
+                ...codingRuntimeEvidence,
+                vfs: undefined,
+                executions: codingRuntimeEvidence.executions.map((execution) => ({ ...execution, output: String(execution.output || '').slice(0, 8000) })),
+                outputFiles: (codingRuntimeEvidence.outputFiles || []).slice(0, 10).map(([path, entry]) => ({ path, content: String(typeof entry === 'string' ? entry : entry?.content || '').slice(0, 4000) })),
+              } : null,
             });
             if (typeof onCodingTurnProved === 'function') {
               try {
-                onCodingTurnProved(codingProof, turnPlan, owningSessionId);
-              } catch { /* desk apply is best-effort */ }
+                if (onCodingTurnProved(codingProof, turnPlan, owningSessionId, pythonVerificationBase) === false) {
+                  codingProof.ok = false;
+                  codingProof.status = 'fail';
+                  codingProof.gaps.push('The desk rejected the file update; existing files were preserved.');
+                }
+              } catch {
+                codingProof.ok = false;
+                codingProof.status = 'fail';
+                codingProof.gaps.push('The verified files could not be saved to the desk.');
+              }
             }
             /*
              * A failed proof is a NOTE, never a replacement.

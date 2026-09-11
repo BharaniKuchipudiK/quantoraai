@@ -286,6 +286,18 @@ export function resolveCodingTurnOutcome({
     };
   }
 
+  if (kind === 'artifact-invalid') {
+    return {
+      kind,
+      text: 'Generated files failed validation. This was not simply a lost model connection.\n\n'
+        + `**Validation failure:** ${String(errorMessage || 'The requested source files were not delivered.').trim()}\n`
+        + describeAttemptsSpent(attemptsMade, triedEngines)
+        + describeRunReference(runId)
+        + 'Automatic recovery stopped. No successful build or execution is claimed; existing desk files are unchanged.',
+      isError: true,
+      continueSet: null,
+    };
+  }
   if (kind === 'provider-dead' || kind === 'stream-ended') {
     const detail = String(errorMessage || '').trim();
     const overloaded = /overload|429|503|high demand|capacity/i.test(detail);

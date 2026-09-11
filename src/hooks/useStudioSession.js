@@ -839,6 +839,16 @@ export function useStudioSession({ user, selectedModel }) {
     });
   }, [activeSessionId]);
 
+  // A background runtime completion must save to its own chat immediately,
+  // rather than depend on the visible desk's debounced snapshot.
+  const updateSessionById = useCallback((sessionId, updates) => {
+    setAllChatSessions((sessions) => {
+      const next = sessions.map((session) => session.id === sessionId ? { ...session, ...updates } : session);
+      persistSessions(next, accountKey);
+      return next;
+    });
+  }, [accountKey]);
+
   const updateActiveMessages = useCallback((updater) => {
     setAllChatSessions((prevSessions) => {
       const updated = prevSessions.map((session) => {
@@ -1231,6 +1241,7 @@ export function useStudioSession({ user, selectedModel }) {
     listeningSignals,
     defaultGreetingMsg,
     updateActiveSession,
+    updateSessionById,
     updateActiveMessages,
     setChoiceDockState,
     setStudioMode,
