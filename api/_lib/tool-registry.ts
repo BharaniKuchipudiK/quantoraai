@@ -64,7 +64,25 @@ import {
   executeGithubToolCall,
   shouldEnableGithubTools,
 } from "./github-agent-tools.js";
+import {
+  githubWriteFunctionDeclarations,
+  executeGithubWriteToolCall,
+  shouldEnableGithubWriteTools,
+} from "./github-write-agent-tools.js";
 import type { GithubPrincipal } from "./github-principal.js";
+import {
+  vercelFunctionDeclarations,
+  executeVercelToolCall,
+  shouldEnableVercelTools,
+} from "./vercel-agent-tools.js";
+import {
+  sandboxFunctionDeclarations,
+  executeSandboxToolCall,
+  shouldEnableSandboxTools,
+  type SandboxFactory,
+} from "./sandbox-agent-tools.js";
+import type { SandboxCredentials } from "./sandbox-credentials.js";
+import { createRealSandbox } from "./sandbox-factory.js";
 
 /** Everything an enablement rule or an executor is allowed to see. */
 export interface QuantoraToolContext {
@@ -72,6 +90,20 @@ export interface QuantoraToolContext {
   studioDomain?: unknown;
   /** The signed-in user's GitHub principal, when they have connected one. */
   githubPrincipal?: GithubPrincipal | null;
+  /**
+   * Whether GitHub WRITE tools (push, open a pull request) may be offered
+   * this turn. This IS the per-user opt-in (github_connections.auto_pr_enabled),
+   * resolved once by the caller; kept independent of `githubPrincipal` so a
+   * future policy can turn writes off without touching whether reads are
+   * offered.
+   */
+  githubWriteToolsEnabled?: boolean;
+  /** The platform's shared Vercel token (deploy:vercel), when configured. */
+  vercelToken?: string | null;
+  /** Vercel Sandbox credentials (token+teamId+projectId), when configured. Distinct from vercelToken — see sandbox-credentials.ts. */
+  sandboxCredentials?: SandboxCredentials | null;
+  /** Injectable Sandbox factory; defaults to the real `@vercel/sandbox`-backed one. Overridable so tests never touch the network. */
+  sandboxFactory?: SandboxFactory;
   /** Whether the platform independently decided travel tools may run. */
   travelToolsPermitted?: boolean;
   /** Recent user turns, used by travel tools to resolve an implied location. */
@@ -175,6 +207,21 @@ export function classifyGithubToolResult(result: any): QuantoraToolState {
   return result?.ok ? "cleared" : "unavailable";
 }
 
+/** GitHub write tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifyGithubWriteToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
+/** Vercel tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifyVercelToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
+/** Sandbox tools answer with an `ok` flag too; same mapping, same reason. */
+export function classifySandboxToolResult(result: any): QuantoraToolState {
+  return result?.ok ? "cleared" : "unavailable";
+}
+
 /*
  * Travel providers are held to 6s per attempt, flights to two attempts with a
  * short backoff. 20s is that plus headroom for the second provider hop, not a
@@ -189,6 +236,36 @@ const TRAVEL_TOOL_BUDGET_MS = 20_000;
  * slow read short is its own wrong answer.
  */
 const GITHUB_TOOL_BUDGET_MS = 45_000;
+
+/*
+ * push_files_to_repository makes up to PUSH_MAX_FILES+3 sequential GitHub
+ * hops (ref read, tree read, one blob per file, tree write, commit write,
+ * branch update) at GITHUB_TIMEOUT_MS each. A large push is a real slow
+ * write, not a stuck one, so its budget is the longest here — long enough
+ * that a legitimate multi-file commit is not cut off mid-write, which would
+ * leave the branch in an unknown state the model would then have to guess
+ * about.
+ */
+const GITHUB_WRITE_TOOL_BUDGET_MS = 60_000;
+
+/*
+ * read_vercel_deployment makes two Vercel hops (deployment detail, then build
+ * log) that this file runs in parallel, not sequentially like GitHub's PR
+ * read — so its budget does not need GitHub's multiplier. 20s matches the
+ * travel budget: headroom for one slow provider hop plus a retry-shaped delay.
+ */
+const VERCEL_TOOL_BUDGET_MS = 20_000;
+
+/*
+ * run_repository_check clones a repository, then runs up to 6 caller-chosen
+ * commands sequentially (install, build, test — real work, not a read). A
+ * genuine `npm ci && npm run build && npm test` on a small repo easily takes
+ * a minute or two; 100s leaves headroom under the turn's own 120s tool-time
+ * ceiling (TOOL_TIME_BUDGET_MS in chat-handler.ts) while still being large
+ * enough that a legitimate check is not cut off mid-way, which would leave
+ * the model unable to say whether the fix actually works.
+ */
+const SANDBOX_TOOL_BUDGET_MS = 100_000;
 
 const TRAVEL_TOOLS: QuantoraToolDefinition[] = travelFunctionDeclarations.map((declaration) => ({
   name: String(declaration.name),
@@ -251,6 +328,88 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
   },
 }));
 
+const GITHUB_WRITE_TOOLS: QuantoraToolDefinition[] = githubWriteFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "github_write",
+  declaration,
+  budgetMs: GITHUB_WRITE_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `GitHub did not answer in time — ${reason}.`,
+      note: "Tell the user the write timed out. Do not describe it as succeeded or failed, and do not invent a commit, branch or pull request — check by reading the repository or pull request before saying anything happened.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableGithubWriteTools({
+      hasGithubConnection: Boolean(context.githubPrincipal),
+      autoPrOptedIn: context.githubWriteToolsEnabled === true,
+    });
+  },
+  async execute(args, context) {
+    const raw = await executeGithubWriteToolCall(this.name, args, {
+      principal: context.githubPrincipal || null,
+      ...(context.abortSignal ? { fetchImpl: budgetedFetch(context.abortSignal) } : {}),
+    });
+    return { family: "github_write", raw, classify: () => classifyGithubWriteToolResult(raw) };
+  },
+}));
+
+const VERCEL_TOOLS: QuantoraToolDefinition[] = vercelFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "vercel",
+  declaration,
+  budgetMs: VERCEL_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `Vercel did not answer in time — ${reason}.`,
+      note: "Tell the user the read timed out and offer to try again. Do not describe the deployment's state or build log from memory; you did not read it.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableVercelTools({ vercelConfigured: Boolean(context.vercelToken) });
+  },
+  async execute(args, context) {
+    const raw = await executeVercelToolCall(this.name, args, {
+      vercelToken: context.vercelToken || null,
+      ...(context.abortSignal ? { fetchImpl: budgetedFetch(context.abortSignal) } : {}),
+    });
+    return { family: "vercel", raw, classify: () => classifyVercelToolResult(raw) };
+  },
+}));
+
+const SANDBOX_TOOLS: QuantoraToolDefinition[] = sandboxFunctionDeclarations.map((declaration) => ({
+  name: String(declaration.name),
+  family: "sandbox",
+  declaration,
+  budgetMs: SANDBOX_TOOL_BUDGET_MS,
+  expired(reason: string) {
+    return {
+      ok: false,
+      status: "timed_out",
+      error: `The sandbox check did not finish in time — ${reason}.`,
+      note: "Tell the user the check timed out. Do not describe any command as having passed or failed — nothing was confirmed either way.",
+    };
+  },
+  isEnabled(context) {
+    return shouldEnableSandboxTools({
+      hasGithubConnection: Boolean(context.githubPrincipal),
+      sandboxConfigured: Boolean(context.sandboxCredentials),
+    });
+  },
+  async execute(args, context) {
+    const raw = await executeSandboxToolCall(this.name, args, {
+      principal: context.githubPrincipal || null,
+      credentials: context.sandboxCredentials || null,
+      sandboxFactory: context.sandboxFactory || createRealSandbox,
+    });
+    return { family: "sandbox", raw, classify: () => classifySandboxToolResult(raw) };
+  },
+}));
+
 /**
  * THE registry. Every tool the model can be offered appears here exactly once.
  *
@@ -261,7 +420,7 @@ const GITHUB_TOOLS: QuantoraToolDefinition[] = githubFunctionDeclarations.map((d
  */
 function buildRegistry(): Map<string, QuantoraToolDefinition> {
   const registry = new Map<string, QuantoraToolDefinition>();
-  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS]) {
+  for (const tool of [...TRAVEL_TOOLS, ...GITHUB_TOOLS, ...GITHUB_WRITE_TOOLS, ...VERCEL_TOOLS, ...SANDBOX_TOOLS]) {
     const existing = registry.get(tool.name);
     if (existing) {
       throw new Error(

@@ -14,7 +14,7 @@
 import { requireActiveSession } from "./authz.js";
 import { isRateLimited } from "./rate-limit.js";
 import { parseGithubRepositoryUrl } from "./repository-preview.js";
-import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection } from "./github-connection-store.js";
+import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection, readGithubAutoPrEnabled, setGithubAutoPrEnabled } from "./github-connection-store.js";
 import { listBranches, listIssues, listPullRequests, listRepositories, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
 import {
   commentOnPullRequest,
@@ -29,6 +29,7 @@ import { assertRepositoryWithinDeploymentBoundary, type GithubPrincipal } from "
 export const GITHUB_STAGES = Object.freeze([
   "github-connection",
   "github-disconnect",
+  "github-auto-pr",
   "github-list-prs",
   "github-read-pr",
   "github-list-issues",
@@ -109,6 +110,21 @@ export async function handleGithubStage(stage: string, req: any, res: any): Prom
   const principal = await readGithubPrincipal(sessionUser.sub);
   if (!principal) {
     res.status(412).json({ error: NOT_CONNECTED, needsGithubConnection: true });
+    return;
+  }
+
+  if (stage === "github-auto-pr") {
+    if (req.body && typeof req.body.enabled === "boolean") {
+      const saved = await setGithubAutoPrEnabled(sessionUser.sub, req.body.enabled);
+      if (!saved) {
+        res.status(503).json({ error: "Could not save this setting. Nothing was changed." });
+        return;
+      }
+      res.status(200).json({ autoPrEnabled: req.body.enabled });
+      return;
+    }
+    const autoPrEnabled = await readGithubAutoPrEnabled(sessionUser.sub);
+    res.status(200).json({ autoPrEnabled });
     return;
   }
 

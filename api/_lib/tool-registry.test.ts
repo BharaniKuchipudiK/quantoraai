@@ -6,7 +6,10 @@ import path from "node:path";
 import {
   budgetedFetch,
   classifyGithubToolResult,
+  classifyGithubWriteToolResult,
+  classifySandboxToolResult,
   classifyTravelToolResult,
+  classifyVercelToolResult,
   dispatchToolCall,
   enabledToolDeclarations,
   findRegisteredTool,
@@ -222,11 +225,29 @@ test("every tool declares a budget and an expiry its own classifier can read", (
    */
   for (const tool of listRegisteredTools()) {
     assert.ok(tool.budgetMs > 0, `${tool.name}: no time budget`);
-    assert.ok(tool.budgetMs <= 60_000, `${tool.name}: a budget longer than a minute is not a budget`);
+    /*
+     * The general ceiling stays a minute — every family here answers with a
+     * network read/write, not a real build. `run_repository_check` is the one
+     * deliberate exception: it clones a repository and runs the caller's own
+     * install/build/test commands, real work that can legitimately take
+     * longer than a network round trip. Its budget (SANDBOX_TOOL_BUDGET_MS in
+     * tool-registry.ts) is still well under the turn's own tool-time ceiling
+     * (TOOL_TIME_BUDGET_MS, 120s in chat-handler.ts), so a runaway sandbox call
+     * still cannot silently outlive the turn — the same guarantee this
+     * assertion exists to protect, just sized to what the tool actually does.
+     */
+    const ceilingMs = tool.family === "sandbox" ? 110_000 : 60_000;
+    assert.ok(tool.budgetMs <= ceilingMs, `${tool.name}: a budget of ${tool.budgetMs}ms exceeds its family's ceiling (${ceilingMs}ms)`);
     const expired = tool.expired("it did not finish in time");
     const state = tool.family === "github"
       ? classifyGithubToolResult(expired)
-      : classifyTravelToolResult(expired, { committed: false });
+      : tool.family === "github_write"
+        ? classifyGithubWriteToolResult(expired)
+        : tool.family === "vercel"
+          ? classifyVercelToolResult(expired)
+          : tool.family === "sandbox"
+            ? classifySandboxToolResult(expired)
+            : classifyTravelToolResult(expired, { committed: false });
     assert.equal(state, "unavailable", `${tool.name}: an expired call does not read as unavailable`);
     const words = JSON.stringify(expired);
     assert.match(words, /did not finish in time/, `${tool.name}: the expiry does not say what happened`);

@@ -132,6 +132,10 @@
       "destination": "/api/pipeline?github=disconnect"
     },
     {
+      "source": "/api/github/auto-pr",
+      "destination": "/api/pipeline?github=auto-pr"
+    },
+    {
       "source": "/api/github/list-prs",
       "destination": "/api/pipeline?github=list-prs"
     },

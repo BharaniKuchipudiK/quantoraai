@@ -23,6 +23,8 @@ export type GithubConnectionSummary = {
   login: string;
   scopes: string[];
   connectedAt: string | null;
+  /** Whether this user has opted in to Quantora pushing fixes / opening PRs on its own. */
+  autoPrEnabled: boolean;
   /** Why a connection is unusable, when it is. Never a token, never a secret. */
   reason?: string;
 };
@@ -98,7 +100,7 @@ export async function deleteGithubConnection(userSub: string): Promise<boolean> 
 async function readRow(userSub: string): Promise<any | null> {
   if (!userSub) return null;
   const response = await request(
-    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=github_login,sealed_token,scopes,connected_at&limit=1`,
+    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=github_login,sealed_token,scopes,connected_at,auto_pr_enabled&limit=1`,
     { method: "GET" },
   );
   if (!response) return null;
@@ -108,6 +110,31 @@ async function readRow(userSub: string): Promise<any | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether this user has opted in to autonomous GitHub writes. Read
+ * independently of the principal so the tool-enablement check does not have
+ * to decrypt a token just to answer "is the switch on".
+ *
+ * Fails closed: no row, no readable store, no opt-in — all read as false.
+ */
+export async function readGithubAutoPrEnabled(userSub: string): Promise<boolean> {
+  const row = await readRow(userSub);
+  return Boolean(row?.auto_pr_enabled);
+}
+
+/**
+ * Set the opt-in flag. Requires a connection to already exist — turning this
+ * on with no GitHub connected has nothing to attach it to.
+ */
+export async function setGithubAutoPrEnabled(userSub: string, enabled: boolean): Promise<boolean> {
+  const response = await request(`github_connections?user_sub=eq.${encodeURIComponent(userSub)}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ auto_pr_enabled: Boolean(enabled), updated_at: new Date().toISOString() }),
+  });
+  return Boolean(response);
 }
 
 /** The principal for this user, or null. Null always means "refuse". */
@@ -130,14 +157,14 @@ export async function readGithubPrincipal(userSub: string): Promise<GithubPrinci
 /** Connection state for the UI. Deliberately cannot leak the token. */
 export async function readGithubConnectionSummary(userSub: string): Promise<GithubConnectionSummary> {
   if (!config()) {
-    return { connected: false, login: "", scopes: [], connectedAt: null, reason: "GitHub connections are not configured on this deployment (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)." };
+    return { connected: false, login: "", scopes: [], connectedAt: null, autoPrEnabled: false, reason: "GitHub connections are not configured on this deployment (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)." };
   }
   if (!resolveGithubSealSecret()) {
-    return { connected: false, login: "", scopes: [], connectedAt: null, reason: "GitHub connections are not configured on this deployment (GITHUB_CONNECTION_SECRET must be at least 32 characters)." };
+    return { connected: false, login: "", scopes: [], connectedAt: null, autoPrEnabled: false, reason: "GitHub connections are not configured on this deployment (GITHUB_CONNECTION_SECRET must be at least 32 characters)." };
   }
   const row = await readRow(userSub);
   if (!row?.sealed_token) {
-    return { connected: false, login: "", scopes: [], connectedAt: null };
+    return { connected: false, login: "", scopes: [], connectedAt: null, autoPrEnabled: false };
   }
   const secret = resolveGithubSealSecret();
   const usable = secret ? openGithubToken(String(row.sealed_token), secret) : null;
@@ -147,6 +174,7 @@ export async function readGithubConnectionSummary(userSub: string): Promise<Gith
       login: String(row.github_login || ""),
       scopes: [],
       connectedAt: row.connected_at ? String(row.connected_at) : null,
+      autoPrEnabled: false,
       reason: "The stored GitHub authorization could not be opened with this deployment's key. Reconnect your GitHub account.",
     };
   }
@@ -155,5 +183,6 @@ export async function readGithubConnectionSummary(userSub: string): Promise<Gith
     login: String(row.github_login || ""),
     scopes: Array.isArray(row.scopes) ? row.scopes.map(String) : [],
     connectedAt: row.connected_at ? String(row.connected_at) : null,
+    autoPrEnabled: Boolean(row.auto_pr_enabled),
   };
 }
