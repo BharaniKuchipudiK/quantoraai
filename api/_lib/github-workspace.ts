@@ -15,14 +15,14 @@ import { requireActiveSession } from "./authz.js";
 import { isRateLimited } from "./rate-limit.js";
 import { parseGithubRepositoryUrl } from "./repository-preview.js";
 import { readGithubConnectionSummary, readGithubPrincipal, deleteGithubConnection, readGithubAutoPrEnabled, setGithubAutoPrEnabled } from "./github-connection-store.js";
-import { listBranches, listIssues, listPullRequests, listRepositories, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
+import { listBranches, listIssues, listPullRequests, readPullRequest, renderPullRequestBrief } from "./github-intelligence.js";
 import {
   commentOnPullRequest,
   createPullRequest,
   createRepository,
   mergePullRequest,
-  pushFilesToRepository,
 } from "./github-actions.js";
+import { pushFilesToRepositoryFromBase } from './github-push-from-base.js';
 import { checkoutRepository, describeCheckoutOmissions } from "./github-checkout.js";
 import { assertRepositoryWithinDeploymentBoundary, type GithubPrincipal } from "./github-principal.js";
 
@@ -268,10 +268,11 @@ async function dispatch(input: {
   }
 
   if (stage === "github-push") {
-    const result = await pushFilesToRepository(context, {
+    const result = await pushFilesToRepositoryFromBase(context, {
       files: req.body?.files,
       message: String(req.body?.message || ""),
       branch: String(req.body?.branch || ""),
+      baseBranch: String(req.body?.baseBranch || ""),
     });
     res.status(201).json({
       pushed: true,
