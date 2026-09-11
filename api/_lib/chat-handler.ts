@@ -96,6 +96,7 @@ import { selectModelsForTurn } from "../../src/lib/communication/routing/select-
 import { activeModelsForRouting } from "../../shared/coding-desk-auto-model.js";
 import { outcomeSignalsForTask, withOutcomeSignals } from "../../shared/model-outcome-routing.js";
 import { shouldHonorGuidedBuild, resolveEffectiveBuildMode, advisorBlocksPreviewBuild } from "../../shared/build-intent.js";
+import { requestedDeliverablePaths } from '../../src/lib/requested-deliverables.js';
 import { describeDoors, doorsBlocking } from "../../src/lib/capability-doors.js";
 import { briefNeedsJob } from "../../src/lib/build-job.js";
 import { describePaidHold, paidRouteAllowed } from "./paid-route-gate.js";
@@ -220,7 +221,7 @@ function emitBuildProgress(
   const label = stage === 'connecting'
     ? `Connecting to ${modelId || 'the selected engine'}…`
     : stage === 'validating'
-      ? 'Checking the generated files before opening Preview…'
+      ? 'Checking the generated files against the requested deliverables…'
       : `Generating files${modelId ? ` with ${modelId}` : ''} · ${receivedKb} KB received…`;
   sse.status({
     phase: 'build',
@@ -678,6 +679,11 @@ export default async function handler(req: any, res: any) {
       studioModeExplicit: communicationRequest.studioModeExplicit,
       buildMode: buildMode || isRefine,
     }) || isRefine;
+    const artifactOptions = {
+      allowIntake: honorGuided,
+      requestedFiles: requestedDeliverablePaths(message),
+      requestBrief: message,
+    };
     const grounding = shouldGroundTurn({
       domain: normalizedStudioDomain,
       buildMode: effectiveBuildMode,
@@ -2000,7 +2006,7 @@ export default async function handler(req: any, res: any) {
               // Gating on the canary HEADER here as well would re-punish a
               // canary-driven guided-intake transaction for obeying — the
               // exact class this option exists to end.
-              { allowIntake: honorGuided },
+              artifactOptions,
             );
             if (!artifactContract.ok) throw buildArtifactContractError(artifactContract.detailCode);
           }
@@ -2044,7 +2050,7 @@ export default async function handler(req: any, res: any) {
             ? recoverInterruptedBuildArtifactResponse(
                 attemptReply,
                 goldenCanary ? transaction : null,
-                { allowIntake: honorGuided },
+                artifactOptions,
               )
             : null;
           if (recoveredArtifact) {
@@ -2854,9 +2860,12 @@ export default async function handler(req: any, res: any) {
     // An auth/billing rejection must never be reported as "retry in a moment".
     const credentialRejected = isProviderCredentialRejection(err);
     const artifactContractFailure = err?.code === 'BUILD_ARTIFACT_CONTRACT';
-    const publicError = artifactContractFailure
+    const pythonArtifactFailure = artifactContractFailure && requestedDeliverablePaths(req.body?.message).some((file) => /\.py$/i.test(file));
+    const publicError = pythonArtifactFailure
+      ? `The requested Python files failed source validation (${err?.detailCode || 'contract-failed'}). No Python execution is claimed. The requested format remains Python, not a web page.`
+      : artifactContractFailure
       ? (err?.detailCode === 'browser-preview-missing'
-        ? 'The model wrote native iOS/Android files. Preview only runs a web page. Retry and I will rebuild HTML.'
+        ? 'The response did not contain the required runnable web entry. The generated artifact failed validation; this is not a provider connection failure.'
         : err?.detailCode === 'code-fences-missing'
           ? 'The model answered in chat without files. Preview needs a page. Retry and I will rebuild HTML.'
           /*

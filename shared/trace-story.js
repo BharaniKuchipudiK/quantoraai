@@ -95,6 +95,11 @@ export function describeTraceEvent(event = {}) {
     }
     if (state === 'failed') return `The server ended the turn with an error${status ? ` (HTTP ${status})` : ''}${detail ? `: ${detail}` : ''}.`;
   }
+  if (boundary === 'browser.python-verification') {
+    if (state === 'started') return 'The browser started isolated Python verification.';
+    if (state === 'succeeded') return `Python execution passed; ${event.fileCount ?? 'the requested'} files were available for the desk.`;
+    if (state === 'failed') return 'Python verification failed. Provider response delivery was not successful execution.';
+  }
   if (boundary === 'inference.plan' && state === 'selected') return `Chose ${engineWords(event)} to run it.`;
   if (boundary === 'inference.provider') {
     if (state === 'attempting') return `Called ${engineWords(event)}.`;

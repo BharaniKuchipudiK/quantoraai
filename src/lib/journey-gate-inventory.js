@@ -612,6 +612,8 @@ export const JOURNEYS = Object.freeze([
     gates: {
       deterministic: [
         'src/lib/python-runtime-command.test.js',
+        'src/lib/python-workspace-results.test.js',
+        'api/_lib/python-server-contract.test.ts',
         'src/lib/requested-python-proof.test.js',
         'src/lib/execution-progress.test.js',
       ],
@@ -619,6 +621,7 @@ export const JOURNEYS = Object.freeze([
         'scripts/desk-rail-smoke-browser-gate.mjs',
         'scripts/coding-desk-chrome-browser-gate.mjs',
         'scripts/coding-desk-python-browser-gate.mjs',
+        'scripts/python-live-boundary-browser-gate.mjs',
         'scripts/studio-regression-browser-gate.mjs',
       ],
     },

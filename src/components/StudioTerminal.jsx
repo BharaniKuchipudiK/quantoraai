@@ -3,7 +3,7 @@ import { studioFileCount, studioTerminalBlocker } from '../lib/studio-terminal.j
 import { runCommandInWorkspace } from '../lib/webcontainer.js';
 import { isPythonRuntimeCommand } from '../lib/python-runtime-command.js';
 
-export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextColor }) {
+export default function StudioTerminal({ vfs = {}, workspaceKey = '', onFilesProduced, isLight, textColor, subtextColor }) {
   const [lines, setLines] = useState([]);
   const [command, setCommand] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,6 +34,12 @@ export default function StudioTerminal({ vfs = {}, isLight, textColor, subtextCo
         ? await import('../lib/python-runtime.js').then(({ runPythonCommandInWorkspace }) => runPythonCommandInWorkspace(vfs, line))
         : await runCommandInWorkspace(vfs, line);
       setLines((prev) => [...prev, result.output || '(no output)']);
+      if (python && result.ok && result.files?.length) {
+        const saved = onFilesProduced?.(result.files, vfs, workspaceKey);
+        setLines((prev) => [...prev, saved === true
+          ? 'Python output files saved to this desk.'
+          : 'Output files were not saved because the desk changed or is unavailable. Your existing files were preserved.']);
+      }
     } catch (error) {
       setLines((prev) => [...prev, error?.message || 'The shell could not start.']);
     } finally {

@@ -17,9 +17,31 @@ function lockedPackageFetch(input, init = {}) {
 }
 
 function lockGeneratedCodeAwayFromBrowserCapabilities() {
-  for (const name of ['fetch', 'postMessage', 'close', 'importScripts', 'WebSocket', 'EventSource', 'XMLHttpRequest', 'indexedDB', 'caches']) {
+  for (const name of ['fetch', 'postMessage', 'close', 'importScripts', 'WebSocket', 'EventSource', 'XMLHttpRequest', 'indexedDB', 'caches', 'Worker', 'SharedWorker', 'BroadcastChannel', 'WebTransport']) {
     try { Object.defineProperty(globalThis, name, { value: undefined, writable: false, configurable: false }); } catch { /* absent or already locked */ }
   }
+}
+
+function collectWorkspace(pyodide) {
+  const files = [];
+  let bytes = 0;
+  const walk = (directory, relative = '') => {
+    for (const name of pyodide.FS.readdir(directory)) {
+      if (['.', '..', '__pycache__', '.pytest_cache'].includes(name)) continue;
+      const full = `${directory}/${name}`;
+      const path = relative ? `${relative}/${name}` : name;
+      const stat = pyodide.FS.lstat(full);
+      if (pyodide.FS.isLink(stat.mode)) throw new Error('Python output contains a symbolic link; no output files were saved.');
+      if (pyodide.FS.isDir(stat.mode)) { walk(full, path); continue; }
+      if (!pyodide.FS.isFile(stat.mode)) throw new Error('Python output is not a regular file.');
+      bytes += stat.size;
+      if (files.length >= 200 || bytes > 2 * 1024 * 1024) throw new Error('Python output exceeds the 200-file / 2 MB workspace limit; no output files were saved.');
+      const content = new TextDecoder('utf-8', { fatal: true }).decode(pyodide.FS.readFile(full));
+      files.push({ path, content });
+    }
+  };
+  walk('/workspace');
+  return files;
 }
 
 async function preparePackages(pyodide, packages) {
@@ -61,8 +83,11 @@ self.onmessage = async ({ data }) => {
     await preparePackages(pyodide, command.packages || []);
     lockGeneratedCodeAwayFromBrowserCapabilities();
     resetWorkspace(pyodide, files || []);
-    pyodide.setStdout({ batched: (line) => { output += `${line}\n`; } });
-    pyodide.setStderr({ batched: (line) => { output += `${line}\n`; } });
+    const appendOutput = (line) => {
+      if (output.length < 256 * 1024) output += `${line}\n`.slice(0, 256 * 1024 - output.length);
+    };
+    pyodide.setStdout({ batched: appendOutput });
+    pyodide.setStderr({ batched: appendOutput });
     pyodide.globals.set('_quantora_args', command.args || []);
     pyodide.globals.set('_quantora_target', command.kind === 'script' ? command.path : command.module);
     pyodide.globals.set('_quantora_kind', command.kind);
@@ -80,7 +105,8 @@ except SystemExit as exc:
     _quantora_exit = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
 _quantora_exit
 `);
-    trustedPostMessage({ id, ok: Number(exitCode) === 0, exitCode: Number(exitCode) || 0, output: output.trim() });
+    const outputFiles = Number(exitCode) === 0 ? collectWorkspace(pyodide) : [];
+    trustedPostMessage({ id, ok: Number(exitCode) === 0, exitCode: Number(exitCode) || 0, output: output.trim(), files: outputFiles });
   } catch (error) {
     trustedPostMessage({ id, ok: false, exitCode: 1, output: output.trim(), error: error?.message || String(error) });
   }
