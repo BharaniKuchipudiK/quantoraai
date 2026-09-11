@@ -48,7 +48,7 @@
     "test:function-region": "node scripts/function-region-gate.mjs",
     "test:image-parsers": "node scripts/image-parser-dos-gate.mjs",
     "test:advisories": "node scripts/dependency-advisory-gate.mjs",
-    "test:qir-worker-crash-resume": "node scripts/qir-worker-crash-resume-proof.mjs"
+    "test:qir-worker-crash-resume": "tsx scripts/qir-worker-crash-resume-proof.mjs"
   },
   "dependencies": {
     "@duffel/api": "^4.28.0",

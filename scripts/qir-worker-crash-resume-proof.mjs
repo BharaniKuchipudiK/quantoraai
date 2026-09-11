@@ -24,10 +24,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { QIR_CONTRACT_VERSION } from '../api/_lib/qir-contracts.js';
+import { readLocalFileQirRunRaw, seedLocalFileQirRun } from '../api/_lib/qir-local-file-store.js';
 
-const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const USER_SUB = 'proof-user';
 const RUN_ID = 'proof-run-crash-resume-1';
 
@@ -40,68 +42,40 @@ function check(condition, message) {
 const storeDir = mkdtempSync(join(tmpdir(), 'qir-worker-crash-proof-'));
 
 /** Build a minimal, valid QirAgentRun with N sequential pending steps. */
-function buildSeedRunSource(stepCount) {
-  return `
-    const steps = Array.from({ length: ${stepCount} }, (_, i) => ({
-      stepId: 'step-' + i,
-      taskId: 'task-' + i,
-      objective: 'proof step ' + i,
-      dependsOn: i === 0 ? [] : ['step-' + (i - 1)],
-      status: 'pending',
-      requiresVerification: false,
-      actionId: null,
-    }));
-    const now = new Date().toISOString();
-    /** @type {import('../api/_lib/qir-contracts.js').QirAgentRun} */
-    const run = {
-      version: QIR_CONTRACT_VERSION,
-      runId: ${JSON.stringify(RUN_ID)},
-      goal: { statement: 'crash/resume proof', status: 'confirmed' },
-      status: 'EXECUTING',
-      steps,
-      cursor: { stepId: null, actionId: null, attempt: 0 },
-      artifacts: [],
-      observations: [],
-      verifications: [],
-      checkpoints: [],
-      budget: { runUnitsRemaining: 100, stepUnitsRemaining: 100, recoveryReserveRemaining: 10, premiumEscalationRemaining: 10 },
-      createdAt: now,
-      updatedAt: now,
-    };
-  `;
+function buildSeedRun(stepCount) {
+  const steps = Array.from({ length: stepCount }, (_, i) => ({
+    stepId: `step-${i}`,
+    taskId: `task-${i}`,
+    objective: `proof step ${i}`,
+    dependsOn: i === 0 ? [] : [`step-${i - 1}`],
+    status: 'pending',
+    requiresVerification: false,
+    actionId: null,
+  }));
+  const now = new Date().toISOString();
+  return {
+    version: QIR_CONTRACT_VERSION,
+    runId: RUN_ID,
+    goal: { statement: 'crash/resume proof', status: 'confirmed' },
+    status: 'EXECUTING',
+    steps,
+    cursor: { stepId: null, actionId: null, attempt: 0 },
+    artifacts: [],
+    observations: [],
+    verifications: [],
+    checkpoints: [],
+    budget: { runUnitsRemaining: 100, stepUnitsRemaining: 100, recoveryReserveRemaining: 10, premiumEscalationRemaining: 10 },
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 async function seedRun(stepCount) {
-  const seedScript = `
-    import { QIR_CONTRACT_VERSION } from '${resolve(ROOT, 'api/_lib/qir-contracts.js')}';
-    import { seedLocalFileQirRun } from '${resolve(ROOT, 'api/_lib/qir-local-file-store.js')}';
-    ${buildSeedRunSource(stepCount)}
-    seedLocalFileQirRun(${JSON.stringify(storeDir)}, ${JSON.stringify(USER_SUB)}, run);
-    console.log('seeded');
-  `;
-  await runNodeInline(seedScript);
-}
-
-function runNodeInline(source) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(join(ROOT, 'node_modules', '.bin', 'tsx'), ['--eval', source], { cwd: ROOT, stdio: 'pipe' });
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (c) => { out += c; });
-    child.stderr.on('data', (c) => { err += c; });
-    child.on('exit', (code) => (code === 0 ? resolvePromise(out) : reject(new Error(`inline script failed (${code}):\n${err}`))));
-  });
+  seedLocalFileQirRun(storeDir, USER_SUB, buildSeedRun(stepCount));
 }
 
 function readRawRecord() {
-  // Import fresh each call (no module cache reuse across the crash) so this
-  // reads whatever is actually on disk right now, the same way a second
-  // real worker process would.
-  return runNodeInline(`
-    import { readLocalFileQirRunRaw } from '${resolve(ROOT, 'api/_lib/qir-local-file-store.js')}';
-    const record = readLocalFileQirRunRaw(${JSON.stringify(storeDir)}, ${JSON.stringify(USER_SUB)}, ${JSON.stringify(RUN_ID)});
-    console.log(JSON.stringify(record));
-  `).then((out) => JSON.parse(out.trim().split('\n').pop()));
+  return Promise.resolve(readLocalFileQirRunRaw(storeDir, USER_SUB, RUN_ID));
 }
 
 function startWorker(maxSteps, stepDelayMs) {

@@ -24,7 +24,7 @@ const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts', 'desktop'];
  * caught that one; the next might not be typed. A dead-code check that cannot
  * see the build config is one file away from breaking the build.
  */
-const ROOT_FILES = ['vite.config.ts', 'vite.config.js', 'vitest.config.ts', 'playwright.config.ts', 'eslint.config.js'];
+const ROOT_FILES = ['vite.config.ts', 'vite.config.js', 'vitest.config.ts', 'playwright.config.ts', 'eslint.config.js', 'worker.ts'];
 // .mjs matters: every browser gate in scripts/ is one, so omitting it made
 // anything called only from a script look like it had no caller at all.
 const CODE = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx']);
