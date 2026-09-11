@@ -22,7 +22,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { detectOutcomeGaps } from './outcome-gap-detection.js';
+import { codingFailureContinues, detectOutcomeGaps } from './outcome-gap-detection.js';
+import { resolveCodingTurnOutcome } from './coding-outcome-spine.js';
 
 const studio = () => readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8')
   .replace(/\/\*[^]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
@@ -43,7 +44,7 @@ test('the detector really does fire on the refusal text — the guard is load-be
   assert.match(labels, /payment gateway|Domestic or international|product photos/i);
 });
 
-test('[was-red] every chip surface refuses to render on a failed turn', () => {
+test('[was-red] every inferred-gap surface refuses a failed turn', () => {
   /*
    * Counted, not enumerated. There are three call sites today — the per-message
    * chips, the mission card's label, and the visible-chip set — and guarding
@@ -61,4 +62,55 @@ test('[was-red] every chip surface refuses to render on a failed turn', () => {
     callSites,
     `every chip surface must refuse a failed turn: ${callSites} surfaces, ${guards} guarded`,
   );
+});
+
+function failedMessage(kind = 'provider-dead') {
+  return {
+    id: 'failed-turn',
+    ...resolveCodingTurnOutcome({
+      kind,
+      fallbackEngine: { id: 'synthetic-b', name: 'Synthetic B' },
+    }),
+  };
+}
+
+test('failed Coding turns retain only explicit recovery, including the actual model override', () => {
+  const message = failedMessage();
+  const recovery = message.continueSet.items[0];
+  message.continueSet.items.push({ id: 'gap-photos', label: 'Add real product photos', value: 'Add photos' });
+  const selected = codingFailureContinues({ message, latestAiId: message.id });
+  assert.deepEqual(selected.items, [recovery]);
+  assert.equal(selected.items[0], recovery);
+  assert.equal(selected.items[0].modelOverrideId, 'synthetic-b');
+  assert.equal(message.continueSet.items.length, 2, 'selection does not mutate the stored message');
+});
+
+test('existing smaller-build and rebuild actions remain available without inventing new actions', () => {
+  for (const kind of ['timeout', 'no-preview']) {
+    const message = failedMessage(kind);
+    assert.deepEqual(codingFailureContinues({ message, latestAiId: message.id }), message.continueSet);
+  }
+});
+
+test('recovery does not leak to old, dismissed, successful, stopped, advisor or Office turns', () => {
+  const message = failedMessage();
+  const base = { message, latestAiId: message.id };
+  for (const overrides of [
+    { latestAiId: 'new-turn' },
+    { dismissedContinueId: message.id },
+    { message: { ...message, isError: false } },
+    { message: failedMessage('stopped') },
+    ...['education', 'travel', 'finance', 'research'].map((studioDomain) => ({ studioDomain })),
+    { officeKind: 'document' },
+    { message: { ...message, continueSet: null } },
+    { message: { ...message, continueSet: { items: [{ id: 'gap-photos', label: 'Add photos', value: 'Add photos' }] } } },
+  ]) assert.equal(codingFailureContinues({ ...base, ...overrides }), null);
+});
+
+test('missing and malformed recovery actions are ignored', () => {
+  assert.equal(codingFailureContinues(), null);
+  const message = failedMessage();
+  for (const items of [null, {}, [null], [{ id: 'outcome-retry-fallback', label: '', value: 'Retry' }], [{ id: 'outcome-retry-fallback', label: 'Retry' }]]) {
+    assert.equal(codingFailureContinues({ message: { ...message, continueSet: { items } }, latestAiId: message.id }), null);
+  }
 });

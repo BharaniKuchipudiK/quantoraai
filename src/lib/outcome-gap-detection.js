@@ -6,6 +6,26 @@
 import { assessShopBuildAsk, expandCatalogChip, shopCatalogWasCapped } from './shop-catalog-scale.js';
 import { briefWantsNoImages, briefWantsOnlineSelling } from './commerce-intent.js';
 import { studyGuidedChipBeats } from './study-guided-chips.js';
+import { canAutoOpenCodeWorkspace } from './studio-domain-policy.js';
+
+const CODING_RECOVERY_IDS = new Set([
+  'outcome-retry-fallback',
+  'outcome-retry-smaller',
+  'outcome-rebuild-page',
+]);
+
+/** Explicit recovery is not a suggestion to extend a successfully built artifact. */
+export function codingFailureContinues({ message, latestAiId, dismissedContinueId, studioDomain, officeKind = null } = {}) {
+  if (!message?.isError || !message.id || message.id !== latestAiId
+    || message.id === dismissedContinueId || officeKind || !canAutoOpenCodeWorkspace(studioDomain)) return null;
+  const items = Array.isArray(message.continueSet?.items)
+    ? message.continueSet.items.filter((item) => CODING_RECOVERY_IDS.has(item?.id)
+      && typeof item.label === 'string' && item.label.trim()
+      && typeof item.value === 'string' && item.value.trim())
+    : [];
+  // Keep the original objects: modelOverrideId must reach the existing click handler.
+  return items.length ? { items } : null;
+}
 
 function beat(id, label, value, priority = 0) {
   return { id, label, value, priority };
