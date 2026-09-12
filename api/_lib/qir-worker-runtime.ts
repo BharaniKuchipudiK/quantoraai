@@ -49,11 +49,6 @@ export type QirStepContinuation = NonNullable<ReturnType<typeof deriveQirContinu
 
 export type QirStepExecution = {
   observation: QirObservation;
-  /**
-   * Optional authoritative Run produced after executor-owned independent
-   * verification. When absent, the worker applies the canonical observation
-   * reducer exactly as Phase 1 did.
-   */
   committedRun?: QirAgentRun;
   eventType?: string;
   payload?: Record<string, unknown>;
@@ -82,9 +77,17 @@ function stepIsClaimed(run: QirAgentRun, continuation: QirStepContinuation): boo
 }
 
 function claimQirStep(run: QirAgentRun, continuation: QirStepContinuation, now: string): QirAgentRun {
-  const actionId = continuation.actionId || `${continuation.stepId}-action-${Math.random().toString(36).slice(2, 10)}`;
-  const steps = run.steps.map((step) => (
-    step.stepId === continuation.stepId ? { ...step, status: "active" as const, actionId } : step
+  const step = run.steps.find((candidate) => candidate.stepId === continuation.stepId);
+  const recovering = step?.status === "failed_recoverable" || run.status === "REPLANNING" || run.status === "REPAIRING";
+  // A recoverable attempt must never reuse the action id whose failure event is
+  // already durable. Reusing it also reuses the claim/event id, turning the next
+  // attempt into an idempotent replay of the OLD transition rather than new
+  // work. Fresh action identity is what lets recovery make progress safely.
+  const actionId = !recovering && continuation.actionId
+    ? continuation.actionId
+    : `${continuation.stepId}-action-${Math.max(1, run.cursor.attempt + 1)}-${Math.random().toString(36).slice(2, 8)}`;
+  const steps = run.steps.map((candidate) => (
+    candidate.stepId === continuation.stepId ? { ...candidate, status: "active" as const, actionId } : candidate
   ));
   return {
     ...run,
