@@ -175,8 +175,8 @@ export function describeDeskCheckpoints(history, currentVfs = null) {
 
 /**
  * Plan a rewind. Returns the VFS to install and the next history — which
- * gains a "before rewind" snapshot of the current state when that state is
- * not itself already the newest checkpoint.
+ * preserves the current state and appends the restored state. The server reads
+ * the chain's tail as the current workspace, so it must match the browser.
  */
 export function planDeskRestore(history, checkpointId, currentVfs) {
   const entries = Array.isArray(history) ? history : [];
@@ -190,6 +190,10 @@ export function planDeskRestore(history, checkpointId, currentVfs) {
     label: 'Before rewind',
     origin: 'restore',
   });
+  const restored = recordDeskCheckpoint(preserved, target.vfs, {
+    label: `Restored: ${target.label}`,
+    origin: 'restore',
+  });
   // In the desk's own shape, or the file tree shows nothing after a rewind.
-  return { ok: true, vfs: deskVfsFromText(target.vfs), history: preserved, restoredLabel: target.label };
+  return { ok: true, vfs: deskVfsFromText(target.vfs), history: restored, restoredLabel: target.label };
 }

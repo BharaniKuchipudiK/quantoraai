@@ -1,5 +1,10 @@
 # PR #709 implementation sequence
 
+> **Current status (2026-09-13):** This document includes historical implementation
+> status. Use [Reliability closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for current
+> evidence, open release gates and the ordered backlog. QIR is not yet complete
+> as a production-wide runtime.
+
 1. Server worker service is enabled by default in production service mode, with explicit opt-out only.
 2. Add a server-owned browser submission path that binds Coding Desk context before making the Run runnable.
 3. Add durable Run observation/polling and verified workspace reload after worker completion.

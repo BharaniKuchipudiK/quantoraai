@@ -1,5 +1,10 @@
 # Coding stabilization after #713
 
+> **Current status (2026-09-13):** This document includes historical implementation
+> status. Use [Reliability closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for current
+> evidence, open release gates and the ordered backlog. QIR is not yet complete
+> as a production-wide runtime.
+
 ## Implemented locally
 
 The #713 changes below are merged and Vercel production deployment was confirmed at e08e24d4. The candidate-isolation changes described next are subsequent work, not proof of worker activation.

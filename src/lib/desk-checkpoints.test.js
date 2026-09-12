@@ -42,7 +42,8 @@ test('rewind returns the old files and preserves the current state first', () =>
   assert.match(plan.vfs['index.html'].content, /working/);
   assert.equal(plan.vfs['index.html'].language, 'html');
   // The bad state survives as its own checkpoint, so the rewind is undoable.
-  assert.equal(plan.history[plan.history.length - 1].hash, hashVfsContent(broken));
+  assert.equal(plan.history.at(-2).hash, hashVfsContent(broken));
+  assert.equal(plan.history.at(-1).hash, hashVfsContent(plan.vfs));
 });
 
 test('restoring the state already on the desk is refused', () => {

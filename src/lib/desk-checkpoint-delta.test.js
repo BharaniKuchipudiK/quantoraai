@@ -27,6 +27,24 @@ import {
 
 const roundTrip = (before, after) => applyDeskVfsDelta(before, deskVfsDelta(before, after));
 
+test('rewind persists the restored tree as the server head and remains undoable', () => {
+  const original = { 'index.html': 'working', 'quantity.mjs': 'limit 99' };
+  const edited = { 'index.html': 'broken', 'quantity.mjs': 'limit 100' };
+  const history = recordDeskCheckpoint([], original, { label: 'Working' });
+  const restored = planDeskRestore(history, history[0].id, edited);
+  assert.equal(restored.ok, true);
+  const saved = planDeskCheckpointChain(restored.history);
+  const reopened = replayDeskCheckpointChain({ steps: saved.steps });
+  assert.equal(reopened.ok, true);
+  assert.deepEqual(reopened.vfs, original, 'worker must receive the same files Rewind put on the desk');
+  const before = restored.history.find(entry => entry.hash === hashVfsContent(edited));
+  assert.ok(before, 'the replaced files remain recoverable');
+  const undone = planDeskRestore(restored.history, before.id, restored.vfs);
+  const undoReload = replayDeskCheckpointChain({ steps: planDeskCheckpointChain(undone.history).steps });
+  assert.equal(undoReload.ok, true);
+  assert.deepEqual(undoReload.vfs, edited);
+});
+
 test('a delta plus the tree it came from is exactly the tree it went to', () => {
   const cases = [
     [{}, {}],

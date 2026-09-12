@@ -1,5 +1,9 @@
 # Quantora — Product Roadmap
 
+> **2026-09-13 priority:** Finish the reliability pipeline before adding features.
+> Older phase/status notes below are historical; the [current closeout](docs/architecture/RELIABILITY_CLOSEOUT_2026-09-13.md)
+> separates shipped mechanisms, unfinished journeys and deferred product work.
+
 **2026-08-22:** Travel and Study are parked. Next work is the Studio coding desk (IDE). Leftovers live in `docs/PRODUCT_BACKLOG.md`.
 
 A living, prioritized plan. We tackle it **top to bottom, one item at a time.**

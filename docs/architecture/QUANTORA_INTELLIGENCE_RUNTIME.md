@@ -1,5 +1,10 @@
 # Quantora Intelligence Runtime (QIR)
 
+> **Current status (2026-09-13):** This document includes historical implementation
+> status. Use [Reliability closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for current
+> evidence, open release gates and the ordered backlog. QIR is not yet complete
+> as a production-wide runtime.
+
 > **North Star:** turn an idea into a verified outcome.
 >
 > Quantora accepts a user's goal, determines the next useful action, executes that action with the appropriate model or tool, observes the real result, verifies progress against an explicit outcome contract, and continues until the goal is achieved, user input is genuinely required, or a bounded and explainable terminal condition is reached.
