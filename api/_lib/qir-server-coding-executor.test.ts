@@ -224,3 +224,19 @@ test('operator recovery of a saved candidate verifies without charging the model
   assert.equal(publishes, 1);
   assert.ok(recovered.committedRun.observations.some((item: any) => item.status === 'failure'));
 });
+
+
+test('module-only edits verify the complete persisted preview with the real build verifier', async () => {
+  const html = '<!doctype html><html lang="en"><head><title>Quantity</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{padding:2rem;background:#eef;color:#123;font-family:system-ui}</style></head><body><main><h1>Quantity</h1><a href="https://example.com">Reference</a></main></body></html>';
+  const executor = createQirServerCodingExecutor({
+    loadWorkspace: async () => ({ status: 'loaded', sessionId: 'desk-1', checkpointCount: 1, vfs: { 'index.html': html, 'quantity.mjs': 'export const limit = 100;' } }),
+    modelRunner: async () => ({ status: 'success', provider: 'vercel-gateway', modelId: 'test/model', text: '```javascript filepath="quantity.mjs"\nexport const limit = 99;\n```' }),
+    saveWorkspace: async input => ({ status: 'saved', sessionId: 'desk-1', checkpointId: input.checkpointId }),
+    runtimeVerify: async () => ({ status: 'passed', commands: ['npm test'], results: [{ command: 'npm test', exitCode: 0, output: 'passed', outputTruncated: false }] }),
+  });
+  const run = activeRun();
+  run.goal.statement = 'Change quantity limit to 99';
+  const result: any = await executor.execute(run, continuation, { userSub: 'u1', runId: 'run-1' });
+  assert.equal(result.committedRun.status, 'COMPLETE');
+  assert.equal(result.payload.verificationScore, 100);
+});

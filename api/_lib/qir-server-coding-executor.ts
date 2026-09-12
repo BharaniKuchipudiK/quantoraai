@@ -1,3 +1,4 @@
+import { pickPreviewEntry } from '../../src/lib/preview-utils.js';
 import { randomUUID } from 'node:crypto';
 import { loadQirCodingWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
 import { describeQirProviderFailure, type QirProviderFailure } from './qir-provider-failure.js';
@@ -373,7 +374,7 @@ export function createQirServerCodingExecutor(options: {
         };
       }
 
-      const report = await verify({ code: model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
+      const report = await verify({ code: pickPreviewEntry(nextVfs) || model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
       if (context.signal?.aborted) return ownershipLost();
       if (!report.passed) {
         const issues = (report.issues || []).map((issue) => String(issue || '').trim()).filter(Boolean).slice(0, 8);
