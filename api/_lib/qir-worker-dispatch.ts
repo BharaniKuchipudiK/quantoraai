@@ -17,7 +17,7 @@ export async function runQirWorkerDispatchCycle(input: {
   workerId: string;
   ttlMs: number;
   heartbeatMs: number;
-  driveRun: (run: QirRunnableRunRef) => Promise<unknown>;
+  driveRun: (run: QirRunnableRunRef, signal: AbortSignal) => Promise<unknown>;
   leaseToken?: () => string;
   onEvent?: (message: string) => void;
 }): Promise<QirWorkerDispatchResult> {
@@ -41,9 +41,9 @@ export async function runQirWorkerDispatchCycle(input: {
       ttlMs: input.ttlMs,
       heartbeatMs: input.heartbeatMs,
       onHeartbeat: (status) => input.onEvent?.(`lease-heartbeat ${status} run=${ref.runId}`),
-      run: async () => {
+      run: async ({ signal }) => {
         result.acquired += 1;
-        return input.driveRun(ref);
+        return input.driveRun(ref, signal);
       },
     });
 
