@@ -1,15 +1,6 @@
 /*
  * Request-independent QIR worker runtime.
- *
- * The worker reads durable state fresh for every step, claims a continuation,
- * executes through a QirStepExecutor, and commits through the same optimistic
- * concurrency store contract used by the request path. The executor may return
- * either a plain observation (the original Phase-1 contract) or a fully reduced
- * Run after it has independently verified an artifact. That additive form is
- * what allows the server Coding executor to own model -> artifact -> verifier
- * without routing the work back through a browser request.
  */
-
 import {
   deriveQirContinuation,
   type QirAgentRun,
@@ -18,13 +9,7 @@ import {
 import { reduceQirObservation } from "./qir-run-store.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
 
-export type QirPersistedRunLike = {
-  run: QirAgentRun;
-  storageVersion: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
+export type QirPersistedRunLike = { run: QirAgentRun; storageVersion: number; createdAt: string; updatedAt: string };
 export type QirRunCommitResultLike =
   | { status: "committed"; record: QirPersistedRunLike }
   | { status: "conflict" }
@@ -35,31 +20,24 @@ export type QirDurableStorePort = {
   readonly kind: string;
   readRun(userSub: string, runId: string): Promise<QirPersistedRunLike | null>;
   commitEvent(input: {
-    userSub: string;
-    runId: string;
-    expectedVersion: number;
-    eventId: string;
-    eventType: string;
-    run: QirAgentRun;
-    payload?: Record<string, unknown>;
+    userSub: string; runId: string; expectedVersion: number; eventId: string; eventType: string;
+    run: QirAgentRun; payload?: Record<string, unknown>;
   }): Promise<QirRunCommitResultLike>;
 };
 
 export type QirStepContinuation = NonNullable<ReturnType<typeof deriveQirContinuation>>;
-
 export type QirStepExecution = {
   observation: QirObservation;
   committedRun?: QirAgentRun;
   eventType?: string;
   payload?: Record<string, unknown>;
 };
-
 export type QirStepExecutor = {
   readonly kind: string;
   execute(
     run: QirAgentRun,
     continuation: QirStepContinuation,
-    context: { userSub: string; runId: string },
+    context: { userSub: string; runId: string; signal?: AbortSignal },
   ): Promise<QirObservation | QirStepExecution>;
 };
 
@@ -70,6 +48,11 @@ export type QirWorkerStepResult =
   | { status: "conflict" }
   | { status: "unavailable"; diagnosis?: { cause: string; remedy: string } | null };
 
+const ownershipLost = (): QirWorkerStepResult => ({
+  status: "unavailable",
+  diagnosis: { cause: "worker ownership was lost", remedy: "Allow the durable lease to be reclaimed and resume the Run." },
+});
+
 function stepIsClaimed(run: QirAgentRun, continuation: QirStepContinuation): boolean {
   if (run.cursor.stepId !== continuation.stepId) return false;
   const step = run.steps.find((candidate) => candidate.stepId === continuation.stepId);
@@ -79,23 +62,13 @@ function stepIsClaimed(run: QirAgentRun, continuation: QirStepContinuation): boo
 function claimQirStep(run: QirAgentRun, continuation: QirStepContinuation, now: string): QirAgentRun {
   const step = run.steps.find((candidate) => candidate.stepId === continuation.stepId);
   const recovering = step?.status === "failed_recoverable" || run.status === "REPLANNING" || run.status === "REPAIRING";
-  // A recoverable attempt must never reuse the action id whose failure event is
-  // already durable. Reusing it also reuses the claim/event id, turning the next
-  // attempt into an idempotent replay of the OLD transition rather than new
-  // work. Fresh action identity is what lets recovery make progress safely.
   const actionId = !recovering && continuation.actionId
     ? continuation.actionId
     : `${continuation.stepId}-action-${Math.max(1, run.cursor.attempt + 1)}-${Math.random().toString(36).slice(2, 8)}`;
   const steps = run.steps.map((candidate) => (
     candidate.stepId === continuation.stepId ? { ...candidate, status: "active" as const, actionId } : candidate
   ));
-  return {
-    ...run,
-    status: "EXECUTING",
-    steps,
-    cursor: { ...run.cursor, stepId: continuation.stepId, actionId },
-    updatedAt: now,
-  };
+  return { ...run, status: "EXECUTING", steps, cursor: { ...run.cursor, stepId: continuation.stepId, actionId }, updatedAt: now };
 }
 
 function normalizeExecution(value: QirObservation | QirStepExecution): QirStepExecution {
@@ -109,8 +82,11 @@ export async function stepQirRunOnce(
   executor: QirStepExecutor,
   userSub: string,
   runId: string,
+  signal?: AbortSignal,
 ): Promise<QirWorkerStepResult> {
+  if (signal?.aborted) return ownershipLost();
   const record = await store.readRun(userSub, runId);
+  if (signal?.aborted) return ownershipLost();
   if (!record) return { status: "no-run" };
 
   const continuation = deriveQirContinuation(record.run);
@@ -118,13 +94,10 @@ export async function stepQirRunOnce(
 
   if (!stepIsClaimed(record.run, continuation)) {
     const claimed = claimQirStep(record.run, continuation, new Date().toISOString());
+    if (signal?.aborted) return ownershipLost();
     const commit = await store.commitEvent({
-      userSub,
-      runId,
-      expectedVersion: record.storageVersion,
-      eventId: `${claimed.cursor.actionId}-claim`,
-      eventType: "step.claimed",
-      run: claimed,
+      userSub, runId, expectedVersion: record.storageVersion,
+      eventId: `${claimed.cursor.actionId}-claim`, eventType: "step.claimed", run: claimed,
       payload: { stepId: continuation.stepId, actionId: claimed.cursor.actionId },
     });
     if (commit.status === "conflict") return { status: "conflict" };
@@ -133,9 +106,9 @@ export async function stepQirRunOnce(
     return { status: "advanced", run: commit.record.run };
   }
 
-  const execution = normalizeExecution(await executor.execute(record.run, continuation, { userSub, runId }));
+  const execution = normalizeExecution(await executor.execute(record.run, continuation, { userSub, runId, signal }));
+  if (signal?.aborted) return ownershipLost();
   const observation = execution.observation;
-
   let nextRun = execution.committedRun || null;
   if (!nextRun) {
     const reduced = reduceQirObservation({
@@ -146,22 +119,15 @@ export async function stepQirRunOnce(
     if (!reduced.accepted) return { status: "stopped", run: record.run };
     nextRun = reduced.run;
   }
+  if (signal?.aborted) return ownershipLost();
 
   const commit = await store.commitEvent({
-    userSub,
-    runId,
-    expectedVersion: record.storageVersion,
+    userSub, runId, expectedVersion: record.storageVersion,
     eventId: observation.observationId,
-    eventType: execution.eventType
-      || (observation.status === "failure" ? "observation.failed" : "observation.succeeded"),
+    eventType: execution.eventType || (observation.status === "failure" ? "observation.failed" : "observation.succeeded"),
     run: nextRun,
-    payload: {
-      actionId: observation.actionId,
-      kind: observation.kind,
-      ...(execution.payload || {}),
-    },
+    payload: { actionId: observation.actionId, kind: observation.kind, ...(execution.payload || {}) },
   });
-
   if (commit.status === "conflict") return { status: "conflict" };
   if (commit.status === "not_found") return { status: "no-run" };
   if (commit.status !== "committed") return { status: "unavailable", diagnosis: commit.diagnosis || null };
@@ -171,6 +137,7 @@ export async function stepQirRunOnce(
 export type QirWorkerLoopOptions = {
   maxSteps?: number;
   stepDelayMs?: number;
+  signal?: AbortSignal;
   onStep?: (result: QirWorkerStepResult) => void;
 };
 
@@ -184,7 +151,8 @@ export async function runQirWorkerLoop(
   const maxSteps = options.maxSteps ?? Number.POSITIVE_INFINITY;
   let last: QirWorkerStepResult = { status: "no-run" };
   for (let i = 0; i < maxSteps; i += 1) {
-    last = await stepQirRunOnce(store, executor, userSub, runId);
+    if (options.signal?.aborted) return ownershipLost();
+    last = await stepQirRunOnce(store, executor, userSub, runId, options.signal);
     options.onStep?.(last);
     if (last.status !== "advanced") return last;
     if (options.stepDelayMs) await new Promise((resolve) => { setTimeout(resolve, options.stepDelayMs); });
@@ -193,9 +161,7 @@ export async function runQirWorkerLoop(
 }
 
 /** Phase-1 proof executor retained only for deterministic crash/lease tests. */
-export function heartbeatStepExecutor(options: {
-  onStepStart?: (stepId: string, actionId: string) => void | Promise<void>;
-} = {}): QirStepExecutor {
+export function heartbeatStepExecutor(options: { onStepStart?: (stepId: string, actionId: string) => void | Promise<void> } = {}): QirStepExecutor {
   return {
     kind: "heartbeat",
     async execute(_run, continuation) {
@@ -203,12 +169,7 @@ export function heartbeatStepExecutor(options: {
       await options.onStepStart?.(continuation.stepId, actionId);
       return {
         observationId: `${continuation.stepId}-obs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        runId: _run.runId,
-        actionId,
-        kind: "runtime",
-        status: "success",
-        evidence: [],
-        observedAt: new Date().toISOString(),
+        runId: _run.runId, actionId, kind: "runtime", status: "success", evidence: [], observedAt: new Date().toISOString(),
       };
     },
   };
