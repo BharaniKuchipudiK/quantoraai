@@ -31,13 +31,13 @@ test('server Coding executor loads durable source, calls a model, saves source a
     modelId: 'test/model',
     loadWorkspace: async () => ({
       status: 'loaded', sessionId: 'desk-1', checkpointCount: 1,
-      vfs: { 'index.html': '<main><h1>Old</h1></main>' },
+      vfs: { 'index.html': '<!doctype html><html><body><main><h1>Old</h1></main></body></html>' },
     }),
     modelRunner: async (input) => {
       prompt = input.prompt;
       return {
         status: 'success', provider: 'openrouter', modelId: 'test/model',
-        text: '```html filepath="index.html"\n<main><h1>New</h1></main>\n```',
+        text: '```html filepath="index.html"\n<!doctype html><html><body><main><h1>New</h1></main></body></html>\n```',
       };
     },
     saveWorkspace: async (input) => {
