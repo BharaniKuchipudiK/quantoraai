@@ -6193,7 +6193,7 @@ Paused — ${autoPauseRef.current}.`
                  * describeQirDurability tells them apart, and says nothing when the
                  * evidence is ambiguous.
                  */
-                const durability = describeQirDurability(qirCoding);
+                const durability = describeQirDurability({ ...qirCoding, previewChecks: deskPacket?.checks || [] });
                 if (!durability) return null;
                 return (
                   <span

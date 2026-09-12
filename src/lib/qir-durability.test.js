@@ -146,7 +146,7 @@ test('the desk consumes the verdict rather than testing run truthiness', () => {
    * because it renders an unconfigured runtime as nothing at all.
    */
   const studio = fs.readFileSync(new URL('../components/AiStudio.jsx', import.meta.url), 'utf8');
-  assert.match(studio, /describeQirDurability\(qirCoding\)/, 'the desk must ask for the verdict');
+  assert.match(studio, /describeQirDurability\(\{ \.\.\.qirCoding, previewChecks: deskPacket\?\.checks \|\| \[\] \}\)/, 'the desk must ask for the verdict using its visible Preview checks');
   assert.doesNotMatch(
     studio,
     /\{qirCoding\.run \? \(/,
