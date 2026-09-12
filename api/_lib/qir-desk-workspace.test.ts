@@ -68,6 +68,53 @@ test('server worker appends a replacement workspace as a new durable generation'
   assert.match(JSON.stringify(savedRows[1].delta), /server-owned/);
 });
 
+test('crash replay with the same action checkpoint does not perform the workspace mutation twice', async () => {
+  let rows: any[] = rowsFor({ 'App.jsx': 'export default function App(){ return <main>old</main> }' });
+  let writes = 0;
+  const bindings = {
+    readRows: async () => rows,
+    saveRows: async (_userSub: string, _sessionId: string, next: any[]) => {
+      writes += 1;
+      rows = next;
+      return true;
+    },
+  };
+  const input = {
+    userSub: 'u1',
+    run: runWithSession(),
+    checkpointId: 'qir-action-1',
+    vfs: { 'App.jsx': 'export default function App(){ return <main>once</main> }' },
+  };
+  const first = await saveQirDeskWorkspace(input, bindings);
+  assert.equal(first.status, 'saved');
+  assert.equal(writes, 1);
+
+  // Simulates process death after the external workspace save but before the
+  // Run event commit. The replacement worker replays the same action id.
+  const replay = await saveQirDeskWorkspace(input, bindings);
+  assert.equal(replay.status, 'saved');
+  if (replay.status === 'saved') assert.equal(replay.replayed, true);
+  assert.equal(writes, 1, 'the durable workspace mutation must not run twice');
+});
+
+test('an idempotency key cannot be reused for different workspace bytes', async () => {
+  let rows: any[] = rowsFor({ 'App.jsx': 'export default function App(){ return <main>old</main> }' });
+  const bindings = {
+    readRows: async () => rows,
+    saveRows: async (_userSub: string, _sessionId: string, next: any[]) => { rows = next; return true; },
+  };
+  const run = runWithSession();
+  await saveQirDeskWorkspace({
+    userSub: 'u1', run, checkpointId: 'qir-action-1',
+    vfs: { 'App.jsx': 'export default function App(){ return <main>first</main> }' },
+  }, bindings);
+  const conflicting = await saveQirDeskWorkspace({
+    userSub: 'u1', run, checkpointId: 'qir-action-1',
+    vfs: { 'App.jsx': 'export default function App(){ return <main>different</main> }' },
+  }, bindings);
+  assert.deepEqual(conflicting, { status: 'unavailable', reason: 'idempotency-key-reused-for-different-workspace' });
+});
+
 test('worker refuses to guess a desk session when the Run has no binding', async () => {
   const run = runWithSession('');
   const result = await loadQirDeskWorkspace('u1', run, {
