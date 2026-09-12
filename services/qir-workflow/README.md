@@ -174,25 +174,47 @@ not induced.
 
 ## Customer handoff audit (2026-09-13)
 
-The synthetic worker proof does not mean the live application submits work to
-this worker yet. Before the browser-close release test, connect these existing
-seams under an account-and-desk-scoped server capability:
+The main application now has a disabled, one-account/desk/run browser pilot:
 
-- `AiStudio.jsx` must select server ownership and restore verified checkpoints
-  through `useQirCodingRun` for the opted-in desk.
-- `useChatStream.js` must call the server submission branch and stop the browser
-  model path for that turn. Its current caller uses only `beginAttempt`.
-- The authenticated API must durably schedule the Workflow and expose honest
-  enqueue failure/retry state. Persisting a runnable journal row alone does not
-  enqueue this isolated service. Recovery must cover interruption between save
-  and enqueue, without depending on a browser retry.
-- Browser-close/reopen must recover both the run and its published checkpoint.
+- Open `/desk?workerPilot=1` to request the pilot. The authenticated API must
+  approve the configured account and desk; the query parameter alone grants
+  nothing. A rejected/unconfigured pilot does not fall back to browser execution.
+- `AiStudio` selects server ownership; `useChatStream` submits once and returns
+  before its model loop. The browser only observes the saved run afterward.
+- The main API checks the saved source hash and calls the isolated worker. The
+  worker durably schedules before replying 202, and its first step creates the
+  journal. A lost response can be retried with the same pinned run identity.
+- Initialization and execution both reject changed source. Duplicate exact
+  submissions reuse the journal; a different goal/revision cannot overwrite it.
+- Completion restores the saved checkpoint only if local files still match the
+  submitted baseline or the published result. Local edits are preserved and a
+  reconciliation notice is shown otherwise.
+- “SCHEDULED” means Workflow acceptance, not persisted journal, execution success,
+  or verified behavior. The account-scoped run id can be recovered on reopening
+  even if the browser lost its local pointer.
 
-The client submission now explicitly persists `executionOwner: server` before
-making the model step runnable. A regression test demonstrated that the old
-request omitted the marker required by the worker. Compatibility-mode context
-updates do not add the marker. This fixes one prerequisite; it does not enable
-customer execution or complete the connections above.
+Configuration (none enabled in production yet): set `QIR_BROWSER_PILOT_ENABLED`,
+`QIR_BROWSER_PILOT_USER_SUB`, `QIR_BROWSER_PILOT_SESSION_ID`, and
+`QIR_BROWSER_PILOT_RUN_ID` identically on main and worker. Main additionally needs
+`QIR_BROWSER_PILOT_WORKER_URL=https://quantora-coding-worker-pilot.vercel.app`
+and the encrypted `QIR_BROWSER_PILOT_WORKER_TOKEN` matching worker admin auth.
+The worker also requires its existing Workflow, Supabase and bounded Gateway
+configuration. No customer/provider credentials are sent to the browser.
+
+Local evidence: API/client tests cover scope, source races, duplicate/replayed
+submissions, scheduling uncertainty and checkpoint adoption. The existing
+production-recovery browser gate drives the real chat send path against fixture
+APIs for both 202 and 503; neither starts `/api/chat` or a second journal action.
+Deliberately disabling the handoff makes that gate fail. These are simulated
+transport checks, not a production customer execution proof.
+
+Still required before enabling this path: configure a dedicated test desk,
+exercise real Workflow admission and initialization from the deployed web API,
+close/reopen the browser, and verify its saved files. Initialization failures
+before the journal exists still require Workflow log inspection; the UI does
+not yet retrieve Workflow failure details. General customer rollout and
+automatic recovery of exhausted infrastructure retries remain out of scope for
+this limited pilot. Main PR #717 remains draft until that release proof.
 
 The original Reliability Cart Test (marker QIR-E2E-714) passed live UI checks in
 Chrome: all three products rejected Add at 99 without changing totals or adding

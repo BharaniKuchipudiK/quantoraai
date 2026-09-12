@@ -38,6 +38,16 @@ export const QIR_PERSIST_FAILED = 'persist-failed';
  *   null means "say nothing" — the honest answer when there is simply no Run yet.
  */
 export function describeQirDurability({ run = null, error = null, workspace = null, previewChecks = [] } = {}) {
+  if (error?.reason === 'scheduling-unconfirmed') return {
+    label: 'Background scheduling · UNCONFIRMED',
+    detail: 'The worker may have accepted this request. Retry the same submission to check; a separate browser build was not started.',
+    recording: false,
+  };
+  if (run?.durability === 'scheduled') return {
+    label: 'Background run · SCHEDULED',
+    detail: 'The durable worker accepted the request. Waiting for its saved run record; execution and verification are not yet confirmed.',
+    recording: false,
+  };
   // A restored COMPLETE Run is historical evidence, not permission to certify
   // files absent from the current desk. Reuse the existing file contract;
   // this is only a veto on the outward claim, never a new promotion authority.

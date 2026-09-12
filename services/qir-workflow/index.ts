@@ -1,15 +1,16 @@
+import { validBrowserSubmission } from '../../api/_lib/qir-browser-pilot.js';
 import express from 'express';
 import { start, getRun } from 'workflow/api';
 import { authenticateAdmin } from '../../api/_lib/admin-auth.js';
-import { codingPilotWorkflow } from './workflow.js';
-import { pilotAllows } from './transition.js';
+import { codingPilotWorkflow, browserPilotWorkflow } from './workflow.js';
+import { pilotAllows, browserPilotAllows } from './transition.js';
 
 import { liveRecoveryProof, liveProofEnabled } from './live-proof.js';
 
 import { seedJournalProof, readJournalProof, proveSaveConflict } from './journal-proof.js';
 
 const app = express();
-app.use(express.json({ limit: '2kb' }));
+app.use(express.json({ limit: '8kb' }));
 app.get('/health', (_req, res) => res.json({ service: 'qir-workflow-pilot', enabled: process.env.QIR_WORKFLOW_PILOT_ENABLED === 'true' }));
 app.post('/runs', async (req, res) => {
   const denied = authenticateAdmin(req);
@@ -24,6 +25,20 @@ app.post('/runs', async (req, res) => {
   } catch {
     return res.status(503).json({ error: 'Unable to enqueue the pilot. Check Workflow logs before retrying.' });
   }
+});
+app.post('/submissions', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (!validBrowserSubmission(req.body) || !browserPilotAllows(req.body.userSub, req.body.sessionId, req.body.runId)) {
+    return res.status(403).json({ error: 'Submission is outside the configured browser pilot.' });
+  }
+  try {
+    // The durable engine accepts first. Its step creates the QIR row, so there
+    // is no saved-but-never-enqueued job if the requesting browser disappears.
+    const { userSub, sessionId, runId, goal, workspaceHash } = req.body;
+    const run = await start(browserPilotWorkflow, [{ userSub, sessionId, runId, goal, workspaceHash }]);
+    return res.status(202).json({ workflowRunId: run.runId, runId: req.body.runId, durability: 'scheduled' });
+  } catch { return res.status(503).json({ error: 'Scheduling was not confirmed. Retry the same submission.' }); }
 });
 app.post('/proof', async (req, res) => {
   const denied = authenticateAdmin(req);

@@ -64,6 +64,8 @@ import {
 } from '../lib/study-syllabus-overlay.js';
 import { shouldShowAssistantDecisionCard } from '../lib/studio-choices.js';
 import { useChatStream } from '../hooks/useChatStream';
+import { useQirBrowserPilot } from '../hooks/useQirBrowserPilot.js';
+import { hashVfsContent } from '../lib/desk-checkpoints.js';
 import { useQirCodingRun } from '../hooks/useQirCodingRun.js';
 import { describeQirDurability } from '../lib/qir-durability.js';
 import { planFromMessageSnapshot } from '../lib/coding-turn-skills.js';
@@ -2041,7 +2043,33 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     [vfs, workspaceCode, previewEntryPin],
   );
   const previewAssemblyKey = useMemo(() => previewAssemblyFingerprint(vfs), [vfs]);
+  const browserPilot = useQirBrowserPilot(activeSessionId);
+  const adoptServerWorkspace = useCallback(async (nextVfs, run, restored) => {
+    const sessionId = run.workingContext?.projectState?.sessionId;
+    if (!sessionId || sessionId !== activeSessionIdRef.current) return false;
+    const baseHash = run.workingContext?.projectState?.submissionHash;
+    const currentHash = hashVfsContent(vfsRef.current || {});
+    if (currentHash !== baseHash && currentHash !== hashVfsContent(nextVfs)) {
+      setDeskSaveError('Background work is saved. Local edits were kept; reload and reconcile to view the saved result.');
+      return false;
+    }
+    await deskCheckpointSaver.settle();
+    // Edits and navigation may have happened while a prior save settled.
+    if (sessionId !== activeSessionIdRef.current || hashVfsContent(vfsRef.current || {}) !== currentHash) return false;
+    deskCheckpointSaver.adopt(restored);
+    desksRef.current = updateDesk(desksRef.current, sessionId, { vfs: nextVfs });
+    vfsRef.current = nextVfs;
+    setVfs(nextVfs);
+    setDeskCheckpoints(restored.entries);
+    setWorkspaceCode(pickPreviewEntry(nextVfs));
+    setDeskSaveError('');
+    return true;
+  }, [deskCheckpointSaver]);
   const qirCoding = useQirCodingRun({
+    executionOwner: browserPilot.requested ? 'server' : 'browser',
+    workflowPilot: browserPilot.requested,
+    workflowPilotRunId: browserPilot.runId,
+    onServerWorkspace: adoptServerWorkspace,
     enabled: canAutoOpenCodeWorkspace(studioDomain) && codingDeskOpen && Boolean(previewRunCode),
     sessionId: activeSessionId,
     goal: [...messages].reverse().find((message) => message.sender === 'user')?.text || '',

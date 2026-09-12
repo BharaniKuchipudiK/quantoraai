@@ -1,3 +1,5 @@
+import { initializeBrowserSubmission } from './submission.js';
+import type { BrowserPilotSubmission } from '../../api/_lib/qir-browser-pilot.js';
 import { FatalError, RetryableError, sleep } from 'workflow';
 import { runPilotTransition } from './transition.js';
 
@@ -20,3 +22,14 @@ async function advance(userSub: string, runId: string) {
   return result;
 }
 advance.maxRetries = 2;
+
+export async function browserPilotWorkflow(input: BrowserPilotSubmission) {
+  'use workflow';
+  await initialize(input);
+  return await codingPilotWorkflow(input.userSub, input.runId);
+}
+async function initialize(input: BrowserPilotSubmission) {
+  'use step';
+  await initializeBrowserSubmission(input);
+}
+initialize.maxRetries = 3;

@@ -90,6 +90,9 @@ async function runJourney(name, script) {
     chatCalls: 0,
     qirAttempts: 0,
     qirObserves: 0,
+    workflowSubmissions: 0,
+    workflowCapabilities: 0,
+    browserRunCreates: 0,
   };
 
   await page.addInitScript(() => {
@@ -121,6 +124,22 @@ async function runJourney(name, script) {
       });
     }
     if (path === '/api/qir-runs') {
+      if (script.workerPilot) {
+        const query = new URL(request.url()).searchParams;
+        if (query.get('workerPilot') === '1') {
+          state.workflowCapabilities++;
+          return jsonOk(route, { enabled: true, runId: 'browser-pilot-run' });
+        }
+        if (request.method() === 'GET') return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Scheduled, awaiting initialization' }) });
+        const submitted = request.postDataJSON() || {};
+        if (submitted.action === 'coding.workflow_submit') {
+          state.workflowSubmissions++;
+          return route.fulfill({ status: script.rejectScheduling ? 503 : 202, contentType: 'application/json', body: JSON.stringify(script.rejectScheduling
+            ? { error: 'Scheduling was not confirmed', reason: 'scheduling-unconfirmed' }
+            : { runId: 'browser-pilot-run', workflowRunId: 'wrun_fixture', durability: 'scheduled' }) });
+        }
+        if (submitted.run) state.browserRunCreates++;
+      }
       const body = request.postDataJSON?.() || {};
       if (body.action === 'coding.attempt') state.qirAttempts += 1;
       if (body.action === 'coding.observe') state.qirObserves += 1;
@@ -133,7 +152,7 @@ async function runJourney(name, script) {
   });
 
   try {
-    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await page.goto(script.workerPilot ? `${BASE_URL}/desk?workerPilot=1` : BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     await script.drive(page, state);
   } catch (error) {
     mkdirSync('artifacts/e2e', { recursive: true });
@@ -276,8 +295,34 @@ try {
     },
   });
 
+  for (const rejectScheduling of [false, true]) {
+    await runJourney(`worker-pilot-${rejectScheduling ? 'unconfirmed' : 'accepted'}`, {
+      workerPilot: true, rejectScheduling,
+      onChat(route, state) {
+        state.chatCalls++;
+        return route.fulfill({ status: 500, body: 'A worker-owned turn must not call chat.' });
+      },
+      async drive(page, state) {
+        await enterSignedInStudio(page);
+        // Bind a real desk through the UI before capability resolution.
+        const prompt = page.locator('.app-shell--studio textarea').first();
+        await prompt.fill(CODING_ASK);
+        await waitForState(() => state.workflowCapabilities > 0, 'Pilot capability was never checked for the signed-in desk.');
+        await prompt.press('Enter');
+        await waitForState(() => state.workflowSubmissions === 1, 'The real chat send path did not submit to the worker.');
+        const expected = rejectScheduling ? 'Background scheduling was not confirmed' : 'Your background submission was accepted';
+        await page.getByText(expected, { exact: false }).last().waitFor({ state: 'visible', timeout: 10_000 });
+        if (state.chatCalls || state.qirAttempts || state.browserRunCreates) throw new Error(`Worker ownership leaked: ${JSON.stringify(state)}`);
+        // A fresh page load must not invent a replacement run while initialization is pending.
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await enterSignedInStudio(page);
+        if (state.browserRunCreates || state.chatCalls) throw new Error(`Reopen started another owner: ${JSON.stringify(state)}`);
+      },
+    });
+  }
+
   mkdirSync('artifacts/e2e', { recursive: true });
-  console.log('QIR production recovery browser gate passed: Study isolation, Coding auto-recovery, and explicit retry on the displayed engine.');
+  console.log('QIR production recovery browser gate passed: Study isolation, Coding auto-recovery, explicit retry on the displayed engine, and exclusive worker handoff on acceptance and scheduling failure.');
 } catch (error) {
   console.error('QIR production recovery browser gate FAILED:', error?.stack || error);
   process.exitCode = 1;

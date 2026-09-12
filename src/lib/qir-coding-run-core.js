@@ -8,6 +8,7 @@
  */
 
 import { missingRequestedDeliverables } from './requested-deliverables.js';
+import { hashVfsContent } from './desk-checkpoints.js';
 
 const POINTER_PREFIX = 'quantora_qir_coding_run:';
 
@@ -205,11 +206,11 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   };
 
   const boot = async (goalOverride = '', force = false, assertCurrent = () => {}) => {
-    const { enabled, sessionId, goal } = readOptions();
+    const { enabled, sessionId, goal, workflowPilot, workflowPilotRunId } = readOptions();
     if ((!enabled && !force) || !sessionId) return null;
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
-      const existingId = readPointer(sessionId);
+      const existingId = workflowPilot ? workflowPilotRunId : readPointer(sessionId);
       if (existingId) {
         try {
           const loaded = await requestQir(null, `?runId=${encodeURIComponent(existingId)}`);
@@ -219,6 +220,10 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
           if (resumeError.status !== 404) throw resumeError;
         }
       }
+
+      // A missing scheduled row is not permission to create a browser-owned
+      // run. The durable Workflow creates it, including after the tab closes.
+      if (workflowPilot) return null;
 
       const runId = id('coding-run');
       const created = await requestQir({ run: queuedRun(runId, goalOverride || goal) });
@@ -314,6 +319,20 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     };
     return enqueue(async () => {
     assertCurrent();
+    if (submittingOptions.workflowPilot) {
+      if (!submittingOptions.workflowPilotRunId) throw new Error('Background pilot is not enabled for this desk, or its configuration is still loading.');
+      const submitted = await requestQir({
+        action: 'coding.workflow_submit', sessionId: submittingOptions.sessionId,
+        goal: String(goal || '').trim(), workspaceHash: hashVfsContent(submittingOptions.vfs || {}),
+      });
+      assertCurrent();
+      if (submitted.runId !== submittingOptions.workflowPilotRunId
+        || !['scheduled', 'persisted'].includes(submitted.durability)) throw new Error('Scheduling was not confirmed. Retry this same submission.');
+      writePointer(submittingOptions.sessionId, submitted.runId);
+      return accept(submitted.run ? submitted : { run: {
+        ...queuedRun(submitted.runId, goal), durability: 'scheduled', workflowRunId: submitted.workflowRunId,
+      } });
+    }
     let current = await boot(goal, true, assertCurrent);
     assertCurrent();
     if (!current) return null;
@@ -351,7 +370,11 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   const refresh = () => enqueue(async (current) => {
     const snapshot = current || runNow || await boot();
     if (!snapshot?.runId) return snapshot || null;
-    return accept(await requestQir(null, `?runId=${encodeURIComponent(snapshot.runId)}`));
+    try { return accept(await requestQir(null, `?runId=${encodeURIComponent(snapshot.runId)}`)); }
+    catch (error) {
+      if (readOptions().workflowPilot && error.status === 404) return snapshot;
+      throw error;
+    }
   });
 
   const compactWorkingContext = (current, note) => writeWorkingContext(current, note, { required: false });

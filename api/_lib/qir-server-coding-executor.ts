@@ -12,6 +12,7 @@ import { changedRequiredVerificationScript, verifyQirRepositoryRuntime, type Qir
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
+import { readQirWorkingContext } from './qir-context-state.js';
 
 const MAX_PROMPT_SOURCE_CHARS = 60_000;
 const MAX_FILE_CHARS = 12_000;
@@ -216,6 +217,13 @@ export function createQirServerCodingExecutor(options: {
       const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
       const replayedCandidate = workspace.candidateCheckpointId === stableCheckpointId;
       const baselineHash = workspace.candidateBaselineHash || hashVfsContent(workspace.baselineVfs || currentVfs);
+      const submittedHash = readQirWorkingContext(run)?.projectState?.submissionHash;
+      if (submittedHash && submittedHash !== baselineHash) {
+        return { observation: failureObservation(run, continuation, {
+          code: 'INTERNAL_INVARIANT', message: 'Saved files changed after this submission. The newer work was kept.',
+          retryable: false, recoveryExhausted: true, evidenceKind: 'runtime.submission_workspace_changed',
+        }) };
+      }
       const objective = run.steps.find((step) => step.stepId === continuation.stepId)?.objective
         || run.goal.statement || 'Complete the Coding task.';
       const priorRepairFailures = repairFailures(run).length;

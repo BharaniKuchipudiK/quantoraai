@@ -1,3 +1,4 @@
+import { browserPilotScope } from '../../api/_lib/qir-browser-pilot.js';
 import { randomUUID } from 'node:crypto';
 import { createSupabaseQirWorkerStore } from '../../api/_lib/qir-supabase-worker-store.js';
 import { createSupabaseQirWorkerLeaseStore } from '../../api/_lib/qir-worker-lease.js';
@@ -14,8 +15,17 @@ export function pilotAllows(userSub: string, runId: string, env = process.env): 
     && userSub === env.QIR_PILOT_USER_SUB && runId === env.QIR_PILOT_RUN_ID;
 }
 
+export function browserPilotAllows(userSub: string, sessionId: string, runId: string, env = process.env): boolean {
+  const scope = browserPilotScope(userSub, sessionId, env);
+  return Boolean(scope && scope.runId === runId && env.QIR_WORKFLOW_PILOT_ENABLED === 'true'
+    && env.QIR_AI_GATEWAY_API_KEY?.trim()
+    && env.QIR_WORKER_MODEL?.includes('/') && String(env.QIR_GATEWAY_MODELS || '').split(',').map(v => v.trim()).includes(env.QIR_WORKER_MODEL));
+}
+
 export async function runPilotTransition(userSub: string, runId: string) {
-  if (!pilotAllows(userSub, runId)) return 'disabled';
+  const browserScope = browserPilotScope(userSub, process.env.QIR_BROWSER_PILOT_SESSION_ID || '');
+  const browserAllowed = browserPilotAllows(userSub, process.env.QIR_BROWSER_PILOT_SESSION_ID || '', runId);
+  if (!pilotAllows(userSub, runId) && !browserAllowed) return 'disabled';
   const store = createSupabaseQirWorkerStore();
   const leased = await runWithQirWorkerLease({
     leaseStore: createSupabaseQirWorkerLeaseStore(), userSub, runId,
@@ -25,6 +35,7 @@ export async function runPilotTransition(userSub: string, runId: string) {
       if (!record) return 'retry';
       const context = readQirWorkingContext(record.run);
       if (context?.projectState?.executionOwner !== 'server') return 'disabled';
+      if (browserAllowed && context.projectState.sessionId !== browserScope?.sessionId) return 'disabled';
       const result = await stepQirRunOnce(store, createQirServerCodingExecutor({
         modelId: process.env.QIR_WORKER_MODEL,
         modelRunner: createQirGatewayRunner(), maxRepairAttempts: 1,
