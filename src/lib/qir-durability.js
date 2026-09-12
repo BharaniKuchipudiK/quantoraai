@@ -62,7 +62,7 @@ export function describeQirDurability({ run = null, error = null, workspace = nu
     const failed = failingChecks(previewChecks).length;
     const pending = unverifiedChecks(previewChecks).length;
     if (failed || pending) return {
-      label: failed ? 'Run · NEEDS ATTENTION' : 'Run · CHECKS PENDING',
+      label: failed ? 'Run · NEEDS ATTENTION' : 'Run finished · UNVERIFIED',
       detail: `Durable Run ${run.runId || ''} finished. Preview checks: ${failed} failed, ${pending} unverified. `
         + 'Unchecked behaviour is not certified; no automatic check is implied.',
       recording: true,
