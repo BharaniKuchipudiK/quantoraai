@@ -106,6 +106,29 @@ Vercel configuration with these worker settings. The matching configuration is
 `services/qir-workflow/vercel.pilot.json`; use it only from a checkout linked to
 the dedicated worker project, with `vercel --local-config` pointing to that file.
 
+## Production journal probe
+
+The operator-only `/journal-proof` routes are pinned in code to a synthetic
+user (`qir-workflow-synthetic-20260912`), run (`qir-workflow-journal-20260912`)
+and desk (`qir-workflow-desk-20260912`). They also require the isolated-project
+check and matching pilot environment configuration. They cannot accept a
+customer ID from the caller.
+
+- `POST /journal-proof` idempotently seeds a durable baseline with a known
+  100-item defect and a run requesting the 99-item correction.
+- `POST /journal-proof/save-conflict` races two saves in a separate synthetic
+  session at the same revision, then checks that a stale retry cannot replace
+  the winner. An already-used fixture reports `already-run`, not a fresh pass.
+- `POST /runs` queues the real QIR worker against that pinned saved run.
+- `GET /journal-proof` reads the durable run, verification evidence and published
+  quantity source, including whether the independent test file stayed unchanged.
+
+The baseline includes 306 quantity assertions and a syntax build command.
+Production repository verification can now use Vercel's injected OIDC identity
+without a long-lived Sandbox token. An explicit null credential override still
+refuses execution. No production journal result is claimed until the real
+Supabase connection and this probe complete.
+
 ## Release gate
 
 Passed locally: Gateway failure/budget/cancellation tests, isolation guards,

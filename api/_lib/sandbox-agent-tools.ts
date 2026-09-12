@@ -26,9 +26,9 @@ export type SandboxFactory = (params: {
   source?: { type: "git"; url: string; username: string; password: string; depth?: number; revision?: string };
   timeout: number;
   resources: { vcpus: number };
-  token: string;
-  teamId: string;
-  projectId: string;
+  token?: string;
+  teamId?: string;
+  projectId?: string;
 }) => Promise<SandboxHandle>;
 
 const SANDBOX_WALL_CLOCK_MS = 4 * 60_000;

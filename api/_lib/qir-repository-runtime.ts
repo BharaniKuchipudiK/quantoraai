@@ -164,7 +164,11 @@ export async function verifyQirRepositoryRuntime(
   const credentials = options.credentials === undefined
     ? (options.resolveCredentials || resolveSandboxCredentials)()
     : options.credentials;
-  if (!credentials) {
+  // Deployed workers use the SDK's short-lived OIDC identity. Explicit test or
+  // operator credential overrides still fail closed when null.
+  const automaticOidc = options.credentials === undefined && !options.resolveCredentials
+    && process.env.VERCEL === '1' && Boolean(process.env.VERCEL_OIDC_TOKEN?.trim());
+  if (!credentials && !automaticOidc) {
     return {
       status: 'skipped',
       reason: 'Vercel Sandbox credentials are not configured; no real repository command was executed.',
@@ -186,9 +190,9 @@ export async function verifyQirRepositoryRuntime(
     sandbox = await factory({
       timeout: SANDBOX_WALL_CLOCK_MS,
       resources: { vcpus: 2 },
-      token: credentials.token,
-      teamId: credentials.teamId,
-      projectId: credentials.projectId,
+      token: credentials?.token,
+      teamId: credentials?.teamId,
+      projectId: credentials?.projectId,
     });
     input.signal?.throwIfAborted();
     if (typeof sandbox.writeFiles !== 'function') {

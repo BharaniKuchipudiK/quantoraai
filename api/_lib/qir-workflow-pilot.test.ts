@@ -23,3 +23,14 @@ test('destructive recovery proof requires explicit enablement on its isolated pr
   for (const key of Object.keys(enabled)) assert.equal(liveProofEnabled({ ...enabled, [key]: '' }), false, key);
   assert.equal(liveProofEnabled({ ...enabled, VERCEL_PROJECT_ID: 'web-production' }), false);
 });
+
+import { journalProofRun, JOURNAL_PROOF_RUN, JOURNAL_PROOF_SESSION } from '../../services/qir-workflow/journal-proof.js';
+import { readQirWorkingContext } from './qir-context-state.js';
+import { isValidQirRunSnapshot } from './qir-run-store.js';
+test('journal fixture is a valid active run with explicit durable server ownership', () => {
+  const run = journalProofRun();
+  assert.equal(isValidQirRunSnapshot(run), true);
+  assert.equal(run.runId, JOURNAL_PROOF_RUN);
+  assert.equal(run.status, 'EXECUTING');
+  assert.deepEqual(readQirWorkingContext(run)?.projectState, { executionOwner: 'server', sessionId: JOURNAL_PROOF_SESSION });
+});

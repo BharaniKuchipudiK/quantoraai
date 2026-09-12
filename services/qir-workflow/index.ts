@@ -6,6 +6,8 @@ import { pilotAllows } from './transition.js';
 
 import { liveRecoveryProof, liveProofEnabled } from './live-proof.js';
 
+import { seedJournalProof, readJournalProof, proveSaveConflict } from './journal-proof.js';
+
 const app = express();
 app.use(express.json({ limit: '2kb' }));
 app.get('/health', (_req, res) => res.json({ service: 'qir-workflow-pilot', enabled: process.env.QIR_WORKFLOW_PILOT_ENABLED === 'true' }));
@@ -51,4 +53,16 @@ app.delete('/proof/:id', async (req, res) => {
     return res.json({ status: 'cancelled' });
   } catch { return res.status(503).json({ error: 'Unable to cancel proof.' }); }
 });
+for (const [method, path, handler] of [
+  ['post', '/journal-proof', seedJournalProof],
+  ['get', '/journal-proof', readJournalProof],
+  ['post', '/journal-proof/save-conflict', proveSaveConflict],
+] as const) {
+  app[method](path, async (req, res) => {
+    const denied = authenticateAdmin(req);
+    if (denied) return res.status(denied.status).json({ error: denied.error });
+    try { return res.json(await handler()); }
+    catch (error) { return res.status(503).json({ error: error instanceof Error ? error.message : 'Journal proof unavailable.' }); }
+  });
+}
 export default app;
