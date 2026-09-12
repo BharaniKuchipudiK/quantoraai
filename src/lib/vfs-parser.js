@@ -43,8 +43,15 @@ export function parseVFSWithReport(text, currentVfs = {}) {
 
   function ingestBlock(languageRaw, attributesRaw, codeRaw) {
     const language = (languageRaw || '').toLowerCase();
-    const attributes = attributesRaw || '';
+    let attributes = attributesRaw || '';
     let code = codeRaw;
+    // Some providers place the file attribute immediately inside the fence.
+    // Accept only a standalone metadata line, never an assignment in real code.
+    const bodyPath = !attributes.trim() && code.match(/^[ \t]*((?:filepath|filename)=["'][^"'\r\n]+["'])[ \t]*\r?\n/);
+    if (bodyPath) {
+      attributes = bodyPath[1];
+      code = code.slice(bodyPath[0].length);
+    }
 
     if (language === 'html' && /id=["']quantora-office-manifest["']/i.test(code)) {
       vfs = {

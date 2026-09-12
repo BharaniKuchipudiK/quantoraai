@@ -218,3 +218,18 @@ test('the empty-fence note names the file and says what was kept', () => {
   assert.match(two, /styles\.css, script\.js/);
   assert.match(two, /files were kept/);
 });
+
+
+test('standalone first-line filepath metadata routes provider output to its named module', () => {
+  const parsed = parseVFSFromMarkdown('```javascript\nfilepath="quantity.mjs"\nexport const limit = 99;\n```', { 'quantity.mjs': 'export const limit = 100;' });
+  assert.equal(parsed['quantity.mjs'].content, 'export const limit = 99;\n');
+  assert.equal(parsed['script.js'], undefined);
+});
+
+test('ordinary code assignments and explicit header paths are not treated as body metadata', () => {
+  const body = 'filepath="quantity.mjs";\nconsole.log(filepath);\n';
+  assert.equal(parseVFSFromMarkdown('```javascript\n' + body + '```')['script.js'].content, body);
+  const explicit = parseVFSFromMarkdown('```javascript filepath="script.js"\nfilepath="quantity.mjs"\n```');
+  assert.equal(explicit['script.js'].content, 'filepath="quantity.mjs"\n');
+  assert.equal(explicit['quantity.mjs'], undefined);
+});
