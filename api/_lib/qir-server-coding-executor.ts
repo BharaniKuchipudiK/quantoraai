@@ -31,7 +31,7 @@ type BuildVerifier = typeof verifyBuild;
 function providerFailureCode(failure: QirProviderFailure): QirFailureCode {
   if (failure.providerCode === 'timeout' || failure.httpStatus === 408) return 'PROVIDER_TIMEOUT';
   if (failure.httpStatus === 401 || failure.httpStatus === 403 || failure.providerCode === 'credential_missing') return 'PROVIDER_AUTH';
-  if (failure.httpStatus === 429) return 'PROVIDER_QUOTA';
+  if ((failure.provider === 'vercel-gateway' && failure.httpStatus === 402) || failure.httpStatus === 429) return 'PROVIDER_QUOTA';
   return 'PROVIDER_TRANSPORT';
 }
 
@@ -455,6 +455,7 @@ export function createQirServerCodingExecutor(options: {
           verificationId: verification.verificationId, verificationScore: report.score,
           repositoryRuntime: runtimePayload(runtime),
           workspaceReplay: replayedCandidate || saved.replayed === true,
+          modelUsage: 'usage' in model ? model.usage : null,
           repairAttemptsUsed: priorRepairFailures,
         },
       };

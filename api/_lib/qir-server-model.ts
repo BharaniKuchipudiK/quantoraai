@@ -1,3 +1,4 @@
+import { createQirGatewayRunner } from './qir-gateway-model.js';
 import { GoogleGenAI } from '@google/genai';
 import { fetchApiGatewayKey } from '../autocomplete.js';
 import { resolveOpenRouterEnvKey } from './openrouter-key.js';
@@ -5,7 +6,8 @@ import { qirProviderFailure, type QirProviderFailure } from './qir-provider-fail
 
 export type QirServerModelSuccess = {
   status: 'success';
-  provider: 'gemini' | 'openrouter';
+  provider: 'gemini' | 'openrouter' | 'vercel-gateway';
+  usage?: { inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
   modelId: string;
   text: string;
   priorFailures?: QirProviderFailure[];
@@ -183,6 +185,9 @@ function modelLadder(primary: string): string[] {
 }
 
 export const runQirServerModel: QirServerModelRunner = async ({ modelId, prompt, timeoutMs = 90_000, signal }) => {
+  if (process.env.QIR_WORKER_PROVIDER === 'vercel-gateway') {
+    return createQirGatewayRunner()({ modelId, prompt, timeoutMs, signal });
+  }
   const primary = String(modelId || '').trim() || 'gemini-flash-latest';
   const failures: QirProviderFailure[] = [];
   for (const candidate of modelLadder(primary)) {

@@ -38,3 +38,9 @@ artifacts/
 
 # Vercel project linkage — local metadata; Vercel says not to commit it.
 .vercel/
+
+# Isolated Workflow build and local execution journal.
+.nitro/
+.output/
+.workflow-data/
+.swc/
