@@ -257,7 +257,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     }
 
     try {
-      const { vfs, goal, job, sessionId } = options || readOptions();
+      const { vfs, goal, job, sessionId, executionOwner } = options || readOptions();
       const files = Object.keys(vfs || {});
       const response = await fetch('/api/qir-context', {
         method: 'POST',
@@ -267,6 +267,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
           runId: current.runId,
           projectState: {
             sessionId: String(sessionId || '').slice(0, 128),
+            ...(executionOwner === 'server' ? { executionOwner: 'server' } : {}),
             files: files.sort().slice(0, 100),
             fileCount: files.length,
             goal: String(current.goal?.statement || goal || '').slice(0, 500),
@@ -332,7 +333,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     }
     if (['COMPLETE', 'FAILED_TERMINAL', 'PAUSED'].includes(current.status)) return current;
 
-    await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true, options: submittingOptions });
+    await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true, options: { ...submittingOptions, executionOwner: 'server' } });
     assertCurrent();
     current = runNow || current;
     if (!['QUEUED', 'REPLANNING'].includes(current.status)) return current;

@@ -171,3 +171,28 @@ remain unverified. Keep broad customer server ownership disabled and this PR in
 draft until those release checks pass. The earlier synthetic process-exit proof
 is separate from this production journal test; an actual provider outage was
 not induced.
+
+## Customer handoff audit (2026-09-13)
+
+The synthetic worker proof does not mean the live application submits work to
+this worker yet. Before the browser-close release test, connect these existing
+seams under an account-and-desk-scoped server capability:
+
+- `AiStudio.jsx` must select server ownership and restore verified checkpoints
+  through `useQirCodingRun` for the opted-in desk.
+- `useChatStream.js` must call the server submission branch and stop the browser
+  model path for that turn. Its current caller uses only `beginAttempt`.
+- The authenticated API must durably schedule the Workflow and expose honest
+  enqueue failure/retry state. Persisting a runnable journal row alone does not
+  enqueue this isolated service. Recovery must cover interruption between save
+  and enqueue, without depending on a browser retry.
+- Browser-close/reopen must recover both the run and its published checkpoint.
+
+The client submission now explicitly persists `executionOwner: server` before
+making the model step runnable. A regression test demonstrated that the old
+request omitted the marker required by the worker. Compatibility-mode context
+updates do not add the marker. This fixes one prerequisite; it does not enable
+customer execution or complete the connections above.
+
+The live cart/Undo retest is pending sign-in to the separate in-app Quantora tab.
+Chrome was being used concurrently, so the original project was not modified.
