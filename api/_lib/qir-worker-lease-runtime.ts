@@ -14,11 +14,11 @@ export type QirWorkerLeaseRunResult<T> =
 /**
  * Hold exclusive ownership of one Run while `run` executes.
  *
- * The heartbeat exists before any real Coding executor is connected so the
- * ownership semantics can be proven independently. If the heartbeat is lost,
- * no success is reported. The next slice will additionally pass cancellation
- * and idempotency context into real external actions before those actions are
- * allowed behind this worker.
+ * The abort signal is the authority boundary for external work. Once a
+ * heartbeat reports that ownership is lost/unavailable, the signal fires
+ * immediately so provider/tool calls can stop before performing another side
+ * effect. Durable idempotency remains the second line of defence for an action
+ * that completed immediately before cancellation was observed.
  */
 export async function runWithQirWorkerLease<T>(input: {
   leaseStore: QirWorkerLeasePort;
@@ -28,7 +28,7 @@ export async function runWithQirWorkerLease<T>(input: {
   leaseToken: string;
   ttlMs: number;
   heartbeatMs: number;
-  run: () => Promise<T>;
+  run: (context: { signal: AbortSignal }) => Promise<T>;
   onHeartbeat?: (status: "renewed" | "lost" | "unavailable") => void;
 }): Promise<QirWorkerLeaseRunResult<T>> {
   if (!Number.isFinite(input.heartbeatMs)
@@ -49,6 +49,13 @@ export async function runWithQirWorkerLease<T>(input: {
 
   let leaseLost = false;
   let heartbeatInFlight: Promise<void> | null = null;
+  const ownership = new AbortController();
+  const loseLease = (status: "lost" | "unavailable") => {
+    if (leaseLost) return;
+    leaseLost = true;
+    ownership.abort(new Error(`QIR worker lease ${status}`));
+    input.onHeartbeat?.(status);
+  };
   const heartbeat = () => {
     if (heartbeatInFlight || leaseLost) return;
     heartbeatInFlight = input.leaseStore.heartbeat({
@@ -59,10 +66,9 @@ export async function runWithQirWorkerLease<T>(input: {
       ttlMs: input.ttlMs,
     }).then((result) => {
       if (result.status === "renewed") input.onHeartbeat?.("renewed");
-      else {
-        leaseLost = true;
-        input.onHeartbeat?.(result.status === "lost" ? "lost" : "unavailable");
-      }
+      else loseLease(result.status === "lost" ? "lost" : "unavailable");
+    }).catch(() => {
+      loseLease("unavailable");
     }).finally(() => {
       heartbeatInFlight = null;
     });
@@ -71,7 +77,7 @@ export async function runWithQirWorkerLease<T>(input: {
   const timer = setInterval(heartbeat, input.heartbeatMs);
   timer.unref?.();
   try {
-    const result = await input.run();
+    const result = await input.run({ signal: ownership.signal });
     if (heartbeatInFlight) await heartbeatInFlight;
     return leaseLost ? { status: "lease-lost" } : { status: "completed", result };
   } finally {
