@@ -1,5 +1,6 @@
 import { describeQirPersistDiagnosis } from '../../shared/qir-persist-diagnosis.js';
 import { missingRequestedDeliverables, requestedDeliverablePaths } from './requested-deliverables.js';
+import { failingChecks, unverifiedChecks } from './studio-desk-criteria.js';
 
 /**
  * What the desk should say about the durable Run — including when there isn't one.
@@ -32,11 +33,11 @@ export const QIR_STORAGE_UNCONFIGURED = 'storage-unconfigured';
 export const QIR_PERSIST_FAILED = 'persist-failed';
 
 /**
- * @param {{ run?: object|null, error?: (Error & { reason?: string })|null, workspace?: { goal?: string, vfs?: object }|null }} input
+ * @param {{ run?: object|null, error?: (Error & { reason?: string })|null, workspace?: { goal?: string, vfs?: object }|null, previewChecks?: Array<object> }} input
  * @returns {{ label: string, detail: string, recording: boolean }|null}
  *   null means "say nothing" — the honest answer when there is simply no Run yet.
  */
-export function describeQirDurability({ run = null, error = null, workspace = null } = {}) {
+export function describeQirDurability({ run = null, error = null, workspace = null, previewChecks = [] } = {}) {
   // A restored COMPLETE Run is historical evidence, not permission to certify
   // files absent from the current desk. Reuse the existing file contract;
   // this is only a veto on the outward claim, never a new promotion authority.
@@ -54,6 +55,18 @@ export function describeQirDurability({ run = null, error = null, workspace = nu
         recording: true,
       };
     }
+  }
+  // Use the same evidence as the visible Preview checklist. This is a display
+  // veto, not a mutation of the historical journal or a promise to run checks.
+  if (run?.status === 'COMPLETE') {
+    const failed = failingChecks(previewChecks).length;
+    const pending = unverifiedChecks(previewChecks).length;
+    if (failed || pending) return {
+      label: failed ? 'Run · NEEDS ATTENTION' : 'Run · CHECKS PENDING',
+      detail: `Durable Run ${run.runId || ''} finished. Preview checks: ${failed} failed, ${pending} unverified. `
+        + 'Unchecked behaviour is not certified; no automatic check is implied.',
+      recording: true,
+    };
   }
   if (run && run.status) {
     return {
