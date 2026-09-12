@@ -1,20 +1,5 @@
 #!/usr/bin/env node
-/*
- * Standalone QIR worker process.
- *
- * Single-run mode remains available for the existing local/crash proofs by
- * setting QIR_WORKER_USER_SUB and QIR_WORKER_RUN_ID.
- *
- * Service mode (no explicit run id) discovers runnable durable Runs from the
- * production Supabase journal, then competes for each Run through the existing
- * durable lease. That is the process shape Railway/container hosting needs.
- *
- * IMPORTANT DURING PR #708: heartbeat is still the only executor wired here.
- * Service mode therefore refuses to start unless heartbeat is explicitly
- * opted into for a proof. The safety catch is removed only when the real
- * server Coding executor lands later in this PR; an accidental deployment must
- * never mark customer work successful using the proof executor.
- */
+/* Standalone QIR worker process. */
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -28,10 +13,12 @@ import {
 } from "./api/_lib/qir-worker-lease.js";
 import { runWithQirWorkerLease } from "./api/_lib/qir-worker-lease-runtime.js";
 import { runQirWorkerDispatchCycle, runQirWorkerService } from "./api/_lib/qir-worker-dispatch.js";
+import { createQirServerCodingExecutor } from "./api/_lib/qir-server-coding-executor.js";
 import {
   heartbeatStepExecutor,
   runQirWorkerLoop,
   type QirDurableStorePort,
+  type QirStepExecutor,
 } from "./api/_lib/qir-worker-runtime.js";
 
 function requiredEnv(name: string): string {
@@ -85,8 +72,7 @@ function resolveLeaseStore(selectedStore: "local" | "supabase"): QirWorkerLeaseP
     return null;
   }
   if (selected === "local") {
-    const leaseDir = process.env.QIR_WORKER_LEASE_DIR
-      || join(requiredEnv("QIR_WORKER_STORE_DIR"), "worker-leases");
+    const leaseDir = process.env.QIR_WORKER_LEASE_DIR || join(requiredEnv("QIR_WORKER_STORE_DIR"), "worker-leases");
     return createLocalFileQirWorkerLeaseStore(leaseDir);
   }
   if (selected === "supabase") {
@@ -100,6 +86,28 @@ function resolveLeaseStore(selectedStore: "local" | "supabase"): QirWorkerLeaseP
   process.exit(1);
 }
 
+function resolveExecutor(input: { serviceMode: boolean; executionDelayMs: number }): QirStepExecutor {
+  const defaultName = input.serviceMode ? "server-coding" : "heartbeat";
+  const selected = String(process.env.QIR_WORKER_EXECUTOR || defaultName).trim().toLowerCase();
+  if (selected === "server-coding") {
+    return createQirServerCodingExecutor({ modelId: process.env.QIR_WORKER_MODEL });
+  }
+  if (selected === "heartbeat") {
+    if (input.serviceMode && process.env.QIR_WORKER_ALLOW_HEARTBEAT_SERVICE !== "1") {
+      console.error("worker.ts: heartbeat service mode is proof-only; set QIR_WORKER_ALLOW_HEARTBEAT_SERVICE=1 explicitly");
+      process.exit(1);
+    }
+    return heartbeatStepExecutor({
+      onStepStart: async (stepId, actionId) => {
+        console.log(`worker: step-start stepId=${stepId} actionId=${actionId} pid=${process.pid}`);
+        if (input.executionDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, input.executionDelayMs));
+      },
+    });
+  }
+  console.error(`worker.ts: unsupported QIR_WORKER_EXECUTOR ${selected}; expected server-coding or heartbeat`);
+  process.exit(1);
+}
+
 async function main() {
   const explicitUserSub = optionalIdentity("QIR_WORKER_USER_SUB");
   const explicitRunId = optionalIdentity("QIR_WORKER_RUN_ID");
@@ -107,43 +115,30 @@ async function main() {
     console.error("worker.ts: QIR_WORKER_USER_SUB and QIR_WORKER_RUN_ID must be supplied together");
     process.exit(1);
   }
-
+  const serviceMode = !explicitUserSub && !explicitRunId;
   const maxSteps = process.env.QIR_WORKER_MAX_STEPS ? Number(process.env.QIR_WORKER_MAX_STEPS) : undefined;
   const stepDelayMs = process.env.QIR_WORKER_STEP_DELAY_MS ? Number(process.env.QIR_WORKER_STEP_DELAY_MS) : undefined;
   const executionDelayMs = process.env.QIR_WORKER_EXECUTION_DELAY_MS ? Number(process.env.QIR_WORKER_EXECUTION_DELAY_MS) : 0;
 
   const { selected, store } = resolveWorkerStore();
   const leaseStore = resolveLeaseStore(selected);
-  const executorName = String(process.env.QIR_WORKER_EXECUTOR || "heartbeat").trim().toLowerCase();
-  if (executorName !== "heartbeat") {
-    console.error(`worker.ts: executor ${executorName} is not wired yet on this PR head`);
-    process.exit(1);
-  }
-  const executor = heartbeatStepExecutor({
-    onStepStart: async (stepId, actionId) => {
-      console.log(`worker: step-start stepId=${stepId} actionId=${actionId} pid=${process.pid}`);
-      if (executionDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, executionDelayMs));
-    },
-  });
-
+  const executor = resolveExecutor({ serviceMode, executionDelayMs });
   const workerId = process.env.QIR_WORKER_ID || `${hostname()}-${process.pid}`;
   const ttlMs = numericEnv("QIR_WORKER_LEASE_TTL_MS", 30_000);
   const heartbeatMs = numericEnv("QIR_WORKER_HEARTBEAT_MS", Math.max(1_000, Math.floor(ttlMs / 3)));
 
-  if (explicitUserSub && explicitRunId) {
+  if (!serviceMode) {
     const drive = () => runQirWorkerLoop(store, executor, explicitUserSub, explicitRunId, {
       maxSteps,
       stepDelayMs,
       onStep: (step) => console.log(`worker: step-result ${JSON.stringify(step).slice(0, 200)}`),
     });
-
-    console.log(`worker: starting single-run pid=${process.pid} store=${store.kind} lease=${leaseStore?.kind || "none"} run=${explicitRunId}`);
+    console.log(`worker: starting single-run pid=${process.pid} store=${store.kind} executor=${executor.kind} lease=${leaseStore?.kind || "none"} run=${explicitRunId}`);
     if (!leaseStore) {
       const result = await drive();
       console.log(`worker: loop ended status=${result.status}`);
       process.exit(0);
     }
-
     const leased = await runWithQirWorkerLease({
       leaseStore,
       userSub: explicitUserSub,
@@ -155,7 +150,6 @@ async function main() {
       onHeartbeat: (status) => console.log(`worker: lease-heartbeat ${status} worker=${workerId}`),
       run: drive,
     });
-
     if (leased.status === "busy") {
       console.log(`worker: lease-busy run=${explicitRunId} owner=${leased.claim.lease?.workerId || "unknown"}`);
       process.exit(0);
@@ -172,11 +166,6 @@ async function main() {
     console.error("worker.ts: service mode requires QIR_WORKER_STORE=supabase with the durable Supabase lease");
     process.exit(1);
   }
-  if (process.env.QIR_WORKER_ALLOW_HEARTBEAT_SERVICE !== "1") {
-    console.error("worker.ts: service mode is safety-locked until the real server Coding executor lands; heartbeat may only be enabled explicitly for a proof");
-    process.exit(1);
-  }
-
   const pollMs = numericEnv("QIR_WORKER_POLL_MS", 2_000);
   const discoveryLimit = Math.max(1, Math.min(100, Math.round(numericEnv("QIR_WORKER_DISCOVERY_LIMIT", 32))));
   const maxStepsPerRun = Math.max(1, Math.round(numericEnv("QIR_WORKER_MAX_STEPS_PER_DISPATCH", 8)));
@@ -185,7 +174,7 @@ async function main() {
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
 
-  console.log(`worker: starting service pid=${process.pid} store=${store.kind} lease=${leaseStore.kind} pollMs=${pollMs}`);
+  console.log(`worker: starting service pid=${process.pid} store=${store.kind} executor=${executor.kind} lease=${leaseStore.kind} pollMs=${pollMs}`);
   await runQirWorkerService({
     pollMs,
     signal: abort.signal,
