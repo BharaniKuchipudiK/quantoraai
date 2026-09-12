@@ -14,13 +14,14 @@ import { missingRequestedDeliverables } from '../../src/lib/requested-deliverabl
 const MAX_PROMPT_SOURCE_CHARS = 60_000;
 const MAX_FILE_CHARS = 12_000;
 
+type WorkspaceLoader = typeof loadQirDeskWorkspace;
+type WorkspaceSaver = typeof saveQirDeskWorkspace;
+type BuildVerifier = typeof verifyBuild;
+
 function providerFailureCode(failure: QirProviderFailure): QirFailureCode {
   if (failure.providerCode === 'timeout' || failure.httpStatus === 408) return 'PROVIDER_TIMEOUT';
   if (failure.httpStatus === 401 || failure.httpStatus === 403 || failure.providerCode === 'credential_missing') return 'PROVIDER_AUTH';
   if (failure.httpStatus === 429) return 'PROVIDER_QUOTA';
-  // HTTP 402 is deliberately NOT called quota/balance here. The provider's
-  // structured message is evidence; the status alone does not tell us why it
-  // refused payment/authorization for this particular request.
   return 'PROVIDER_TRANSPORT';
 }
 
@@ -98,8 +99,14 @@ function normalizedVfs(vfs: Record<string, unknown>): Record<string, string> {
 export function createQirServerCodingExecutor(options: {
   modelId?: string;
   modelRunner?: QirServerModelRunner;
+  loadWorkspace?: WorkspaceLoader;
+  saveWorkspace?: WorkspaceSaver;
+  verify?: BuildVerifier;
 } = {}): QirStepExecutor {
   const modelRunner = options.modelRunner || runQirServerModel;
+  const loadWorkspace = options.loadWorkspace || loadQirDeskWorkspace;
+  const saveWorkspace = options.saveWorkspace || saveQirDeskWorkspace;
+  const verify = options.verify || verifyBuild;
   const modelId = String(options.modelId || process.env.QIR_WORKER_MODEL || 'gemini-flash-latest').trim();
 
   return {
@@ -107,16 +114,15 @@ export function createQirServerCodingExecutor(options: {
     async execute(run, continuation, context): Promise<QirStepExecution> {
       const actionId = run.cursor.actionId || continuation.actionId || `${continuation.stepId}-action`;
       const userSub = String(context.userSub || '').trim();
-      const workspace = await loadQirDeskWorkspace(userSub, run);
+      const workspace = await loadWorkspace(userSub, run);
       if (workspace.status !== 'loaded') {
         const reason = workspace.status === 'missing-session-binding'
           ? 'The durable Run is not bound to a Coding Desk session yet.'
           : `The durable Coding workspace could not be loaded: ${workspace.reason}`;
-        const observation = failureObservation(run, continuation, {
+        return { observation: failureObservation(run, continuation, {
           code: 'INTERNAL_INVARIANT', message: reason, retryable: true,
           evidenceKind: 'runtime.workspace_unavailable',
-        });
-        return { observation };
+        }) };
       }
 
       const currentVfs = normalizedVfs(workspace.vfs);
@@ -137,26 +143,24 @@ export function createQirServerCodingExecutor(options: {
       const parsed = parseVFSWithReport(model.text, currentVfs);
       const nextVfs = normalizedVfs(parsed.vfs || {});
       if (!Object.keys(nextVfs).length || hashVfsContent(nextVfs) === hashVfsContent(currentVfs)) {
-        const observation = failureObservation(run, continuation, {
+        return { observation: failureObservation(run, continuation, {
           code: 'MODEL_CONTRACT', message: 'The server model returned no material workspace change.', retryable: true,
           evidenceKind: 'runtime.model_no_workspace_change', evidenceRef: `model:${model.modelId}`,
-        });
-        return { observation };
+        }) };
       }
 
       const missing = missingRequestedDeliverables(run.goal.statement || '', nextVfs);
       if (missing.length) {
-        const observation = failureObservation(run, continuation, {
+        return { observation: failureObservation(run, continuation, {
           code: 'ARTIFACT_INVALID',
           message: `Requested deliverables are missing: ${missing.slice(0, 20).join(', ')}`,
           retryable: true, evidenceKind: 'runtime.requested_deliverables_missing',
           evidenceRef: `model:${model.modelId}`,
-        });
-        return { observation };
+        }) };
       }
 
       const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
-      const saved = await saveQirDeskWorkspace({
+      const saved = await saveWorkspace({
         userSub,
         run,
         vfs: nextVfs,
@@ -164,23 +168,19 @@ export function createQirServerCodingExecutor(options: {
         label: `Server Coding action ${actionId}`,
       });
       if (saved.status !== 'saved') {
-        const observation = failureObservation(run, continuation, {
+        return { observation: failureObservation(run, continuation, {
           code: 'INTERNAL_INVARIANT', message: `Generated source was not durably stored: ${saved.reason}`,
           retryable: true, evidenceKind: 'runtime.workspace_persist_failed',
-        });
-        return { observation };
+        }) };
       }
 
       const generation = Math.max(0, ...run.artifacts
         .filter((artifact) => artifact.artifactId === 'coding-desk-vfs')
         .map((artifact) => artifact.generation)) + 1;
       const artifact: QirArtifactRef = {
-        artifactId: 'coding-desk-vfs',
-        generation,
+        artifactId: 'coding-desk-vfs', generation,
         ref: `desk-checkpoint://${saved.sessionId}/${saved.checkpointId}`,
-        state: 'candidate',
-        createdByActionId: actionId,
-        verifiedByActionId: null,
+        state: 'candidate', createdByActionId: actionId, verifiedByActionId: null,
       };
       const withCandidate: QirAgentRun = {
         ...run,
@@ -190,48 +190,27 @@ export function createQirServerCodingExecutor(options: {
       const observedAt = new Date().toISOString();
       const success: QirObservation = {
         observationId: observationId(actionId, 'model-succeeded'),
-        runId: run.runId,
-        actionId,
-        artifactId: artifact.artifactId,
-        artifactGeneration: artifact.generation,
-        kind: 'model',
-        status: 'success',
+        runId: run.runId, actionId,
+        artifactId: artifact.artifactId, artifactGeneration: artifact.generation,
+        kind: 'model', status: 'success',
         evidence: [{
           evidenceId: observationId(actionId, 'model-evidence'),
-          source: 'model',
-          kind: 'model.workspace_written',
-          actionId,
-          ref: `model:${model.modelId}`,
-          observedAt,
+          source: 'model', kind: 'model.workspace_written', actionId,
+          ref: `model:${model.modelId}`, observedAt,
         }],
         observedAt,
       };
-      const reduced = reduceQirObservation({
-        run: withCandidate,
-        observation: success,
-        proofOfDoneStatus: 'verification_required',
-      });
+      const reduced = reduceQirObservation({ run: withCandidate, observation: success, proofOfDoneStatus: 'verification_required' });
       if (!reduced.accepted) return { observation: success };
 
-      const report = await verifyBuild({
-        code: model.text,
-        vfs: nextVfs,
-        brief: run.goal.statement || '',
-        job: null,
-      });
+      const report = await verify({ code: model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
       if (!report.passed) {
         const failedVerification = failureObservation(reduced.run, continuation, {
-          code: 'VERIFICATION_FAILURE',
-          message: `Independent server verification failed (score ${report.score}).`,
-          retryable: true,
-          evidenceKind: 'runtime.independent_verification_failed',
+          code: 'VERIFICATION_FAILURE', message: `Independent server verification failed (score ${report.score}).`,
+          retryable: true, evidenceKind: 'runtime.independent_verification_failed',
           evidenceRef: `desk-checkpoint:${saved.checkpointId}`,
         });
-        const failed = reduceQirObservation({
-          run: reduced.run,
-          observation: failedVerification,
-          proofOfDoneStatus: 'blocked',
-        });
+        const failed = reduceQirObservation({ run: reduced.run, observation: failedVerification, proofOfDoneStatus: 'blocked' });
         return {
           observation: failedVerification,
           committedRun: failed.accepted ? failed.run : reduced.run,
@@ -250,24 +229,17 @@ export function createQirServerCodingExecutor(options: {
         verifiedAt: new Date().toISOString(),
       };
       const completed = promoteQirCodingCheckpoint({
-        run: reduced.run,
-        verification,
-        proofOfDoneStatus: 'verified',
-        artifactId: artifact.artifactId,
-        artifactGeneration: artifact.generation,
-        checkpointId: `qir-run-checkpoint-${randomUUID()}`,
-        now: new Date().toISOString(),
+        run: reduced.run, verification, proofOfDoneStatus: 'verified',
+        artifactId: artifact.artifactId, artifactGeneration: artifact.generation,
+        checkpointId: `qir-run-checkpoint-${randomUUID()}`, now: new Date().toISOString(),
       });
       return {
         observation: success,
         committedRun: completed,
         eventType: 'worker.coding_completed',
         payload: {
-          checkpointId: saved.checkpointId,
-          modelId: model.modelId,
-          provider: model.provider,
-          verificationId: verification.verificationId,
-          verificationScore: report.score,
+          checkpointId: saved.checkpointId, modelId: model.modelId, provider: model.provider,
+          verificationId: verification.verificationId, verificationScore: report.score,
           workspaceReplay: saved.replayed === true,
         },
       };
