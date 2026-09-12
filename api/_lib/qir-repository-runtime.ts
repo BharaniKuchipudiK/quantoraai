@@ -136,7 +136,7 @@ export async function verifyQirRepositoryRuntime(
   }
 
   const prepared = candidateFiles(input.vfs);
-  if (!prepared.ok) {
+  if (prepared.ok === false) {
     return {
       status: 'failed',
       reason: prepared.reason,
