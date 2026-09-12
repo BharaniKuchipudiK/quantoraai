@@ -40,9 +40,10 @@ export function createQirTurnJournal({
   qirCoding = null,
 } = {}) {
   const owns = codingFailureSpineOwnsTurn({ isCodingRequest, studioDomain });
+  const serverOwned = owns && qirCoding?.serverOwned === true;
 
   const send = (method, payload) => {
-    if (!owns) return false;
+    if (!owns || serverOwned) return false;
     const fn = qirCoding?.[method];
     if (typeof fn !== 'function') return false;
     try {
@@ -55,32 +56,43 @@ export function createQirTurnJournal({
   };
 
   return {
-    /** True when QIR owns this turn's execution lifecycle. */
+    /** True when QIR owns this turn's lifecycle. */
     owns,
 
+    /** True only after #709 selects the standalone worker as execution owner. */
+    serverOwned,
+
     /**
-     * Open a durable pre-artifact Coding attempt. Called before the model has
-     * produced a single byte, which is the whole point: the was-red failure is a
-     * provider dying before any runnable file exists.
-     * @returns {boolean} whether the attempt was actually journaled
+     * Compatibility-mode browser model attempt. In server-owned mode this is a
+     * deliberate no-op so an old call site cannot accidentally create a second
+     * execution owner for the same action.
      */
     beginAttempt: (goal, engineId) => send('beginModelAttempt', [goal || '', engineId || '']),
 
     /**
-     * Charge the mission's premium reserve for an escalation that is actually
-     * starting.
-     *
-     * Debited HERE rather than at engine selection, on purpose. Selection is
-     * synchronous and speculative — the resolver may pick a paid engine that
-     * never runs, and a reserve charged for attempts that did not happen is a
-     * budget that lies in the expensive direction. An attempt that has begun is
-     * the first moment the spend is real.
-     *
-     * Resolves true whenever the governor cannot answer. Same rule as
-     * premium-escalation.js: it may refuse on evidence, never on ignorance.
+     * Submit one durable server-owned Coding action. The adapter binds the desk
+     * context before making coding.model runnable. A null result means the
+     * submission did not become runnable; callers must not fall through to a
+     * browser model request for that same server-owned action.
+     */
+    submitServerExecution: async (goal, strategy = '') => {
+      if (!serverOwned) return null;
+      const fn = qirCoding?.submitServerRun;
+      if (typeof fn !== 'function') return null;
+      try {
+        return await fn.call(qirCoding, goal || '', strategy || '');
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Charge the mission's premium reserve for a compatibility-mode browser
+     * escalation that is actually starting. Server-owned model spend belongs
+     * to the worker path instead.
      */
     chargePremium: async () => {
-      if (!owns) return true;
+      if (!owns || serverOwned) return true;
       const fn = qirCoding?.requestPremiumEscalation;
       if (typeof fn !== 'function') return true;
       try {
@@ -92,27 +104,8 @@ export function createQirTurnJournal({
     },
 
     /**
-     * Record failure evidence against the running action.
-     *
-     * `recoveryExhausted` is the terminal signal: it is the difference between
-     * REPLANNING and FAILED_TERMINAL, so it must not be inferred from copy —
-     * and it is the MISSION's verdict, not the turn's. A spent turn budget
-     * reported here as exhaustion seals the Run for the whole browser session
-     * (see mission-continuation.js for the measurement).
-     *
-     * `engineIds` is what makes the evidence usable rather than merely durable.
-     * The field has always existed at the other end of this call — the
-     * observation's `ref: model:<id>` — and nothing ever filled it, so the Run
-     * recorded that an attempt failed without recording what it failed on.
-     * Nothing downstream could then avoid repeating it.
-     *
-     * It is a LIST because one browser attempt is up to four server ones: the
-     * inference ladder in api/_lib/chat-handler.ts works down its own rungs
-     * behind a single request, and an engine it burned there is just as spent as
-     * one the browser chose. Recording only the browser's primary told the
-     * mission the others were still untried.
-     *
-     * @returns {boolean} whether the failure was actually journaled
+     * Browser provider failures are evidence only in compatibility mode. A
+     * server-owned worker records provider/model/tool failure facts itself.
      */
     reportFailure: ({ kind, message, engineIds = [], recoveryExhausted = false } = {}) => send('reportModelFailure', [{
       kind,
