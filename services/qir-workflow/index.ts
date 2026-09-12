@@ -42,4 +42,13 @@ app.get('/proof/:id', async (req, res) => {
     return res.json({ status, ...(status === 'completed' ? { result: await run.returnValue } : {}) });
   } catch { return res.status(503).json({ error: 'Unable to read proof.' }); }
 });
+app.delete('/proof/:id', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (!liveProofEnabled() || !/^wrun_[A-Za-z0-9]+$/.test(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  try {
+    await getRun(req.params.id).cancel();
+    return res.json({ status: 'cancelled' });
+  } catch { return res.status(503).json({ error: 'Unable to cancel proof.' }); }
+});
 export default app;

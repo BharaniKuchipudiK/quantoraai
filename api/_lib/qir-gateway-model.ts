@@ -1,4 +1,4 @@
-import { createGateway, generateText } from 'ai';
+import type { generateText } from 'ai';
 import { qirProviderFailure } from './qir-provider-failure.js';
 import type { QirServerModelRunner, QirServerModelResult } from './qir-server-model.js';
 
@@ -8,7 +8,6 @@ export function createQirGatewayRunner(options: {
   generate?: typeof generateText;
 } = {}): QirServerModelRunner {
   const env = options.env || process.env;
-  const generate = options.generate || generateText;
   return async ({ modelId, prompt, timeoutMs = 90_000, signal }) => {
     const fail = (code: string, retryable = false, httpStatus?: number): QirServerModelResult => ({
       status: 'failure', failure: qirProviderFailure({
@@ -26,8 +25,12 @@ export function createQirGatewayRunner(options: {
     const timeout = AbortSignal.timeout(Math.max(1, Math.min(90_000, timeoutMs)));
     const abortSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
+      // Load the SDK at the call boundary so the Workflow CJS bundle initializes
+      // its schema dependencies before Gateway creates top-level schemas.
+      const sdk = await import('ai');
+      const generate = options.generate || sdk.generateText;
       const result = await generate({
-        model: createGateway({ apiKey: key })(modelId),
+        model: sdk.createGateway({ apiKey: key })(modelId),
         prompt, maxOutputTokens: 4096, maxRetries: 0, abortSignal,
         // No model fallback here. QIR owns bounded recovery, including budget refusal.
       });

@@ -97,17 +97,26 @@ code 17. On recovery it runs 313 independent quantity assertions inside a
 60-second Sandbox and stops the Sandbox in a finally block. The provider outage
 is simulated; the model call, deployed worker interruption and Sandbox are real.
 `GET /proof/:workflowRunId` reports completion and verification evidence.
+`DELETE /proof/:workflowRunId` cancels a failed or unwanted synthetic run.
 
 Remote source builds require the repository `.npmrc` (`legacy-peer-deps=true`)
 alongside its lockfile. The dedicated project uses Nitro and the build command
 `node scripts/build-qir-workflow-vercel.mjs`; do not replace the web project's
-Vercel configuration with these worker settings.
+Vercel configuration with these worker settings. The matching configuration is
+`services/qir-workflow/vercel.pilot.json`; use it only from a checkout linked to
+the dedicated worker project, with `vercel --local-config` pointing to that file.
 
 ## Release gate
 
 Passed locally: Gateway failure/budget/cancellation tests, isolation guards,
-main regression suite, build/typecheck, advisory gate and Workflow SIGKILL proof.
-A tiny live Gateway request also succeeded. Cloud recovery proof is in progress.
+main regression suite, build/typecheck, advisory gate, Workflow SIGKILL proof,
+and startup of the actual Vercel flow/step bundles. The startup gate reproduces
+and prevents a Gateway/Zod initialization crash found in the first cloud run.
+
+The corrected cloud run completed: injected 503 retry, real Gateway generation,
+worker exit/recovery, and all 313 assertions in Sandbox. Gateway recorded
+$0.000128 total pilot-key model spend (excludes Functions, Workflow and Sandbox).
+The failed run was cancelled. See [recorded evidence](./evidence-2026-09-12.json).
 Production journal/checkpoint execution, browser-close behavior and the original
 generated app's live cart behavior remain unverified. Keep broad server ownership
 disabled until those checks pass.
