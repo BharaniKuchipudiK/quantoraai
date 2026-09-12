@@ -226,6 +226,46 @@ export async function readQirRun(userSub: string, runId: string): Promise<QirPer
   }
 }
 
+export type QirRunnableRunRef = {
+  userSub: string;
+  runId: string;
+  updatedAt: string;
+};
+
+/**
+ * Discover work for a long-running server worker.
+ *
+ * This is deliberately READ ONLY. The lease remains the exclusive ownership
+ * boundary, so two Railway replicas may discover the same Run and only one is
+ * allowed to execute it. We fetch a bounded oldest-first window and filter by
+ * the same `deriveQirContinuation` used by the worker itself rather than grow a
+ * second status machine in SQL/PostgREST syntax.
+ */
+export async function listRunnableQirRuns(limit = 32): Promise<QirRunnableRunRef[] | null> {
+  const safeLimit = Math.max(1, Math.min(Math.round(Number(limit) || 32), 100));
+  const response = await requestRaw(
+    `qir_runs?select=user_sub,run_id,state,updated_at&order=updated_at.asc&limit=${safeLimit}`,
+    { method: "GET" },
+  );
+  if (!response?.ok) return response ? [] : null;
+  try {
+    const rows = await response.json();
+    if (!Array.isArray(rows)) return null;
+    const refs: QirRunnableRunRef[] = [];
+    for (const row of rows) {
+      const userSub = String(row?.user_sub || "").trim();
+      const runId = String(row?.run_id || "").trim();
+      const state = row?.state;
+      if (!userSub || !RUN_ID.test(runId) || !isValidQirRunSnapshot(state)) continue;
+      if (!deriveQirContinuation(state)) continue;
+      refs.push({ userSub, runId, updatedAt: String(row?.updated_at || state.updatedAt || "") });
+    }
+    return refs;
+  } catch {
+    return null;
+  }
+}
+
 export async function commitQirRunEvent(input: {
   userSub: string;
   runId: string;
