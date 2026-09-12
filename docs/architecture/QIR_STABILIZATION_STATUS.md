@@ -1,6 +1,12 @@
-# Coding stabilization after #712
+# Coding stabilization after #713
 
 ## Implemented locally
+
+The #713 changes below are merged and Vercel production deployment was confirmed at e08e24d4. The candidate-isolation changes described next are subsequent work, not proof of worker activation.
+
+- Worker candidates use a per-Run checkpoint namespace, owned by the same user, separate from the visible desk. Only bytes that pass runtime and semantic verification are published to the visible history.
+- Reclaiming the same action reuses its durable candidate before another model call. Repair actions can read the preceding failed candidate without exposing it to the desk.
+- The candidate retains its original workspace hash across restart. Publication refuses a desk changed since that snapshot. This is a read-before-write guard, **not atomic compare-and-swap**; simultaneous writes after that read still require database fencing.
 
 - A different goal submitted after COMPLETE or FAILED_TERMINAL creates a new Run bound to the same desk session. An active or paused different goal reports a conflict instead of silently returning the wrong Run. Repeating the current goal reuses its Run.
 - Existing package.json typecheck/test/build commands cannot be removed or changed by a generated candidate before saving it. This prevents the candidate from discarding those checks before execution.
@@ -24,7 +30,7 @@ Ownership regression coverage aborts before execution and during workspace load,
 
 ## Next implementation order
 
-1. Isolate failed candidates from the last verified workspace; add revision/ownership fencing to checkpoint writes and crash replay before another generation.
+1. Finish database-atomic revision/ownership fencing for checkpoint writes. Candidate isolation and same-action generation replay are implemented; overlapping writes are not yet solved.
 2. Wire browser submission/observation behind an explicit server-ownership switch, with no browser execution fallback for an accepted Run.
 3. Verify worker deployment, heartbeat, job consumption and restart recovery before activating server ownership in production.
 4. Exercise initial build, follow-up edit, browser disconnect, provider failure and failed-verification repair end to end. Only then expand external Git delivery and its action idempotency.

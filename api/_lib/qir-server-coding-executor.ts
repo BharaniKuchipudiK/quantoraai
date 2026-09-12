@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { loadQirDeskWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
+import { loadQirCodingWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
 import { describeQirProviderFailure, type QirProviderFailure } from './qir-provider-failure.js';
 import { runQirServerModel, type QirServerModelRunner } from './qir-server-model.js';
 import { promoteQirCodingCheckpoint } from './qir-coding-runtime.js';
@@ -24,7 +24,7 @@ const REPAIRABLE_FAILURE_CODES = new Set([
   'VERIFICATION_FAILURE',
 ]);
 
-type WorkspaceLoader = typeof loadQirDeskWorkspace;
+type WorkspaceLoader = typeof loadQirCodingWorkspace;
 type WorkspaceSaver = typeof saveQirDeskWorkspace;
 type BuildVerifier = typeof verifyBuild;
 
@@ -179,7 +179,7 @@ export function createQirServerCodingExecutor(options: {
   maxRepairAttempts?: number;
 } = {}): QirStepExecutor {
   const modelRunner = options.modelRunner || runQirServerModel;
-  const loadWorkspace = options.loadWorkspace || loadQirDeskWorkspace;
+  const loadWorkspace = options.loadWorkspace || loadQirCodingWorkspace;
   const saveWorkspace = options.saveWorkspace || saveQirDeskWorkspace;
   const verify = options.verify || verifyBuild;
   const runtimeVerify = options.runtimeVerify || verifyQirRepositoryRuntime;
@@ -212,10 +212,16 @@ export function createQirServerCodingExecutor(options: {
       }
 
       const currentVfs = normalizedVfs(workspace.vfs);
+      const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
+      const replayedCandidate = workspace.candidateCheckpointId === stableCheckpointId;
+      const baselineHash = workspace.candidateBaselineHash || hashVfsContent(workspace.baselineVfs || currentVfs);
       const objective = run.steps.find((step) => step.stepId === continuation.stepId)?.objective
         || run.goal.statement || 'Complete the Coding task.';
       const priorRepairFailures = repairFailures(run).length;
-      const model = await modelRunner({
+      const model = replayedCandidate ? {
+        status: 'success' as const, provider: 'durable-checkpoint', modelId: 'checkpoint-replay',
+        text: Object.values(currentVfs).join('\n\n'),
+      } : await modelRunner({
         modelId,
         prompt: sourcePrompt(currentVfs, objective, repairEvidence(run)),
         timeoutMs: 90_000,
@@ -233,9 +239,9 @@ export function createQirServerCodingExecutor(options: {
         return { observation, payload: { providerFailure: model.failure } };
       }
 
-      const parsed = parseVFSWithReport(model.text, currentVfs);
+      const parsed = replayedCandidate ? { vfs: currentVfs } : parseVFSWithReport(model.text, currentVfs);
       const nextVfs = normalizedVfs(parsed.vfs || {});
-      if (!Object.keys(nextVfs).length || hashVfsContent(nextVfs) === hashVfsContent(currentVfs)) {
+      if (!Object.keys(nextVfs).length || (!replayedCandidate && hashVfsContent(nextVfs) === hashVfsContent(currentVfs))) {
         return { observation: failureObservation(run, continuation, {
           code: 'MODEL_CONTRACT', message: 'The server model returned no material workspace change.', retryable: true,
           evidenceKind: 'runtime.model_no_workspace_change', evidenceRef: `model:${model.modelId}`,
@@ -254,7 +260,7 @@ export function createQirServerCodingExecutor(options: {
         }) };
       }
 
-      const changedCheck = changedRequiredVerificationScript(currentVfs, nextVfs);
+      const changedCheck = changedRequiredVerificationScript(workspace.baselineVfs || currentVfs, nextVfs);
       if (changedCheck) {
         return { observation: failureObservation(run, continuation, {
           code: 'ARTIFACT_INVALID',
@@ -264,13 +270,14 @@ export function createQirServerCodingExecutor(options: {
         }) };
       }
 
-      const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
       const saved = await saveWorkspace({
         userSub,
         run,
         vfs: nextVfs,
         checkpointId: stableCheckpointId,
         label: `Server Coding action ${actionId}`,
+        candidate: true,
+        baselineHash,
       });
       if (context.signal?.aborted) return ownershipLost();
       if (saved.status !== 'saved') {
@@ -404,6 +411,23 @@ export function createQirServerCodingExecutor(options: {
       const runtimeEvidenceRefs = runtime.status === 'passed'
         ? runtime.results.map((result, index) => `sandbox-command:${index}:exit-${result.exitCode}`)
         : [];
+      // Publish only the exact candidate that passed both verification stages.
+      const published = await saveWorkspace({
+        userSub, run, vfs: nextVfs, checkpointId: stableCheckpointId,
+        label: `Verified Coding action ${actionId}`,
+        expectedWorkspaceHash: baselineHash,
+      });
+      if (context.signal?.aborted) return ownershipLost();
+      if (published.status !== 'saved') {
+        return { observation: failureObservation(run, continuation, {
+          code: 'INTERNAL_INVARIANT', message: `Verified source could not be published: ${published.reason}`,
+          retryable: true, evidenceKind: 'runtime.workspace_publish_failed',
+        }) };
+      }
+      const publishedRun = { ...reduced.run, artifacts: reduced.run.artifacts.map(item =>
+        item.artifactId === artifact.artifactId
+          ? { ...item, ref: `desk-checkpoint://${published.sessionId}/${published.checkpointId}` }
+          : item) };
       const verification: QirVerificationResult = {
         verificationId: `qir-verification-${randomUUID()}`,
         runId: run.runId,
@@ -418,7 +442,7 @@ export function createQirServerCodingExecutor(options: {
         verifiedAt: new Date().toISOString(),
       };
       const completed = promoteQirCodingCheckpoint({
-        run: reduced.run, verification, proofOfDoneStatus: 'verified',
+        run: publishedRun, verification, proofOfDoneStatus: 'verified',
         artifactId: artifact.artifactId, artifactGeneration: artifact.generation,
         checkpointId: `qir-run-checkpoint-${randomUUID()}`, now: new Date().toISOString(),
       });
@@ -430,7 +454,7 @@ export function createQirServerCodingExecutor(options: {
           checkpointId: saved.checkpointId, modelId: model.modelId, provider: model.provider,
           verificationId: verification.verificationId, verificationScore: report.score,
           repositoryRuntime: runtimePayload(runtime),
-          workspaceReplay: saved.replayed === true,
+          workspaceReplay: replayedCandidate || saved.replayed === true,
           repairAttemptsUsed: priorRepairFailures,
         },
       };

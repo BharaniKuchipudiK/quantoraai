@@ -2,14 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { attachQirWorkingContext, compactQirWorkingContext } from './qir-context-state.js';
 import { QIR_CONTRACT_VERSION, type QirAgentRun } from './qir-contracts.js';
-import { loadQirDeskWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
+import { loadQirDeskWorkspace, loadQirCodingWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
+import { createQirServerCodingExecutor } from './qir-server-coding-executor.js';
+import { hashVfsContent } from '../../src/lib/desk-checkpoints.js';
 import { planDeskCheckpointChain } from '../../src/lib/desk-checkpoint-delta.js';
 
-function runWithSession(sessionId = 'chat-1'): QirAgentRun {
+function runWithSession(sessionId = 'chat-1', runId = 'run-1'): QirAgentRun {
   const now = '2026-09-12T00:00:00.000Z';
   const base: QirAgentRun = {
     version: QIR_CONTRACT_VERSION,
-    runId: 'run-1',
+    runId,
     goal: { statement: 'Change the app', status: 'confirmed' },
     status: 'EXECUTING',
     steps: [{
@@ -35,6 +37,87 @@ function rowsFor(vfs: Record<string, string>) {
     checkpoint_id: step.id, seq, label: step.label, origin: step.origin, hash: step.hash, delta: step.delta,
   }));
 }
+
+test('a failed candidate stays out of the visible desk and survives for worker replay', async () => {
+  const baseline = { 'index.html': '<main>Old</main>' };
+  const chains = new Map<string, any[]>([['chat-1', rowsFor(baseline)]]);
+  const bindings = {
+    readRows: async (_sub: string, session: string) => chains.get(session) || [],
+    saveRows: async (_sub: string, session: string, rows: any[]) => { chains.set(session, rows); return true; },
+  };
+  let models = 0;
+  let pass = false;
+  const executor = createQirServerCodingExecutor({
+    loadWorkspace: (sub, run) => loadQirCodingWorkspace(sub, run, bindings),
+    saveWorkspace: input => saveQirDeskWorkspace(input, bindings),
+    modelRunner: async () => {
+      models += 1;
+      return { status: 'success', provider: 'openrouter', modelId: 'fixture',
+        text: '```html filepath="index.html"\n<!doctype html><html><body><main>New</main></body></html>\n```' };
+    },
+    runtimeVerify: async () => ({ status: 'skipped', commands: [], reason: 'fixture' }),
+    verify: async () => ({ score: pass ? 100 : 0, passed: pass, checks: [], issues: [], summary: 'fixture', critiqued: false }),
+  });
+  const run = runWithSession();
+  const continuation = { stepId: 'step-1', taskId: 'coding.model', actionId: 'action-1' };
+  const first: any = await executor.execute(run, continuation, { userSub: 'u1', runId: run.runId });
+  assert.equal(first.eventType, 'worker.verification_failed', JSON.stringify(first));
+  const visible = await loadQirDeskWorkspace('u1', run, bindings);
+  assert.equal(visible.status, 'loaded');
+  if (visible.status === 'loaded') assert.deepEqual(visible.vfs, baseline);
+  const staged = await loadQirCodingWorkspace('u1', run, bindings);
+  assert.equal(staged.status, 'loaded');
+  if (staged.status === 'loaded') {
+    assert.match(staged.vfs['index.html'], /New/);
+    assert.deepEqual(staged.baselineVfs, baseline);
+    assert.equal(staged.candidateCheckpointId, 'qir-action-1');
+    assert.equal(staged.candidateBaselineHash, hashVfsContent(baseline));
+  }
+  // Lost event commit after staging: another worker replays the same action.
+  pass = true;
+  chains.set('chat-1', rowsFor({ 'index.html': '<main>User edit during restart</main>' }));
+  const conflict: any = await executor.execute(run, continuation, { userSub: 'u1', runId: run.runId });
+  assert.equal(conflict.observation.evidence[0].kind, 'runtime.workspace_publish_failed');
+  assert.match(conflict.observation.error.message, /workspace-changed-during-verification/);
+  const preserved = await loadQirDeskWorkspace('u1', run, bindings);
+  if (preserved.status !== 'loaded') assert.fail('desk unavailable');
+  assert.match(preserved.vfs['index.html'], /User edit during restart/);
+  chains.set('chat-1', rowsFor(baseline));
+  const replay: any = await executor.execute(run, continuation, { userSub: 'u1', runId: run.runId });
+  assert.equal(models, 1, 'durable candidate must be reused before asking a model again');
+  assert.equal(replay.eventType, 'worker.coding_completed');
+  assert.equal(replay.payload.workspaceReplay, true);
+  assert.equal(replay.committedRun.artifacts[0].ref, 'desk-checkpoint://chat-1/qir-action-1');
+  const published = await loadQirDeskWorkspace('u1', run, bindings);
+  if (published.status !== 'loaded') assert.fail('published workspace unavailable');
+  assert.match(published.vfs['index.html'], /New/);
+  // A crash after publication must not claim completion over a later user edit.
+  await saveQirDeskWorkspace({ userSub: 'u1', run, checkpointId: 'user-edit',
+    vfs: { 'index.html': '<main>Later user edit</main>' } }, bindings);
+  const staleReplay: any = await executor.execute(run, continuation, { userSub: 'u1', runId: run.runId });
+  assert.equal(staleReplay.observation.evidence[0].kind, 'runtime.workspace_publish_failed');
+  assert.match(staleReplay.observation.error.message, /workspace-changed-after-publication/);
+  assert.equal(staleReplay.committedRun, undefined);
+  assert.equal(models, 1);
+  // Another Run in the same desk cannot inherit this Run's failed candidates.
+  const next = await loadQirCodingWorkspace('u1', runWithSession('chat-1', 'other-run'), bindings);
+  if (next.status !== 'loaded') assert.fail('next workspace unavailable');
+  assert.equal(next.candidateCheckpointId, undefined);
+});
+
+test('publishing refuses a desk that changed while verification was running', async () => {
+  let writes = 0;
+  const result = await saveQirDeskWorkspace({
+    userSub: 'u1', run: runWithSession(), checkpointId: 'new',
+    vfs: { 'index.html': '<main>Model</main>' },
+    expectedWorkspaceHash: hashVfsContent({ 'index.html': '<main>Old</main>' }),
+  }, {
+    readRows: async () => rowsFor({ 'index.html': '<main>User edit</main>' }),
+    saveRows: async () => { writes += 1; return true; },
+  });
+  assert.deepEqual(result, { status: 'unavailable', reason: 'workspace-changed-during-verification' });
+  assert.equal(writes, 0);
+});
 
 test('server worker loads verified source from the durable desk checkpoint chain', async () => {
   const result = await loadQirDeskWorkspace('u1', runWithSession(), {
