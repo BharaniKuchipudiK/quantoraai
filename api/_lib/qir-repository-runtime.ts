@@ -35,6 +35,7 @@ export type QirRepositoryRuntimeResult =
 
 export type QirRepositoryRuntimeVerifier = (input: {
   vfs: Record<string, string>;
+  signal?: AbortSignal;
 }) => Promise<QirRepositoryRuntimeResult>;
 
 type RuntimeOptions = {
@@ -66,6 +67,14 @@ function meaningfulScript(value: unknown): boolean {
   const script = String(value || '').trim();
   if (!script) return false;
   return !/no test specified/i.test(script);
+}
+
+export function changedRequiredVerificationScript(baseline: Record<string, string>, candidate: Record<string, string>): string | null {
+  const original = packageJson(baseline)?.scripts || {};
+  const proposed = packageJson(candidate)?.scripts || {};
+  return ['typecheck', 'test', 'build'].find(name =>
+    meaningfulScript(original[name]) && original[name] !== proposed[name],
+  ) || null;
 }
 
 export function qirRuntimeCommandPlan(vfs: Record<string, string>): string[] {
@@ -127,10 +136,13 @@ function candidateFiles(vfs: Record<string, string>):
 }
 
 export async function verifyQirRepositoryRuntime(
-  input: { vfs: Record<string, string> },
+  input: { vfs: Record<string, string>; signal?: AbortSignal },
   options: RuntimeOptions = {},
 ): Promise<QirRepositoryRuntimeResult> {
   const commands = qirRuntimeCommandPlan(input.vfs);
+  if (input.signal?.aborted) {
+    return { status: 'unavailable', reason: 'Worker ownership was lost before repository execution.', commands };
+  }
   if (!commands.length) {
     return { status: 'skipped', reason: 'No supported package.json verification scripts were found.', commands };
   }
@@ -162,8 +174,15 @@ export async function verifyQirRepositoryRuntime(
 
   const factory = options.sandboxFactory || createRealSandbox;
   let sandbox: SandboxHandle | null = null;
+  let stopping: Promise<void> | null = null;
+  const stopSandbox = () => {
+    if (sandbox && !stopping) stopping = sandbox.stop().catch(() => {});
+    return stopping;
+  };
+  const abortExecution = () => { void stopSandbox(); };
   const results: QirRuntimeCommandEvidence[] = [];
   try {
+    input.signal?.addEventListener('abort', abortExecution, { once: true });
     sandbox = await factory({
       timeout: SANDBOX_WALL_CLOCK_MS,
       resources: { vcpus: 2 },
@@ -171,18 +190,23 @@ export async function verifyQirRepositoryRuntime(
       teamId: credentials.teamId,
       projectId: credentials.projectId,
     });
+    input.signal?.throwIfAborted();
     if (typeof sandbox.writeFiles !== 'function') {
       return { status: 'unavailable', reason: 'The configured sandbox cannot write the durable candidate workspace.', commands };
     }
     await sandbox.writeFiles(prepared.files);
+    input.signal?.throwIfAborted();
 
     for (const command of commands) {
+      input.signal?.throwIfAborted();
       const finished = await sandbox.runCommand({
         cmd: 'bash',
         args: ['-lc', command],
         timeoutMs: COMMAND_TIMEOUT_MS,
       });
+      input.signal?.throwIfAborted();
       const raw = await finished.output('both');
+      input.signal?.throwIfAborted();
       const truncated = truncateOutput(raw);
       const evidence: QirRuntimeCommandEvidence = {
         command,
@@ -206,9 +230,13 @@ export async function verifyQirRepositoryRuntime(
     }
     return { status: 'passed', commands, results };
   } catch (error) {
+    if (input.signal?.aborted) {
+      return { status: 'unavailable', reason: 'Worker ownership was lost during repository execution.', commands };
+    }
     const detail = error instanceof Error ? error.message : String(error || 'unknown sandbox error');
     return { status: 'unavailable', reason: `Real repository execution could not run: ${detail}`.slice(0, 500), commands };
   } finally {
-    if (sandbox) await sandbox.stop().catch(() => {});
+    input.signal?.removeEventListener('abort', abortExecution);
+    await stopSandbox();
   }
 }

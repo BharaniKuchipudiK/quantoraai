@@ -292,7 +292,8 @@ test('an attached document reaches the model, and the desk says what was read', 
   assert.match(handler, /readAttachedDocuments\(attachedDocuments\)/, 'documents are read once, on the server');
   assert.match(handler, /const refineUserMessage = \[\s*messageForModel,/, 'the model sees the documents on the primary path');
   assert.match(handler, /buildGeminiContents\(boundedHistory, messageForModel, visionImages\)/, 'and on the legacy path');
-  assert.equal((handler.match(/attachments: attachmentSummary,/g) || []).length, 3, 'every done payload carries the read summary');
+  // The OpenRouter tool-agent path added in #712 is the fourth completion path.
+  assert.equal((handler.match(/attachments: attachmentSummary,/g) || []).length, 4, 'every done payload carries the read summary');
   const studio = read('src/components/AiStudio.jsx');
   assert.match(studio, /data-quantora-document-reads=/, 'the desk must publish what was read');
   assert.match(studio, /attachmentKindForFile\(file\)/, 'the composer classifies with the shared module, not its own rule');

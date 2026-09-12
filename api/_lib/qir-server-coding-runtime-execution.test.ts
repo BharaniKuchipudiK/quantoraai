@@ -23,6 +23,45 @@ function activeRun(): QirAgentRun {
 
 const continuation = { stepId: 'step-1', taskId: 'coding.model', actionId: 'action-1' };
 
+test('ownership loss at every async boundary stops subsequent Coding stages', async () => {
+  const stages = ['load', 'model', 'save', 'runtime', 'verify'];
+  for (const abortAt of ['before', ...stages]) {
+    const controller = new AbortController();
+    const called: string[] = [];
+    const reach = (stage: string) => {
+      called.push(stage);
+      if (abortAt === stage) controller.abort();
+    };
+    const base = baseOptions();
+    const executor = createQirServerCodingExecutor({
+      ...base,
+      loadWorkspace: async () => { reach('load'); return base.loadWorkspace(); },
+      modelRunner: async (input) => {
+        assert.equal(input.signal, controller.signal, 'the provider must receive worker ownership');
+        reach('model');
+        return base.modelRunner();
+      },
+      saveWorkspace: async (input) => { reach('save'); return base.saveWorkspace(input); },
+      runtimeVerify: async (input) => {
+        assert.equal(input.signal, controller.signal);
+        reach('runtime');
+        return { status: 'passed', commands: [], results: [] };
+      },
+      verify: async () => {
+        reach('verify');
+        return { score: 100, passed: true, checks: [], issues: [], summary: 'verified', critiqued: false };
+      },
+    });
+    if (abortAt === 'before') controller.abort();
+    const result: any = await executor.execute(activeRun(), continuation, {
+      userSub: 'u1', runId: 'runtime-run-1', signal: controller.signal,
+    });
+    assert.deepEqual(called, stages.slice(0, stages.indexOf(abortAt) + 1), abortAt);
+    assert.equal(result.observation.evidence[0].kind, 'runtime.ownership_lost', abortAt);
+    assert.equal(result.committedRun, undefined, 'ownership loss must never promote a candidate');
+  }
+});
+
 function sourceVfs() {
   return {
     'package.json': JSON.stringify({ scripts: { test: 'node test.js', build: 'node build.js' } }),
@@ -67,6 +106,25 @@ function baseOptions() {
     }),
   };
 }
+
+test('removing or replacing a required check cannot save a candidate or reach completion', async () => {
+  for (const manifest of ['{}', '{invalid', JSON.stringify({ scripts: { test: 'exit 0', build: 'node build.js' } })]) {
+    let saved = false;
+    let verified = false;
+    const executor = createQirServerCodingExecutor({
+      ...baseOptions(),
+      modelRunner: async () => ({ status: 'success', provider: 'openrouter', modelId: 'test/model',
+        text: '```json filepath="package.json"\n' + manifest + '\n```',
+      }),
+      saveWorkspace: async () => { saved = true; throw new Error('Candidate must not be saved'); },
+      runtimeVerify: async () => { verified = true; throw new Error('Checks must not be skipped'); },
+    });
+    const result: any = await executor.execute(activeRun(), continuation, { userSub: 'u1', runId: 'runtime-run-1' });
+    assert.equal(result.observation.error.code, 'ARTIFACT_INVALID');
+    assert.equal(saved, false);
+    assert.equal(verified, false);
+  }
+});
 
 test('a real failing repository test blocks completion and becomes repair evidence', async () => {
   let semanticVerifierCalled = false;

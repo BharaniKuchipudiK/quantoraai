@@ -266,7 +266,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
             sessionId: String(sessionId || '').slice(0, 128),
             files: files.sort().slice(0, 100),
             fileCount: files.length,
-            goal: String(goal || '').slice(0, 500),
+            goal: String(current.goal?.statement || goal || '').slice(0, 500),
             job: String(job?.title || job?.name || '').slice(0, 200),
           },
           recentInteractions: note ? [String(note).slice(0, 500)] : [],
@@ -302,6 +302,18 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
   const submitServerRun = (goal, strategy = '') => enqueue(async () => {
     let current = await boot(goal, true);
     if (!current) return null;
+    const requestedGoal = String(goal || '').trim();
+    const sameGoal = requestedGoal === String(current.goal?.statement || '').trim();
+    if (!sameGoal && requestedGoal) {
+      if (!['COMPLETE', 'FAILED_TERMINAL'].includes(current.status)) {
+        const error = new Error('The current Coding task is still active. Finish or cancel it before submitting a different task.');
+        error.reason = 'coding-run-active';
+        throw error;
+      }
+      const runId = id('coding-run');
+      current = accept(await requestQir({ run: queuedRun(runId, requestedGoal) }));
+      writePointer(readOptions().sessionId, runId);
+    }
     if (['COMPLETE', 'FAILED_TERMINAL', 'PAUSED'].includes(current.status)) return current;
 
     await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true });
