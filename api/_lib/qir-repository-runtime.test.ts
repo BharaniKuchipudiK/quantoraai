@@ -5,6 +5,60 @@ import { qirRuntimeCommandPlan, verifyQirRepositoryRuntime } from './qir-reposit
 
 const CREDENTIALS = { token: 'sandbox-token', teamId: 'team-1', projectId: 'project-1' };
 
+test('lost ownership before allocation performs no external work', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const result = await verifyQirRepositoryRuntime({ vfs: packageVfs(), signal: controller.signal }, {
+    credentials: CREDENTIALS,
+    sandboxFactory: async () => { throw new Error('must not allocate'); },
+  });
+  assert.equal(result.status, 'unavailable');
+  assert.match('reason' in result ? result.reason : '', /ownership/);
+});
+
+test('ownership lost during allocation stops the new sandbox before writing files', async () => {
+  const controller = new AbortController();
+  let stops = 0;
+  const result = await verifyQirRepositoryRuntime({ vfs: packageVfs(), signal: controller.signal }, {
+    credentials: CREDENTIALS,
+    sandboxFactory: async () => {
+      controller.abort();
+      return {
+        writeFiles: async () => { throw new Error('must not write'); },
+        runCommand: async () => { throw new Error('must not execute'); },
+        stop: async () => { stops += 1; },
+      };
+    },
+  });
+  assert.equal(result.status, 'unavailable');
+  assert.equal(stops, 1);
+});
+
+test('ownership loss stops an in-flight sandbox command and prevents subsequent checks', async () => {
+  const controller = new AbortController();
+  let commands = 0;
+  let stops = 0;
+  let releaseCommand: (() => void) | undefined;
+  const result = await verifyQirRepositoryRuntime({ vfs: packageVfs(), signal: controller.signal }, {
+    credentials: CREDENTIALS,
+    sandboxFactory: async () => ({
+      writeFiles: async () => {},
+      runCommand: async () => {
+        commands += 1;
+        await new Promise<void>(resolve => {
+          releaseCommand = resolve;
+          controller.abort();
+        });
+        return { exitCode: 0, output: async () => 'success after ownership lost' };
+      },
+      stop: async () => { stops += 1; releaseCommand?.(); },
+    }),
+  });
+  assert.equal(result.status, 'unavailable');
+  assert.equal(commands, 1);
+  assert.equal(stops, 1);
+});
+
 function packageVfs(script = 'node test.js') {
   return {
     'package.json': JSON.stringify({ scripts: { test: script, build: 'node build.js' } }),

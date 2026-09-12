@@ -31,6 +31,87 @@ function executingRun() {
   };
 }
 
+test('a different follow-up creates a fresh Run in the same desk and repeated submission does not duplicate it', async () => {
+  const originalFetch = globalThis.fetch;
+  const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  let pointer = 'prior-run';
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: () => pointer, setItem: (_key, value) => { pointer = value; },
+  } });
+  const calls = [];
+  let snapshot = { ...queuedRun(), runId: pointer, status: 'COMPLETE' };
+  globalThis.fetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url, body });
+    if (body?.run) snapshot = body.run;
+    if (body?.action === 'coding.attempt') snapshot = { ...snapshot, status: 'EXECUTING' };
+    return { ok: true, status: 200, json: async () => ({ run: snapshot }) };
+  };
+  try {
+    const errors = [];
+    const client = createQirCodingRunClient({
+      onRun: () => {}, onError: error => errors.push(error),
+      readOptions: () => ({ enabled: true, sessionId: 'same-desk', goal: 'Change the heading', vfs: {} }),
+    });
+    const result = await client.submitServerRun('Add a filter');
+    assert.equal(result.status, 'EXECUTING');
+    assert.notEqual(result.runId, 'prior-run');
+    assert.equal(result.goal.statement, 'Add a filter');
+    const context = calls.find(call => call.url === '/api/qir-context');
+    assert.equal(context.body.projectState.sessionId, 'same-desk');
+    assert.equal(context.body.projectState.goal, 'Add a filter');
+    await client.submitServerRun('Add a filter');
+    assert.equal(calls.filter(call => call.body?.run).length, 1);
+    assert.equal(calls.filter(call => call.body?.action === 'coding.attempt').length, 1);
+    assert.deepEqual(errors, []);
+    const rejected = await client.submitServerRun('Delete the table');
+    assert.equal(rejected, null);
+    assert.equal(errors[0].reason, 'coding-run-active');
+    assert.equal(calls.filter(call => call.body?.run).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);
+    else delete globalThis.localStorage;
+  }
+});
+
+test('switching desks during follow-up creation cannot bind or start the old submission in the new desk', async () => {
+  const originalFetch = globalThis.fetch;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const writes = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: () => 'prior-run', setItem: (...args) => writes.push(args),
+  } });
+  let sessionId = 'desk-a';
+  const calls = [];
+  const accepted = [];
+  const errors = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url, body });
+    if (body?.run) sessionId = 'desk-b';
+    return { ok: true, status: 200, json: async () => ({
+      run: body?.run || { ...queuedRun(), status: 'COMPLETE' },
+    }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: run => accepted.push(run), onError: error => errors.push(error),
+      readOptions: () => ({ enabled: true, sessionId, vfs: {} }),
+    });
+    assert.equal(await client.submitServerRun('Add a filter'), null);
+    assert.equal(errors[0].reason, 'coding-session-changed');
+    assert.deepEqual(writes, []);
+    assert.equal(accepted.length, 1, 'only the original desk snapshot may be accepted');
+    assert.equal(calls.some(call => call.url === '/api/qir-context'), false);
+    assert.equal(calls.some(call => call.body?.action === 'coding.attempt'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
+});
+
 test('server-owned submit binds the desk session before making coding.model runnable', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

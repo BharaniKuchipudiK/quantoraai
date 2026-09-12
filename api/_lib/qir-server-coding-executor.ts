@@ -7,7 +7,7 @@ import { reduceQirObservation } from './qir-run-store.js';
 import type { QirAgentRun, QirArtifactRef, QirFailureCode, QirObservation, QirVerificationResult } from './qir-contracts.js';
 import type { QirStepContinuation, QirStepExecution, QirStepExecutor } from './qir-worker-runtime.js';
 import { verifyBuild } from './verify-build.js';
-import { verifyQirRepositoryRuntime, type QirRepositoryRuntimeResult, type QirRepositoryRuntimeVerifier } from './qir-repository-runtime.js';
+import { changedRequiredVerificationScript, verifyQirRepositoryRuntime, type QirRepositoryRuntimeResult, type QirRepositoryRuntimeVerifier } from './qir-repository-runtime.js';
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
@@ -192,9 +192,15 @@ export function createQirServerCodingExecutor(options: {
   return {
     kind: 'server-coding',
     async execute(run, continuation, context): Promise<QirStepExecution> {
+      const ownershipLost = (): QirStepExecution => ({ observation: failureObservation(run, continuation, {
+        code: 'INTERNAL_INVARIANT', message: 'Coding execution stopped because the worker no longer owns the Run.',
+        retryable: true, evidenceKind: 'runtime.ownership_lost',
+      }) });
+      if (context.signal?.aborted) return ownershipLost();
       const actionId = run.cursor.actionId || continuation.actionId || `${continuation.stepId}-action`;
       const userSub = String(context.userSub || '').trim();
       const workspace = await loadWorkspace(userSub, run);
+      if (context.signal?.aborted) return ownershipLost();
       if (workspace.status !== 'loaded') {
         const reason = workspace.status === 'missing-session-binding'
           ? 'The durable Run is not bound to a Coding Desk session yet.'
@@ -213,7 +219,9 @@ export function createQirServerCodingExecutor(options: {
         modelId,
         prompt: sourcePrompt(currentVfs, objective, repairEvidence(run)),
         timeoutMs: 90_000,
+        signal: context.signal,
       });
+      if (context.signal?.aborted) return ownershipLost();
       if (model.status === 'failure') {
         const observation = failureObservation(run, continuation, {
           code: providerFailureCode(model.failure),
@@ -246,6 +254,16 @@ export function createQirServerCodingExecutor(options: {
         }) };
       }
 
+      const changedCheck = changedRequiredVerificationScript(currentVfs, nextVfs);
+      if (changedCheck) {
+        return { observation: failureObservation(run, continuation, {
+          code: 'ARTIFACT_INVALID',
+          message: `The candidate changed the required ${changedCheck} verification script. Preserve the existing check while repairing the implementation.`,
+          retryable: true, evidenceKind: 'runtime.verification_contract_changed',
+          recoveryExhausted: priorRepairFailures >= maxRepairAttempts,
+        }) };
+      }
+
       const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
       const saved = await saveWorkspace({
         userSub,
@@ -254,6 +272,7 @@ export function createQirServerCodingExecutor(options: {
         checkpointId: stableCheckpointId,
         label: `Server Coding action ${actionId}`,
       });
+      if (context.signal?.aborted) return ownershipLost();
       if (saved.status !== 'saved') {
         return { observation: failureObservation(run, continuation, {
           code: 'INTERNAL_INVARIANT', message: `Generated source was not durably stored: ${saved.reason}`,
@@ -296,7 +315,8 @@ export function createQirServerCodingExecutor(options: {
        * UX/contract defects afterwards, but it is never allowed to stand in for
        * a real test/build when the repository declares executable checks.
        */
-      const runtime = await runtimeVerify({ vfs: nextVfs });
+      const runtime = await runtimeVerify({ vfs: nextVfs, signal: context.signal });
+      if (context.signal?.aborted) return ownershipLost();
       if (runtime.status === 'failed') {
         const recoveryExhausted = priorRepairFailures >= maxRepairAttempts;
         const failedRuntime = failureObservation(reduced.run, continuation, {
@@ -347,6 +367,7 @@ export function createQirServerCodingExecutor(options: {
       }
 
       const report = await verify({ code: model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
+      if (context.signal?.aborted) return ownershipLost();
       if (!report.passed) {
         const issues = (report.issues || []).map((issue) => String(issue || '').trim()).filter(Boolean).slice(0, 8);
         const summary = String(report.summary || '').trim().slice(0, 500);
