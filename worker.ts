@@ -163,8 +163,8 @@ async function main() {
     console.error("worker.ts: service mode requires QIR_WORKER_STORE=supabase with the durable Supabase lease");
     process.exit(1);
   }
-  if (executor.kind === "server-coding" && process.env.QIR_WORKER_ENABLE_SERVER_CODING !== "1") {
-    console.error("worker.ts: server Coding service is built but cutover is disabled; set QIR_WORKER_ENABLE_SERVER_CODING=1 only when the browser ownership cutover is ready");
+  if (executor.kind === "server-coding" && process.env.QIR_WORKER_ENABLE_SERVER_CODING === "0") {
+    console.error("worker.ts: server Coding service was explicitly disabled with QIR_WORKER_ENABLE_SERVER_CODING=0");
     process.exit(1);
   }
 
