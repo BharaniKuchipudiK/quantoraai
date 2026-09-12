@@ -21,6 +21,7 @@ export type QirServerModelRunner = (input: {
   modelId: string;
   prompt: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }) => Promise<QirServerModelResult>;
 
 function safeProviderMessage(value: unknown): string {
@@ -30,6 +31,25 @@ function safeProviderMessage(value: unknown): string {
     .replace(/sk-or-v1-[\w-]+/gi, 'sk-or-v1-[key]')
     .replace(/AIza[\w-]{20,}/g, 'AIza[key]')
     .slice(0, 500);
+}
+
+function providerSignal(timeoutMs: number, ownership?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return ownership ? AbortSignal.any([ownership, timeout]) : timeout;
+}
+
+function cancelledFailure(provider: string, modelId: string): QirServerModelResult {
+  return {
+    status: 'failure',
+    failure: qirProviderFailure({
+      provider,
+      modelId,
+      providerCode: 'ownership_lost',
+      providerMessage: 'The worker stopped this provider attempt because it no longer owns the durable Run.',
+      retryable: true,
+      route: 'qir-worker',
+    }),
+  };
 }
 
 async function openRouterError(response: Response): Promise<{ code: string; message: string }> {
@@ -46,8 +66,10 @@ async function openRouterError(response: Response): Promise<{ code: string; mess
   }
 }
 
-async function runOpenRouter(input: { modelId: string; prompt: string; timeoutMs: number }): Promise<QirServerModelResult> {
+async function runOpenRouter(input: { modelId: string; prompt: string; timeoutMs: number; signal?: AbortSignal }): Promise<QirServerModelResult> {
+  if (input.signal?.aborted) return cancelledFailure('openrouter', input.modelId);
   const key = resolveOpenRouterEnvKey() || await fetchApiGatewayKey('OPENROUTER') || '';
+  if (input.signal?.aborted) return cancelledFailure('openrouter', input.modelId);
   if (!key) {
     return { status: 'failure', failure: qirProviderFailure({
       provider: 'openrouter', modelId: input.modelId, providerCode: 'credential_missing',
@@ -70,9 +92,10 @@ async function runOpenRouter(input: { modelId: string; prompt: string; timeoutMs
         temperature: 0.2,
         messages: [{ role: 'user', content: input.prompt }],
       }),
-      signal: AbortSignal.timeout(input.timeoutMs),
+      signal: providerSignal(input.timeoutMs, input.signal),
     });
   } catch (error: any) {
+    if (input.signal?.aborted) return cancelledFailure('openrouter', input.modelId);
     const timeout = /timeout|aborted/i.test(String(error?.name || error?.message || error));
     return { status: 'failure', failure: qirProviderFailure({
       provider: 'openrouter', modelId: input.modelId,
@@ -80,6 +103,7 @@ async function runOpenRouter(input: { modelId: string; prompt: string; timeoutMs
       providerMessage: safeProviderMessage(error?.message || error), retryable: true, route: 'qir-worker',
     }) };
   }
+  if (input.signal?.aborted) return cancelledFailure('openrouter', input.modelId);
   if (!response.ok) {
     const detail = await openRouterError(response);
     return { status: 'failure', failure: qirProviderFailure({
@@ -107,8 +131,10 @@ async function runOpenRouter(input: { modelId: string; prompt: string; timeoutMs
   }
 }
 
-async function runGemini(input: { modelId: string; prompt: string; timeoutMs: number }): Promise<QirServerModelResult> {
+async function runGemini(input: { modelId: string; prompt: string; timeoutMs: number; signal?: AbortSignal }): Promise<QirServerModelResult> {
+  if (input.signal?.aborted) return cancelledFailure('gemini', input.modelId);
   const key = await fetchApiGatewayKey('GEMINI') || process.env.GEMINI_API_KEY || '';
+  if (input.signal?.aborted) return cancelledFailure('gemini', input.modelId);
   if (!key) return { status: 'failure', failure: qirProviderFailure({
     provider: 'gemini', modelId: input.modelId, providerCode: 'credential_missing',
     providerMessage: 'No server Gemini credential is configured.', retryable: false, route: 'qir-worker',
@@ -118,8 +144,9 @@ async function runGemini(input: { modelId: string; prompt: string; timeoutMs: nu
     const response = await client.models.generateContent({
       model: input.modelId,
       contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
-      config: { temperature: 0.2, abortSignal: AbortSignal.timeout(input.timeoutMs) },
+      config: { temperature: 0.2, abortSignal: providerSignal(input.timeoutMs, input.signal) },
     });
+    if (input.signal?.aborted) return cancelledFailure('gemini', input.modelId);
     const text = String(response.text || '').trim();
     if (!text) return { status: 'failure', failure: qirProviderFailure({
       provider: 'gemini', modelId: input.modelId, providerCode: 'empty_response',
@@ -127,6 +154,7 @@ async function runGemini(input: { modelId: string; prompt: string; timeoutMs: nu
     }) };
     return { status: 'success', provider: 'gemini', modelId: input.modelId, text };
   } catch (error: any) {
+    if (input.signal?.aborted) return cancelledFailure('gemini', input.modelId);
     const status = Number(error?.status ?? error?.code);
     const message = safeProviderMessage(error?.message || error);
     const timeout = /timeout|aborted/i.test(`${error?.name || ''} ${message}`);
@@ -139,10 +167,10 @@ async function runGemini(input: { modelId: string; prompt: string; timeoutMs: nu
   }
 }
 
-async function runOne(modelId: string, prompt: string, timeoutMs: number): Promise<QirServerModelResult> {
+async function runOne(modelId: string, prompt: string, timeoutMs: number, signal?: AbortSignal): Promise<QirServerModelResult> {
   return modelId.startsWith('gemini')
-    ? runGemini({ modelId, prompt, timeoutMs })
-    : runOpenRouter({ modelId, prompt, timeoutMs });
+    ? runGemini({ modelId, prompt, timeoutMs, signal })
+    : runOpenRouter({ modelId, prompt, timeoutMs, signal });
 }
 
 function modelLadder(primary: string): string[] {
@@ -154,14 +182,19 @@ function modelLadder(primary: string): string[] {
   return [...new Set([primary, ...(configured.length ? configured : [defaultCrossProvider])])].slice(0, 3);
 }
 
-export const runQirServerModel: QirServerModelRunner = async ({ modelId, prompt, timeoutMs = 90_000 }) => {
+export const runQirServerModel: QirServerModelRunner = async ({ modelId, prompt, timeoutMs = 90_000, signal }) => {
   const primary = String(modelId || '').trim() || 'gemini-flash-latest';
   const failures: QirProviderFailure[] = [];
   for (const candidate of modelLadder(primary)) {
-    const result = await runOne(candidate, prompt, timeoutMs);
+    if (signal?.aborted) {
+      const cancelled = cancelledFailure(candidate.startsWith('gemini') ? 'gemini' : 'openrouter', candidate);
+      return cancelled.status === 'failure' ? { ...cancelled, failures } : cancelled;
+    }
+    const result = await runOne(candidate, prompt, timeoutMs, signal);
     if (result.status === 'success') {
       return failures.length ? { ...result, priorFailures: failures } : result;
     }
+    if (result.failure.providerCode === 'ownership_lost') return { ...result, failures: [...failures, result.failure] };
     failures.push({ ...result.failure, fallbackAttempted: true });
   }
   const last = failures.at(-1) || qirProviderFailure({
