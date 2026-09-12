@@ -91,6 +91,14 @@ test('a failed candidate stays out of the visible desk and survives for worker r
   const published = await loadQirDeskWorkspace('u1', run, bindings);
   if (published.status !== 'loaded') assert.fail('published workspace unavailable');
   assert.match(published.vfs['index.html'], /New/);
+  // A crash after publication must not claim completion over a later user edit.
+  await saveQirDeskWorkspace({ userSub: 'u1', run, checkpointId: 'user-edit',
+    vfs: { 'index.html': '<main>Later user edit</main>' } }, bindings);
+  const staleReplay: any = await executor.execute(run, continuation, { userSub: 'u1', runId: run.runId });
+  assert.equal(staleReplay.observation.evidence[0].kind, 'runtime.workspace_publish_failed');
+  assert.match(staleReplay.observation.error.message, /workspace-changed-after-publication/);
+  assert.equal(staleReplay.committedRun, undefined);
+  assert.equal(models, 1);
   // Another Run in the same desk cannot inherit this Run's failed candidates.
   const next = await loadQirCodingWorkspace('u1', runWithSession('chat-1', 'other-run'), bindings);
   if (next.status !== 'loaded') assert.fail('next workspace unavailable');

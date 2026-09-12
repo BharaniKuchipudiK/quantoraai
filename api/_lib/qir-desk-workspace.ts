@@ -108,6 +108,9 @@ export async function saveQirDeskWorkspace(
     if (already.hash !== wantedHash) {
       return { status: "unavailable", reason: "idempotency-key-reused-for-different-workspace" };
     }
+    if (input.expectedWorkspaceHash !== undefined && hydrated.entries.at(-1)?.id !== checkpointId) {
+      return { status: 'unavailable', reason: 'workspace-changed-after-publication' };
+    }
     return { status: "saved", sessionId, checkpointId, replayed: true };
   }
   if (input.expectedWorkspaceHash !== undefined) {
