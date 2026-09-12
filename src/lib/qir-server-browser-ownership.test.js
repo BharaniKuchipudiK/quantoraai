@@ -75,6 +75,43 @@ test('a different follow-up creates a fresh Run in the same desk and repeated su
   }
 });
 
+test('switching desks during follow-up creation cannot bind or start the old submission in the new desk', async () => {
+  const originalFetch = globalThis.fetch;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const writes = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: () => 'prior-run', setItem: (...args) => writes.push(args),
+  } });
+  let sessionId = 'desk-a';
+  const calls = [];
+  const accepted = [];
+  const errors = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url, body });
+    if (body?.run) sessionId = 'desk-b';
+    return { ok: true, status: 200, json: async () => ({
+      run: body?.run || { ...queuedRun(), status: 'COMPLETE' },
+    }) };
+  };
+  try {
+    const client = createQirCodingRunClient({
+      onRun: run => accepted.push(run), onError: error => errors.push(error),
+      readOptions: () => ({ enabled: true, sessionId, vfs: {} }),
+    });
+    assert.equal(await client.submitServerRun('Add a filter'), null);
+    assert.equal(errors[0].reason, 'coding-session-changed');
+    assert.deepEqual(writes, []);
+    assert.equal(accepted.length, 1, 'only the original desk snapshot may be accepted');
+    assert.equal(calls.some(call => call.url === '/api/qir-context'), false);
+    assert.equal(calls.some(call => call.body?.action === 'coding.attempt'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  }
+});
+
 test('server-owned submit binds the desk session before making coding.model runnable', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

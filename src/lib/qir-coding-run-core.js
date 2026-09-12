@@ -204,7 +204,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     return next;
   };
 
-  const boot = async (goalOverride = '', force = false) => {
+  const boot = async (goalOverride = '', force = false, assertCurrent = () => {}) => {
     const { enabled, sessionId, goal } = readOptions();
     if ((!enabled && !force) || !sessionId) return null;
     if (bootPromise) return bootPromise;
@@ -212,7 +212,9 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
       const existingId = readPointer(sessionId);
       if (existingId) {
         try {
-          return accept(await requestQir(null, `?runId=${encodeURIComponent(existingId)}`));
+          const loaded = await requestQir(null, `?runId=${encodeURIComponent(existingId)}`);
+          assertCurrent();
+          return accept(loaded);
         } catch (resumeError) {
           if (resumeError.status !== 404) throw resumeError;
         }
@@ -220,6 +222,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
 
       const runId = id('coding-run');
       const created = await requestQir({ run: queuedRun(runId, goalOverride || goal) });
+      assertCurrent();
       writePointer(sessionId, runId);
       return accept(created);
     })().finally(() => { bootPromise = null; });
@@ -239,7 +242,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
 
   let storageUnconfigured = false;
 
-  const writeWorkingContext = async (current, note, { required = false } = {}) => {
+  const writeWorkingContext = async (current, note, { required = false, options = null } = {}) => {
     if (!current?.runId) {
       if (required) throw new Error('Server-owned Coding requires a durable Run before context can be bound.');
       return false;
@@ -254,7 +257,7 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     }
 
     try {
-      const { vfs, goal, job, sessionId } = readOptions();
+      const { vfs, goal, job, sessionId } = options || readOptions();
       const files = Object.keys(vfs || {});
       const response = await fetch('/api/qir-context', {
         method: 'POST',
@@ -299,8 +302,19 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
    * bound session id. Once this succeeds the browser must never execute the same
    * action through /api/chat as a fallback: one durable action has one owner.
    */
-  const submitServerRun = (goal, strategy = '') => enqueue(async () => {
-    let current = await boot(goal, true);
+  const submitServerRun = (goal, strategy = '') => {
+    const submittingOptions = { ...readOptions() };
+    const assertCurrent = () => {
+      if (readOptions().sessionId !== submittingOptions.sessionId) {
+        const error = new Error('Coding submission stopped because the active desk changed.');
+        error.reason = 'coding-session-changed';
+        throw error;
+      }
+    };
+    return enqueue(async () => {
+    assertCurrent();
+    let current = await boot(goal, true, assertCurrent);
+    assertCurrent();
     if (!current) return null;
     const requestedGoal = String(goal || '').trim();
     const sameGoal = requestedGoal === String(current.goal?.statement || '').trim();
@@ -311,21 +325,27 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         throw error;
       }
       const runId = id('coding-run');
-      current = accept(await requestQir({ run: queuedRun(runId, requestedGoal) }));
-      writePointer(readOptions().sessionId, runId);
+      const created = await requestQir({ run: queuedRun(runId, requestedGoal) });
+      assertCurrent();
+      current = accept(created);
+      writePointer(submittingOptions.sessionId, runId);
     }
     if (['COMPLETE', 'FAILED_TERMINAL', 'PAUSED'].includes(current.status)) return current;
 
-    await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true });
+    await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true, options: submittingOptions });
+    assertCurrent();
     current = runNow || current;
     if (!['QUEUED', 'REPLANNING'].includes(current.status)) return current;
 
-    return accept(await requestQir({
+    const attempted = await requestQir({
       action: 'coding.attempt',
       runId: current.runId,
       strategy: String(strategy || '').slice(0, 240),
-    }));
+    });
+    assertCurrent();
+    return accept(attempted);
   });
+  };
 
   const refresh = () => enqueue(async (current) => {
     const snapshot = current || runNow || await boot();
