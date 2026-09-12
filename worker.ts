@@ -47,9 +47,7 @@ function optionalIdentity(name: string): string {
 
 function resolveWorkerStore(): { selected: "local" | "supabase"; store: QirDurableStorePort } {
   const selected = String(process.env.QIR_WORKER_STORE || "local").trim().toLowerCase();
-  if (selected === "local") {
-    return { selected, store: createLocalFileQirStore(requiredEnv("QIR_WORKER_STORE_DIR")) };
-  }
+  if (selected === "local") return { selected, store: createLocalFileQirStore(requiredEnv("QIR_WORKER_STORE_DIR")) };
   if (selected === "supabase") {
     if (!isQirRunStoreConfigured()) {
       console.error("worker.ts: QIR_WORKER_STORE=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
@@ -89,9 +87,7 @@ function resolveLeaseStore(selectedStore: "local" | "supabase"): QirWorkerLeaseP
 function resolveExecutor(input: { serviceMode: boolean; executionDelayMs: number }): QirStepExecutor {
   const defaultName = input.serviceMode ? "server-coding" : "heartbeat";
   const selected = String(process.env.QIR_WORKER_EXECUTOR || defaultName).trim().toLowerCase();
-  if (selected === "server-coding") {
-    return createQirServerCodingExecutor({ modelId: process.env.QIR_WORKER_MODEL });
-  }
+  if (selected === "server-coding") return createQirServerCodingExecutor({ modelId: process.env.QIR_WORKER_MODEL });
   if (selected === "heartbeat") {
     if (input.serviceMode && process.env.QIR_WORKER_ALLOW_HEARTBEAT_SERVICE !== "1") {
       console.error("worker.ts: heartbeat service mode is proof-only; set QIR_WORKER_ALLOW_HEARTBEAT_SERVICE=1 explicitly");
@@ -166,6 +162,11 @@ async function main() {
     console.error("worker.ts: service mode requires QIR_WORKER_STORE=supabase with the durable Supabase lease");
     process.exit(1);
   }
+  if (executor.kind === "server-coding" && process.env.QIR_WORKER_ENABLE_SERVER_CODING !== "1") {
+    console.error("worker.ts: server Coding service is built but cutover is disabled; set QIR_WORKER_ENABLE_SERVER_CODING=1 only when the browser ownership cutover is ready");
+    process.exit(1);
+  }
+
   const pollMs = numericEnv("QIR_WORKER_POLL_MS", 2_000);
   const discoveryLimit = Math.max(1, Math.min(100, Math.round(numericEnv("QIR_WORKER_DISCOVERY_LIMIT", 32))));
   const maxStepsPerRun = Math.max(1, Math.round(numericEnv("QIR_WORKER_MAX_STEPS_PER_DISPATCH", 8)));
