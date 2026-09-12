@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readDeskCheckpoints, saveDeskCheckpoints, type DeskCheckpointRow } from "./store.js";
 import { readQirWorkingContext } from "./qir-context-state.js";
 import type { QirAgentRun } from "./qir-contracts.js";
+import { hashVfsContent } from "../../src/lib/desk-checkpoints.js";
 import {
   deskCheckpointStepsFromRows,
   hydrateDeskCheckpointHistory,
@@ -58,9 +59,11 @@ export async function saveQirDeskWorkspace(
     vfs: Record<string, unknown>;
     label?: string;
     maxHistory?: number;
+    /** Stable per external action. A retry after a worker crash must reuse it. */
+    checkpointId?: string;
   },
   bindings: WorkspaceBindings = productionBindings,
-): Promise<{ status: "saved"; sessionId: string; checkpointId: string } | { status: "unavailable"; reason: string }> {
+): Promise<{ status: "saved"; sessionId: string; checkpointId: string; replayed?: boolean } | { status: "unavailable"; reason: string }> {
   const sessionId = boundSessionId(input.run);
   if (!sessionId) return { status: "unavailable", reason: "missing-session-binding" };
   const rows = await bindings.readRows(input.userSub, sessionId);
@@ -70,7 +73,16 @@ export async function saveQirDeskWorkspace(
   const hydrated = hydrateDeskCheckpointHistory(chain.steps);
   if (!hydrated.ok) return { status: "unavailable", reason: hydrated.reason };
 
-  const checkpointId = `qir-worker-${randomUUID()}`;
+  const checkpointId = String(input.checkpointId || `qir-worker-${randomUUID()}`).trim().slice(0, 120);
+  const wantedHash = hashVfsContent(input.vfs);
+  const already = hydrated.entries.find((entry: any) => entry.id === checkpointId);
+  if (already) {
+    if (already.hash !== wantedHash) {
+      return { status: "unavailable", reason: "idempotency-key-reused-for-different-workspace" };
+    }
+    return { status: "saved", sessionId, checkpointId, replayed: true };
+  }
+
   const maxHistory = Math.max(1, Math.min(40, Math.round(Number(input.maxHistory) || 20)));
   const history = [
     ...hydrated.entries,
@@ -80,7 +92,7 @@ export async function saveQirDeskWorkspace(
       label: String(input.label || "Server worker checkpoint").slice(0, 120),
       origin: "commit",
       vfs: input.vfs,
-      hash: "",
+      hash: wantedHash,
     },
   ].slice(-maxHistory);
   const plan = planDeskCheckpointChain(history);
