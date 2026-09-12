@@ -124,9 +124,10 @@ async function main() {
   const heartbeatMs = numericEnv("QIR_WORKER_HEARTBEAT_MS", Math.max(1_000, Math.floor(ttlMs / 3)));
 
   if (!serviceMode) {
-    const drive = () => runQirWorkerLoop(store, executor, explicitUserSub, explicitRunId, {
+    const drive = (signal?: AbortSignal) => runQirWorkerLoop(store, executor, explicitUserSub, explicitRunId, {
       maxSteps,
       stepDelayMs,
+      signal,
       onStep: (step) => console.log(`worker: step-result ${JSON.stringify(step).slice(0, 200)}`),
     });
     console.log(`worker: starting single-run pid=${process.pid} store=${store.kind} executor=${executor.kind} lease=${leaseStore?.kind || "none"} run=${explicitRunId}`);
@@ -144,7 +145,7 @@ async function main() {
       ttlMs,
       heartbeatMs,
       onHeartbeat: (status) => console.log(`worker: lease-heartbeat ${status} worker=${workerId}`),
-      run: drive,
+      run: ({ signal }) => drive(signal),
     });
     if (leased.status === "busy") {
       console.log(`worker: lease-busy run=${explicitRunId} owner=${leased.claim.lease?.workerId || "unknown"}`);
@@ -186,9 +187,10 @@ async function main() {
       ttlMs,
       heartbeatMs,
       onEvent: (message) => console.log(`worker: ${message}`),
-      driveRun: (ref) => runQirWorkerLoop(store, executor, ref.userSub, ref.runId, {
+      driveRun: (ref, signal) => runQirWorkerLoop(store, executor, ref.userSub, ref.runId, {
         maxSteps: maxStepsPerRun,
         stepDelayMs,
+        signal,
         onStep: (step) => console.log(`worker: step-result run=${ref.runId} ${JSON.stringify(step).slice(0, 200)}`),
       }),
     }),
