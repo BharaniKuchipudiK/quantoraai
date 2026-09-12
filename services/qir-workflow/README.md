@@ -166,8 +166,8 @@ Recorded total Gateway pilot spend is $0.001068, excluding Vercel infrastructure
 See [journal evidence](./journal-evidence-2026-09-13.json) and the preserved
 [event history](./journal-events-2026-09-13.json).
 
-The customer browser-close journey and original generated app's live cart/Undo
-remain unverified. Keep broad customer server ownership disabled and this PR in
+The customer browser-close journey remains unverified. The original generated
+app's live cart/Undo checks passed later on 2026-09-13 (see the browser evidence). Keep broad customer server ownership disabled and this PR in
 draft until those release checks pass. The earlier synthetic process-exit proof
 is separate from this production journal test; an actual provider outage was
 not induced.
@@ -194,5 +194,15 @@ request omitted the marker required by the worker. Compatibility-mode context
 updates do not add the marker. This fixes one prerequisite; it does not enable
 customer execution or complete the connections above.
 
-The live cart/Undo retest is pending sign-in to the separate in-app Quantora tab.
-Chrome was being used concurrently, so the original project was not modified.
+The original Reliability Cart Test (marker QIR-E2E-714) passed live UI checks in
+Chrome: all three products rejected Add at 99 without changing totals or adding
+an Undo entry; invalid quantities preserved cart/history; Add, Empty Cart and
+Reset Sample Cart could be undone. Reload and manual conversation selection
+restored the corrected app with an empty cart. The source was not modified or
+published. See [browser evidence](./cart-browser-evidence-2026-09-13.json).
+
+Reload selected a different conversation, so automatic return to the last
+conversation was not proved. The separate in-app browser signed in but did not
+show the original local history. These observations do not establish cross-browser
+session continuity. The platform's own run label remains UNVERIFIED; external
+UI test observations have not been written into its proof journal.

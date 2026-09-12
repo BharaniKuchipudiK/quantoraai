@@ -1,0 +1,74 @@
+{
+  "date": "2026-09-13",
+  "surface": "Signed-in production Quantora Coding Desk in existing Chrome profile",
+  "app": "Reliability Cart Test",
+  "marker": "QIR-E2E-714",
+  "method": "Native browser UI clicks and keyboard input; results read from the live Preview accessibility tree",
+  "checks": [
+    {
+      "case": "Initial restored preview",
+      "result": "0 items, $0.00; Undo and Empty Cart disabled"
+    },
+    {
+      "case": "Notebook quantity 99 then Add",
+      "result": "99 items, $990.00 unchanged; inline maximum-limit message"
+    },
+    {
+      "case": "Undo after rejected Notebook Add",
+      "result": "0 items, $0.00; Undo disabled, showing no extra history entry"
+    },
+    {
+      "case": "Reset Sample Cart",
+      "result": "1 Notebook + 1 Pen; 2 items, $15.00"
+    },
+    {
+      "case": "Notebook invalid quantities -1, 1.5, 100, blank",
+      "result": "Each rejected with inline error; sample cart stayed at 2 items, $15.00"
+    },
+    {
+      "case": "Undo after all four invalid submissions",
+      "result": "Returned directly to 0 items, $0.00; Undo disabled"
+    },
+    {
+      "case": "Add Notebook, Pen, Mug",
+      "result": "One each; 3 items, $35.00"
+    },
+    {
+      "case": "Undo Mug addition",
+      "result": "1 Notebook + 1 Pen; 2 items, $15.00"
+    },
+    {
+      "case": "Empty Cart then Undo",
+      "result": "0 items, $0.00 then 2 items, $15.00"
+    },
+    {
+      "case": "Pen quantity 99 then Add",
+      "result": "1 Notebook + 99 Pens; 100 items, $505.00 unchanged; inline maximum-limit message"
+    },
+    {
+      "case": "Undo after rejected Pen Add",
+      "result": "Returned directly to 2 items, $15.00"
+    },
+    {
+      "case": "Mug quantity 99 then Add",
+      "result": "1 Notebook + 1 Pen + 99 Mugs; 101 items, $1995.00 unchanged; inline maximum-limit message"
+    },
+    {
+      "case": "Undo after rejected Mug Add",
+      "result": "Returned directly to 2 items, $15.00"
+    },
+    {
+      "case": "Reload Quantora and manually reopen saved test conversation",
+      "result": "Test marker and corrected controls restored; 0 items, $0.00; Undo and Empty Cart disabled"
+    }
+  ],
+  "limitations": [
+    "Reload selected a different conversation; returning to this test required manual selection. Automatic last-conversation restoration was not proved.",
+    "The application still labels its run UNVERIFIED; these external observations were not injected into its journal.",
+    "This is not a test of customer background generation while the browser is closed.",
+    "The separate in-app browser signed in successfully but did not show the original local test history; the original Chrome profile was used."
+  ],
+  "generatedAppSourceChanged": false,
+  "modelCallsRequested": 0,
+  "generatedAppPublishedOrPushed": false
+}
