@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   GITHUB_ENDPOINTS,
   buildGithubStageBody,
@@ -13,14 +13,10 @@ import { studioWorkspaceFileEntries } from '../lib/studio-workspace-tree.js';
 /*
  * The step that makes a build the user's own.
  *
- * Everything else on this desk is reversible and local: the preview, the file
- * tree, the simulated git. This panel is the first control that writes to
- * something outside Quantora, so it says what it is about to do before it does
- * it — how many files, to which repository, on which branch — and reports back
- * what actually happened rather than "Done".
- *
- * It holds no credential. The server resolves the user's sealed GitHub token
- * and asks GitHub whether they may write, on every call.
+ * Existing repositories are pushed to a WORK branch by default, based on the
+ * branch the user checked out. That makes the next action — Open pull request —
+ * a real diff with shared history instead of either writing straight to `main`
+ * or creating an unrelated root branch.
  */
 
 const panelStyle = {
@@ -52,6 +48,8 @@ const buttonStyle = {
   cursor: 'pointer',
 };
 
+const DEFAULT_WORK_BRANCH = 'quantora-desk';
+
 async function postStage(endpoint, payload) {
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -77,20 +75,16 @@ export default function GithubPushPanel({
   githubRepoUrl = '',
   githubDestination = null,
   projectName = '',
+  onBranchChange = null,
 }) {
-  /*
-   * A destination chosen above the composer wins over the imported repository
-   * URL: it is the more recent and more deliberate statement of intent, and
-   * asking the same question twice in one product is how the two answers end up
-   * disagreeing.
-   */
   const chosen = normalizeGithubDestination(githubDestination);
   const targetRepoUrl = chosen ? githubDestinationRepoUrl(chosen) : githubRepoUrl;
+  const baseBranch = chosen?.branch || chosen?.defaultBranch || 'main';
 
   const [mode, setMode] = useState(targetRepoUrl ? 'existing' : 'new');
   const [repoName, setRepoName] = useState(() => suggestRepositoryName(projectName));
-  const [branch, setBranch] = useState(chosen?.branch || 'main');
-  const [message, setMessage] = useState('Initial commit from Quantora');
+  const [branch, setBranch] = useState(targetRepoUrl ? DEFAULT_WORK_BRANCH : 'main');
+  const [message, setMessage] = useState('Update from Quantora coding desk');
   const [isPrivate, setIsPrivate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
@@ -98,9 +92,52 @@ export default function GithubPushPanel({
   const [createdUrl, setCreatedUrl] = useState('');
 
   const files = useMemo(() => deskFilesForPush(studioWorkspaceFileEntries(vfs)), [vfs]);
-  const canPush = files.length > 0 && !busy;
+  const writeBlocked = mode === 'existing' && chosen?.canPush === false;
+  const canPush = files.length > 0
+    && !busy
+    && !writeBlocked
+    && (mode === 'new' || Boolean(targetRepoUrl));
+
+  /*
+   * The destination can be selected after this lazy panel mounted. Keep the
+   * mode in step with it and hand the PR pane the same work branch the push
+   * pane will use. Before this, Save to GitHub could push one branch while
+   * "Open draft PR" pointed at another branch that did not exist.
+   */
+  useEffect(() => {
+    if (!targetRepoUrl) return;
+    setMode('existing');
+    setBranch((current) => {
+      const next = !current || current === 'main' || current === baseBranch ? DEFAULT_WORK_BRANCH : current;
+      onBranchChange?.(next);
+      return next;
+    });
+  }, [targetRepoUrl, baseBranch, onBranchChange]);
+
+  useEffect(() => {
+    onBranchChange?.(branch);
+  }, [branch, onBranchChange]);
+
+  function chooseMode(nextMode) {
+    setMode(nextMode);
+    if (nextMode === 'existing') {
+      setBranch(DEFAULT_WORK_BRANCH);
+      onBranchChange?.(DEFAULT_WORK_BRANCH);
+    } else {
+      setBranch('main');
+    }
+  }
+
+  function changeBranch(value) {
+    setBranch(value);
+    if (mode === 'existing') onBranchChange?.(value);
+  }
 
   async function run() {
+    if (writeBlocked) {
+      setError('This repository is read-only for your connected GitHub account. You can review its checked-out code, but GitHub will not accept a commit from this account.');
+      return;
+    }
     setBusy(true);
     setError('');
     setStatus('');
@@ -124,7 +161,7 @@ export default function GithubPushPanel({
         setCreatedUrl(created.data.htmlUrl || repoUrl);
         setStatus(`Created ${created.data.fullName}. Pushing ${files.length} file${files.length === 1 ? '' : 's'}…`);
       } else {
-        setStatus(`Pushing ${files.length} file${files.length === 1 ? '' : 's'}…`);
+        setStatus(`Committing ${files.length} file${files.length === 1 ? '' : 's'} to ${branch} from ${baseBranch}…`);
       }
 
       const pushed = await postStage(GITHUB_ENDPOINTS.push, {
@@ -132,21 +169,20 @@ export default function GithubPushPanel({
         files,
         message,
         branch,
+        // For an existing repository, a missing work branch is created from
+        // the branch the user actually pulled, not as an unrelated root commit.
+        ...(mode === 'existing' ? { baseBranch } : {}),
       });
       if (!pushed.ok) {
-        // A repository that was created still exists even when the push failed.
-        // Saying so beats leaving the user to discover an empty repository.
         setError(mode === 'new'
           ? `${pushed.error} The repository was created and is empty — you can push again.`
           : pushed.error);
         return;
       }
 
-      setStatus(`${pushOutcomeMessage(pushed.data)} As ${pushed.data.actedAs}.`);
-      // The push reply's htmlUrl is the branch on GitHub; without one, keep the
-      // repository link the create step set. `createdUrl` from this closure is
-      // the value from before the click, so it must be read fresh.
+      setStatus(`${pushOutcomeMessage(pushed.data)} As ${pushed.data.actedAs}. ${mode === 'existing' ? 'The branch is ready for a pull request.' : ''}`);
       setCreatedUrl((current) => pushed.data.htmlUrl || current);
+      if (mode === 'existing') onBranchChange?.(pushed.data.branch || branch);
     } catch (caught) {
       setError(caught?.message || 'The push did not complete.');
     } finally {
@@ -157,14 +193,14 @@ export default function GithubPushPanel({
   return (
     <div data-quantora-github-push="true" style={panelStyle}>
       <div style={{ color: '#94a3b8', lineHeight: 1.45 }}>
-        Save this desk to GitHub as yourself. Quantora asks GitHub whether you may write, every time.
+        Commit this desk to GitHub as yourself. Existing repositories use a work branch so the commit can be opened as a pull request.
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <button
           type="button"
           data-quantora-github-push-mode="new"
-          onClick={() => setMode('new')}
+          onClick={() => chooseMode('new')}
           style={{ ...buttonStyle, opacity: mode === 'new' ? 1 : 0.55 }}
         >
           New repository
@@ -172,7 +208,7 @@ export default function GithubPushPanel({
         <button
           type="button"
           data-quantora-github-push-mode="existing"
-          onClick={() => setMode('existing')}
+          onClick={() => chooseMode('existing')}
           disabled={!targetRepoUrl}
           title={targetRepoUrl ? undefined : 'Choose a repository above the composer, or import one, to push into an existing repository.'}
           style={{ ...buttonStyle, opacity: mode === 'existing' && targetRepoUrl ? 1 : 0.55 }}
@@ -204,17 +240,26 @@ export default function GithubPushPanel({
       ) : (
         <div style={{ color: '#cbd5f5' }}>
           {targetRepoUrl || 'No repository chosen. Pick one above the composer, or import one.'}
+          {targetRepoUrl ? <span style={{ color: '#94a3b8' }}> · base {baseBranch}</span> : null}
         </div>
       )}
 
+      {writeBlocked ? (
+        <div data-quantora-github-push-readonly="true" style={{ color: '#fbbf24', lineHeight: 1.45 }}>
+          Read-only repository: the code is available for review, but this GitHub account cannot commit or open a PR from it.
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <label htmlFor="quantora-push-branch" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>Branch</label>
+        <label htmlFor="quantora-push-branch" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>
+          {mode === 'existing' ? 'Work branch' : 'Branch'}
+        </label>
         <input
           id="quantora-push-branch"
           data-quantora-github-push-branch="true"
           value={branch}
-          onChange={(event) => setBranch(event.target.value)}
-          style={{ ...inputStyle, maxWidth: '160px' }}
+          onChange={(event) => changeBranch(event.target.value)}
+          style={{ ...inputStyle, maxWidth: '180px' }}
         />
         <label htmlFor="quantora-push-message" style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>Commit</label>
         <input
@@ -226,15 +271,22 @@ export default function GithubPushPanel({
         />
       </div>
 
+      {mode === 'existing' && branch === baseBranch ? (
+        <div data-quantora-github-push-base-warning="true" style={{ color: '#fbbf24', lineHeight: 1.45 }}>
+          This work branch matches the base branch. Use a separate branch (for example {DEFAULT_WORK_BRANCH}) if you want to open a pull request instead of committing directly to {baseBranch}.
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button
           type="button"
           data-quantora-github-push-run="true"
           disabled={!canPush}
           onClick={run}
+          title={writeBlocked ? 'Your connected GitHub account has read access only.' : undefined}
           style={{ ...buttonStyle, opacity: canPush ? 1 : 0.5, cursor: canPush ? 'pointer' : 'not-allowed' }}
         >
-          {busy ? 'Working…' : mode === 'new' ? 'Create and push' : 'Push to GitHub'}
+          {busy ? 'Working…' : mode === 'new' ? 'Create and push' : 'Commit to GitHub'}
         </button>
         <span style={{ color: '#64748b' }}>
           {files.length
