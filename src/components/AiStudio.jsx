@@ -49,7 +49,7 @@ import { deskFor, forgetDesk, resolveWriteTarget, updateDesk } from '../lib/sess
 import { CODING_DESK_AUTO_MODEL, isCodingDeskAutoSelection } from '../lib/coding-desk-auto-model.js';
 import { diffVfsReview, mergeDeskReview } from '../lib/studio-file-review.js';
 import { describeDeskCheckpoints, planDeskRestore, recordDeskCheckpoint } from '../lib/desk-checkpoints.js';
-import { loadDeskCheckpoints, persistDeskCheckpoints } from '../lib/desk-checkpoint-client.js';
+import { loadDeskCheckpoints, createDeskCheckpointSaver } from '../lib/desk-checkpoint-client.js';
 import { applyPatch, patchApplies, proposePatch } from '../lib/candidate-patch.js';
 import { newThreadLabel } from '../lib/advisor-thread.js';
 import { STUDIO_PLUS_ACTION, resolveStudioPlusAction } from '../lib/studio-tools-menu.js';
@@ -616,6 +616,9 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
   const [deskReview, setDeskReview] = useState([]);
   // Every accepted state, oldest first — the rewind menu's restore points.
   const [deskCheckpoints, setDeskCheckpoints] = useState([]);
+  const [deskSaveError, setDeskSaveError] = useState('');
+  const [deskLoadEpoch, setDeskLoadEpoch] = useState(0);
+  const deskCheckpointSaver = useMemo(() => createDeskCheckpointSaver(activeSessionId), [activeSessionId]);
   const vfsRef = useRef({});
   useEffect(() => { vfsRef.current = vfs; }, [vfs]);
 
@@ -1143,14 +1146,18 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
       // The session can change while this is in flight. Adopting a chain the
       // user has navigated away from is the same defect arriving late.
       if (cancelled || sessionId !== activeSessionId) return;
-      if (!result.ok || !result.entries?.length) return;
+      if (!result.ok) { setDeskSaveError(result.reason); return; }
+      deskCheckpointSaver.initialize(result);
+      setDeskSaveError('');
+      setDeskLoadEpoch((epoch) => epoch + 1);
+      if (!result.entries?.length) return;
       setDeskCheckpoints((current) => {
         const untouched = current.length <= 1 && (current[0]?.origin === 'baseline' || !current.length);
         return untouched ? result.entries : current;
       });
     });
     return () => { cancelled = true; };
-  }, [activeSessionId]);
+  }, [activeSessionId, deskCheckpointSaver]);
 
   /*
    * The same binding, and the same reason. Saving under the lagging ref would
@@ -1162,12 +1169,13 @@ export default function AiStudio({ onOpenAuth, selectedModel, setSelectedModel, 
     const sessionId = activeSessionId;
     if (!sessionId || !deskCheckpoints.length) return undefined;
     let cancelled = false;
-    persistDeskCheckpoints(sessionId, deskCheckpoints).then((result) => {
-      if (cancelled || result.ok) return;
-      console.warn('Desk checkpoints were not saved:', result.reason);
+    deskCheckpointSaver.save(deskCheckpoints).then((result) => {
+      if (cancelled) return;
+      setDeskSaveError(result.ok ? '' : result.reason);
+      if (!result.ok) console.warn('Desk checkpoints were not saved:', result.reason);
     });
     return () => { cancelled = true; };
-  }, [deskCheckpoints, activeSessionId]);
+  }, [deskCheckpoints, activeSessionId, deskLoadEpoch, deskCheckpointSaver]);
   const deskCheckpointRows = useMemo(
     () => describeDeskCheckpoints(deskCheckpoints, vfs),
     [deskCheckpoints, vfs],
@@ -6169,6 +6177,7 @@ Paused — ${autoPauseRef.current}.`
                   {deskChromeCompact ? null : deskLadderChipLabel(deskLadder)}
                 </span>
               ) : null}
+              {deskSaveError ? <span role="status" data-desk-save-error="true" title={deskSaveError} style={{ color: '#d97706', fontSize: '0.75rem' }}>Files kept locally · {deskSaveError}</span> : null}
               {deskJobLabel ? (
                 <span
                   data-quantora-desk-job="true"

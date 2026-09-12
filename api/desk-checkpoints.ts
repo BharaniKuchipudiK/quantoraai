@@ -20,7 +20,7 @@
  * store enforces the same pairing in its queries.
  */
 import { requireActiveSession } from "./_lib/authz.js";
-import { isStoreConfigured, readDeskCheckpoints, saveDeskCheckpoints } from "./_lib/store.js";
+import { isStoreConfigured, readDeskCheckpoints, saveDeskCheckpointsRevision } from "./_lib/store.js";
 import {
   deskCheckpointStepsFromRows,
   planDeskCheckpointChain,
@@ -54,14 +54,21 @@ export default async function handler(req: any, res: any) {
   if (!sessionId) return res.status(400).json({ error: "A valid sessionId is required." });
 
   if (req.method === "POST") {
+    const expectedRevision = req.body?.expectedRevision;
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      return res.status(409).json({ reason: "revision-required", error: "Reload the saved history before saving. Your local files are unchanged." });
+    }
     const history = Array.isArray(req.body?.history) ? req.body.history : null;
     if (!history) return res.status(400).json({ error: "history must be an array of checkpoints." });
 
     const plan = planDeskCheckpointChain(history);
+    if (plan.stoppedAt || plan.steps.length !== history.length) {
+      return res.status(422).json({ saved: 0, reason: plan.reason || 'invalid-history', error: 'The complete history could not be stored. Local files are unchanged.' });
+    }
     if (!plan.steps.length) {
       return res.status(200).json({ saved: 0, stoppedAt: plan.stoppedAt, reason: plan.reason });
     }
-    const saved = await saveDeskCheckpoints(
+    const saved = await saveDeskCheckpointsRevision(
       userSub,
       sessionId,
       plan.steps.map((step, seq) => ({
@@ -72,16 +79,21 @@ export default async function handler(req: any, res: any) {
         hash: step.hash,
         delta: step.delta,
       })),
+      expectedRevision,
     );
     // Never answer "saved" on a write that did not land: the desk would drop
     // the in-memory history it is still the only holder of.
-    if (!saved) {
+    if (saved.status === "conflict") {
+      return res.status(409).json({ reason: "save-conflict", error: "Newer work was saved elsewhere. Your local files are unchanged; reload and reconcile before saving." });
+    }
+    if (saved.status !== "saved") {
       return res.status(503).json({
         error: "The checkpoints could not be stored, so keep the history you have.",
         reason: "store-unreachable",
       });
     }
     return res.status(200).json({
+      revision: saved.revision,
       saved: plan.steps.length,
       stoppedAt: plan.stoppedAt,
       reason: plan.reason,
@@ -130,6 +142,7 @@ export default async function handler(req: any, res: any) {
 
   return res.status(200).json({
     sessionId,
+    revision: rows[0]?.generation ?? 0,
     vfs: replay.vfs,
     verifiedSteps: replay.verifiedSteps,
     checkpoints,

@@ -206,3 +206,19 @@ test('worker refuses to guess a desk session when the Run has no binding', async
   });
   assert.equal(result.status, 'missing-session-binding');
 });
+
+test('a browser save between worker read and write defeats worker publication atomically', async () => {
+  const baseline = { 'index.html': 'baseline' };
+  let current = rowsFor(baseline).map(row => ({ ...row, generation: 10 }));
+  const result = await saveQirDeskWorkspace({ userSub: 'u1', run: runWithSession(),
+    vfs: { 'index.html': 'worker' }, expectedWorkspaceHash: hashVfsContent(baseline) }, {
+    readRows: async () => structuredClone(current),
+    saveRows: async (_sub, _session, _rows, expectedRevision) => {
+      current = rowsFor({ 'index.html': 'new browser work' }).map(row => ({ ...row, generation: 11 }));
+      assert.equal(expectedRevision, 10);
+      return expectedRevision === current[0].generation;
+    },
+  });
+  assert.equal(result.status, 'unavailable');
+  assert.equal(current[0].delta.changed['index.html'], 'new browser work');
+});

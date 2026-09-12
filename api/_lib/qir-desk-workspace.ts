@@ -18,7 +18,7 @@ export type QirDeskWorkspaceLoad =
 
 type WorkspaceBindings = {
   readRows(userSub: string, sessionId: string): Promise<DeskCheckpointRow[] | null>;
-  saveRows(userSub: string, sessionId: string, rows: DeskCheckpointRow[]): Promise<boolean>;
+  saveRows(userSub: string, sessionId: string, rows: DeskCheckpointRow[], expectedRevision: number): Promise<boolean>;
 };
 
 const productionBindings: WorkspaceBindings = {
@@ -148,6 +148,7 @@ export async function saveQirDeskWorkspace(
       hash: step.hash,
       delta: step.delta,
     })),
+    rows[0]?.generation ?? 0,
   );
   return saved
     ? { status: "saved", sessionId, checkpointId }

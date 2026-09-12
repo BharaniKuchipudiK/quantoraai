@@ -1280,61 +1280,37 @@ export type DeskCheckpointRow = {
  * a statistic, while a lost row here is a hole in someone's history that the
  * replay will refuse to cross. The caller is told whether the work is safe.
  *
- * Upserted on (user_sub, session_id, checkpoint_id) so a retry after a timeout
- * cannot fork the chain into two rows claiming the same position.
+ * Replaced atomically only when the caller still holds the current revision.
+ * Browser and worker writes use the same database lock and revision check.
  */
-export async function saveDeskCheckpoints(
-  userSub: string,
-  sessionId: string,
-  rows: DeskCheckpointRow[],
-): Promise<boolean> {
+export type DeskCheckpointSaveResult =
+  | { status: "saved"; revision: number }
+  | { status: "conflict" }
+  | { status: "unavailable" };
+
+export async function saveDeskCheckpointsRevision(
+  userSub: string, sessionId: string, rows: DeskCheckpointRow[], expectedRevision: number,
+): Promise<DeskCheckpointSaveResult> {
   const sub = String(userSub || "").trim();
   const session = String(sessionId || "").trim();
-  if (!sub || !session || !Array.isArray(rows) || !rows.length) return false;
-
-  /*
-   * A SAVE REPLACES THE CHAIN, IT DOES NOT ADD TO IT.
-   *
-   * The desk trims its own history and renumbers what remains, so the
-   * twenty-first checkpoint arrives claiming seq 0 -- the position the dropped
-   * one still held. Merging by checkpoint_id alone would leave two rows at the
-   * same position and `deskCheckpointStepsFromRows` would refuse the chain from
-   * then on, permanently. Raised in review of #591.
-   *
-   * Each save therefore writes a whole new generation and readers take the
-   * newest one, so a chain is never observed half-replaced: the previous
-   * generation stays intact and readable until this one is completely written.
-   */
-  const generation = Date.now();
-  const response = await request("desk_checkpoints", {
+  if (!sub || !session || !Array.isArray(rows) || !rows.length
+      || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) return { status: "unavailable" };
+  const response = await request("rpc/replace_desk_checkpoints", {
     method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify(rows.map((row) => ({
-      user_sub: sub.slice(0, 200),
-      session_id: session.slice(0, 200),
-      generation,
-      checkpoint_id: String(row.checkpoint_id || "").slice(0, 120),
-      seq: Math.max(0, Math.round(Number(row.seq) || 0)),
-      label: row.label ? String(row.label).slice(0, 120) : null,
-      origin: row.origin ? String(row.origin).slice(0, 40) : "commit",
-      hash: String(row.hash || ""),
-      delta: row.delta && typeof row.delta === "object" ? row.delta : { changed: {}, removed: [] },
-    }))),
+    body: JSON.stringify({ p_user_sub: sub, p_session_id: session,
+      p_expected_revision: expectedRevision, p_rows: rows }),
   });
-  if (!response) return false;
+  if (!response) return { status: "unavailable" };
+  const result = await response.json().catch(() => null);
+  if (result?.status === "conflict") return { status: "conflict" };
+  return result?.status === "saved" && Number.isSafeInteger(result.revision)
+    ? { status: "saved", revision: result.revision } : { status: "unavailable" };
+}
 
-  /*
-   * Retire what this generation replaced. Deliberately after the write and
-   * deliberately not fatal: a failure here leaves rows that no reader will look
-   * at, which costs storage. Doing it first, or treating it as required, would
-   * risk deleting the only copy of a history whose replacement never landed.
-   */
-  void requestRaw(
-    `desk_checkpoints?user_sub=eq.${encodeURIComponent(sub)}`
-    + `&session_id=eq.${encodeURIComponent(session)}&generation=lt.${generation}`,
-    { method: "DELETE", headers: { Prefer: "return=minimal" } },
-  );
-  return true;
+export async function saveDeskCheckpoints(
+  userSub: string, sessionId: string, rows: DeskCheckpointRow[], expectedRevision = 0,
+): Promise<boolean> {
+  return (await saveDeskCheckpointsRevision(userSub, sessionId, rows, expectedRevision)).status === "saved";
 }
 
 /**
