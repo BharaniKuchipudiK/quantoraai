@@ -283,15 +283,12 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
         }
         return false;
       }
-      if (body?.run) accept(body);
       return true;
     } catch (error) {
       if (required) throw error;
       return false;
     }
   };
-
-  const compactWorkingContext = (current, note) => writeWorkingContext(current, note, { required: false });
 
   /*
    * PR #709 ownership boundary.
@@ -323,6 +320,8 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
     if (!snapshot?.runId) return snapshot || null;
     return accept(await requestQir(null, `?runId=${encodeURIComponent(snapshot.runId)}`));
   });
+
+  const compactWorkingContext = (current, note) => writeWorkingContext(current, note, { required: false });
 
   const requestPremiumEscalation = () => enqueue(async () => {
     const current = runNow;
