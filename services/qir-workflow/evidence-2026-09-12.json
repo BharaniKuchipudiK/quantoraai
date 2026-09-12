@@ -45,5 +45,26 @@
     "Actual provider outage (503 was injected)",
     "Original generated app live cart and Undo",
     "Customer browser-close/resume journey"
-  ]
+  ],
+  "productionDatabaseSaveConflict": {
+    "transport": "Connected Supabase SQL tool calling production replace_desk_checkpoints RPC; not the worker REST connection",
+    "syntheticUser": "qir-workflow-synthetic-20260912",
+    "syntheticUserLoginBlocked": true,
+    "session": "qir-workflow-desk-20260912-management-cas",
+    "concurrentResults": [
+      {
+        "writer": "writer-a",
+        "status": "saved",
+        "revision": 1
+      },
+      {
+        "writer": "writer-b",
+        "status": "conflict"
+      }
+    ],
+    "staleRetry": "conflict",
+    "finalStoredCheckpoint": "writer-a",
+    "finalStoredText": "writer-a",
+    "finalGeneration": 1
+  }
 }

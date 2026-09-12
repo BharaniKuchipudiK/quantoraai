@@ -123,6 +123,11 @@ customer ID from the caller.
 - `GET /journal-proof` reads the durable run, verification evidence and published
   quantity source, including whether the independent test file stayed unchanged.
 
+Provision the synthetic user row first; it is a non-login identity with
+`blocked_at` set and an `example.invalid` address. Checkpoints have a foreign key
+to this row. The production row has been created through the connected database
+management tool.
+
 The baseline includes 306 quantity assertions and a syntax build command.
 Production repository verification can now use Vercel's injected OIDC identity
 without a long-lived Sandbox token. An explicit null credential override still
@@ -143,3 +148,8 @@ The failed run was cancelled. See [recorded evidence](./evidence-2026-09-12.json
 Production journal/checkpoint execution, browser-close behavior and the original
 generated app's live cart behavior remain unverified. Keep broad server ownership
 disabled until those checks pass.
+
+A production database RPC race also passed through the connected SQL tool: one
+writer saved revision 1, the other conflicted, and a stale retry left the winner
+intact. This confirms database concurrency behavior, not the worker's pending
+REST credential connection. Evidence is recorded alongside the cloud proof.
