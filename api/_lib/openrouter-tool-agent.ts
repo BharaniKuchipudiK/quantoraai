@@ -241,7 +241,7 @@ export async function runOpenRouterToolAgent(input: {
       const parsed = parseToolArguments(call?.function?.arguments);
       let raw: any;
       let state: QuantoraToolState = 'unavailable';
-      if (!parsed.ok) {
+      if (parsed.ok === false) {
         raw = { ok: false, status: 'invalid_arguments', error: parsed.message, note: 'No tool executed. Correct the arguments and try the tool again.' };
       } else {
         input.onToolState?.({ tool: toolName, state: 'running' });
