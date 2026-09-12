@@ -59,6 +59,7 @@ import { NO_CONTENT_MS, contentSilenceWindowMs, nextReadBudgetMs, streamStopReas
 import { buildGroundedSourceBlock, stripGroundingMarkerFromMessage } from '../../shared/research/grounding-marker.js';
 import { formatTravelPlaceShortlist } from '../../shared/travel/place-shortlist.js';
 import { appendFunctionResponse, extractSignedFunctionTurn } from './gemini-tool-turn.js';
+import { runOpenRouterToolAgent } from './openrouter-tool-agent.js';
 import { describeCredentialFailure, isBillingRefusal, isProviderCredentialRejection, shouldDegradeToolsTurn, shouldFallbackBeforeStreaming, streamErrorFrom } from './model-execution-policy.js';
 import { partnerProviderPressureLabel } from './partner-turn-status.js';
 import {
@@ -1315,7 +1316,7 @@ export default async function handler(req: any, res: any) {
       ? await readGithubPrincipal(activeSessionUser.sub).catch(() => null)
       : null;
     const githubToolsEnabled = shouldEnableGithubTools({ hasGithubConnection: Boolean(githubPrincipal) })
-      && Boolean(effectiveGeminiKey);
+      && Boolean(effectiveGeminiKey || effectiveOpenRouterKey);
     /*
      * Writes get their own gate rather than reusing githubToolsEnabled,
      * because the roadmap that decided this (per the product owner: the model
@@ -1334,7 +1335,7 @@ export default async function handler(req: any, res: any) {
     const githubWriteToolsEnabled = shouldEnableGithubWriteTools({
       hasGithubConnection: Boolean(githubPrincipal),
       autoPrOptedIn: githubAutoPrOptedIn,
-    }) && Boolean(effectiveGeminiKey);
+    }) && Boolean(effectiveGeminiKey || effectiveOpenRouterKey);
     /*
      * The platform's shared Vercel token, read once per turn for the same
      * reason the GitHub principal is: a tool loop that re-reads it per call
@@ -1344,7 +1345,7 @@ export default async function handler(req: any, res: any) {
      */
     const vercelToken = await resolveVercelToken().catch(() => null);
     const vercelToolsEnabled = shouldEnableVercelTools({ vercelConfigured: Boolean(vercelToken) })
-      && Boolean(effectiveGeminiKey);
+      && Boolean(effectiveGeminiKey || effectiveOpenRouterKey);
     /*
      * Vercel Sandbox credentials — a DIFFERENT credential shape from
      * vercelToken above (see sandbox-credentials.ts for why). Resolved once
@@ -1356,7 +1357,7 @@ export default async function handler(req: any, res: any) {
     const sandboxToolsEnabled = shouldEnableSandboxTools({
       hasGithubConnection: Boolean(githubPrincipal),
       sandboxConfigured: Boolean(sandboxCredentials),
-    }) && Boolean(effectiveGeminiKey);
+    }) && Boolean(effectiveGeminiKey || effectiveOpenRouterKey);
     /*
      * THE turn's tool context. Every question about tools — what to declare,
      * whether a call is legitimate, who executes it — is asked of the registry
@@ -1378,6 +1379,10 @@ export default async function handler(req: any, res: any) {
       get travelToolsPermitted() { return travelToolsEnabled; },
       toolDeadlineAt: startTime + TOOL_TIME_BUDGET_MS,
     };
+    const repositoryAgentToolsEnabled = githubToolsEnabled
+      || githubWriteToolsEnabled
+      || vercelToolsEnabled
+      || sandboxToolsEnabled;
     const textCapabilities = visionImages.length
       ? (['text', 'vision'] as const)
       : effectiveBuildMode
@@ -1609,7 +1614,7 @@ export default async function handler(req: any, res: any) {
     // Provider-neutral text/build execution. The route is not committed until
     // the upstream produces a usable first token, so a dead endpoint, exhausted
     // quota domain, or empty stream can fail over before Quantora starts SSE.
-    if (!travelToolsEnabled) {
+    if (!travelToolsEnabled && !repositoryAgentToolsEnabled) {
       const formattedHistory = [
         { role: "system", content: finalSystemPrompt },
         ...(boundedHistory || []).map((item: any) => ({
@@ -2775,6 +2780,129 @@ ${sandboxToolsEnabled ? `- You DO have a way to actually run the fix before push
 
     if (!effectiveOpenRouterKey) {
       return res.status(401).json({ error: `No OpenRouter API key configured.`, requiresKey: "openrouter" });
+    }
+
+    if (repositoryAgentToolsEnabled) {
+      /*
+       * #712: OpenRouter/Nemotron uses the SAME registry and dispatcher as
+       * Gemini. This branch is only a provider protocol adapter: declarations,
+       * enablement, permission and execution authority stay in tool-registry.
+       * Travel remains on its existing Gemini-specific path for now because its
+       * live capability is explicitly routed as travel-tools.
+       */
+      const toolMessages = [
+        { role: 'system', content: finalSystemPrompt },
+        ...(boundedHistory || []).map((item: any) => ({
+          role: item.role === 'model' || item.role === 'assistant' || item.sender === 'ai' ? 'assistant' : 'user',
+          content: item.text || item.content || '',
+        })),
+      ];
+      toolMessages.push({
+        role: 'user',
+        content: visionImages.length
+          ? [
+              ...visionImages.map((url: string) => ({ type: 'image_url', image_url: { url } })),
+              { type: 'text', text: refineUserMessage },
+            ]
+          : refineUserMessage,
+      });
+
+      const openRouterToolAttempts = attempts.filter((attempt) => attempt.provider === 'openrouter');
+      let toolAgentResult: Awaited<ReturnType<typeof runOpenRouterToolAgent>> | null = null;
+      let toolAgentModel = '';
+      let toolAgentFallbackUsed = false;
+      let toolAgentLastError: any = null;
+      const hasTurnAttempt = Object.prototype.hasOwnProperty.call(req.body || {}, 'turnAttempt');
+      const toolContext: QuantoraToolContext = {
+        ...activeToolContext,
+        recentUserTexts: recentUserTextsFromChat(boundedHistory, message),
+        ...(hasTurnAttempt ? { turnAttempt: Math.max(1, Number(req.body?.turnAttempt) || 1) } : {}),
+      };
+
+      for (let index = 0; index < openRouterToolAttempts.length; index += 1) {
+        assertBudget(startTime, turnBudgetMs, 'chat turn');
+        const attempt = openRouterToolAttempts[index];
+        const resolved = resolveOpenRouterModelId(attempt.id);
+        if (resolved.error) {
+          toolAgentLastError = new Error(resolved.error);
+          continue;
+        }
+        try {
+          toolAgentResult = await runOpenRouterToolAgent({
+            key: effectiveOpenRouterKey,
+            modelId: resolved.slug as string,
+            messages: toolMessages,
+            temperature: dynamicTemperature,
+            grounding,
+            toolContext,
+            maxSteps: MAX_AGENT_STEPS,
+            modelDeadlineAt: startTime + turnBudgetMs,
+            streamCommitted: () => sse.isCommitted,
+            onToolState: ({ tool, state }) => sse.status({ phase: 'tool', state, tool }),
+          });
+          toolAgentModel = resolved.slug as string;
+          toolAgentFallbackUsed = index > 0;
+          await recordInferenceRouteSuccess(providerCircuitStore, attempt);
+          break;
+        } catch (error: any) {
+          toolAgentLastError = error;
+          if (error && typeof error === 'object' && !error.gateway) error.gateway = 'openrouter';
+          spentEngineIds.add(attempt.id);
+          const status = Number(error?.status || 500);
+          await recordInferenceRouteFailure(providerCircuitStore, attempt, status, Date.now(), { billing: isBillingRefusal(error) });
+          const next = openRouterToolAttempts[index + 1];
+          if (
+            index >= openRouterToolAttempts.length - 1
+            || !shouldFallbackBeforeStreaming(error, {
+              currentGateway: 'openrouter',
+              nextGateway: next ? 'openrouter' : undefined,
+            })
+          ) throw error;
+        }
+      }
+
+      if (!toolAgentResult || !toolAgentModel) {
+        throw toolAgentLastError || new Error('OpenRouter did not return a tool-capable response.');
+      }
+
+      let fullReply = toolAgentResult.text;
+      if (toolAgentResult.status === 'paused' && toolAgentResult.toolResult?.status !== 'unavailable') {
+        fullReply = `**Clarifying Question:** ${fullReply}`;
+      }
+      if (!fullReply.trim()) {
+        throw Object.assign(new Error('OpenRouter tool agent returned an empty final response.'), { status: 502, gateway: 'openrouter' });
+      }
+      sse.text(fullReply);
+
+      const latencyMs = Date.now() - startTime;
+      logTelemetry(toolAgentModel, latencyMs, fullReply.length, 'OpenRouter', activeSessionUser?.sub ?? null, !openRouterKey && mayUseServerKeys, telemetryContext, req);
+      const finish = classifyFinish(toolAgentResult.finishReason);
+      const outcome = ledgerOutcomeFor(finish);
+      if (outcome) {
+        recordModelQualityEvent({
+          requestId,
+          modelId: toolAgentModel,
+          taskCategory,
+          outcome,
+          latencyMs,
+          fallbackFrom: toolAgentFallbackUsed ? modelId : fallbackFrom,
+        });
+      }
+      sse.done({
+        provider: `OpenRouter (${modelName || toolAgentModel})`,
+        latencyMs,
+        modelId: toolAgentModel,
+        requestId,
+        correlationId,
+        finish,
+        attachments: attachmentSummary,
+        liveConnected: true,
+        fallbackUsed: toolAgentFallbackUsed,
+        conversation: conversationMetadata(fullReply, finish),
+        toolCalls: toolAgentResult.toolCalls,
+        ...(travelDegraded ? { travelDegraded: true } : {}),
+      });
+      return;
     }
 
     const formattedHistory = [
