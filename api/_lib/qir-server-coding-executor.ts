@@ -7,6 +7,7 @@ import { reduceQirObservation } from './qir-run-store.js';
 import type { QirAgentRun, QirArtifactRef, QirFailureCode, QirObservation, QirVerificationResult } from './qir-contracts.js';
 import type { QirStepContinuation, QirStepExecution, QirStepExecutor } from './qir-worker-runtime.js';
 import { verifyBuild } from './verify-build.js';
+import { verifyQirRepositoryRuntime, type QirRepositoryRuntimeResult, type QirRepositoryRuntimeVerifier } from './qir-repository-runtime.js';
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
@@ -68,6 +69,7 @@ function failureObservation(run: QirAgentRun, continuation: QirStepContinuation,
   evidenceKind: string;
   evidenceRef?: string | null;
   recoveryExhausted?: boolean;
+  observationKind?: QirObservation['kind'];
 }): QirObservation {
   const actionId = run.cursor.actionId || continuation.actionId || `${continuation.stepId}-action`;
   const observedAt = new Date().toISOString();
@@ -76,7 +78,7 @@ function failureObservation(run: QirAgentRun, continuation: QirStepContinuation,
     observationId: id,
     runId: run.runId,
     actionId,
-    kind: 'model',
+    kind: input.observationKind || 'model',
     status: 'failure',
     evidence: [{
       evidenceId: `${id}-evidence`.slice(0, 191),
@@ -137,18 +139,50 @@ function normalizedVfs(vfs: Record<string, unknown>): Record<string, string> {
   return out;
 }
 
+function runtimeFailureMessage(runtime: Extract<QirRepositoryRuntimeResult, { status: 'failed' }>): string {
+  const output = String(runtime.output || '').replace(/\s+/g, ' ').trim().slice(0, 320);
+  return `${runtime.reason}${output ? ` Output: ${output}` : ''}`;
+}
+
+function runtimePayload(runtime: QirRepositoryRuntimeResult) {
+  if (runtime.status === 'passed') {
+    return {
+      status: runtime.status,
+      commands: runtime.commands,
+      results: runtime.results.map((result) => ({
+        command: result.command,
+        exitCode: result.exitCode,
+        outputTruncated: result.outputTruncated,
+      })),
+    };
+  }
+  if (runtime.status === 'failed') {
+    return {
+      status: runtime.status,
+      commands: runtime.commands,
+      command: runtime.command,
+      exitCode: runtime.exitCode,
+      failureCode: runtime.failureCode,
+      reason: runtime.reason,
+    };
+  }
+  return { status: runtime.status, commands: runtime.commands, reason: runtime.reason };
+}
+
 export function createQirServerCodingExecutor(options: {
   modelId?: string;
   modelRunner?: QirServerModelRunner;
   loadWorkspace?: WorkspaceLoader;
   saveWorkspace?: WorkspaceSaver;
   verify?: BuildVerifier;
+  runtimeVerify?: QirRepositoryRuntimeVerifier;
   maxRepairAttempts?: number;
 } = {}): QirStepExecutor {
   const modelRunner = options.modelRunner || runQirServerModel;
   const loadWorkspace = options.loadWorkspace || loadQirDeskWorkspace;
   const saveWorkspace = options.saveWorkspace || saveQirDeskWorkspace;
   const verify = options.verify || verifyBuild;
+  const runtimeVerify = options.runtimeVerify || verifyQirRepositoryRuntime;
   const modelId = String(options.modelId || process.env.QIR_WORKER_MODEL || 'gemini-flash-latest').trim();
   const configuredMaxRepairs = Number(options.maxRepairAttempts ?? process.env.QIR_WORKER_MAX_REPAIR_ATTEMPTS ?? DEFAULT_MAX_REPAIR_ATTEMPTS);
   const maxRepairAttempts = Number.isFinite(configuredMaxRepairs)
@@ -256,6 +290,62 @@ export function createQirServerCodingExecutor(options: {
       const reduced = reduceQirObservation({ run: withCandidate, observation: success, proofOfDoneStatus: 'verification_required' });
       if (!reduced.accepted) return { observation: success };
 
+      /*
+       * The candidate is durable before execution and the exact same VFS is
+       * written into an isolated microVM. A semantic verifier can still catch
+       * UX/contract defects afterwards, but it is never allowed to stand in for
+       * a real test/build when the repository declares executable checks.
+       */
+      const runtime = await runtimeVerify({ vfs: nextVfs });
+      if (runtime.status === 'failed') {
+        const recoveryExhausted = priorRepairFailures >= maxRepairAttempts;
+        const failedRuntime = failureObservation(reduced.run, continuation, {
+          code: runtime.failureCode,
+          message: runtimeFailureMessage(runtime),
+          retryable: true,
+          evidenceKind: 'runtime.repository_command_failed',
+          evidenceRef: runtime.command ? `command:${runtime.command}` : `desk-checkpoint:${saved.checkpointId}`,
+          recoveryExhausted,
+          observationKind: 'runtime',
+        });
+        const failed = reduceQirObservation({ run: reduced.run, observation: failedRuntime, proofOfDoneStatus: 'blocked' });
+        return {
+          observation: failedRuntime,
+          committedRun: failed.accepted ? failed.run : reduced.run,
+          eventType: 'worker.repository_execution_failed',
+          payload: {
+            checkpointId: saved.checkpointId,
+            modelId: model.modelId,
+            repositoryRuntime: runtimePayload(runtime),
+            repairAttempt: priorRepairFailures,
+            recoveryExhausted,
+          },
+        };
+      }
+
+      if (runtime.status === 'unavailable' || (runtime.status === 'skipped' && runtime.commands.length > 0)) {
+        const unavailable = failureObservation(reduced.run, continuation, {
+          code: 'INTERNAL_INVARIANT',
+          message: `Independent repository execution is required but unavailable: ${runtime.reason}`,
+          retryable: false,
+          evidenceKind: 'runtime.repository_execution_unavailable',
+          evidenceRef: `desk-checkpoint:${saved.checkpointId}`,
+          recoveryExhausted: true,
+          observationKind: 'runtime',
+        });
+        const failed = reduceQirObservation({ run: reduced.run, observation: unavailable, proofOfDoneStatus: 'blocked' });
+        return {
+          observation: unavailable,
+          committedRun: failed.accepted ? failed.run : reduced.run,
+          eventType: 'worker.repository_execution_unavailable',
+          payload: {
+            checkpointId: saved.checkpointId,
+            modelId: model.modelId,
+            repositoryRuntime: runtimePayload(runtime),
+          },
+        };
+      }
+
       const report = await verify({ code: model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
       if (!report.passed) {
         const issues = (report.issues || []).map((issue) => String(issue || '').trim()).filter(Boolean).slice(0, 8);
@@ -283,19 +373,27 @@ export function createQirServerCodingExecutor(options: {
             modelId: model.modelId,
             verificationIssues: issues,
             verificationSummary: summary,
+            repositoryRuntime: runtimePayload(runtime),
             repairAttempt: priorRepairFailures,
             recoveryExhausted,
           },
         };
       }
 
+      const runtimeEvidenceRefs = runtime.status === 'passed'
+        ? runtime.results.map((result, index) => `sandbox-command:${index}:exit-${result.exitCode}`)
+        : [];
       const verification: QirVerificationResult = {
         verificationId: `qir-verification-${randomUUID()}`,
         runId: run.runId,
         actionId: `qir-independent-verifier-${randomUUID()}`,
         passed: true,
         proofOfDoneStatus: 'verified',
-        evidenceRefs: [`desk-checkpoint:${saved.checkpointId}`, `build-verifier:score:${report.score}`],
+        evidenceRefs: [
+          `desk-checkpoint:${saved.checkpointId}`,
+          ...runtimeEvidenceRefs,
+          `build-verifier:score:${report.score}`,
+        ],
         verifiedAt: new Date().toISOString(),
       };
       const completed = promoteQirCodingCheckpoint({
@@ -310,6 +408,7 @@ export function createQirServerCodingExecutor(options: {
         payload: {
           checkpointId: saved.checkpointId, modelId: model.modelId, provider: model.provider,
           verificationId: verification.verificationId, verificationScore: report.score,
+          repositoryRuntime: runtimePayload(runtime),
           workspaceReplay: saved.replayed === true,
           repairAttemptsUsed: priorRepairFailures,
         },
