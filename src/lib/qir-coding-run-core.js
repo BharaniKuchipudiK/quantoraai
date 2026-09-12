@@ -239,8 +239,20 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
 
   let storageUnconfigured = false;
 
-  const compactWorkingContext = async (current, note) => {
-    if (!current?.runId || storageUnconfigured) return;
+  const writeWorkingContext = async (current, note, { required = false } = {}) => {
+    if (!current?.runId) {
+      if (required) throw new Error('Server-owned Coding requires a durable Run before context can be bound.');
+      return false;
+    }
+    if (storageUnconfigured) {
+      if (required) {
+        const error = new Error('Server-owned Coding requires durable QIR context storage, but storage is not configured.');
+        error.reason = 'storage-unconfigured';
+        throw error;
+      }
+      return false;
+    }
+
     try {
       const { vfs, goal, job, sessionId } = readOptions();
       const files = Object.keys(vfs || {});
@@ -260,14 +272,57 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
           recentInteractions: note ? [String(note).slice(0, 500)] : [],
         }),
       });
-      if (response.status === 503) {
-        const body = await response.json().catch(() => ({}));
-        if (body?.reason === 'storage-unconfigured') storageUnconfigured = true;
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 503 && body?.reason === 'storage-unconfigured') storageUnconfigured = true;
+        if (required) {
+          const error = new Error(body?.error || `Unable to bind the durable Coding context (HTTP ${response.status}).`);
+          error.status = response.status;
+          error.reason = typeof body?.reason === 'string' ? body.reason : 'context-bind-failed';
+          throw error;
+        }
+        return false;
       }
-    } catch {
-      /* A build must never fail, or slow down, because a snapshot was missed. */
+      if (body?.run) accept(body);
+      return true;
+    } catch (error) {
+      if (required) throw error;
+      return false;
     }
   };
+
+  const compactWorkingContext = (current, note) => writeWorkingContext(current, note, { required: false });
+
+  /*
+   * PR #709 ownership boundary.
+   *
+   * The browser binds the desk session BEFORE making the model step runnable,
+   * then stops. The standalone worker can now discover the active coding.model
+   * continuation from durable state and load the desk checkpoint chain by the
+   * bound session id. Once this succeeds the browser must never execute the same
+   * action through /api/chat as a fallback: one durable action has one owner.
+   */
+  const submitServerRun = (goal, strategy = '') => enqueue(async () => {
+    let current = await boot(goal, true);
+    if (!current) return null;
+    if (['COMPLETE', 'FAILED_TERMINAL', 'PAUSED'].includes(current.status)) return current;
+
+    await writeWorkingContext(current, 'browser submitted this Coding Run to the server worker', { required: true });
+    current = runNow || current;
+    if (!['QUEUED', 'REPLANNING'].includes(current.status)) return current;
+
+    return accept(await requestQir({
+      action: 'coding.attempt',
+      runId: current.runId,
+      strategy: String(strategy || '').slice(0, 240),
+    }));
+  });
+
+  const refresh = () => enqueue(async (current) => {
+    const snapshot = current || runNow || await boot();
+    if (!snapshot?.runId) return snapshot || null;
+    return accept(await requestQir(null, `?runId=${encodeURIComponent(snapshot.runId)}`));
+  });
 
   const requestPremiumEscalation = () => enqueue(async () => {
     const current = runNow;
@@ -455,6 +510,8 @@ export function createQirCodingRunClient({ onRun, onError, readOptions }) {
 
   return {
     sync,
+    submitServerRun,
+    refresh,
     beginModelAttempt,
     requestPremiumEscalation,
     reportModelFailure,
