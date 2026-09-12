@@ -123,7 +123,7 @@ test('the checkpoint load and save are bound to the session, not to a ref that l
   assert.ok(studioSource.length > 5000, `AiStudio.jsx read as ${studioSource.length} bytes; this gate cannot check what it cannot find`);
 
   const load = studioSource.indexOf('loadDeskCheckpoints(sessionId)');
-  const save = studioSource.indexOf('persistDeskCheckpoints(sessionId, deskCheckpoints)');
+  const save = studioSource.indexOf('deskCheckpointSaver.save(deskCheckpoints)');
   assert.ok(load > 0 && save > 0, 'the checkpoint load/save effects are no longer recognisable, so this gate is checking nothing');
 
   for (const [name, at] of [['load', load], ['save', save]]) {
