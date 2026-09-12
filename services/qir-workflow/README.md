@@ -83,8 +83,9 @@ automatic reload off. No extra paid Agent features are required.
 
 The dedicated `quantora-coding-worker-pilot` project has its own operator key and
 Coding Gateway key ($5 total budget, no reset, 30-day expiry). Automatic credit
-reload remains off. No production database credentials are installed, and the
-customer execution flag remains disabled.
+reload remains off. The isolated worker now has the explicitly authorized
+production Supabase credential for the pinned synthetic probe. Customer
+execution remains disabled.
 
 `POST /proof` accepts the dedicated admin bearer header and no caller inputs.
 It additionally requires `QIR_PILOT_LIVE_PROOF=true` and an exact match between
@@ -131,8 +132,8 @@ management tool.
 The baseline includes 306 quantity assertions and a syntax build command.
 Production repository verification can now use Vercel's injected OIDC identity
 without a long-lived Sandbox token. An explicit null credential override still
-refuses execution. No production journal result is claimed until the real
-Supabase connection and this probe complete.
+refuses execution. The production Supabase REST connection and pinned saved-run probe passed on
+2026-09-13; see the evidence below.
 
 ## Release gate
 
@@ -145,11 +146,28 @@ The corrected cloud run completed: injected 503 retry, real Gateway generation,
 worker exit/recovery, and all 313 assertions in Sandbox. Gateway recorded
 $0.000128 total pilot-key model spend (excludes Functions, Workflow and Sandbox).
 The failed run was cancelled. See [recorded evidence](./evidence-2026-09-12.json).
-Production journal/checkpoint execution, browser-close behavior and the original
-generated app's live cart behavior remain unverified. Keep broad server ownership
-disabled until those checks pass.
+The production journal probe also completed through the real worker REST
+connection: 306 quantity assertions plus the build passed in Sandbox, the
+independent page verifier scored 100, and the corrected source was published
+at run version 10 with two visible checkpoints. Original tests remained intact.
+Re-enqueuing the completed run left the entire saved result unchanged.
 
-A production database RPC race also passed through the connected SQL tool: one
-writer saved revision 1, the other conflicted, and a stale retry left the winner
-intact. This confirms database concurrency behavior, not the worker's pending
-REST credential connection. Evidence is recorded alongside the cloud proof.
+Three defects surfaced and were fixed during this probe: request-scoped OIDC
+was missed by an environment-only check; a provider's standalone filepath line
+was interpreted as source; and module edits were judged instead of the complete
+saved page. Failures never changed the visible baseline. Each operator resume
+was recorded with compare-and-swap, preserving prior failures. Final recovery
+reused the candidate (`durable-checkpoint`) without another model call. This was
+operator-assisted recovery, not proof of automatic recovery from these bugs.
+
+Worker REST save-conflict testing also passed: one concurrent save succeeded,
+the other conflicted, and a stale retry could not overwrite the winner.
+Recorded total Gateway pilot spend is $0.001068, excluding Vercel infrastructure.
+See [journal evidence](./journal-evidence-2026-09-13.json) and the preserved
+[event history](./journal-events-2026-09-13.json).
+
+The customer browser-close journey and original generated app's live cart/Undo
+remain unverified. Keep broad customer server ownership disabled and this PR in
+draft until those release checks pass. The earlier synthetic process-exit proof
+is separate from this production journal test; an actual provider outage was
+not induced.

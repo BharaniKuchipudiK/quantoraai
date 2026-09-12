@@ -1,0 +1,276 @@
+{
+  "date": "2026-09-13",
+  "scope": "Isolated worker using production Supabase REST APIs in a blocked synthetic user partition; customer execution remains disabled",
+  "deployment": "https://quantora-coding-worker-pilot-1x27tbux0-sartho.vercel.app",
+  "codeCommit": "b0082ae8",
+  "runId": "qir-workflow-journal-20260912",
+  "workflowRunId": "wrun_01M2BS2V5GQ3FA8SF9X7MEAD2H",
+  "result": {
+    "status": "COMPLETE",
+    "storageVersion": 10,
+    "observations": [
+      {
+        "kind": "model",
+        "runId": "qir-workflow-journal-20260912",
+        "status": "success",
+        "actionId": "journal-quantity-fix",
+        "evidence": [
+          {
+            "ref": "model:google/gemini-3.1-flash-lite",
+            "kind": "model.workspace_written",
+            "source": "model",
+            "actionId": "journal-quantity-fix",
+            "evidenceId": "journal-quantity-fix-model-evidence",
+            "observedAt": "2026-09-12T21:29:50.767Z"
+          }
+        ],
+        "artifactId": "coding-desk-vfs",
+        "observedAt": "2026-09-12T21:29:50.767Z",
+        "observationId": "journal-quantity-fix-model-succeeded",
+        "artifactGeneration": 1
+      },
+      {
+        "kind": "runtime",
+        "error": {
+          "code": "INTERNAL_INVARIANT",
+          "message": "Independent repository execution is required but unavailable: Vercel Sandbox credentials are not configured; no real repository command was executed.",
+          "retryable": false,
+          "recoveryExhausted": true
+        },
+        "runId": "qir-workflow-journal-20260912",
+        "status": "failure",
+        "actionId": "journal-quantity-fix",
+        "evidence": [
+          {
+            "ref": "desk-checkpoint:qir-journal-quantity-fix",
+            "kind": "runtime.repository_execution_unavailable",
+            "source": "runtime",
+            "actionId": "journal-quantity-fix",
+            "evidenceId": "journal-quantity-fix-failure-internal_invariant-evidence",
+            "observedAt": "2026-09-12T21:29:50.769Z"
+          }
+        ],
+        "observedAt": "2026-09-12T21:29:50.769Z",
+        "observationId": "journal-quantity-fix-failure-internal_invariant"
+      },
+      {
+        "kind": "model",
+        "runId": "qir-workflow-journal-20260912",
+        "status": "success",
+        "actionId": "journal-quantity-fix",
+        "evidence": [
+          {
+            "ref": "model:checkpoint-replay",
+            "kind": "model.workspace_written",
+            "source": "model",
+            "actionId": "journal-quantity-fix",
+            "evidenceId": "journal-quantity-fix-model-evidence",
+            "observedAt": "2026-09-12T21:35:13.342Z"
+          }
+        ],
+        "artifactId": "coding-desk-vfs",
+        "observedAt": "2026-09-12T21:35:13.342Z",
+        "observationId": "journal-quantity-fix-model-succeeded",
+        "artifactGeneration": 2
+      },
+      {
+        "kind": "runtime",
+        "error": {
+          "code": "RUNTIME_FAILURE",
+          "message": "Real repository command failed: CI=1 npm run test (exit 1). Output: > test > node --test quantity.test.mjs node:internal/modules/run_main:107 triggerUncaughtException( ^ AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 100 !== 99 at file:///vercel/quantity.test.mjs:3:36 at ModuleJob.run (node:internal/modules/esm/module_job:439:25) at async node:internal/modules/es",
+          "retryable": true,
+          "recoveryExhausted": false
+        },
+        "runId": "qir-workflow-journal-20260912",
+        "status": "failure",
+        "actionId": "journal-quantity-fix",
+        "evidence": [
+          {
+            "ref": "command:CI=1 npm run test",
+            "kind": "runtime.repository_command_failed",
+            "source": "runtime",
+            "actionId": "journal-quantity-fix",
+            "evidenceId": "journal-quantity-fix-failure-runtime_failure-evidence",
+            "observedAt": "2026-09-12T21:35:20.850Z"
+          }
+        ],
+        "observedAt": "2026-09-12T21:35:20.850Z",
+        "observationId": "journal-quantity-fix-failure-runtime_failure"
+      },
+      {
+        "kind": "model",
+        "error": {
+          "code": "MODEL_CONTRACT",
+          "message": "The server model returned no material workspace change.",
+          "retryable": true,
+          "recoveryExhausted": true
+        },
+        "runId": "qir-workflow-journal-20260912",
+        "status": "failure",
+        "actionId": "quantity-fix-action-3-1zxu29",
+        "evidence": [
+          {
+            "ref": "model:google/gemini-3.1-flash-lite",
+            "kind": "runtime.model_no_workspace_change",
+            "source": "runtime",
+            "actionId": "quantity-fix-action-3-1zxu29",
+            "evidenceId": "quantity-fix-action-3-1zxu29-failure-model_contract-evidence",
+            "observedAt": "2026-09-12T21:35:37.194Z"
+          }
+        ],
+        "observedAt": "2026-09-12T21:35:37.194Z",
+        "observationId": "quantity-fix-action-3-1zxu29-failure-model_contract"
+      },
+      {
+        "kind": "model",
+        "runId": "qir-workflow-journal-20260912",
+        "status": "success",
+        "actionId": "journal-parser-recovery",
+        "evidence": [
+          {
+            "ref": "model:google/gemini-3.1-flash-lite",
+            "kind": "model.workspace_written",
+            "source": "model",
+            "actionId": "journal-parser-recovery",
+            "evidenceId": "journal-parser-recovery-model-evidence",
+            "observedAt": "2026-09-12T21:38:05.425Z"
+          }
+        ],
+        "artifactId": "coding-desk-vfs",
+        "observedAt": "2026-09-12T21:38:05.425Z",
+        "observationId": "journal-parser-recovery-model-succeeded",
+        "artifactGeneration": 3
+      },
+      {
+        "kind": "model",
+        "error": {
+          "code": "VERIFICATION_FAILURE",
+          "message": "Independent server verification failed (score 45). Repair these issues: Missing: Has real styling (not default browser HTML); Missing: Preview is the real page; Missing: Has a page title; Missing: Responsive viewport meta; Missing: Language attribute set; Missing: Real links / buttons (not dead #)",
+          "retryable": true,
+          "recoveryExhausted": true
+        },
+        "runId": "qir-workflow-journal-20260912",
+        "status": "failure",
+        "actionId": "journal-parser-recovery",
+        "evidence": [
+          {
+            "ref": "desk-checkpoint:qir-journal-parser-recovery",
+            "kind": "runtime.independent_verification_failed",
+            "source": "runtime",
+            "actionId": "journal-parser-recovery",
+            "evidenceId": "journal-parser-recovery-failure-verification_failure-evidence",
+            "observedAt": "2026-09-12T21:38:13.018Z"
+          }
+        ],
+        "observedAt": "2026-09-12T21:38:13.018Z",
+        "observationId": "journal-parser-recovery-failure-verification_failure"
+      },
+      {
+        "kind": "model",
+        "runId": "qir-workflow-journal-20260912",
+        "status": "success",
+        "actionId": "journal-parser-recovery",
+        "evidence": [
+          {
+            "ref": "model:checkpoint-replay",
+            "kind": "model.workspace_written",
+            "source": "model",
+            "actionId": "journal-parser-recovery",
+            "evidenceId": "journal-parser-recovery-model-evidence",
+            "observedAt": "2026-09-12T21:41:28.974Z"
+          }
+        ],
+        "artifactId": "coding-desk-vfs",
+        "observedAt": "2026-09-12T21:41:28.974Z",
+        "observationId": "journal-parser-recovery-model-succeeded",
+        "artifactGeneration": 4
+      }
+    ],
+    "verifications": [
+      {
+        "runId": "qir-workflow-journal-20260912",
+        "passed": true,
+        "actionId": "qir-independent-verifier-963ed89e-4eea-41d7-818a-2b88140fffba",
+        "verifiedAt": "2026-09-12T21:41:37.104Z",
+        "evidenceRefs": [
+          "desk-checkpoint:qir-journal-parser-recovery",
+          "sandbox-command:0:exit-0",
+          "sandbox-command:1:exit-0",
+          "sandbox-command:2:exit-0",
+          "build-verifier:score:100"
+        ],
+        "verificationId": "qir-verification-31301aae-ef66-4643-810f-836147e1511f",
+        "proofOfDoneStatus": "verified"
+      }
+    ],
+    "artifacts": [
+      {
+        "ref": "desk-checkpoint://qir-workflow-desk-20260912/qir-journal-parser-recovery",
+        "state": "verified",
+        "artifactId": "coding-desk-vfs",
+        "generation": 4,
+        "createdByActionId": "journal-parser-recovery",
+        "verifiedByActionId": "qir-independent-verifier-963ed89e-4eea-41d7-818a-2b88140fffba"
+      }
+    ],
+    "checkpoints": [
+      {
+        "runId": "qir-workflow-journal-20260912",
+        "stepId": "quantity-fix",
+        "actionId": "journal-parser-recovery",
+        "createdAt": "2026-09-12T21:41:37.104Z",
+        "checkpointId": "qir-run-checkpoint-380617a7-1c86-4bb4-ad6e-bd09a033db1a",
+        "artifactGenerations": {
+          "coding-desk-vfs": 4
+        }
+      }
+    ],
+    "workspace": {
+      "status": "loaded",
+      "checkpointCount": 2,
+      "quantitySource": "export function clampQuantity(value) {\n  const n = Number(value);\n  if (!Number.isFinite(n)) {\n    return 0;\n  }\n  const floored = Math.floor(n);\n  return Math.max(0, Math.min(99, floored));\n}\n",
+      "testsUnchanged": true,
+      "quantityHash": "cda27973b343b3830948f13d8aa69db7737a0919bdc3d8da55ac88f3edc0cc07"
+    }
+  },
+  "assertions": 306,
+  "eventsFile": "journal-events-2026-09-13.json",
+  "saveConflict": {
+    "status": "passed",
+    "concurrentResults": [
+      "conflict",
+      "saved"
+    ],
+    "staleResult": "conflict",
+    "winningCheckpoint": "writer-b",
+    "generation": 1
+  },
+  "reEnqueue": {
+    "workflowRunId": "wrun_01M2BS3ZCVWP9C1DCEJ6NVKBT9",
+    "result": {
+      "status": "completed",
+      "result": {
+        "status": "COMPLETE",
+        "runId": "qir-workflow-journal-20260912"
+      }
+    },
+    "persistedResultIdentical": true,
+    "storageVersion": 10,
+    "publishedCheckpointCount": 2
+  },
+  "gatewayPilotKeySpendUsd": 0.001068,
+  "gatewayLimitUsd": 5,
+  "gatewayBudgetRefresh": "none",
+  "costExcludes": [
+    "Vercel Functions",
+    "Workflow",
+    "Sandbox"
+  ],
+  "recovery": "Operator-triggered CAS resume after three implementation fixes. Failed history retained. Final completion provider=durable-checkpoint, workspaceReplay=true; no model generation in final recovery.",
+  "notVerified": [
+    "Customer browser-close/resume journey",
+    "Original generated app live cart and Undo",
+    "Actual provider outage; earlier 503 was injected",
+    "Worker restart during this production journal probe; restart was tested in the separate isolated cloud proof"
+  ]
+}
