@@ -109,5 +109,16 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "workflow": "4.8.8"
+  },
+  "overrides": {
+    "@workflow/core": {
+      "nanoid": "5.1.16"
+    },
+    "@workflow/world-local": {
+      "undici": "7.29.1"
+    },
+    "@workflow/world-vercel": {
+      "undici": "7.29.1"
+    }
   }
 }

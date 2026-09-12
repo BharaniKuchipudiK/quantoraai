@@ -1,8 +1,10 @@
 import express from 'express';
-import { start } from 'workflow/api';
+import { start, getRun } from 'workflow/api';
 import { authenticateAdmin } from '../../api/_lib/admin-auth.js';
 import { codingPilotWorkflow } from './workflow.js';
 import { pilotAllows } from './transition.js';
+
+import { liveRecoveryProof, liveProofEnabled } from './live-proof.js';
 
 const app = express();
 app.use(express.json({ limit: '2kb' }));
@@ -20,5 +22,24 @@ app.post('/runs', async (req, res) => {
   } catch {
     return res.status(503).json({ error: 'Unable to enqueue the pilot. Check Workflow logs before retrying.' });
   }
+});
+app.post('/proof', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (!liveProofEnabled()) return res.status(503).json({ error: 'Proof is disabled.' });
+  try {
+    const run = await start(liveRecoveryProof, []);
+    return res.status(202).json({ workflowRunId: run.runId });
+  } catch { return res.status(503).json({ error: 'Unable to enqueue proof.' }); }
+});
+app.get('/proof/:id', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (!liveProofEnabled() || !/^wrun_[A-Za-z0-9]+$/.test(req.params.id)) return res.status(404).json({ error: 'Not found.' });
+  try {
+    const run = getRun(req.params.id);
+    const status = await run.status;
+    return res.json({ status, ...(status === 'completed' ? { result: await run.returnValue } : {}) });
+  } catch { return res.status(503).json({ error: 'Unable to read proof.' }); }
 });
 export default app;

@@ -14,3 +14,12 @@ test('pilot is pinned to one user and run and requires explicit, budgeted routin
   }
   assert.equal(pilotAllows('pilot-user', 'pilot-run', { ...env, QIR_GATEWAY_MODELS: 'expensive/model' }), false);
 });
+
+import { liveProofEnabled } from '../../services/qir-workflow/live-proof.js';
+test('destructive recovery proof requires explicit enablement on its isolated project', () => {
+  const enabled = { QIR_PILOT_LIVE_PROOF: 'true', QIR_PILOT_PROJECT_ID: 'isolated', VERCEL_PROJECT_ID: 'isolated' };
+  assert.equal(liveProofEnabled(enabled), true);
+  assert.equal(liveProofEnabled({}), false);
+  for (const key of Object.keys(enabled)) assert.equal(liveProofEnabled({ ...enabled, [key]: '' }), false, key);
+  assert.equal(liveProofEnabled({ ...enabled, VERCEL_PROJECT_ID: 'web-production' }), false);
+});

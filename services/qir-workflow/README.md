@@ -34,10 +34,10 @@ All settings are server-side. Do not use `VITE_` variables for credentials.
 | `QIR_WORKFLOW_PILOT_ENABLED` | Must equal `true`; omit to disable. |
 | `QIR_PILOT_USER_SUB` | One dedicated synthetic test user. |
 | `QIR_PILOT_RUN_ID` | One durable test run owned by that user. |
-| `QIR_AI_GATEWAY_API_KEY` | Dedicated Coding pilot key; proposed $5 total budget, no automatic refresh, 30-day expiry. |
+| `QIR_AI_GATEWAY_API_KEY` | Dedicated Coding pilot key; $5 total budget, no automatic refresh, 30-day expiry. |
 | `QIR_GATEWAY_MODELS` | Explicit comma-separated allowed model IDs. |
 | `QIR_WORKER_MODEL` | One allowed provider/model ID, chosen from the actual eligible catalogue. |
-| `ADMIN_API_KEY` | Existing server admin authentication, minimum 16 characters. |
+| `ADMIN_API_KEY` | Dedicated isolated-worker admin bearer key, minimum 16 characters. |
 
 Provide the existing server-side database settings required by the QIR store
 and existing Sandbox configuration for runtime verification. Do not copy all
@@ -79,14 +79,35 @@ The dedicated key's budget must be set before live calls. Gateway budgets are
 soft limits checked before requests; one crossing request can overshoot. Keep
 automatic reload off. No extra paid Agent features are required.
 
+## Deployed synthetic recovery proof
+
+The dedicated `quantora-coding-worker-pilot` project has its own operator key and
+Coding Gateway key ($5 total budget, no reset, 30-day expiry). Automatic credit
+reload remains off. No production database credentials are installed, and the
+customer execution flag remains disabled.
+
+`POST /proof` accepts the dedicated admin bearer header and no caller inputs.
+It additionally requires `QIR_PILOT_LIVE_PROOF=true` and an exact match between
+`QIR_PILOT_PROJECT_ID` and Vercel's injected `VERCEL_PROJECT_ID`. Never enable this
+on the web application: the test deliberately terminates a worker process.
+
+The workflow injects a provider 503 once, makes a real Gateway request on retry,
+persists the generated quantity function, then exits the isolated worker with
+code 17. On recovery it runs 313 independent quantity assertions inside a
+60-second Sandbox and stops the Sandbox in a finally block. The provider outage
+is simulated; the model call, deployed worker interruption and Sandbox are real.
+`GET /proof/:workflowRunId` reports completion and verification evidence.
+
+Remote source builds require the repository `.npmrc` (`legacy-peer-deps=true`)
+alongside its lockfile. The dedicated project uses Nitro and the build command
+`node scripts/build-qir-workflow-vercel.mjs`; do not replace the web project's
+Vercel configuration with these worker settings.
+
 ## Release gate
 
-Locally passed: Gateway failure/budget/cancellation tests, main regression suite,
-main build/typecheck, Vercel-format worker build and local Workflow SIGKILL proof.
-Not yet proven: live Gateway request/cost, full production journal/checkpoint
-execution in the deployed Workflow, provider failure and worker restart on
-Vercel, browser-close behavior, or the generated app's live cart behavior.
-
-Do not enable broad server ownership until those checks pass. The dedicated
-key was not created because automatic approval review requested explicit user
-approval of credential creation, the $5 total budget, expiry and secure storage.
+Passed locally: Gateway failure/budget/cancellation tests, isolation guards,
+main regression suite, build/typecheck, advisory gate and Workflow SIGKILL proof.
+A tiny live Gateway request also succeeded. Cloud recovery proof is in progress.
+Production journal/checkpoint execution, browser-close behavior and the original
+generated app's live cart behavior remain unverified. Keep broad server ownership
+disabled until those checks pass.
