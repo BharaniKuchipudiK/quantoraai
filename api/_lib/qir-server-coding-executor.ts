@@ -104,20 +104,14 @@ export function createQirServerCodingExecutor(options: {
 
   return {
     kind: 'server-coding',
-    async execute(run, continuation): Promise<QirStepExecution> {
+    async execute(run, continuation, context): Promise<QirStepExecution> {
       const actionId = run.cursor.actionId || continuation.actionId || `${continuation.stepId}-action`;
-      const loaded = await loadQirDeskWorkspace('', run).catch(() => null);
-      // Production execution needs the owner to read an owner-scoped desk tree.
-      // The worker runtime injects it on the Run for this call through the
-      // server-only symbol below; tests may invoke the executor directly.
-      const userSub = String((run as any).__qirWorkerUserSub || '').trim();
-      const workspace = userSub
-        ? await loadQirDeskWorkspace(userSub, run)
-        : loaded;
-      if (!workspace || workspace.status !== 'loaded') {
-        const reason = workspace?.status === 'missing-session-binding'
+      const userSub = String(context.userSub || '').trim();
+      const workspace = await loadQirDeskWorkspace(userSub, run);
+      if (workspace.status !== 'loaded') {
+        const reason = workspace.status === 'missing-session-binding'
           ? 'The durable Run is not bound to a Coding Desk session yet.'
-          : `The durable Coding workspace could not be loaded${workspace && 'reason' in workspace ? `: ${workspace.reason}` : '.'}`;
+          : `The durable Coding workspace could not be loaded: ${workspace.reason}`;
         const observation = failureObservation(run, continuation, {
           code: 'INTERNAL_INVARIANT', message: reason, retryable: true,
           evidenceKind: 'runtime.workspace_unavailable',
@@ -126,8 +120,9 @@ export function createQirServerCodingExecutor(options: {
       }
 
       const currentVfs = normalizedVfs(workspace.vfs);
-      const prompt = sourcePrompt(currentVfs, run.steps.find((step) => step.stepId === continuation.stepId)?.objective || run.goal.statement || 'Complete the Coding task.');
-      const model = await modelRunner({ modelId, prompt, timeoutMs: 90_000 });
+      const objective = run.steps.find((step) => step.stepId === continuation.stepId)?.objective
+        || run.goal.statement || 'Complete the Coding task.';
+      const model = await modelRunner({ modelId, prompt: sourcePrompt(currentVfs, objective), timeoutMs: 90_000 });
       if (model.status === 'failure') {
         const observation = failureObservation(run, continuation, {
           code: providerFailureCode(model.failure),
