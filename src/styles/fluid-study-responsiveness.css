@@ -1,0 +1,80 @@
+/*
+ * Fluid workspace + Study responsiveness layer.
+ *
+ * Keep reading content comfortable, but stop the Studio shell from wasting the
+ * browser width the person already gave it. Runtime, routing, assessment and
+ * delivery semantics are intentionally untouched.
+ */
+
+.app-shell--studio {
+  --quantora-fluid-chat-max: 1440px;
+  --quantora-fluid-composer-max: 1320px;
+  --quantora-fluid-gutter: clamp(14px, 2vw, 32px);
+}
+
+.app-shell--studio .ai-studio-main {
+  width: 100%;
+  min-width: 0;
+}
+
+/* AiStudio currently has exactly two 1000px inline caps: the active thread and
+ * the composer wrapper. Override those layout caps without touching message or
+ * runtime code. On a normal laptop this simply fills the remaining pane; on an
+ * ultrawide monitor it grows enough to avoid large dead columns while still
+ * preserving a deliberate reading boundary. */
+.app-shell--studio .ai-studio-main [style*="max-width: 1000px"] {
+  width: calc(100% - (2 * var(--quantora-fluid-gutter))) !important;
+  max-width: var(--quantora-fluid-chat-max) !important;
+  box-sizing: border-box;
+}
+
+.app-shell--studio .ai-studio-main > div:has(> .floating-input-pill),
+.app-shell--studio .floating-input-pill {
+  width: calc(100% - (2 * var(--quantora-fluid-gutter))) !important;
+  max-width: var(--quantora-fluid-composer-max) !important;
+  box-sizing: border-box;
+}
+
+/* A collapsed sidebar must surrender its space completely. The main surface is
+ * the flexible owner of everything that remains, rather than retaining a
+ * sidebar-shaped phantom gutter. */
+.app-shell--studio [data-quantora-studio-sidebar="true"][style*="width: 0px"] + * {
+  min-width: 0;
+  flex: 1 1 100%;
+}
+
+/* Study progress should read as active work, not a tiny spinner users miss.
+ * The existing text remains aria-live and truthful; this only gives it a clear
+ * low-noise surface while the tutor turn is actually running. */
+html[data-quantora-domain="education"] .app-shell--studio .animate-slide-up:has(.animate-spin) {
+  width: min(100%, 780px);
+  margin: 10px auto 4px !important;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, #f97316 30%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, #f97316 7%, transparent);
+  box-sizing: border-box;
+}
+
+html[data-quantora-domain="education"] .app-shell--studio .animate-slide-up:has(.animate-spin) .animate-spin {
+  animation-duration: 1.6s;
+}
+
+@media (min-width: 1800px) {
+  .app-shell--studio {
+    --quantora-fluid-chat-max: 1560px;
+    --quantora-fluid-composer-max: 1420px;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell--studio {
+    --quantora-fluid-gutter: 8px;
+  }
+
+  .app-shell--studio .ai-studio-main [style*="max-width: 1000px"],
+  .app-shell--studio .ai-studio-main > div:has(> .floating-input-pill),
+  .app-shell--studio .floating-input-pill {
+    width: calc(100% - 16px) !important;
+  }
+}
