@@ -3,6 +3,7 @@ import type { BrowserPilotSubmission } from '../../api/_lib/qir-browser-pilot.js
 import { FatalError, RetryableError, sleep } from 'workflow';
 import { runPilotTransition } from './transition.js';
 import { executeCodingDelivery, type CodingDeliveryWorkflowInput } from './delivery.js';
+import { observeCodingDeliveryResult } from '../../api/_lib/runtime-governor-delivery.js';
 
 export async function codingPilotWorkflow(userSub: string, runId: string) {
   'use workflow';
@@ -51,6 +52,8 @@ export async function codingDeliveryWorkflow(input: CodingDeliveryWorkflowInput)
 
 async function deliver(input: CodingDeliveryWorkflowInput) {
   'use step';
-  return executeCodingDelivery(input);
+  const result = await executeCodingDelivery(input);
+  await observeCodingDeliveryResult({ userSub: input.userSub, runId: input.runId, result });
+  return result;
 }
 deliver.maxRetries = 0;
