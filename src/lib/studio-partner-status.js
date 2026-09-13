@@ -42,12 +42,6 @@ export function resolveStudioPartnerStatus({
 } = {}) {
   void photosMissing;
   void shopUiMissing;
-  /*
-   * The minute used to be a literal zero, so the clock could not count past 59:
-   * a 110s build rendered "0:110" and a full turn "0:165". It stayed invisible
-   * while every build died inside a minute; now that the primary attempt gets
-   * 110s and the turn 165s, it is on screen for the whole wait.
-   */
   const totalSec = Math.max(0, Math.floor(Number(elapsedSec) || 0));
   const clock = `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
   const lifeDomain = studioDomain === 'travel'
@@ -61,17 +55,41 @@ export function resolveStudioPartnerStatus({
   if (isGenerating) {
     if (lifeDomain) {
       if (studioDomain === 'education') {
+        /*
+         * Study is deliberately conservative here: elapsed time is not proof
+         * that a model is "reasoning" or "checking examples". The UI therefore
+         * names only facts we know from the request lifecycle. AiStudio already
+         * passes the live assistant text on every render, so the first real
+         * streamed content flips this state without adding another runtime
+         * counter or changing the chat transport.
+         */
+        const hasStartedStreaming = Boolean(String(lastAiText || '').trim()) || Number(streamedBytes) > 0;
+        if (hasStartedStreaming) {
+          return {
+            now: `Your tutor answer is arriving… ${clock}`,
+            next: 'You can start reading now — the rest will continue to stream into this response.',
+            phase: 'streaming',
+            stalled: false,
+            actions: [],
+          };
+        }
         const now = totalSec < 6
-          ? 'Reading your question…'
+          ? 'Tutor request sent…'
           : totalSec < 20
-            ? 'Shaping a clear tutor response…'
+            ? 'Waiting for the tutor to start responding…'
             : totalSec < 45
-              ? 'Still working on the explanation…'
-              : 'The tutor model is taking longer than expected.';
+              ? 'Still waiting for the first answer content…'
+              : 'This tutor route is slower than usual.';
         const next = totalSec < 45
-          ? 'I’ll show the answer here as soon as it starts arriving.'
-          : 'You can stop and retry; Quantora will use the next eligible tutor route.';
-        return { now: `${now} ${clock}`, next };
+          ? 'The answer will start appearing here as soon as the first content arrives.'
+          : 'You can keep waiting, or stop and retry to use the next eligible tutor route.';
+        return {
+          now: `${now} ${clock}`,
+          next,
+          phase: 'waiting-first-content',
+          stalled: totalSec >= 45,
+          actions: [],
+        };
       }
       return {
         now: `${generatingLabel || 'Working on your next step…'} ${clock}`,
@@ -84,11 +102,6 @@ export function resolveStudioPartnerStatus({
         next: `Building about ${shopIntake.proposedCatalogSize || 10} working catalog photos — not the full unique-image ask. ${clock}`,
       };
     }
-    /*
-     * The old copy was the same sentence at 5 seconds and at 3 minutes, so a
-     * person could not tell a healthy turn from one about to die. Every line
-     * below is backed by something observed: bytes, files, the compiler.
-     */
     const phase = describeTurnPhase({
       elapsedSec: totalSec,
       bytes: streamedBytes,
@@ -103,8 +116,6 @@ export function resolveStudioPartnerStatus({
       next: phase.line,
       phase: phase.phase,
       stalled: phase.stalled,
-      // Offered only once the wait has stopped being normal, so a person has
-      // something to DO other than keep watching a clock.
       actions: phase.stalled ? stalledTurnActions({ hasPreview, isBuild: !lifeDomain }) : [],
     };
   }
@@ -122,13 +133,10 @@ export function resolveStudioPartnerStatus({
     };
   }
 
-  // Idle Coding Desk: no sticky "photos missing" / "Building…" furniture above chat.
-  // Gaps live on Preview checks. Progress copy is only for generating (above) or warming.
   if (codingDeskOpen && !shellWarming) {
     return null;
   }
 
-  // Files on the desk are not "done" while the Preview shell is still warming.
   if ((hasPreview || (codingDeskOpen && hasDeskFiles)) && shellWarming && !officeKind) {
     return {
       now: 'Preview is starting…',
@@ -148,7 +156,6 @@ export function resolveStudioPartnerStatus({
           : 'Next: download the file, or tell me which slide or section to change.',
       };
     }
-    // Non-desk canvas preview (rare): stay quiet — do not nag about photos in chat chrome.
     return null;
   }
 
@@ -170,7 +177,6 @@ export function resolveStudioPartnerStatus({
   }
 
   if (lastAiText && hasUserTurn) {
-    // No sticky "no preview yet" strip — chips / desk own the next move.
     return null;
   }
 

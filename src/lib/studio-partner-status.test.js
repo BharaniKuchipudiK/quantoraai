@@ -38,24 +38,39 @@ test('a turn with nothing coming back says so, and offers a way out', () => {
   assert.ok(status.actions.length > 0, 'a stalled turn must offer something to DO');
 });
 
-test('Study gives staged learner-facing progress and names a slow tutor route', () => {
+test('Study distinguishes first-content wait from an answer that is already streaming', () => {
   const early = resolveStudioPartnerStatus({
     isGenerating: true,
     generatingLabel: 'Working on your next step…',
     elapsedSec: 8,
     studioDomain: 'education',
+    streamedBytes: 0,
   });
-  assert.match(early.now, /Shaping a clear tutor response/);
-  assert.match(early.next, /as soon as it starts arriving/i);
+  assert.match(early.now, /Waiting for the tutor to start responding.*0:08/i);
+  assert.match(early.next, /first content arrives/i);
+  assert.equal(early.phase, 'waiting-first-content');
+  assert.equal(early.stalled, false);
+
+  const streaming = resolveStudioPartnerStatus({
+    isGenerating: true,
+    elapsedSec: 18,
+    studioDomain: 'education',
+    streamedBytes: 2048,
+  });
+  assert.match(streaming.now, /answer is arriving.*0:18/i);
+  assert.match(streaming.next, /start reading now/i);
+  assert.equal(streaming.phase, 'streaming');
+  assert.equal(streaming.stalled, false);
 
   const slow = resolveStudioPartnerStatus({
     isGenerating: true,
-    generatingLabel: 'Working on your next step…',
     elapsedSec: 105,
     studioDomain: 'education',
+    streamedBytes: 0,
   });
-  assert.match(slow.now, /taking longer than expected.*1:45/i);
-  assert.match(slow.next, /stop and retry.*next eligible tutor route/i);
+  assert.match(slow.now, /slower than usual.*1:45/i);
+  assert.match(slow.next, /keep waiting.*stop and retry.*next eligible tutor route/i);
+  assert.equal(slow.stalled, true);
 });
 
 test('files being written are named as they land', () => {
@@ -146,20 +161,11 @@ test('studioPreviewRunLabel maps shell states', () => {
 });
 
 test('the build clock counts past a minute', () => {
-  /*
-   * The minute was a literal zero, so the clock could not roll over: 110s
-   * rendered as "0:110" and a full turn as "0:165". It stayed invisible while
-   * every build died inside a minute. Now that the primary attempt gets 110s
-   * and the turn 165s, this is on screen for the whole wait — so it is pinned
-   * at the boundary and past both budgets.
-   */
   const at = (elapsedSec) => resolveStudioPartnerStatus({
     isGenerating: true,
     generatingLabel: 'Building your preview…',
     elapsedSec,
     hasPreview: false,
-    // Bytes present so the line is a streaming phase rather than a stall
-    // notice; the clock itself is what this test is about.
     streamedBytes: 2048,
   }).next.match(/\d+:\d\d/)?.[0];
 
@@ -172,7 +178,6 @@ test('the build clock counts past a minute', () => {
 test('the screenshot: an observed execution label cannot be contradicted by missing counters', () => {
   const label = 'Generating files with anthropic/claude-opus-5 · 1 KB received…';
   for (const elapsedSec of [31, 70, 175]) {
-    // This matches the production AiStudio caller: label + clock, no counters.
     const status = resolveStudioPartnerStatus({ isGenerating: true, generatingLabel: label, elapsedSec });
     assert.equal(status.now, label);
     assert.match(status.next, /^Elapsed /);
