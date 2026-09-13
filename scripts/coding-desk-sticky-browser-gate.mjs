@@ -206,22 +206,18 @@ try {
   }
 
   /*
-   * WORKSPACES OWN THEIR CHATS (2026-09-06).
+   * WORKSPACES PIN EXECUTION; PROJECTS OWN VISIBLE CHAT HISTORY (2026-09-13).
    *
-   * A chat opened from a workspace — the "+" beside it in the sidebar — is
-   * pinned there for life, is listed under it, and folds with it. Before this,
-   * a coding chat with no build yet was moved to Travel by one trip word: the
-   * Coding desk is the null domain, so "explicit wins" never protected it. And
-   * leaving an advisor chat for the Coding desk rewrote the chat being left,
-   * because the domain write landed on the still-active old session.
-   *
-   * Mutation notes: with `pinned` ignored by the resolver (or not sent by
-   * useChatStream), step 1 fails as "jumped to travel"; with openCodingDesk's
-   * old setStudioDomain(null) restored, step 5 fails because the Travel chat
-   * is no longer listed under the Travel Advisor.
+   * A chat opened from the "+" beside a workspace is still pinned there for
+   * routing and continuity. The UI no longer duplicates the same chat tree
+   * underneath every workspace, however: Projects are the canonical visible
+   * history. This gate therefore proves both halves independently — hidden
+   * ownership hooks still name the workspace, while visible Project history is
+   * where a person reopens the chat.
    */
   const advisorDomains = ['finance', 'travel', 'education', 'research'];
   const workspaceDomain = () => page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
+  const visibleHistoryRow = (pattern) => page.locator('[data-quantora-sidebar-chat]:visible', { hasText: pattern }).first();
   async function assertNoAdvisor(label) {
     await page.waitForTimeout(600);
     const domain = await workspaceDomain();
@@ -244,27 +240,28 @@ try {
   await page.getByText(pinnedTrip, { exact: false }).first().waitFor({ state: 'visible', timeout: 8_000 });
   await assertNoAdvisor(`"${pinnedTrip}" in a chat opened from the Coding desk`);
 
-  // 2. The chat is listed under the Coding desk, and nowhere else.
-  const codingList = page.locator('[data-quantora-workspace-chats="coding"]');
-  const pinnedTripRow = codingList.locator('[data-quantora-sidebar-chat]', { hasText: /help me plan a trip/i });
-  if (!(await pinnedTripRow.count())) throw new Error('The chat opened from the Coding desk is not listed under the Coding desk.');
+  // 2. Ownership stays Coding, while the visible row lives in Project history.
+  const codingOwnership = page.locator('[data-quantora-workspace-chats="coding"] [data-quantora-sidebar-chat]', { hasText: /help me plan a trip/i });
+  if (!(await codingOwnership.count())) throw new Error('The chat opened from the Coding desk lost its Coding workspace ownership.');
   for (const domain of advisorDomains) {
     if (await page.locator(`[data-quantora-workspace-chats="${domain}"] [data-quantora-sidebar-chat]`, { hasText: /help me plan a trip/i }).count()) {
-      throw new Error(`The chat opened from the Coding desk is listed under ${domain}.`);
+      throw new Error(`The chat opened from the Coding desk was reassigned to ${domain}.`);
     }
   }
+  const pinnedTripRow = visibleHistoryRow(/help me plan a trip/i);
+  await visible(pinnedTripRow, 'The chat opened from the Coding desk is missing from visible Project history.');
 
-  // 3. The fold beside the desk hides its chats and brings them back.
+  // 3. Folding workspace chrome does not hide or rewrite canonical Project history.
   const codingFold = page.locator('[data-quantora-workspace-collapse="coding"]').first();
   await visible(codingFold, 'The fold beside the Coding desk is missing.');
   await codingFold.click();
   await page.waitForTimeout(250);
-  if (await codingList.count()) throw new Error('Folding the Coding desk did not hide its chats.');
   if ((await codingFold.getAttribute('aria-expanded')) !== 'false') throw new Error('The folded Coding desk still says it is expanded.');
   if (advisorDomains.includes(await workspaceDomain())) throw new Error('Folding the Coding desk changed the open chat.');
+  await visible(pinnedTripRow, 'Folding the Coding workspace incorrectly hid Project history.');
   await codingFold.click();
   await page.waitForTimeout(250);
-  if (!(await pinnedTripRow.count())) throw new Error('Unfolding the Coding desk did not bring its chats back.');
+  await visible(pinnedTripRow, 'Unfolding the Coding desk lost its Project history row.');
 
   // 4. "+" beside the Travel Advisor opens a Travel chat; a money question stays in it.
   const travelPlus = page.locator('[data-quantora-workspace-new-chat="travel"]').first();
@@ -280,13 +277,15 @@ try {
   await page.waitForTimeout(800);
   const domainAfterPinnedMoney = await workspaceDomain();
   if (domainAfterPinnedMoney !== 'travel') throw new Error(`A chat opened from the Travel Advisor jumped to "${domainAfterPinnedMoney || '(empty)'}" on a money question.`);
-  const travelRow = page.locator('[data-quantora-workspace-chats="travel"] [data-quantora-sidebar-chat]', { hasText: /under budget/i }).first();
-  await visible(travelRow, 'The chat opened from the Travel Advisor is not listed under the Travel Advisor.');
+  const travelOwnership = page.locator('[data-quantora-workspace-chats="travel"] [data-quantora-sidebar-chat]', { hasText: /under budget/i });
+  if (!(await travelOwnership.count())) throw new Error('The chat opened from Travel lost its Travel workspace ownership.');
+  const travelRow = visibleHistoryRow(/under budget/i);
+  await visible(travelRow, 'The chat opened from Travel is missing from visible Project history.');
 
-  // 5. Leaving the Travel chat for the Coding desk must not rewrite the Travel chat.
+  // 5. Leaving the Travel chat for Coding must not rewrite it; reopen via Projects.
   await page.locator('[data-quantora-coding-desk-nav="true"]').click();
   await assertNoAdvisor('clicking the Coding desk row from a Travel chat');
-  await visible(travelRow, 'Leaving the Travel chat for the Coding desk took it off the Travel Advisor list.');
+  await visible(travelRow, 'Leaving the Travel chat removed it from visible Project history.');
   await travelRow.click();
   await page.waitForTimeout(400);
   const domainBackInTravel = await workspaceDomain();
@@ -336,10 +335,8 @@ try {
     }
   }
   // It must still exist somewhere the person can reach it, or this is a delete.
-  const generalRow = page.locator('[data-quantora-sidebar-chat]', { hasText: /plan a trip to Kyoto/i });
-  if (!(await generalRow.count())) {
-    throw new Error('A chat started from the top-level New Chat is not listed anywhere in the sidebar — unfiled must mean "no workspace", never "gone".');
-  }
+  const generalRow = visibleHistoryRow(/plan a trip to Kyoto/i);
+  await visible(generalRow, 'A chat started from the top-level New Chat is not visible in Project history — unfiled must mean "no workspace", never "gone".');
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/coding-desk-sticky-pass.png', fullPage: true }).catch(() => {});
