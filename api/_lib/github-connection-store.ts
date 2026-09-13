@@ -15,11 +15,8 @@ export type GithubConnectionSummary = {
   login: string;
   scopes: string[];
   connectedAt: string | null;
-  /** User consent for unattended push + pull-request creation only. */
   autoPrEnabled: boolean;
-  /** Separate higher-privilege consent for evidence-gated merge/deploy delivery. */
   autoDeliverEnabled: boolean;
-  /** Why a connection is unusable, when it is. Never a token, never a secret. */
   reason?: string;
 };
 
@@ -59,12 +56,7 @@ async function request(path: string, init: RequestInit & { headers?: Record<stri
   }
 }
 
-export async function saveGithubConnection(input: {
-  userSub: string;
-  login: string;
-  token: string;
-  scopes: string[];
-}): Promise<boolean> {
+export async function saveGithubConnection(input: { userSub: string; login: string; token: string; scopes: string[] }): Promise<boolean> {
   const secret = resolveGithubSealSecret();
   if (!secret) return false;
   const now = new Date().toISOString();
@@ -85,8 +77,7 @@ export async function saveGithubConnection(input: {
 
 export async function deleteGithubConnection(userSub: string): Promise<boolean> {
   const response = await request(`github_connections?user_sub=eq.${encodeURIComponent(userSub)}`, {
-    method: "DELETE",
-    headers: { Prefer: "return=minimal" },
+    method: "DELETE", headers: { Prefer: "return=minimal" },
   });
   return Boolean(response);
 }
@@ -106,37 +97,38 @@ async function readCoreRow(userSub: string): Promise<any | null> {
   }
 }
 
+async function readOptionalBoolean(userSub: string, column: 'auto_pr_enabled' | 'auto_deliver_enabled'): Promise<boolean> {
+  const response = await request(
+    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=${column}&limit=1`,
+    { method: "GET" },
+  );
+  if (!response) return false;
+  try {
+    const rows = await response.json();
+    return Boolean(Array.isArray(rows) && rows.length && rows[0]?.[column]);
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Read optional consent columns independently from the load-bearing connection.
- * If production is one migration behind, both privileges default OFF while the
- * GitHub connection remains usable for reads.
+ * Each optional consent is read independently. A missing future migration may
+ * disable that one capability, but cannot erase an older consent or the core
+ * GitHub connection while schemas roll forward.
  */
 async function readRow(userSub: string): Promise<any | null> {
   const row = await readCoreRow(userSub);
   if (!row) return null;
-
-  const optional = await request(
-    `github_connections?user_sub=eq.${encodeURIComponent(userSub)}&select=auto_pr_enabled,auto_deliver_enabled&limit=1`,
-    { method: "GET" },
-  );
-  if (!optional) return { ...row, auto_pr_enabled: false, auto_deliver_enabled: false };
-
-  try {
-    const rows = await optional.json();
-    const featureRow = Array.isArray(rows) && rows.length ? rows[0] : null;
-    return {
-      ...row,
-      auto_pr_enabled: Boolean(featureRow?.auto_pr_enabled),
-      auto_deliver_enabled: Boolean(featureRow?.auto_deliver_enabled),
-    };
-  } catch {
-    return { ...row, auto_pr_enabled: false, auto_deliver_enabled: false };
-  }
+  const [autoPrEnabled, autoDeliverEnabled] = await Promise.all([
+    readOptionalBoolean(userSub, 'auto_pr_enabled'),
+    readOptionalBoolean(userSub, 'auto_deliver_enabled'),
+  ]);
+  return { ...row, auto_pr_enabled: autoPrEnabled, auto_deliver_enabled: autoDeliverEnabled };
 }
 
 export async function readGithubAutoPrEnabled(userSub: string): Promise<boolean> {
-  const row = await readRow(userSub);
-  return Boolean(row?.auto_pr_enabled);
+  const row = await readCoreRow(userSub);
+  return row ? readOptionalBoolean(userSub, 'auto_pr_enabled') : false;
 }
 
 export async function setGithubAutoPrEnabled(userSub: string, enabled: boolean): Promise<boolean> {
@@ -148,13 +140,9 @@ export async function setGithubAutoPrEnabled(userSub: string, enabled: boolean):
   return Boolean(response);
 }
 
-/**
- * Higher-privilege delivery consent is deliberately independent of Auto PR.
- * A user may grant push/PR access without granting merge/deploy authority.
- */
 export async function readGithubAutoDeliverEnabled(userSub: string): Promise<boolean> {
-  const row = await readRow(userSub);
-  return Boolean(row?.auto_deliver_enabled);
+  const row = await readCoreRow(userSub);
+  return row ? readOptionalBoolean(userSub, 'auto_deliver_enabled') : false;
 }
 
 export async function setGithubAutoDeliverEnabled(userSub: string, enabled: boolean): Promise<boolean> {
@@ -166,11 +154,10 @@ export async function setGithubAutoDeliverEnabled(userSub: string, enabled: bool
   return Boolean(response);
 }
 
-/** The principal for this user, or null. Null always means "refuse". */
 export async function readGithubPrincipal(userSub: string): Promise<GithubPrincipal | null> {
   const secret = resolveGithubSealSecret();
   if (!secret) return null;
-  const row = await readRow(userSub);
+  const row = await readCoreRow(userSub);
   if (!row?.sealed_token) return null;
   const token = openGithubToken(String(row.sealed_token), secret);
   if (!token) return null;
@@ -183,21 +170,14 @@ export async function readGithubPrincipal(userSub: string): Promise<GithubPrinci
   };
 }
 
-/** Connection state for the UI. Deliberately cannot leak the token. */
 export async function readGithubConnectionSummary(userSub: string): Promise<GithubConnectionSummary> {
   if (!config()) {
-    return {
-      connected: false, login: "", scopes: [], connectedAt: null,
-      autoPrEnabled: false, autoDeliverEnabled: false,
-      reason: "GitHub connections are not configured on this deployment (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).",
-    };
+    return { connected: false, login: "", scopes: [], connectedAt: null, autoPrEnabled: false, autoDeliverEnabled: false,
+      reason: "GitHub connections are not configured on this deployment (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)." };
   }
   if (!resolveGithubSealSecret()) {
-    return {
-      connected: false, login: "", scopes: [], connectedAt: null,
-      autoPrEnabled: false, autoDeliverEnabled: false,
-      reason: "GitHub connections are not configured on this deployment (GITHUB_CONNECTION_SECRET must be at least 32 characters).",
-    };
+    return { connected: false, login: "", scopes: [], connectedAt: null, autoPrEnabled: false, autoDeliverEnabled: false,
+      reason: "GitHub connections are not configured on this deployment (GITHUB_CONNECTION_SECRET must be at least 32 characters)." };
   }
   const row = await readRow(userSub);
   if (!row?.sealed_token) {
