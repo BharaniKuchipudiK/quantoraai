@@ -10,19 +10,6 @@ import {
 } from '../lib/github-workspace.js';
 import { readGithubApiJson } from '../lib/github-import.js';
 
-/*
- * Pull request intelligence for the coding desk.
- *
- * Everything here runs as the signed-in user's own GitHub principal — Quantora
- * holds no credential that can write to GitHub. That is why "Connect GitHub" is
- * a separate, explicit step rather than something sign-in did silently, and why
- * a refusal here reads as "your account cannot do this" rather than "Quantora
- * is not configured".
- *
- * The panel deliberately never renders a green tick for a commit with no
- * checks. `checkStateLabel` owns that wording; see its test.
- */
-
 const TONE_COLORS = {
   good: '#4ade80',
   bad: '#f87171',
@@ -40,10 +27,23 @@ async function postStage(endpoint, payload) {
   return readGithubApiJson(response);
 }
 
+/** Auto Deliver is intentionally not part of GITHUB_ENDPOINTS/Auto PR consent. */
+async function postAutoDeliver(enabled) {
+  const response = await fetch('/api/pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ targetStage: 'github-auto-deliver', enabled }),
+  });
+  return readGithubApiJson(response);
+}
+
 export default function GithubPullRequests({ repoUrl = '', headBranch = '', baseBranch = 'main' }) {
   const [connection, setConnection] = useState(null);
   const [autoPrEnabled, setAutoPrEnabled] = useState(false);
   const [autoPrBusy, setAutoPrBusy] = useState(false);
+  const [autoDeliverEnabled, setAutoDeliverEnabled] = useState(false);
+  const [autoDeliverBusy, setAutoDeliverBusy] = useState(false);
   const [pullRequests, setPullRequests] = useState([]);
   const [brief, setBrief] = useState(null);
   const [comment, setComment] = useState('');
@@ -59,6 +59,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
     }
     setConnection(parsed.data);
     setAutoPrEnabled(Boolean(parsed.data?.autoPrEnabled));
+    setAutoDeliverEnabled(Boolean(parsed.data?.autoDeliverEnabled));
     return parsed.data;
   }, []);
 
@@ -66,9 +67,6 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
     loadConnection();
   }, [loadConnection]);
 
-  // A repository change invalidates every pull request on screen. Leaving the
-  // old list up while the header says a new repo is the kind of stale surface
-  // that gets acted on.
   useEffect(() => {
     setPullRequests([]);
     setBrief(null);
@@ -128,27 +126,10 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       draft: true,
     });
     if (!parsed.ok) throw new Error(parsed.error);
-    /*
-     * The refresh comes FIRST, because loadPullRequests opens with setStatus('')
-     * and would erase this sentence the moment it ran. Written the other way
-     * round, the panel reported that it had opened a pull request and then
-     * silently blanked -- a click that visibly did nothing, on a write that had
-     * actually happened. Same shape as the push link that vanished after a
-     * successful push on 2026-09-06.
-     */
     await loadPullRequests();
     setStatus(`Draft pull request #${parsed.data.number} opened as ${parsed.data.actedAs}.`);
   });
 
-  /*
-   * A SEPARATE decision from connecting GitHub. Connecting only ever grants
-   * Quantora the ability to act as the user for reads (list/read a PR,
-   * comment) — this switch is the one thing that additionally lets the
-   * Coding Desk push a fix and open it as a pull request on its own,
-   * unprompted, when it diagnoses a broken build or deployment. It starts
-   * OFF, and merging a pull request is never covered by it — that stays a
-   * human clicking merge, on GitHub, no matter what this switch says.
-   */
   const toggleAutoPr = () => run(async () => {
     setAutoPrBusy(true);
     try {
@@ -161,17 +142,29 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
     }
   });
 
+  const toggleAutoDeliver = () => run(async () => {
+    setAutoDeliverBusy(true);
+    try {
+      const next = !autoDeliverEnabled;
+      const parsed = await postAutoDeliver(next);
+      if (!parsed.ok) throw new Error(parsed.error);
+      setAutoDeliverEnabled(Boolean(parsed.data?.autoDeliverEnabled));
+      setStatus(next
+        ? 'Auto Deliver enabled. Quantora may merge only after the exact-head delivery gates pass.'
+        : 'Auto Deliver disabled. Quantora will not autonomously merge or deploy.');
+    } finally {
+      setAutoDeliverBusy(false);
+    }
+  });
+
   const mergeCurrent = () => run(async () => {
     const parsed = await postStage(GITHUB_ENDPOINTS.mergePullRequest, {
       repoUrl,
       number: brief?.summary?.number,
-      // Bound to the commit actually on screen: if the head moved since this
-      // brief was loaded, the server refuses rather than merging unread code.
       expectedHeadSha: brief?.summary?.headSha,
       mergeMethod: 'squash',
     });
     if (!parsed.ok) throw new Error(parsed.error);
-    // Refresh first, then report: see openDraftPullRequest.
     await loadPullRequests();
     setStatus(`Merged as ${parsed.data.sha?.slice(0, 12) || 'a new commit'}.`);
   });
@@ -203,6 +196,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
       </div>
 
       {notice ? <div data-quantora-github-notice="true" style={{ color: '#94a3b8', lineHeight: 1.45 }}>{notice}</div> : null}
+
       {connected ? (
         <label
           data-quantora-github-auto-pr-toggle="true"
@@ -217,13 +211,35 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
           />
           <span>
             Let Quantora push fixes and open pull requests on its own when it diagnoses a build or deployment failure.
-            Merging always stays a click you make yourself.
+            This permission does not include merge or deploy.
           </span>
         </label>
       ) : null}
-      {!repoUrl ? (
-        <div style={{ color: '#94a3b8' }}>Import a repository in the composer to point this panel at one.</div>
+
+      {connected ? (
+        <label
+          data-quantora-github-auto-deliver-toggle="true"
+          style={{
+            display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '8px 10px', borderRadius: '8px',
+            border: '1px solid rgba(74,222,128,0.22)', background: 'rgba(74,222,128,0.06)',
+            color: '#cbd5e1', cursor: autoDeliverBusy ? 'wait' : 'pointer', lineHeight: 1.45,
+          }}
+        >
+          <input
+            type="checkbox"
+            data-quantora-github-auto-deliver-checkbox="true"
+            checked={autoDeliverEnabled}
+            disabled={autoDeliverBusy}
+            onChange={toggleAutoDeliver}
+            style={{ marginTop: '3px' }}
+          />
+          <span>
+            <strong style={{ color: '#e2e8f0' }}>Auto Deliver</strong> — after Quantora makes and verifies a Coding change, allow the delivery controller to open the PR, wait for CI, repair a concrete CI failure within its bounded retry, merge only the exact green head, verify the matching Vercel production deployment, and run the production smoke check. If any gate fails, it stops instead of claiming success.
+          </span>
+        </label>
       ) : null}
+
+      {!repoUrl ? <div style={{ color: '#94a3b8' }}>Import a repository in the composer to point this panel at one.</div> : null}
       {error ? <div data-quantora-github-error="true" style={{ color: '#f87171', lineHeight: 1.45 }}>{error}</div> : null}
       {status ? <div data-quantora-github-status="true" style={{ color: '#4ade80' }}>{status}</div> : null}
 
@@ -247,24 +263,15 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
 
       {brief ? (
         <div data-quantora-github-brief="true" style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '8px' }}>
-          <div style={{ color: '#e2e8f0', fontWeight: 700 }}>
-            #{brief.summary.number} {brief.summary.title}
-          </div>
+          <div style={{ color: '#e2e8f0', fontWeight: 700 }}>#{brief.summary.number} {brief.summary.title}</div>
           <div style={{ color: '#94a3b8' }}>
             {brief.summary.author} · {pullRequestStateLabel(brief.summary)} · +{brief.summary.additions} −{brief.summary.deletions} in {brief.summary.changedFiles} file(s) · {brief.summary.headSha.slice(0, 12)}
           </div>
           <div data-quantora-github-checks={brief.checks.state} style={{ color: TONE_COLORS[checkStateLabel(brief.checks.state).tone] }}>
-            {checkStateLabel(brief.checks.state).text}
-            {brief.checks.failing.length ? ':' : ''}
+            {checkStateLabel(brief.checks.state).text}{brief.checks.failing.length ? ':' : ''}
           </div>
           {brief.checks.failing.map((failure) => (
-            <a
-              key={failure.name}
-              href={failure.url || brief.summary.htmlUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: '#f87171' }}
-            >
+            <a key={failure.name} href={failure.url || brief.summary.htmlUrl} target="_blank" rel="noreferrer" style={{ color: '#f87171' }}>
               {failure.name} ({failure.conclusion}) — open the log
             </a>
           ))}
@@ -287,9 +294,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: '#e2e8f0', padding: '6px 8px', font: 'inherit', resize: 'vertical' }}
           />
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button type="button" data-quantora-github-post-comment="true" disabled={busy || !comment.trim()} onClick={postComment} style={buttonStyle}>
-              Post comment
-            </button>
+            <button type="button" data-quantora-github-post-comment="true" disabled={busy || !comment.trim()} onClick={postComment} style={buttonStyle}>Post comment</button>
             <button
               type="button"
               data-quantora-github-merge="true"
@@ -300,9 +305,7 @@ export default function GithubPullRequests({ repoUrl = '', headBranch = '', base
             >
               {blockedReason ? `Cannot merge — ${blockedReason}` : `Squash merge ${brief.summary.headSha.slice(0, 7)}`}
             </button>
-            <a href={brief.summary.htmlUrl} target="_blank" rel="noreferrer" style={{ ...buttonStyle, textDecoration: 'none' }}>
-              Open on GitHub
-            </a>
+            <a href={brief.summary.htmlUrl} target="_blank" rel="noreferrer" style={{ ...buttonStyle, textDecoration: 'none' }}>Open on GitHub</a>
           </div>
         </div>
       ) : null}

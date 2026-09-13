@@ -2,22 +2,21 @@ import { validBrowserSubmission } from '../../api/_lib/qir-browser-pilot.js';
 import express from 'express';
 import { start, getRun } from 'workflow/api';
 import { authenticateAdmin } from '../../api/_lib/admin-auth.js';
+import { readGithubAutoDeliverEnabled } from '../../api/_lib/github-connection-store.js';
 import { codingPilotWorkflow, browserPilotWorkflow, codingDeliveryWorkflow } from './workflow.js';
 import { pilotAllows, browserPilotAllows } from './transition.js';
 import { validCodingDeliveryInput } from './delivery.js';
 import { codingDeliveryPilotAllows } from './delivery-policy.js';
-
 import { liveRecoveryProof, liveProofEnabled } from './live-proof.js';
-
 import { seedJournalProof, readJournalProof, proveSaveConflict } from './journal-proof.js';
 
 const app = express();
 app.use(express.json({ limit: '8kb' }));
 app.get('/health', (_req, res) => res.json({ service: 'qir-workflow-pilot', enabled: process.env.QIR_WORKFLOW_PILOT_ENABLED === 'true' }));
+
 app.post('/runs', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
-  // The caller cannot select a customer or run. The operator config pins both.
   const userSub = process.env.QIR_PILOT_USER_SUB || '';
   const runId = process.env.QIR_PILOT_RUN_ID || '';
   if (!pilotAllows(userSub, runId)) return res.status(503).json({ error: 'Pilot is not configured.' });
@@ -28,6 +27,7 @@ app.post('/runs', async (req, res) => {
     return res.status(503).json({ error: 'Unable to enqueue the pilot. Check Workflow logs before retrying.' });
   }
 });
+
 app.post('/submissions', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
@@ -35,26 +35,30 @@ app.post('/submissions', async (req, res) => {
     return res.status(403).json({ error: 'Submission is outside the configured browser pilot.' });
   }
   try {
-    // The durable engine accepts first. Its step creates the QIR row, so there
-    // is no saved-but-never-enqueued job if the requesting browser disappears.
     const { userSub, sessionId, runId, goal, workspaceHash } = req.body;
     const run = await start(browserPilotWorkflow, [{ userSub, sessionId, runId, goal, workspaceHash }]);
     return res.status(202).json({ workflowRunId: run.runId, runId: req.body.runId, durability: 'scheduled' });
-  } catch { return res.status(503).json({ error: 'Scheduling was not confirmed. Retry the same submission.' }); }
+  } catch {
+    return res.status(503).json({ error: 'Scheduling was not confirmed. Retry the same submission.' });
+  }
 });
 
 /*
- * Autonomous delivery is a separate, narrower pilot than worker execution.
- * It can merge and therefore never inherits the older browser/auto-PR flags.
- * Admin auth + exact user/repository/project env scope are both required.
+ * Delivery still has an operator kill switch and target boundary, but the
+ * user-sub environment pin is no longer treated as customer consent. The
+ * signed-in user's stored Auto Deliver flag is the necessary higher-privilege
+ * permission for CI repair + exact-head merge + deploy + production smoke.
  */
 app.post('/deliveries', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
   if (!validCodingDeliveryInput(req.body)) return res.status(400).json({ error: 'Invalid coding delivery request.' });
-  if (!codingDeliveryPilotAllows(req.body)) {
-    return res.status(403).json({ error: 'Autonomous delivery is outside the configured pilot scope.' });
+
+  const autoDeliverEnabled = await readGithubAutoDeliverEnabled(req.body.userSub);
+  if (!codingDeliveryPilotAllows(req.body, autoDeliverEnabled)) {
+    return res.status(403).json({ error: 'Auto Deliver is not enabled for this user or target.' });
   }
+
   try {
     const run = await start(codingDeliveryWorkflow, [req.body]);
     return res.status(202).json({ workflowRunId: run.runId, runId: req.body.runId, durability: 'scheduled' });
@@ -62,6 +66,7 @@ app.post('/deliveries', async (req, res) => {
     return res.status(503).json({ error: 'Delivery scheduling was not confirmed. Nothing should be described as merged or deployed.' });
   }
 });
+
 app.get('/deliveries/:id', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
@@ -84,8 +89,11 @@ app.post('/proof', async (req, res) => {
   try {
     const run = await start(liveRecoveryProof, []);
     return res.status(202).json({ workflowRunId: run.runId });
-  } catch { return res.status(503).json({ error: 'Unable to enqueue proof.' }); }
+  } catch {
+    return res.status(503).json({ error: 'Unable to enqueue proof.' });
+  }
 });
+
 app.get('/proof/:id', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
@@ -94,8 +102,11 @@ app.get('/proof/:id', async (req, res) => {
     const run = getRun(req.params.id);
     const status = await run.status;
     return res.json({ status, ...(status === 'completed' ? { result: await run.returnValue } : {}) });
-  } catch { return res.status(503).json({ error: 'Unable to read proof.' }); }
+  } catch {
+    return res.status(503).json({ error: 'Unable to read proof.' });
+  }
 });
+
 app.delete('/proof/:id', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
@@ -103,8 +114,11 @@ app.delete('/proof/:id', async (req, res) => {
   try {
     await getRun(req.params.id).cancel();
     return res.json({ status: 'cancelled' });
-  } catch { return res.status(503).json({ error: 'Unable to cancel proof.' }); }
+  } catch {
+    return res.status(503).json({ error: 'Unable to cancel proof.' });
+  }
 });
+
 for (const [method, path, handler] of [
   ['post', '/journal-proof', seedJournalProof],
   ['get', '/journal-proof', readJournalProof],
@@ -113,8 +127,12 @@ for (const [method, path, handler] of [
   app[method](path, async (req, res) => {
     const denied = authenticateAdmin(req);
     if (denied) return res.status(denied.status).json({ error: denied.error });
-    try { return res.json(await handler()); }
-    catch (error) { return res.status(503).json({ error: error instanceof Error ? error.message : 'Journal proof unavailable.' }); }
+    try {
+      return res.json(await handler());
+    } catch (error) {
+      return res.status(503).json({ error: error instanceof Error ? error.message : 'Journal proof unavailable.' });
+    }
   });
 }
+
 export default app;
