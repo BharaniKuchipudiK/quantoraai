@@ -8,7 +8,7 @@ import { reduceQirObservation } from './qir-run-store.js';
 import type { QirAgentRun, QirArtifactRef, QirFailureCode, QirObservation, QirVerificationResult } from './qir-contracts.js';
 import type { QirStepContinuation, QirStepExecution, QirStepExecutor } from './qir-worker-runtime.js';
 import { verifyBuild } from './verify-build.js';
-import { changedRequiredVerificationScript, verifyQirRepositoryRuntime, type QirRepositoryRuntimeResult, type QirRepositoryRuntimeVerifier } from './qir-repository-runtime.js';
+import { changedIndependentVerificationFile, changedRequiredVerificationScript, verifyQirRepositoryRuntime, type QirRepositoryRuntimeResult, type QirRepositoryRuntimeVerifier } from './qir-repository-runtime.js';
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
@@ -269,12 +269,24 @@ export function createQirServerCodingExecutor(options: {
         }) };
       }
 
-      const changedCheck = changedRequiredVerificationScript(workspace.baselineVfs || currentVfs, nextVfs);
+      const baselineVfs = normalizedVfs(workspace.baselineVfs || currentVfs);
+      const changedCheck = changedRequiredVerificationScript(baselineVfs, nextVfs);
       if (changedCheck) {
         return { observation: failureObservation(run, continuation, {
           code: 'ARTIFACT_INVALID',
           message: `The candidate changed the required ${changedCheck} verification script. Preserve the existing check while repairing the implementation.`,
           retryable: true, evidenceKind: 'runtime.verification_contract_changed',
+          recoveryExhausted: priorRepairFailures >= maxRepairAttempts,
+        }) };
+      }
+
+      const changedIndependentFile = changedIndependentVerificationFile(baselineVfs, nextVfs);
+      if (changedIndependentFile) {
+        return { observation: failureObservation(run, continuation, {
+          code: 'ARTIFACT_INVALID',
+          message: `The candidate changed independent verification file ${changedIndependentFile}. Preserve the baseline judge and repair only the implementation; new tests may be added separately.`,
+          retryable: true, evidenceKind: 'runtime.independent_verification_changed',
+          evidenceRef: `file:${changedIndependentFile}`,
           recoveryExhausted: priorRepairFailures >= maxRepairAttempts,
         }) };
       }

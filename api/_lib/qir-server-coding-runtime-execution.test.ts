@@ -65,7 +65,8 @@ test('ownership loss at every async boundary stops subsequent Coding stages', as
 function sourceVfs() {
   return {
     'package.json': JSON.stringify({ scripts: { test: 'node test.js', build: 'node build.js' } }),
-    'test.js': 'if ("Old" !== "New") process.exit(1)',
+    'app.js': 'export const value = "Old";',
+    'test.js': 'import { value } from "./app.js"; if (value !== "New") process.exit(1)',
     'build.js': 'console.log("build")',
   };
 }
@@ -79,8 +80,8 @@ function changedModel() {
       '```json filepath="package.json"',
       JSON.stringify({ scripts: { test: 'node test.js', build: 'node build.js' } }),
       '```',
-      '```js filepath="test.js"',
-      'if ("New" !== "New") process.exit(1)',
+      '```js filepath="app.js"',
+      'export const value = "New";',
       '```',
       '```js filepath="build.js"',
       'console.log("build")',
