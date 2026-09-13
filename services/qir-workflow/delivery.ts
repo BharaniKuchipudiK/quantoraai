@@ -84,7 +84,7 @@ async function waitForCi(input: {
       const failures = brief.checks.failing.map(item => `${item.name}: ${item.conclusion}`).join('; ');
       return { status: 'failed' as const, headSha, detail: failures || 'One or more required checks failed.' };
     }
-    if (brief.checks.state === 'passed') {
+    if (brief.checks.state === 'passing') {
       return {
         status: 'passed' as const,
         headSha,
