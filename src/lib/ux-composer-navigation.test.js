@@ -19,8 +19,9 @@ test('GitHub destination is promoted to composer context with a safety disclaime
   assert.match(css, /AI can make mistakes\. Verify important information and review generated changes before publishing\./);
 });
 
-test('Projects are the visible chat hierarchy instead of duplicating chats below workspaces', () => {
-  assert.match(css, /\[data-quantora-workspace-chats\][\s\S]*display:\s*none\s*!important/i);
+test('Projects are the visible chat hierarchy while workspace ownership hooks remain off-canvas', () => {
+  assert.match(css, /\[data-quantora-workspace-chats\][\s\S]*left:\s*-10000px\s*!important/i);
+  assert.match(css, /\[data-quantora-workspace-chats\][\s\S]*pointer-events:\s*none\s*!important/i);
   assert.match(css, /Default project/);
 });
 
