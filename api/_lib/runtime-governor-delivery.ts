@@ -13,12 +13,13 @@ export async function observeCodingDeliveryResult(input: {
   runId: string;
   result: CodingDeliveryResult;
 }, sink?: RuntimeGovernorSink): Promise<void> {
+  const correlationId = `delivery:${input.runId}`;
   let recoveryCount = 0;
   for (const evidence of input.result.evidence) {
     if (!evidence.ok && evidence.stage !== 'FAILED') recoveryCount += 1;
     const state = runtimeStateForDeliveryStage(evidence.stage, evidence.ok);
     await observeRuntimeLifecycle({
-      correlationId: input.runId,
+      correlationId,
       runId: input.runId,
       userSub: input.userSub,
       source: 'delivery',
@@ -32,7 +33,7 @@ export async function observeCodingDeliveryResult(input: {
   }
 
   await observeRuntimeLifecycle({
-    correlationId: input.runId,
+    correlationId,
     runId: input.runId,
     userSub: input.userSub,
     source: 'delivery',
