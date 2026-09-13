@@ -70,12 +70,38 @@ function meaningfulScript(value: unknown): boolean {
   return !/no test specified/i.test(script);
 }
 
+/*
+ * A test cannot independently judge a candidate if the candidate is allowed to
+ * rewrite the test first. This is the production hole observed in the browser
+ * worker pilot: the package.json test command stayed intact, but the model
+ * changed the test file it executed and could therefore grade its own answer.
+ *
+ * Baseline verification files are immutable for the server Coding worker. New
+ * tests may be added, but an existing judge cannot be edited or deleted. This
+ * covers conventional test/spec trees plus the configuration/snapshot files
+ * that can silently weaken what those runners execute.
+ */
+const INDEPENDENT_VERIFICATION_PATH = /(?:^|\/)(?:tests?|__tests__|__snapshots__)(?:\/|$)|(?:^|\/)(?:test|spec)\.[^/]+$|\.(?:test|spec)\.[^/]+$|(?:^|\/)(?:vitest|jest|playwright|cypress)\.config\.[^/]+$/i;
+
+export function changedIndependentVerificationFile(
+  baseline: Record<string, string>,
+  candidate: Record<string, string>,
+): string | null {
+  return Object.keys(baseline || {})
+    .sort()
+    .find(path => INDEPENDENT_VERIFICATION_PATH.test(path) && baseline[path] !== candidate[path]) || null;
+}
+
 export function changedRequiredVerificationScript(baseline: Record<string, string>, candidate: Record<string, string>): string | null {
   const original = packageJson(baseline)?.scripts || {};
   const proposed = packageJson(candidate)?.scripts || {};
-  return ['typecheck', 'test', 'build'].find(name =>
+  const changedScript = ['typecheck', 'test', 'build'].find(name =>
     meaningfulScript(original[name]) && original[name] !== proposed[name],
   ) || null;
+  if (changedScript) return changedScript;
+
+  const changedFile = changedIndependentVerificationFile(baseline, candidate);
+  return changedFile ? `independent test file ${changedFile}` : null;
 }
 
 export function qirRuntimeCommandPlan(vfs: Record<string, string>): string[] {
