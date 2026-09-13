@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { recordBoundaryEvent } from './store.js';
+import { observeTransactionBoundary } from './runtime-governor.js';
 
 const CORRELATION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{7,95}$/;
 const BOUNDARY_PATTERN = /^[a-z][a-z0-9._-]{2,80}$/;
@@ -24,28 +25,11 @@ export type TransactionBoundaryEvent = {
   statusCode?: number | null;
   fileCount?: number | null;
   detailCode?: string | null;
-  /*
-   * The signed-in principal the event belongs to, when the boundary knew one.
-   * Persisted so a person can resolve their own reference id; never written
-   * to the log line, which stays operational data only.
-   */
   userSub?: string | null;
 };
 
 const USER_SUB_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@|-]{0,199}$/;
 
-/*
- * The terminal SSE payload intentionally contains only browser-safe response
- * metadata. It does not repeat the signed-in owner or the golden transaction
- * label. Both are already present on earlier server boundary events for the
- * same correlation id, though, and losing them on the new durable terminal row
- * would make the trace less useful precisely while making it more reliable.
- *
- * Keep that tiny piece of turn context in memory until the terminal boundary
- * is written. This is not a second trace store: it holds only owner/transaction,
- * is bounded, and is discarded at the terminal event. A serverless restart can
- * lose this convenience context, but never the response itself.
- */
 type TraceContext = { transaction: string | null; userSub: string | null; activeChats: number };
 const traceContextByCorrelation = new Map<string, TraceContext>();
 const MAX_TRACE_CONTEXTS = 512;
@@ -147,15 +131,6 @@ export function normalizeBoundaryEvent(input: Partial<TransactionBoundaryEvent>)
 
 export type BoundaryEventSink = (event: TransactionBoundaryEvent) => unknown;
 
-/*
- * Log AND keep. Until 2026-09-05 a boundary event was one console.log line in a
- * serverless function's stdout: gone with the instance, unreadable by the
- * person holding the reference id the desk had shown them ("This turn ended
- * without a reply … Reference: studio-…"). The log line stays, for the
- * platform's own logs; the durable copy is what GET /api/trace resolves.
- * Persistence fails soft, like every store write — a turn is never blocked on
- * bookkeeping — and is injectable so a test can watch what would be kept.
- */
 export function traceBoundary(
   input: Partial<TransactionBoundaryEvent>,
   persist: BoundaryEventSink | null = recordBoundaryEvent,
@@ -176,28 +151,15 @@ export function traceBoundary(
       /* bookkeeping never fails the turn */
     }
   }
+  try {
+    void observeTransactionBoundary(event);
+  } catch {
+    /* governor telemetry never fails the turn */
+  }
   if (isTerminalApiChat(event)) releaseTraceContext(event.correlationId);
   return true;
 }
 
-/**
- * The same record, but WAITED FOR.
- *
- * traceBoundary above is fire-and-forget, which is right for an event written
- * in the middle of a turn: the function keeps running for seconds afterwards
- * and the write lands long before it ends. It is exactly wrong for the last
- * event of a turn. A serverless instance is frozen the moment the handler
- * returns, so a POST started microseconds earlier never completes -- and the
- * event lost that way is the one that says what finally happened.
- *
- * Seen in production on 2026-09-08: an engine failure recorded at +114.7s and
- * nothing after it, on a turn whose catch writes an api.chat failed row on any
- * throw. The row was written. It was never delivered.
- *
- * Use this wherever the next statement ends the response. The write is bounded
- * by the store's own request timeout, so the cost is a network hop and the
- * ceiling is that timeout.
- */
 export async function traceBoundarySettled(
   input: Partial<TransactionBoundaryEvent>,
   persist: BoundaryEventSink | null = recordBoundaryEvent,
@@ -215,26 +177,18 @@ export async function traceBoundarySettled(
     try {
       await persist(event);
     } catch {
-      /* bookkeeping never fails the turn — but it is no longer allowed to
-       * disappear silently either: the caller waited, and that is the point. */
+      /* bookkeeping never fails the turn */
     }
+  }
+  try {
+    await observeTransactionBoundary(event);
+  } catch {
+    /* governor telemetry never fails the turn */
   }
   if (isTerminalApiChat(event)) releaseTraceContext(event.correlationId);
   return true;
 }
 
-/**
- * Turn the final SSE payload into the terminal api.chat success row.
- *
- * Success used to be the one terminal path that still called traceBoundary
- * after sse.done(). That starts an asynchronous store write immediately before
- * the serverless response ends, so the instance may freeze before the write
- * lands. SseWriter now holds the socket open only for this settled write.
- *
- * Owner and transaction are not sent to the browser in the SSE payload. The
- * settled wrapper reattaches the bounded context remembered from earlier
- * server boundary events before writing the terminal row.
- */
 export function chatSuccessEventFromSsePayload(payload: unknown): Partial<TransactionBoundaryEvent> | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   const row = payload as Record<string, any>;
@@ -276,12 +230,6 @@ export function traceSseChatSuccessSettled(
 
 export type TraceLookupUser = { sub: string; isAdmin?: boolean } | null | undefined;
 
-/**
- * Which events of one reference a user may read: all of them for its owner or
- * an admin, none otherwise. "None" is returned as null and answered exactly
- * like "no record", so a reference cannot be probed for existence. An empty
- * record for a signed-in user is the honest empty list.
- */
 export function authorizeTraceLookup(
   events: TransactionBoundaryEvent[],
   user: TraceLookupUser,
@@ -293,7 +241,6 @@ export function authorizeTraceLookup(
   return owned ? events : null;
 }
 
-/** The lookup response never carries the owner. */
 export function publicTraceEvents(events: TransactionBoundaryEvent[]): Omit<TransactionBoundaryEvent, 'userSub'>[] {
   return events.map((event) => {
     const { userSub: _owner, ...rest } = event;
