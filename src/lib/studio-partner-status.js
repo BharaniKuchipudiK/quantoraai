@@ -58,11 +58,12 @@ export function resolveStudioPartnerStatus({
         /*
          * Study is deliberately conservative here: elapsed time is not proof
          * that a model is "reasoning" or "checking examples". The UI therefore
-         * names only facts we know from the request lifecycle. This makes a
-         * long first-token wait feel alive without inventing work that may not
-         * be happening upstream.
+         * names only facts we know from the request lifecycle. AiStudio already
+         * passes the live assistant text on every render, so the first real
+         * streamed content flips this state without adding another runtime
+         * counter or changing the chat transport.
          */
-        const hasStartedStreaming = Number(streamedBytes) > 0;
+        const hasStartedStreaming = Boolean(String(lastAiText || '').trim()) || Number(streamedBytes) > 0;
         if (hasStartedStreaming) {
           return {
             now: `Your tutor answer is arriving… ${clock}`,
