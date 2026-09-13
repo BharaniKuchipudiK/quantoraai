@@ -25,3 +25,48 @@ test('QIR resume keeps the same lifecycle and run identity', async () => {
   assert.equal(events.at(-1)?.verified, true);
   assert.equal(events.at(-1)?.terminal, true);
 });
+
+test('QIR completion is not promoted when evaluated outcome lacks proof', async () => {
+  const events: RuntimeGovernorEvent[] = [];
+  await observeQirRunStatus({
+    userSub: 'user-governor-qir',
+    runId: 'qir-governor-002',
+    status: 'COMPLETE',
+    outcome: {
+      originalIntent: 'Ship a verified outcome evaluator',
+      criteria: [{ criterionId: 'wired', statement: 'Evaluator is wired into production runtime' }],
+      evidence: [],
+    },
+  }, async event => { events.push(event); });
+
+  assert.equal(events.at(-1)?.state, 'validating');
+  assert.equal(events.at(-1)?.terminal, false);
+  assert.equal(events.at(-1)?.verified, false);
+  assert.equal(events.at(-1)?.reason, 'outcome:indeterminate');
+});
+
+test('QIR completion is verified when deterministic outcome evidence satisfies intent', async () => {
+  const events: RuntimeGovernorEvent[] = [];
+  await observeQirRunStatus({
+    userSub: 'user-governor-qir',
+    runId: 'qir-governor-003',
+    status: 'COMPLETE',
+    outcome: {
+      originalIntent: 'Ship a verified outcome evaluator',
+      criteria: [{ criterionId: 'wired', statement: 'Evaluator is wired into production runtime' }],
+      evidence: [{
+        evidenceId: 'evidence-wired',
+        criterionId: 'wired',
+        verdict: 'passed',
+        source: 'verifier',
+        ref: 'ci:wiring-gate',
+      }],
+    },
+  }, async event => { events.push(event); });
+
+  assert.equal(events.at(-1)?.state, 'completed');
+  assert.equal(events.at(-1)?.terminal, true);
+  assert.equal(events.at(-1)?.verified, true);
+  assert.equal(events.at(-1)?.reason, 'outcome:satisfied');
+  assert.equal(events.at(-1)?.evidenceRef, 'ci:wiring-gate');
+});

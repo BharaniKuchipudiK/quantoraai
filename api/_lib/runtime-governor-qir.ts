@@ -1,4 +1,9 @@
 import type { QirRunStatus } from './qir-contracts.js';
+import {
+  evaluateRuntimeOutcome,
+  type OutcomeCriterion,
+  type OutcomeExecutionEvidence,
+} from './runtime-outcome-evaluator.js';
 import { observeRuntimeLifecycle, type RuntimeLifecycleState, type RuntimeGovernorSink } from './runtime-governor.js';
 
 export function runtimeStateForQir(status: QirRunStatus): RuntimeLifecycleState {
@@ -22,8 +27,28 @@ export async function observeQirRunStatus(input: {
   status: QirRunStatus;
   reason?: string | null;
   evidenceRef?: string | null;
+  outcome?: {
+    originalIntent: string | null;
+    criteria: OutcomeCriterion[];
+    evidence: OutcomeExecutionEvidence[];
+  } | null;
 }, sink?: RuntimeGovernorSink) {
-  const state = runtimeStateForQir(input.status);
+  const evaluation = input.outcome ? evaluateRuntimeOutcome(input.outcome) : null;
+  let state = runtimeStateForQir(input.status);
+
+  // A claimed QIR completion is only projected as completed when the outcome
+  // evaluator can prove it. Concrete failure becomes failed; missing proof
+  // remains validating rather than being promoted to a terminal success.
+  if (input.status === 'COMPLETE' && evaluation) {
+    if (evaluation.status === 'failed') state = 'failed';
+    else if (evaluation.status === 'indeterminate') state = 'validating';
+  }
+
+  const evaluatedReason = evaluation
+    ? `outcome:${evaluation.status}${evaluation.modelJudgeRequired ? ':model-judge-required' : ''}`
+    : null;
+  const evaluatedEvidenceRef = evaluation?.evidenceRefs[0] || null;
+
   return observeRuntimeLifecycle({
     correlationId: input.runId,
     runId: input.runId,
@@ -31,8 +56,8 @@ export async function observeQirRunStatus(input: {
     source: 'qir',
     state,
     terminal: state === 'completed' || state === 'failed',
-    verified: state === 'completed',
-    reason: input.reason || input.status.toLowerCase(),
-    evidenceRef: input.evidenceRef || input.runId,
+    verified: state === 'completed' && (!evaluation || evaluation.status === 'satisfied'),
+    reason: input.reason || evaluatedReason || input.status.toLowerCase(),
+    evidenceRef: input.evidenceRef || evaluatedEvidenceRef || input.runId,
   }, sink);
 }
