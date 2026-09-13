@@ -1,0 +1,185 @@
+/*
+ * Quantora workspace UX phase 2.
+ *
+ * This layer changes information hierarchy, not runtime semantics:
+ * - GitHub destination reads as composer context, above the prompt.
+ * - Workspaces stop duplicating their chat lists; Projects own chat browsing.
+ * - The Studio sidebar is wider and browser-resizable within safe bounds.
+ * - Profile and Feedback anchor opposite ends of the footer.
+ * - The signed-in landing uses the viewport without stretching reading widths.
+ */
+
+.app-shell--studio {
+  --quantora-sidebar-width: 300px;
+  --quantora-sidebar-min: 240px;
+  --quantora-sidebar-max: 420px;
+  --quantora-content-max: 1180px;
+  --quantora-composer-max: 1040px;
+}
+
+/* Wider by default, with a native horizontal resize affordance. The inline
+ * closed-state width remains authoritative because the selector only matches
+ * a visible sidebar. */
+@media (min-width: 768px) {
+  .app-shell--studio [data-quantora-studio-sidebar="true"][style*="opacity: 1"] {
+    width: var(--quantora-sidebar-width) !important;
+    min-width: var(--quantora-sidebar-min) !important;
+    max-width: var(--quantora-sidebar-max) !important;
+    resize: horizontal;
+    overflow: auto !important;
+  }
+}
+
+/* Workspace rows are launchers, not a second visible history tree. Keep the
+ * existing ownership nodes mounted off-canvas because they are also durable
+ * product hooks for workspace-pinning/release proof. Projects are the only
+ * chat history a person sees or can interact with. */
+.app-shell--studio [data-quantora-workspace-chats] {
+  position: fixed !important;
+  left: -10000px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* The default Personal Workspace is still the migration-safe default project;
+ * present it as such instead of a second top-level “Chats” category. */
+.app-shell--studio [data-quantora-sidebar-history-title="true"] {
+  font-size: 0 !important;
+  margin-top: 10px !important;
+}
+
+.app-shell--studio [data-quantora-sidebar-history-title="true"]::after {
+  content: "Default project";
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Profile on the left, Feedback on the right. :has() scopes this to the existing
+ * footer without introducing a second profile/feedback implementation. */
+.app-shell--studio [data-quantora-studio-sidebar="true"] > div:has(> [data-quantora-sidebar-profile="true"]) {
+  justify-content: space-between !important;
+  width: 100%;
+}
+
+/* Composer hierarchy: GitHub is destination context. It therefore reads above
+ * the prompt even though the React component remains owned by the action row.
+ * The absolute placement preserves all existing GitHub state/callbacks. */
+.app-shell--studio .floating-input-pill:has([data-quantora-github-destination]) {
+  padding-top: 54px !important;
+}
+
+.app-shell--studio .floating-input-pill [data-quantora-github-destination] {
+  position: absolute !important;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  min-height: 30px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--workspace-border);
+  z-index: 20;
+}
+
+.app-shell--studio .floating-input-pill [data-quantora-github-destination-menu] {
+  top: calc(100% + 8px) !important;
+  bottom: auto !important;
+}
+
+/* Do not repeat the same GitHub destination control in the ordinary action-row
+ * flow after visually promoting it to composer context. */
+.app-shell--studio .floating-input-pill [data-quantora-github-destination] + * {
+  min-width: 0;
+}
+
+/* Small persistent safety copy, deliberately lower contrast than actionable UI. */
+.app-shell--studio .floating-input-pill::after {
+  content: "AI can make mistakes. Verify important information and review generated changes before publishing.";
+  display: block;
+  order: 99;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 14px 0;
+  color: var(--workspace-subtle);
+  font-size: 0.67rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* Keep the composer strong but not ultrawide on large monitors. */
+.app-shell--studio .ai-studio-main > div:has(> .floating-input-pill),
+.app-shell--studio .floating-input-pill {
+  max-width: var(--quantora-composer-max);
+}
+
+/* Signed-in landing: use large displays deliberately while preserving readable
+ * line lengths. This mirrors the principle used by modern chat products: chrome
+ * can be fluid while semantic content is constrained. */
+.welcome-hub {
+  width: min(var(--quantora-content-max, 1180px), calc(100% - 48px));
+  min-height: calc(100dvh - 150px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: clamp(36px, 8vh, 96px);
+  box-sizing: border-box;
+}
+
+.welcome-hub__intro {
+  width: min(760px, 100%);
+  margin-bottom: clamp(28px, 4vh, 48px);
+}
+
+.welcome-hub__grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 18px !important;
+  width: 100%;
+  align-items: stretch;
+}
+
+.welcome-hub__card {
+  min-height: 220px;
+  text-align: left;
+}
+
+@media (min-width: 1500px) {
+  .welcome-hub {
+    --quantora-content-max: 1240px;
+  }
+}
+
+@media (max-width: 767px) {
+  .welcome-hub {
+    width: min(100% - 28px, 680px);
+    min-height: auto;
+    justify-content: flex-start;
+    padding-block: 28px 48px;
+  }
+
+  .welcome-hub__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-hub__card {
+    min-height: 0;
+  }
+
+  .app-shell--studio .floating-input-pill:has([data-quantora-github-destination]) {
+    padding-top: 50px !important;
+  }
+
+  .app-shell--studio .floating-input-pill [data-quantora-github-destination] {
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+}
