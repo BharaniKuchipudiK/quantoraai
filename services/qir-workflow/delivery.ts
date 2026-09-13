@@ -1,7 +1,8 @@
 import { readQirRun } from '../../api/_lib/qir-run-store.js';
-import { loadQirCodingWorkspace } from '../../api/_lib/qir-desk-workspace.js';
-import { vfsFileText } from '../../src/lib/desk-checkpoints.js';
+import { loadQirCodingWorkspace, saveQirDeskWorkspace } from '../../api/_lib/qir-desk-workspace.js';
+import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { verifyQirRepositoryRuntime } from '../../api/_lib/qir-repository-runtime.js';
+import { repairCodingCandidateFromCi } from '../../api/_lib/coding-ci-repair.js';
 import { readGithubPrincipal } from '../../api/_lib/github-connection-store.js';
 import { pushFilesToRepositoryFromBase } from '../../api/_lib/github-push-from-base.js';
 import { createPullRequest, mergePullRequest, type GithubWriteContext } from '../../api/_lib/github-actions.js';
@@ -157,10 +158,10 @@ async function waitForProductionDeployment(input: {
 }
 
 /**
- * Runs one complete straight-through delivery from the durable Coding workspace.
- * It is called from a Workflow step, so browser closure cannot own its lifetime.
- * CI repair is intentionally not invented here: a failing CI run stops with
- * evidence and the existing Coding repair loop can produce a new candidate.
+ * Runs one complete durable delivery from the saved Coding workspace. One CI
+ * failure may be repaired by the same guarded server model stack, but the
+ * repaired bytes must be durably saved and pass the real repository verifier
+ * before a new GitHub head can be pushed.
  */
 export async function executeCodingDelivery(input: CodingDeliveryWorkflowInput) {
   if (!validCodingDeliveryInput(input)) throw new Error('Invalid coding delivery input.');
@@ -169,8 +170,10 @@ export async function executeCodingDelivery(input: CodingDeliveryWorkflowInput) 
   if (!persisted) throw new Error('The durable Coding run could not be loaded.');
   const workspace = await loadQirCodingWorkspace(input.userSub, persisted.run);
   if (workspace.status !== 'loaded') throw new Error('The durable Coding workspace could not be loaded.');
-  const vfs = normalizeWorkspaceVfs(workspace.vfs);
+  let vfs = normalizeWorkspaceVfs(workspace.vfs);
   if (!Object.keys(vfs).length) throw new Error('The durable Coding workspace has no files to deliver.');
+  const baselineHash = workspace.candidateBaselineHash
+    || hashVfsContent(workspace.baselineVfs || workspace.vfs);
 
   const principal = await readGithubPrincipal(input.userSub);
   if (!principal) throw new Error('GitHub is not connected for this user.');
@@ -236,6 +239,30 @@ export async function executeCodingDelivery(input: CodingDeliveryWorkflowInput) 
         expectedHeadSha,
       });
     },
+    async repairAfterCiFailure({ ciDetail, attempt }) {
+      const repair = await repairCodingCandidateFromCi({
+        vfs,
+        objective: [input.title, input.body].filter(Boolean).join('\n\n'),
+        ciDetail,
+        attempt,
+      });
+      if (repair.status !== 'repaired') return { repaired: false, detail: repair.detail };
+
+      const saved = await saveQirDeskWorkspace({
+        userSub: input.userSub,
+        run: persisted.run,
+        vfs: repair.vfs,
+        checkpointId: `delivery-ci-repair-${attempt}`,
+        label: `Delivery CI repair ${attempt}`,
+        candidate: true,
+        baselineHash,
+      });
+      if (saved.status !== 'saved') {
+        return { repaired: false, detail: `CI repair was not durably saved: ${saved.reason}` };
+      }
+      vfs = repair.vfs;
+      return { repaired: true, detail: `${repair.detail} Saved as ${saved.checkpointId}.` };
+    },
     async mergePullRequest({ pullRequestNumber, expectedHeadSha }) {
       const merged = await mergePullRequest(github, {
         number: pullRequestNumber,
@@ -278,7 +305,7 @@ export async function executeCodingDelivery(input: CodingDeliveryWorkflowInput) 
     },
   }, {
     autonomousMergeApproved: true,
-    maxCiRepairs: 0,
+    maxCiRepairs: 1,
   });
 
   return result;
