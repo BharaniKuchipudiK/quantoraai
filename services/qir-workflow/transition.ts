@@ -7,6 +7,7 @@ import { stepQirRunOnce } from '../../api/_lib/qir-worker-runtime.js';
 import { createQirServerCodingExecutor } from '../../api/_lib/qir-server-coding-executor.js';
 import { createQirGatewayRunner } from '../../api/_lib/qir-gateway-model.js';
 import { readQirWorkingContext } from '../../api/_lib/qir-context-state.js';
+import { observeQirRunStatus } from '../../api/_lib/runtime-governor-qir.js';
 
 export function pilotAllows(userSub: string, runId: string, env = process.env): boolean {
   return env.QIR_WORKFLOW_PILOT_ENABLED === 'true'
@@ -33,6 +34,7 @@ export async function runPilotTransition(userSub: string, runId: string) {
     run: async ({ signal }) => {
       const record = await store.readRun(userSub, runId);
       if (!record) return 'retry';
+      await observeQirRunStatus({ userSub, runId, status: record.run.status });
       const context = readQirWorkingContext(record.run);
       if (context?.projectState?.executionOwner !== 'server') return 'disabled';
       if (browserAllowed && context.projectState.sessionId !== browserScope?.sessionId) return 'disabled';
@@ -42,7 +44,17 @@ export async function runPilotTransition(userSub: string, runId: string) {
       }), userSub, runId, signal);
       if (result.status === 'conflict' || result.status === 'unavailable') return 'retry';
       if (result.status === 'no-run') return 'retry';
-      return result.status === 'stopped' ? result.run.status : 'advanced';
+      if (result.status === 'stopped') {
+        await observeQirRunStatus({
+          userSub,
+          runId,
+          status: result.run.status,
+          reason: result.run.status === 'FAILED_TERMINAL' ? 'qir-terminal-failure' : result.run.status.toLowerCase(),
+          evidenceRef: runId,
+        });
+        return result.run.status;
+      }
+      return 'advanced';
     },
   });
   return leased.status === 'completed' ? leased.result : 'retry';
