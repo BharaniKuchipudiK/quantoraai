@@ -30,10 +30,23 @@
   }
 }
 
-/* Workspace rows are launchers, not a second history tree. Chats remain visible
- * under Projects, where move/archive/search already operate on the same data. */
+/* Workspace rows are launchers, not a second visible history tree. Keep the
+ * existing ownership nodes mounted off-canvas because they are also durable
+ * product hooks for workspace-pinning/release proof. Projects are the only
+ * chat history a person sees or can interact with. */
 .app-shell--studio [data-quantora-workspace-chats] {
-  display: none !important;
+  position: fixed !important;
+  left: -10000px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 /* The default Personal Workspace is still the migration-safe default project;
