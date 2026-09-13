@@ -12,6 +12,7 @@ import './styles/studio-toolbar-cleanup.css'
 import './styles/conversation-quality.css'
 import './styles/live-preview-clean.css'
 import './styles/workspace-chrome-consistency.css'
+import './styles/ux-composer-navigation.css'
 
 // Clipboard paste is an input event capability. Studio layout, advisor policy,
 // media, profile, Arena, Fork and project preview are all React-owned now; no
