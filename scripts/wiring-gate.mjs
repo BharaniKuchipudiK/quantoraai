@@ -14,7 +14,10 @@ import { compareToBaseline, findOrphanComponents, findOrphanExports, orphanKey }
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE = join(ROOT, 'src', 'lib', 'wiring-baseline.json');
-const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts', 'desktop'];
+// Dedicated services are production callers too. Their exports are not added to
+// wiring-audit's audited export dirs, but their call sites must count or a real
+// Workflow/service integration is falsely reported as dead code.
+const SOURCE_DIRS = ['src', 'shared', 'api', 'scripts', 'desktop', 'services'];
 /*
  * Root config files count as production code.
  *

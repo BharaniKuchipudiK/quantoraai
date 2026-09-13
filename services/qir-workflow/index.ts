@@ -2,8 +2,10 @@ import { validBrowserSubmission } from '../../api/_lib/qir-browser-pilot.js';
 import express from 'express';
 import { start, getRun } from 'workflow/api';
 import { authenticateAdmin } from '../../api/_lib/admin-auth.js';
-import { codingPilotWorkflow, browserPilotWorkflow } from './workflow.js';
+import { codingPilotWorkflow, browserPilotWorkflow, codingDeliveryWorkflow } from './workflow.js';
 import { pilotAllows, browserPilotAllows } from './transition.js';
+import { validCodingDeliveryInput } from './delivery.js';
+import { codingDeliveryPilotAllows } from './delivery-policy.js';
 
 import { liveRecoveryProof, liveProofEnabled } from './live-proof.js';
 
@@ -40,6 +42,41 @@ app.post('/submissions', async (req, res) => {
     return res.status(202).json({ workflowRunId: run.runId, runId: req.body.runId, durability: 'scheduled' });
   } catch { return res.status(503).json({ error: 'Scheduling was not confirmed. Retry the same submission.' }); }
 });
+
+/*
+ * Autonomous delivery is a separate, narrower pilot than worker execution.
+ * It can merge and therefore never inherits the older browser/auto-PR flags.
+ * Admin auth + exact user/repository/project env scope are both required.
+ */
+app.post('/deliveries', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (!validCodingDeliveryInput(req.body)) return res.status(400).json({ error: 'Invalid coding delivery request.' });
+  if (!codingDeliveryPilotAllows(req.body)) {
+    return res.status(403).json({ error: 'Autonomous delivery is outside the configured pilot scope.' });
+  }
+  try {
+    const run = await start(codingDeliveryWorkflow, [req.body]);
+    return res.status(202).json({ workflowRunId: run.runId, runId: req.body.runId, durability: 'scheduled' });
+  } catch {
+    return res.status(503).json({ error: 'Delivery scheduling was not confirmed. Nothing should be described as merged or deployed.' });
+  }
+});
+app.get('/deliveries/:id', async (req, res) => {
+  const denied = authenticateAdmin(req);
+  if (denied) return res.status(denied.status).json({ error: denied.error });
+  if (process.env.QIR_DELIVERY_PILOT_ENABLED !== 'true' || !/^wrun_[A-Za-z0-9]+$/.test(req.params.id)) {
+    return res.status(404).json({ error: 'Not found.' });
+  }
+  try {
+    const run = getRun(req.params.id);
+    const status = await run.status;
+    return res.json({ status, ...(status === 'completed' ? { result: await run.returnValue } : {}) });
+  } catch {
+    return res.status(503).json({ error: 'Unable to read delivery status.' });
+  }
+});
+
 app.post('/proof', async (req, res) => {
   const denied = authenticateAdmin(req);
   if (denied) return res.status(denied.status).json({ error: denied.error });
