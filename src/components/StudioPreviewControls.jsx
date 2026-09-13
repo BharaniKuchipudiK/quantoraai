@@ -1,33 +1,18 @@
 import React from 'react';
-import { Download, FileCode, Monitor, Smartphone, Tablet, Wand2 } from 'lucide-react';
-
-const VIEWPORTS = [
-  ['mobile', Smartphone],
-  ['tablet', Tablet],
-  ['desktop', Monitor],
-];
+import { Download, FileCode, Wand2 } from 'lucide-react';
 
 /**
- * Preview's own controls, rendered in the desk header.
+ * Preview's compact primary controls, rendered in the desk header.
  *
- * These used to live in a second strip under the header, alongside a status
- * pill that repeated the desk's run label and Share/Publish buttons that
- * repeated its Publish menu. The strip is gone; only the three controls that
- * had nowhere else to live moved up here.
- *
- * Rendered only while Preview is the active tab — a viewport switcher above an
- * open editor is a control that does nothing.
+ * Responsive viewport simulation remains an underlying Preview capability, but
+ * phone/tablet/desktop switches no longer compete with daily actions in the
+ * primary toolbar. If we expose responsive testing again, it belongs in a
+ * secondary Preview/Canvas menu rather than permanent chrome.
  */
 export default function StudioPreviewControls({
   chrome,
   onDownload,
   onImprove,
-  onViewport,
-  /**
-   * The pages Preview could run, conventional entry first, and the one it is
-   * running. Empty unless the desk genuinely holds two or more HTML pages, so
-   * an ordinary single-page build gains no control it does not need.
-   */
   entryChoices = [],
   activeEntry = '',
   onSelectEntry,
@@ -37,7 +22,7 @@ export default function StudioPreviewControls({
   compact = false,
 }) {
   if (!chrome) return null;
-  const { viewport, isOfficeDoc, officeLabel, downloading, canImprove, improving } = chrome;
+  const { isOfficeDoc, officeLabel, downloading, canImprove, improving } = chrome;
 
   const iconButton = (extra = {}) => ({
     display: 'inline-flex',
@@ -60,21 +45,9 @@ export default function StudioPreviewControls({
   return (
     <div
       data-quantora-desk-preview-controls="true"
+      data-quantora-primary-device-switcher="hidden"
       style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
     >
-      {/*
-       * WHICH PAGE AM I LOOKING AT.
-       *
-       * A desk holding two HTML pages renders one of them and used to say
-       * nothing about which. A build that shipped its new page as hello.html
-       * alongside an older index.html showed the OLD page, and the only route
-       * to the new one was asking the model in chat — a paid turn to repoint an
-       * iframe. Naming the running page is most of the fix; being able to
-       * change it is the rest, and it costs nothing.
-       *
-       * Absent entirely below two pages: a control that offers no choice is
-       * noise on every ordinary build.
-       */}
       {entryChoices.length > 1 ? (
         <label
           data-quantora-desk-preview-entry={activeEntry || ''}
@@ -113,45 +86,6 @@ export default function StudioPreviewControls({
           </select>
         </label>
       ) : null}
-
-      {/* An Office artifact has one fixed page shape; a viewport switcher would lie about it. */}
-      {isOfficeDoc ? null : (
-        <div
-          data-quantora-canvas-device-switcher="true"
-          style={{
-            display: 'flex',
-            background: isLight ? '#f1f5f9' : 'rgba(0,0,0,0.25)',
-            borderRadius: '7px',
-            padding: '2px',
-          }}
-        >
-          {VIEWPORTS.map(([name, Icon]) => {
-            const active = viewport === name;
-            return (
-              <button
-                key={name}
-                type="button"
-                data-quantora-desk-viewport={name}
-                aria-pressed={active}
-                title={`${name[0].toUpperCase()}${name.slice(1)} width`}
-                onClick={() => onViewport?.(name)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  padding: '4px',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  background: active ? (isLight ? '#ffffff' : '#334155') : 'transparent',
-                  color: active ? '#f97316' : subtextColor,
-                }}
-              >
-                <Icon size={13} />
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {canImprove ? (
         <button
