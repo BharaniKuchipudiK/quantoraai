@@ -164,6 +164,7 @@ const getTelemetryStatus = (metrics) => {
   const workspaceSource = metrics?.workspaceUse?.source;
   const trafficSource = metrics?.product?.traffic?.source;
   const growthTrafficSource = metrics?.growthTraffic?.source;
+  const governorSource = metrics?.governor?.source;
 
   if (source === 'not_configured' || workspaceSource === 'not_configured' || metrics?.isLiveConnected === false) {
     return {
@@ -175,7 +176,7 @@ const getTelemetryStatus = (metrics) => {
   }
 
   if (source === 'unavailable' || workspaceSource === 'unavailable' || trafficSource === 'unavailable'
-    || growthTrafficSource === 'not_configured' || growthTrafficSource === 'unavailable') {
+    || growthTrafficSource === 'not_configured' || growthTrafficSource === 'unavailable' || governorSource === 'unavailable') {
     return {
       label: 'DEGRADED',
       color: '#f59e0b',
@@ -217,6 +218,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
 import ProductAnalyticsPanel from './ProductAnalyticsPanel';
 import TechnicalAnalyticsPanel from './TechnicalAnalyticsPanel';
 import TechnicalCommandCenterBoundary from './TechnicalCommandCenterBoundary';
+import GovernorMetricsPanel from './GovernorMetricsPanel';
 import AdminFeedbackPanel from './AdminFeedbackPanel';
 
 const UserAnalyticsTab = ({ metrics }) => {
@@ -262,6 +264,8 @@ const TechnicalPredictiveTab = ({ metrics }) => {
 
   return (
     <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
+      <GovernorMetricsPanel governor={metrics.governor} />
+
       <TechnicalCommandCenterBoundary
         technical={metrics.technical}
         turnFailures={metrics.turnFailures}
