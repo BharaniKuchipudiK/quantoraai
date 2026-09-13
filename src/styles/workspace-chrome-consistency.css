@@ -1,0 +1,184 @@
+/*
+ * Workspace chrome consistency — phase 1.
+ *
+ * Coding Desk is the reference surface. These rules intentionally touch only
+ * shared Studio chrome and leave domain-native boards/content alone. No runtime
+ * behaviour, QIR semantics, or desk state is changed here.
+ */
+.app-shell--studio {
+  --workspace-surface: color-mix(in srgb, var(--bg-primary) 96%, #ffffff 4%);
+  --workspace-panel: color-mix(in srgb, var(--bg-secondary) 78%, var(--bg-primary) 22%);
+  --workspace-panel-strong: color-mix(in srgb, var(--bg-secondary) 90%, var(--bg-primary) 10%);
+  --workspace-border: color-mix(in srgb, var(--border-color) 82%, transparent 18%);
+  --workspace-border-strong: color-mix(in srgb, var(--border-glow) 86%, transparent 14%);
+  --workspace-muted: var(--text-secondary);
+  --workspace-subtle: var(--text-muted);
+  --workspace-radius-sm: 10px;
+  --workspace-radius-md: 14px;
+  --workspace-radius-lg: 18px;
+  --workspace-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="dark"] .app-shell--studio {
+  --workspace-surface: #111214;
+  --workspace-panel: #17181b;
+  --workspace-panel-strong: #1d1f22;
+  --workspace-border: #2a2d31;
+  --workspace-border-strong: #3a3e43;
+  --workspace-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+/* One calm application surface, instead of visibly separate boxes competing
+ * with the actual conversation and Canvas. */
+.app-shell--studio .ai-studio-shell {
+  background: var(--workspace-surface) !important;
+}
+
+.app-shell--studio .ai-studio-main {
+  background: transparent !important;
+}
+
+.app-shell--studio .ai-studio-sidebar,
+.app-shell--studio [data-quantora-studio-sidebar="true"] {
+  background: var(--workspace-panel) !important;
+  border-color: var(--workspace-border) !important;
+}
+
+@media (min-width: 768px) {
+  .app-shell--studio .ai-studio-sidebar,
+  .app-shell--studio [data-quantora-studio-sidebar="true"] {
+    border-radius: var(--workspace-radius-lg) !important;
+    box-shadow: inset -1px 0 0 var(--workspace-border);
+  }
+}
+
+/* Shared Studio header/toolbar should read as chrome, not content. */
+.app-shell--studio .ai-studio-toolbar {
+  gap: 10px !important;
+  padding: 8px 10px 10px !important;
+  margin-bottom: 8px !important;
+  border-bottom: 1px solid var(--workspace-border) !important;
+}
+
+.app-shell--studio .ai-studio-toolbar button,
+.app-shell--studio .studio-prompt-icon-btn,
+.app-shell--studio [data-quantora-studio-sidebar="true"] button {
+  border-radius: var(--workspace-radius-sm) !important;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease !important;
+}
+
+.app-shell--studio .ai-studio-toolbar button:hover,
+.app-shell--studio .studio-prompt-icon-btn:hover,
+.app-shell--studio [data-quantora-studio-sidebar="true"] button:hover {
+  background: var(--workspace-panel-strong) !important;
+}
+
+.app-shell--studio .ai-studio-toolbar button:focus-visible,
+.app-shell--studio .studio-prompt-icon-btn:focus-visible,
+.app-shell--studio [data-quantora-studio-sidebar="true"] button:focus-visible,
+.app-shell--studio .floating-input-pill textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, #f97316 72%, white 28%) !important;
+  outline-offset: 2px !important;
+}
+
+/* Conversation is the primary reading lane. Keep generous breathing room while
+ * constraining line length enough to scan long technical turns comfortably. */
+.app-shell--studio .ai-studio-messages {
+  padding-inline: clamp(10px, 1.8vw, 24px) !important;
+  scroll-padding-bottom: 22px;
+}
+
+.app-shell--studio .ai-studio-messages > * {
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+/* Prompt composer is the strongest persistent control in the workspace. */
+.app-shell--studio .floating-input-pill {
+  background: var(--workspace-panel) !important;
+  border: 1px solid var(--workspace-border-strong) !important;
+  border-radius: var(--workspace-radius-lg) !important;
+  box-shadow: var(--workspace-shadow) !important;
+}
+
+.app-shell--studio .floating-input-pill:focus-within {
+  border-color: color-mix(in srgb, #f97316 48%, var(--workspace-border-strong) 52%) !important;
+  box-shadow: var(--workspace-shadow), 0 0 0 1px rgba(249, 115, 22, 0.14) !important;
+}
+
+.app-shell--studio .floating-input-pill textarea {
+  color: var(--text-primary) !important;
+  line-height: 1.55 !important;
+}
+
+.app-shell--studio .floating-input-pill textarea::placeholder {
+  color: var(--workspace-subtle) !important;
+}
+
+.app-shell--studio .studio-prompt-toolbar {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-border) 72%, transparent 28%);
+}
+
+/* Empty state and cards share the same geometry as the working workspace so the
+ * desk does not visually jump when a session begins. */
+.app-shell--studio .ai-studio-empty-state {
+  max-width: 900px !important;
+  margin-inline: auto !important;
+}
+
+.app-shell--studio .ai-studio-model-cards {
+  gap: 12px !important;
+}
+
+.app-shell--studio .ai-studio-model-card {
+  background: var(--workspace-panel) !important;
+  border: 1px solid var(--workspace-border) !important;
+  border-radius: var(--workspace-radius-md) !important;
+  box-shadow: none !important;
+}
+
+.app-shell--studio .ai-studio-model-card:hover {
+  border-color: var(--workspace-border-strong) !important;
+  transform: translateY(-1px);
+}
+
+/* Sidebar hierarchy: section headings quieter, row targets clearer, history
+ * remains readable when the shell compresses at laptop heights. */
+.app-shell--studio [data-quantora-studio-sidebar="true"] {
+  color: var(--text-primary);
+}
+
+.app-shell--studio [data-quantora-sidebar-projects="true"],
+.app-shell--studio [data-quantora-sidebar-agents="true"],
+.app-shell--studio [data-quantora-sidebar-history="true"] {
+  border-color: var(--workspace-border) !important;
+}
+
+.app-shell--studio [data-quantora-sidebar-chat] {
+  border-radius: var(--workspace-radius-sm) !important;
+}
+
+/* Canvas/editor surfaces should feel anchored to the same shell. Do not style
+ * their internal application content; only the immediate shared boundaries. */
+.app-shell--studio [data-quantora-canvas-root="true"] {
+  border-color: var(--workspace-border) !important;
+  border-radius: var(--workspace-radius-md) !important;
+  overflow: hidden;
+}
+
+/* Mobile: preserve the existing stacking behaviour, only remove desktop-style
+ * shadow weight and keep touch targets comfortably rounded. */
+@media (max-width: 767px) {
+  .app-shell--studio .floating-input-pill {
+    border-radius: 16px !important;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  [data-theme="dark"] .app-shell--studio .floating-input-pill {
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24) !important;
+  }
+
+  .app-shell--studio .ai-studio-messages {
+    padding-inline: 8px !important;
+  }
+}
