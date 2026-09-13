@@ -24,7 +24,7 @@ export async function initializeBrowserSubmission(input: BrowserPilotSubmission,
   if (hashVfsContent(workspace.vfs) !== input.workspaceHash) {
     // Record a visible terminal result, rather than leaving a scheduled row missing forever.
     run = { ...run, status: 'FAILED_TERMINAL', observations: [{
-      observationId: 'browser-pilot-source-changed', runId: run.runId, actionId: 'browser-pilot-action',
+      observationId: 'browser-pilot-source-changed', runId: run.runId, actionId: run.cursor.actionId,
       kind: 'runtime', status: 'failure', observedAt: new Date().toISOString(), evidence: [],
       error: { code: 'INTERNAL_INVARIANT', message: 'The saved workspace changed after submission. Submit the current version in a new run.', retryable: false, recoveryExhausted: true },
     }] };

@@ -1,5 +1,6 @@
 import { QIR_CONTRACT_VERSION, type QirAgentRun } from './qir-contracts.js';
 import { attachQirWorkingContext, compactQirWorkingContext } from './qir-context-state.js';
+import { createHash } from 'node:crypto';
 
 export type BrowserPilotSubmission = {
   userSub: string; sessionId: string; runId: string; goal: string; workspaceHash: string;
@@ -23,12 +24,15 @@ export function validBrowserSubmission(input: BrowserPilotSubmission, env = proc
 
 export function browserSubmissionRun(input: BrowserPilotSubmission): QirAgentRun {
   const now = new Date().toISOString();
+  // Publication checkpoints are desk-scoped, so different runs need different
+  // action IDs. Keep the ID bounded even when the submitted run ID is long.
+  const actionId = `browser-pilot-${createHash('sha256').update(input.runId).digest('hex').slice(0, 32)}`;
   const run: QirAgentRun = {
     version: QIR_CONTRACT_VERSION, runId: input.runId,
     goal: { statement: input.goal, status: 'confirmed' }, status: 'EXECUTING',
     steps: [{ stepId: 'browser-pilot', taskId: 'coding.model', objective: input.goal,
-      dependsOn: [], status: 'active', requiresVerification: true, actionId: 'browser-pilot-action' }],
-    cursor: { stepId: 'browser-pilot', actionId: 'browser-pilot-action', attempt: 0 },
+      dependsOn: [], status: 'active', requiresVerification: true, actionId }],
+    cursor: { stepId: 'browser-pilot', actionId, attempt: 0 },
     artifacts: [], observations: [], verifications: [], checkpoints: [],
     budget: { runUnitsRemaining: 100, stepUnitsRemaining: 40, recoveryReserveRemaining: 20, premiumEscalationRemaining: 5 },
     createdAt: now, updatedAt: now,

@@ -20,6 +20,7 @@ import { mkdirSync } from 'node:fs';
 import process from 'node:process';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { planDeskCheckpointChain } from '../src/lib/desk-checkpoint-delta.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const STUDY_ASK = "Make a few flashcards for Newton's laws";
@@ -93,6 +94,7 @@ async function runJourney(name, script) {
     workflowSubmissions: 0,
     workflowCapabilities: 0,
     browserRunCreates: 0,
+    savedSteps: [], savedRevision: 0,
   };
 
   await page.addInitScript(() => {
@@ -123,17 +125,26 @@ async function runJourney(name, script) {
         profile: { studyContext: 'school', completedAt: '2026-09-01T00:00:00.000Z' },
       });
     }
+    if (path === '/api/desk-checkpoints') {
+      if (request.method() === 'GET') return jsonOk(route, { steps: state.savedSteps, revision: state.savedRevision });
+      const body = request.postDataJSON();
+      if (body.expectedRevision !== state.savedRevision) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'Newer checkpoint' }) });
+      state.savedSteps = planDeskCheckpointChain(body.history).steps;
+      state.savedRevision++;
+      return jsonOk(route, { saved: state.savedSteps.length, revision: state.savedRevision });
+    }
     if (path === '/api/qir-runs') {
-      if (script.workerPilot) {
+      if (script.workerPilot || state.workerPilot) {
         const query = new URL(request.url()).searchParams;
         if (query.get('workerPilot') === '1') {
           state.workflowCapabilities++;
           return jsonOk(route, { enabled: true, runId: 'browser-pilot-run' });
         }
-        if (request.method() === 'GET') return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Scheduled, awaiting initialization' }) });
+        if (request.method() === 'GET') return state.completedRun ? jsonOk(route, { run: state.completedRun }) : route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Scheduled, awaiting initialization' }) });
         const submitted = request.postDataJSON() || {};
         if (submitted.action === 'coding.workflow_submit') {
           state.workflowSubmissions++;
+          state.submitted = submitted;
           return route.fulfill({ status: script.rejectScheduling ? 503 : 202, contentType: 'application/json', body: JSON.stringify(script.rejectScheduling
             ? { error: 'Scheduling was not confirmed', reason: 'scheduling-unconfirmed' }
             : { runId: 'browser-pilot-run', workflowRunId: 'wrun_fixture', durability: 'scheduled' }) });
@@ -320,6 +331,50 @@ try {
       },
     });
   }
+
+  await runJourney('worker-checkpoint-restoration', {
+    onChat(route, state) {
+      state.chatCalls++;
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: sseBody(HEALED_PAGE) });
+    },
+    async drive(page, state) {
+      await enterSignedInStudio(page);
+      const prompt = page.locator('.app-shell--studio textarea').first();
+      await prompt.fill(CODING_ASK); await prompt.press('Enter');
+      await waitForState(() => state.savedSteps.length > 0, 'Baseline was not durably saved.');
+      await page.waitForTimeout(600);
+      state.workerPilot = true;
+      await page.goto(`${BASE_URL}/desk?workerPilot=1`);
+      await enterSignedInStudio(page);
+      await waitForState(() => state.workflowCapabilities > 0, 'Worker capability missing.');
+      await prompt.fill('Add the independent worker result file.'); await prompt.press('Enter');
+      await waitForState(() => state.workflowSubmissions === 1, 'Worker submission missing.');
+      await page.getByText('Your background submission was accepted', { exact: false }).last().waitFor({ state: 'visible' });
+      const earlierCalls = state.chatCalls;
+      // Simulate a server publication while the observer is absent, including
+      // the raw text storage format used by the real checkpoint endpoint.
+      await page.goto('about:blank');
+      state.savedSteps = planDeskCheckpointChain([{ id: 'worker-published', vfs: {
+        'index.html': '<!doctype html><html><body><h1>Worker saved result</h1></body></html>',
+        'worker-result.mjs': 'export const verifiedResult = 99;\n',
+      } }]).steps;
+      state.savedRevision++;
+      state.completedRun = { runId: 'browser-pilot-run', status: 'COMPLETE', updatedAt: new Date().toISOString(),
+        goal: { statement: 'Add the independent worker result file.', status: 'achieved' },
+        steps: [], observations: [], verifications: [], checkpoints: [],
+        artifacts: [{ artifactId: 'coding-desk-vfs', state: 'verified', generation: 1 }],
+        workingContext: { projectState: { sessionId: state.submitted.sessionId, executionOwner: 'server', submissionHash: state.submitted.workspaceHash } },
+      };
+      await page.goto(`${BASE_URL}/desk?workerPilot=1`);
+      await enterSignedInStudio(page);
+      await visible(page.getByRole('button', { name: 'worker-result.mjs', exact: true }), 'Published server files cannot be opened in the file tree.', 15_000);
+      await page.waitForTimeout(600);
+      await page.reload();
+      await enterSignedInStudio(page);
+      await visible(page.getByRole('button', { name: 'worker-result.mjs', exact: true }), 'Published files disappeared after saving and reopening the desk.', 15_000);
+      if (state.chatCalls !== earlierCalls || state.browserRunCreates) throw new Error('Restoration executed a new browser turn.');
+    },
+  });
 
   mkdirSync('artifacts/e2e', { recursive: true });
   console.log('QIR production recovery browser gate passed: Study isolation, Coding auto-recovery, explicit retry on the displayed engine, and exclusive worker handoff on acceptance and scheduling failure.');

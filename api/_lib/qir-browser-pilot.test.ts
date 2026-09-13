@@ -27,6 +27,18 @@ function capture() {
 const request = { method: 'POST', body: { ...input, action: 'coding.workflow_submit' } };
 const record = (run = browserSubmissionRun(input)) => ({ run, storageVersion: 1, createdAt: run.createdAt, updatedAt: run.updatedAt });
 
+test('successive runs on one desk cannot reuse a publication action identity', () => {
+  const first = browserSubmissionRun(input);
+  const retry = browserSubmissionRun(input);
+  const next = browserSubmissionRun({ ...input, runId: input.runId + '-next' });
+  assert.equal(first.cursor.actionId, retry.cursor.actionId, 'transport retries reuse their action');
+  assert.notEqual(first.cursor.actionId, next.cursor.actionId, 'a new run must not collide with an earlier published checkpoint');
+  const prefix = 'r'.repeat(127);
+  const longA = browserSubmissionRun({ ...input, runId: prefix + 'a' });
+  const longB = browserSubmissionRun({ ...input, runId: prefix + 'b' });
+  assert.notEqual(`qir-${longA.cursor.actionId}`.slice(0, 120), `qir-${longB.cursor.actionId}`.slice(0, 120));
+});
+
 test('scope validation requires every identity and an approved model', () => {
   assert.equal(validBrowserSubmission(input, env), true);
   assert.equal(isValidQirRunSnapshot(browserSubmissionRun(input)), true);
@@ -108,7 +120,7 @@ test('workspace changes after initialization stop before spending on the model o
     modelRunner: async () => { throw new Error('No model spend allowed'); },
     saveWorkspace: async () => { throw new Error('No writes allowed'); },
   });
-  const result: any = await executor.execute(run, { stepId: 'browser-pilot', taskId: 'coding.model', actionId: 'browser-pilot-action' }, { userSub: input.userSub, runId: input.runId });
+  const result: any = await executor.execute(run, { stepId: 'browser-pilot', taskId: 'coding.model', actionId: run.cursor.actionId }, { userSub: input.userSub, runId: input.runId });
   assert.equal(result.observation.error.retryable, false);
   assert.equal(result.observation.evidence[0].kind, 'runtime.submission_workspace_changed');
 });

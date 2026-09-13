@@ -6,8 +6,9 @@ is absent. Conversely, code, unit tests and a deployment do not prove a complete
 customer journey.
 
 Audit baseline: main `4a3235f8` (#716), pilot `3d3d6e54` (#717). Main production
-and the isolated worker are separate deployments. #717 remains a draft while
-its authenticated browser submission/close/reopen proof is being exercised.
+and the isolated worker are separate deployments. The owner has authorized
+shipping #717 with general customer worker execution disabled. This release
+does not close the unfinished live worker acceptance gates below.
 
 ## Release order
 
@@ -115,7 +116,23 @@ the pre-Rewind tree (`ecc8fb1d`). Worker admission must refuse that mismatch.
 `planDeskRestore` now appends the restored tree after preserving the prior state.
 A regression test failed on the old implementation and passes on the fix; the
 real Studio Rewind browser gate now checks the saved server head as well as
-the rendered Preview. This fix still needs deployment and live retest.
+the rendered Preview. The deployed retest passed: the latest database checkpoint matched the restored
+four-file fixture at hash `99007f83`.
+
+Further live findings:
+
+- Authenticated run `qir-browser-close-20260913` completed at
+  `2026-09-12T22:48:57.129Z`; the tab closed at `22:49:00.507Z`. This proves
+  admission/execution, but **not** execution after closure.
+- Reopening revealed raw stored file strings being installed directly into the
+  editor, which expects `{ content, language }`. The file tree then appeared
+  empty and a subsequent local snapshot lost the file entries. The durable
+  server copy remained intact. The fix converts stored text into editor files;
+  the real Studio regression gate now verifies file visibility and another reload.
+  The gate failed before the fix and passed afterward.
+- Review before the next run found a fixed action ID shared by all browser
+  pilot runs. Desk-scoped publication keys must vary per run while remaining
+  stable for retries; a regression test rejects collisions, including long IDs.
 
 ## Cost and operating decision
 
