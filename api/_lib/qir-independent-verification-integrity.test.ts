@@ -17,7 +17,7 @@ test('baseline independent verification files are immutable', () => {
   for (const path of ['src/cart.test.js', 'tests/checkout.spec.ts', 'vitest.config.ts']) {
     const candidate = { ...baseline, [path]: '// weakened by candidate' };
     assert.equal(changedIndependentVerificationFile(baseline, candidate), path);
-    assert.match(changedRequiredVerificationScript(baseline, candidate) || '', /independent test file/);
+    assert.equal(changedRequiredVerificationScript(baseline, candidate), null);
   }
 });
 
