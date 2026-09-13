@@ -17,6 +17,7 @@ export async function observeCodingDeliveryResult(input: {
   let recoveryCount = 0;
   for (const evidence of input.result.evidence) {
     if (!evidence.ok && evidence.stage !== 'FAILED') recoveryCount += 1;
+    if (evidence.stage === 'FAILED' || evidence.stage === 'PRODUCTION_VERIFIED') continue;
     const state = runtimeStateForDeliveryStage(evidence.stage, evidence.ok);
     await observeRuntimeLifecycle({
       correlationId,
