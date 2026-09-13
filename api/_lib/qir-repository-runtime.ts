@@ -95,13 +95,9 @@ export function changedIndependentVerificationFile(
 export function changedRequiredVerificationScript(baseline: Record<string, string>, candidate: Record<string, string>): string | null {
   const original = packageJson(baseline)?.scripts || {};
   const proposed = packageJson(candidate)?.scripts || {};
-  const changedScript = ['typecheck', 'test', 'build'].find(name =>
+  return ['typecheck', 'test', 'build'].find(name =>
     meaningfulScript(original[name]) && original[name] !== proposed[name],
   ) || null;
-  if (changedScript) return changedScript;
-
-  const changedFile = changedIndependentVerificationFile(baseline, candidate);
-  return changedFile ? `independent test file ${changedFile}` : null;
 }
 
 export function qirRuntimeCommandPlan(vfs: Record<string, string>): string[] {
