@@ -31,7 +31,7 @@ function completedRun(marker?: Record<string, unknown>): QirAgentRun {
       passed: true, proofOfDoneStatus: 'verified', evidenceRefs: ['build:passed'], verifiedAt: now,
     }],
     checkpoints: [{
-      checkpointId: 'checkpoint-1', runId: 'run-auto-deliver-1',
+      checkpointId: 'checkpoint-1', runId: 'run-auto-deliver-1', stepId: 'coding', actionId: 'action-1',
       artifactGenerations: { 'coding-desk-vfs': 1 }, createdAt: now,
     }],
     budget: { runUnitsRemaining: 90, stepUnitsRemaining: 30, recoveryReserveRemaining: 20, premiumEscalationRemaining: 5 },
