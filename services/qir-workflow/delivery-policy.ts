@@ -5,23 +5,29 @@ function value(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 /**
- * Customer-wide autonomous merge is NOT enabled by this slice.
+ * Autonomous delivery needs TWO independent permissions:
  *
- * The operator must explicitly enable one exact user/repository/project scope.
- * That lets us prove the full delivery chain in production without silently
- * upgrading the older `auto_pr_enabled` consent (which only covered push/PR)
- * into permission to merge and deploy.
+ * 1. the operator kill switch + deployment boundary must allow the target; and
+ * 2. the signed-in user must have explicitly enabled Auto Deliver.
+ *
+ * `auto_pr_enabled` is intentionally irrelevant here. Push/PR consent is not
+ * merge/deploy consent, and can never satisfy this function by accident.
  */
 export function codingDeliveryPilotAllows(
   input: CodingDeliveryWorkflowInput,
+  autoDeliverEnabled: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  if (!autoDeliverEnabled) return false;
   if (value(env, 'QIR_DELIVERY_PILOT_ENABLED') !== 'true') return false;
-  const userSub = value(env, 'QIR_DELIVERY_PILOT_USER_SUB');
+
+  // Keep the production rollout pinned to an operator-approved repository and
+  // Vercel project while the new customer consent surface is proven. The old
+  // user-sub pin is no longer the permission: the database opt-in is.
   const repo = value(env, 'QIR_DELIVERY_PILOT_REPO');
   const project = value(env, 'QIR_DELIVERY_PILOT_VERCEL_PROJECT');
-  if (!userSub || !repo || !project) return false;
-  return input.userSub === userSub
-    && `${input.owner}/${input.repo}` === repo
+  if (!repo || !project) return false;
+
+  return `${input.owner}/${input.repo}` === repo
     && input.vercelProject === project;
 }
