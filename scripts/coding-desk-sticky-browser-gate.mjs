@@ -217,7 +217,7 @@ try {
    */
   const advisorDomains = ['finance', 'travel', 'education', 'research'];
   const workspaceDomain = () => page.evaluate(() => document.documentElement.dataset.quantoraDomain || '');
-  const visibleHistoryRow = (pattern) => page.locator('[data-quantora-sidebar-chat]:visible', { hasText: pattern }).first();
+  const visibleHistoryRow = (pattern) => page.locator('[data-quantora-sidebar-projects="true"] [data-quantora-sidebar-chat]', { hasText: pattern }).first();
   async function assertNoAdvisor(label) {
     await page.waitForTimeout(600);
     const domain = await workspaceDomain();
