@@ -6,6 +6,7 @@ import {
   type QirAgentRun,
   type QirObservation,
 } from "./qir-contracts.js";
+import { assessQirContinuity, recoverOrphanedQirAction } from "./qir-continuity.js";
 import { reduceQirObservation } from "./qir-run-store.js";
 import type { ProofOfDoneStatus } from "./outcome-contract.js";
 
@@ -42,7 +43,7 @@ export type QirStepExecutor = {
 };
 
 export type QirWorkerStepResult =
-  | { status: "advanced"; run: QirAgentRun }
+  | { status: "advanced"; run: QirAgentRun; ownedActionId?: string | null }
   | { status: "stopped"; run: QirAgentRun }
   | { status: "no-run" }
   | { status: "conflict" }
@@ -83,15 +84,39 @@ export async function stepQirRunOnce(
   userSub: string,
   runId: string,
   signal?: AbortSignal,
+  ownedActionId: string | null = null,
 ): Promise<QirWorkerStepResult> {
   if (signal?.aborted) return ownershipLost();
   const record = await store.readRun(userSub, runId);
   if (signal?.aborted) return ownershipLost();
   if (!record) return { status: "no-run" };
 
-  const continuation = deriveQirContinuation(record.run);
-  if (!continuation) return { status: "stopped", run: record.run };
+  const continuity = assessQirContinuity(record.run, ownedActionId);
+  if (continuity.action === "stopped") return { status: "stopped", run: record.run };
 
+  if (continuity.action === "recover") {
+    const recovered = recoverOrphanedQirAction(record.run, new Date().toISOString());
+    if (signal?.aborted) return ownershipLost();
+    const commit = await store.commitEvent({
+      userSub,
+      runId,
+      expectedVersion: record.storageVersion,
+      eventId: `${continuity.orphanedActionId}-continuity-recovery`,
+      eventType: "continuity.orphaned_action_recovered",
+      run: recovered,
+      payload: {
+        stepId: continuity.continuation.stepId,
+        orphanedActionId: continuity.orphanedActionId,
+        reason: continuity.reason,
+      },
+    });
+    if (commit.status === "conflict") return { status: "conflict" };
+    if (commit.status === "not_found") return { status: "no-run" };
+    if (commit.status !== "committed") return { status: "unavailable", diagnosis: commit.diagnosis || null };
+    return { status: "advanced", run: commit.record.run, ownedActionId: null };
+  }
+
+  const continuation = continuity.continuation;
   if (!stepIsClaimed(record.run, continuation)) {
     const claimed = claimQirStep(record.run, continuation, new Date().toISOString());
     if (signal?.aborted) return ownershipLost();
@@ -103,7 +128,7 @@ export async function stepQirRunOnce(
     if (commit.status === "conflict") return { status: "conflict" };
     if (commit.status === "not_found") return { status: "no-run" };
     if (commit.status !== "committed") return { status: "unavailable", diagnosis: commit.diagnosis || null };
-    return { status: "advanced", run: commit.record.run };
+    return { status: "advanced", run: commit.record.run, ownedActionId: commit.record.run.cursor.actionId };
   }
 
   const execution = normalizeExecution(await executor.execute(record.run, continuation, { userSub, runId, signal }));
@@ -131,7 +156,7 @@ export async function stepQirRunOnce(
   if (commit.status === "conflict") return { status: "conflict" };
   if (commit.status === "not_found") return { status: "no-run" };
   if (commit.status !== "committed") return { status: "unavailable", diagnosis: commit.diagnosis || null };
-  return { status: "advanced", run: commit.record.run };
+  return { status: "advanced", run: commit.record.run, ownedActionId: null };
 }
 
 export type QirWorkerLoopOptions = {
@@ -150,11 +175,13 @@ export async function runQirWorkerLoop(
 ): Promise<QirWorkerStepResult> {
   const maxSteps = options.maxSteps ?? Number.POSITIVE_INFINITY;
   let last: QirWorkerStepResult = { status: "no-run" };
+  let ownedActionId: string | null = null;
   for (let i = 0; i < maxSteps; i += 1) {
     if (options.signal?.aborted) return ownershipLost();
-    last = await stepQirRunOnce(store, executor, userSub, runId, options.signal);
+    last = await stepQirRunOnce(store, executor, userSub, runId, options.signal, ownedActionId);
     options.onStep?.(last);
     if (last.status !== "advanced") return last;
+    ownedActionId = last.ownedActionId ?? null;
     if (options.stepDelayMs) await new Promise((resolve) => { setTimeout(resolve, options.stepDelayMs); });
   }
   return last;
