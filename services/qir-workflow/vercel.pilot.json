@@ -1,0 +1,8 @@
+{
+  "framework": "nitro",
+  "buildCommand": "node scripts/build-qir-workflow-vercel.mjs",
+  "installCommand": "npm ci",
+  "regions": [
+    "hnd1"
+  ]
+}

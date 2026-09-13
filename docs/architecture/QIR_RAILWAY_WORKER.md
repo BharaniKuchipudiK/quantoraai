@@ -1,5 +1,9 @@
 # QIR Coding worker — Railway/container process
 
+> **Alternative host, not the selected pilot.** The current reliability work uses
+> an isolated Vercel Workflow worker. Keep this runbook for a future host change;
+> do not provision Railway alongside it. See [current closeout](RELIABILITY_CLOSEOUT_2026-09-13.md).
+
 The worker is a separate long-running process from the Quantora web/API service.
 
 ## Build

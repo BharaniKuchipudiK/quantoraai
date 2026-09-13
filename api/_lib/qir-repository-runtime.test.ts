@@ -202,3 +202,52 @@ test('sandbox infrastructure failure is unavailable and still tears down an allo
   assert.match(result.reason, /microVM lost/);
   assert.equal(stopped, true);
 });
+
+test('deployed worker uses Sandbox OIDC while explicit missing credentials still fail closed', async () => {
+  const keys = ['VERCEL', 'VERCEL_OIDC_TOKEN', 'VERCEL_SANDBOX_TOKEN', 'VERCEL_ACCESS_TOKEN'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  const contextSymbol = Symbol.for('@vercel/request-context');
+  const globals = globalThis as any;
+  const previousContext = globals[contextSymbol];
+  let allocations = 0;
+  let stops = 0;
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_OIDC_TOKEN = 'synthetic-oidc';
+    delete process.env.VERCEL_SANDBOX_TOKEN;
+    delete process.env.VERCEL_ACCESS_TOKEN;
+    const sandboxFactory: SandboxFactory = async params => {
+      allocations++;
+      assert.equal(params.token, undefined);
+      return { writeFiles: async () => {}, runCommand: async () => ({ exitCode: 0, output: async () => 'passed' }), stop: async () => { stops++; } };
+    };
+    const passed = await verifyQirRepositoryRuntime({ vfs: packageVfs() }, { sandboxFactory });
+    assert.equal(passed.status, 'passed');
+    assert.equal(allocations, 1);
+    assert.equal(stops, 1);
+    delete process.env.VERCEL_OIDC_TOKEN;
+    globals[contextSymbol] = { get: () => ({ headers: { 'x-vercel-oidc-token': 'synthetic-request-oidc' } }) };
+    const requestScoped = await verifyQirRepositoryRuntime({ vfs: packageVfs() }, { sandboxFactory });
+    assert.equal(requestScoped.status, 'passed');
+    assert.equal(allocations, 2);
+    assert.equal(stops, 2);
+    const disabled = await verifyQirRepositoryRuntime({ vfs: packageVfs() }, { credentials: null, sandboxFactory });
+    assert.equal(disabled.status, 'skipped');
+    delete process.env.VERCEL;
+    const local = await verifyQirRepositoryRuntime({ vfs: packageVfs() }, { sandboxFactory });
+    assert.equal(local.status, 'skipped');
+    assert.equal(allocations, 2);
+    process.env.VERCEL = '1';
+    delete globals[contextSymbol];
+    const missing = await verifyQirRepositoryRuntime({ vfs: packageVfs() }, { sandboxFactory });
+    assert.equal(missing.status, 'skipped');
+    assert.equal(allocations, 2);
+  } finally {
+    if (previousContext === undefined) delete globals[contextSymbol];
+    else globals[contextSymbol] = previousContext;
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});

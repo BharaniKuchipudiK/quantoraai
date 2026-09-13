@@ -1,3 +1,4 @@
+import { handleBrowserPilotRequest } from './_lib/qir-browser-pilot-api.js';
 import { requireActiveSession } from "./_lib/authz.js";
 import { spendOrdinaryUnits } from "./_lib/qir-resource-ledger.js";
 import { qirWorkflowAdapter, type QirWorkflowSignal } from "./_lib/qir-workflow-adapter.js";
@@ -473,6 +474,8 @@ export default async function handler(req: any, res: any) {
   if (!isQirRunStoreConfigured()) {
     return res.status(503).json({ error: "Durable QIR runtime storage is not configured.", reason: "storage-unconfigured" });
   }
+
+  if (await handleBrowserPilotRequest(req, res, userSub)) return;
 
   if (req.method === "GET") {
     const runId = String(req.query?.runId || "").trim();

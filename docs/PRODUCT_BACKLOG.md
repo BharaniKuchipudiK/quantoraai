@@ -1,5 +1,9 @@
 # Product backlog
 
+> **2026-09-13 priority:** Finish the reliability pipeline before adding features.
+> Older phase/status notes below are historical; the [current closeout](architecture/RELIABILITY_CLOSEOUT_2026-09-13.md)
+> separates shipped mechanisms, unfinished journeys and deferred product work.
+
 Plain list. We do one thing at a time.
 
 **Now:** coding desk (the IDE).  

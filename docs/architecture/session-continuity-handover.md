@@ -1,5 +1,10 @@
 # Session continuity and handover
 
+> **Current status (2026-09-13):** This document includes historical implementation
+> status. Use [Reliability closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for current
+> evidence, open release gates and the ordered backlog. QIR is not yet complete
+> as a production-wide runtime.
+
 Status: isolated refinement on the Study draft branch. This contract does not
 change model routing, production configuration, provider limits, or durable PCL
 memory consent.

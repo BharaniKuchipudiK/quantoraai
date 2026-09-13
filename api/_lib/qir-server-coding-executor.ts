@@ -1,3 +1,4 @@
+import { pickPreviewEntry } from '../../src/lib/preview-utils.js';
 import { randomUUID } from 'node:crypto';
 import { loadQirCodingWorkspace, saveQirDeskWorkspace } from './qir-desk-workspace.js';
 import { describeQirProviderFailure, type QirProviderFailure } from './qir-provider-failure.js';
@@ -11,6 +12,7 @@ import { changedRequiredVerificationScript, verifyQirRepositoryRuntime, type Qir
 import { parseVFSWithReport } from '../../src/lib/vfs-parser.js';
 import { hashVfsContent, vfsFileText } from '../../src/lib/desk-checkpoints.js';
 import { missingRequestedDeliverables } from '../../src/lib/requested-deliverables.js';
+import { readQirWorkingContext } from './qir-context-state.js';
 
 const MAX_PROMPT_SOURCE_CHARS = 60_000;
 const MAX_FILE_CHARS = 12_000;
@@ -31,7 +33,7 @@ type BuildVerifier = typeof verifyBuild;
 function providerFailureCode(failure: QirProviderFailure): QirFailureCode {
   if (failure.providerCode === 'timeout' || failure.httpStatus === 408) return 'PROVIDER_TIMEOUT';
   if (failure.httpStatus === 401 || failure.httpStatus === 403 || failure.providerCode === 'credential_missing') return 'PROVIDER_AUTH';
-  if (failure.httpStatus === 429) return 'PROVIDER_QUOTA';
+  if ((failure.provider === 'vercel-gateway' && failure.httpStatus === 402) || failure.httpStatus === 429) return 'PROVIDER_QUOTA';
   return 'PROVIDER_TRANSPORT';
 }
 
@@ -215,6 +217,13 @@ export function createQirServerCodingExecutor(options: {
       const stableCheckpointId = `qir-${actionId}`.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120);
       const replayedCandidate = workspace.candidateCheckpointId === stableCheckpointId;
       const baselineHash = workspace.candidateBaselineHash || hashVfsContent(workspace.baselineVfs || currentVfs);
+      const submittedHash = readQirWorkingContext(run)?.projectState?.submissionHash;
+      if (submittedHash && submittedHash !== baselineHash) {
+        return { observation: failureObservation(run, continuation, {
+          code: 'INTERNAL_INVARIANT', message: 'Saved files changed after this submission. The newer work was kept.',
+          retryable: false, recoveryExhausted: true, evidenceKind: 'runtime.submission_workspace_changed',
+        }) };
+      }
       const objective = run.steps.find((step) => step.stepId === continuation.stepId)?.objective
         || run.goal.statement || 'Complete the Coding task.';
       const priorRepairFailures = repairFailures(run).length;
@@ -373,7 +382,7 @@ export function createQirServerCodingExecutor(options: {
         };
       }
 
-      const report = await verify({ code: model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
+      const report = await verify({ code: pickPreviewEntry(nextVfs) || model.text, vfs: nextVfs, brief: run.goal.statement || '', job: null });
       if (context.signal?.aborted) return ownershipLost();
       if (!report.passed) {
         const issues = (report.issues || []).map((issue) => String(issue || '').trim()).filter(Boolean).slice(0, 8);
@@ -455,6 +464,7 @@ export function createQirServerCodingExecutor(options: {
           verificationId: verification.verificationId, verificationScore: report.score,
           repositoryRuntime: runtimePayload(runtime),
           workspaceReplay: replayedCandidate || saved.replayed === true,
+          modelUsage: 'usage' in model ? model.usage : null,
           repairAttemptsUsed: priorRepairFailures,
         },
       };

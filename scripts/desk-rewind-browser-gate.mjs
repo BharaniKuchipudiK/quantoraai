@@ -37,6 +37,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { compilePreviewVfs } from '../api/_lib/preview-compiler.js';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { planDeskCheckpointChain, replayDeskCheckpointChain } from '../src/lib/desk-checkpoint-delta.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACT_DIR = 'artifacts/e2e';
@@ -98,11 +99,25 @@ await page.addInitScript(() => {
 
 const json = (status, body) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const postedJson = (request) => { try { return JSON.parse(request.postData() || '{}'); } catch { return {}; } };
+const savedDesks = new Map();
+let activeSavedDesk = null;
 
 await page.route('**/api/**', async (route) => {
   const request = route.request();
   const path = new URL(request.url()).pathname;
   const method = request.method();
+  if (path === '/api/desk-checkpoints') {
+    const body = postedJson(request);
+    const sessionId = method === 'POST' ? body.sessionId : new URL(request.url()).searchParams.get('sessionId');
+    const stored = savedDesks.get(sessionId) || { steps: [], revision: 0 };
+    if (method === 'GET') return route.fulfill(json(200, stored));
+    if (body.expectedRevision !== stored.revision) return route.fulfill(json(409, { error: 'stale revision' }));
+    const plan = planDeskCheckpointChain(body.history);
+    if (plan.stoppedAt) return route.fulfill(json(400, { error: plan.reason }));
+    activeSavedDesk = { steps: plan.steps, revision: stored.revision + 1 };
+    savedDesks.set(sessionId, activeSavedDesk);
+    return route.fulfill(json(200, { saved: plan.steps.length, revision: activeSavedDesk.revision }));
+  }
   if (path === '/api/auth/session') {
     return route.fulfill(json(200, { user: { sub: 'rewind-gate', name: 'Rewind Gate', email: 'rewind-gate@quantora.invalid', picture: null, isAdmin: false } }));
   }
@@ -241,6 +256,20 @@ try {
   await step('the desk says what the rewind changed', async () => {
     const review = page.locator('[data-quantora-desk-review="true"]').first();
     await visible(review, 'Nothing on screen accounts for the rewind: the files changed underneath the person in silence.', 10_000);
+  });
+
+  await step('saved server head matches the restored Preview', async () => {
+    const deadline = Date.now() + 10_000;
+    let restored;
+    while (Date.now() < deadline) {
+      restored = replayDeskCheckpointChain({ steps: activeSavedDesk?.steps || [] });
+      if (restored.ok && restored.vfs['index.html']?.includes(FIRST_HEADING)) break;
+      await page.waitForTimeout(100);
+    }
+    if (!restored?.ok || !restored.vfs['index.html']?.includes(FIRST_HEADING) || 'later.js' in restored.vfs) {
+      throw new Error('Rewind changed Preview but the persisted server head still contains the later build.');
+    }
+    evidence.savedRevision = activeSavedDesk.revision;
   });
 
   await page.screenshot({ path: `${ARTIFACT_DIR}/desk-rewind.png`, fullPage: true });

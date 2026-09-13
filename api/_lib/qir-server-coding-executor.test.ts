@@ -184,3 +184,59 @@ test('OpenRouter HTTP 402 remains the provider refusal, not an invented account-
   assert.doesNotMatch(result.observation.error.message, /insufficient balance|top up|re-issu/i);
   assert.equal(result.payload.providerFailure.httpStatus, 402);
 });
+
+test('operator recovery of a saved candidate verifies without charging the model again', async () => {
+  let vfs: Record<string, string> = { 'index.html': '<html><body>Old</body></html>' };
+  let candidateCheckpointId: string | undefined;
+  let modelCalls = 0;
+  let runtimeCalls = 0;
+  let publishes = 0;
+  const executor = createQirServerCodingExecutor({
+    loadWorkspace: async () => ({ status: 'loaded', sessionId: 'desk-1', checkpointCount: 1, vfs, candidateCheckpointId }),
+    modelRunner: async () => {
+      modelCalls++;
+      return { status: 'success', provider: 'vercel-gateway', modelId: 'test/model', text: '```html filepath="index.html"\n<html><body>New</body></html>\n```' };
+    },
+    saveWorkspace: async input => {
+      vfs = input.vfs as Record<string, string>;
+      if (input.candidate) candidateCheckpointId = input.checkpointId;
+      else publishes++;
+      return { status: 'saved', sessionId: 'desk-1', checkpointId: input.checkpointId };
+    },
+    runtimeVerify: async () => {
+      runtimeCalls++;
+      return runtimeCalls === 1
+        ? { status: 'unavailable', reason: 'Synthetic identity failure', commands: ['npm test'] }
+        : { status: 'passed', commands: ['npm test'], results: [{ command: 'npm test', exitCode: 0, output: 'passed', outputTruncated: false }] };
+    },
+    verify: async () => ({ score: 100, passed: true, checks: [], issues: [], summary: 'verified', critiqued: false }),
+  });
+  const failed: any = await executor.execute(activeRun(), continuation, { userSub: 'u1', runId: 'run-1' });
+  assert.equal(failed.committedRun.status, 'FAILED_TERMINAL');
+  assert.equal(publishes, 0);
+  const resumed = { ...failed.committedRun, status: 'EXECUTING', steps: failed.committedRun.steps.map((step: any) => ({ ...step, status: 'active' })) };
+  const recovered: any = await executor.execute(resumed, continuation, { userSub: 'u1', runId: 'run-1' });
+  assert.equal(recovered.committedRun.status, 'COMPLETE');
+  assert.equal(recovered.payload.provider, 'durable-checkpoint');
+  assert.equal(recovered.payload.workspaceReplay, true);
+  assert.equal(modelCalls, 1);
+  assert.equal(runtimeCalls, 2);
+  assert.equal(publishes, 1);
+  assert.ok(recovered.committedRun.observations.some((item: any) => item.status === 'failure'));
+});
+
+
+test('module-only edits verify the complete persisted preview with the real build verifier', async () => {
+  const html = '<!doctype html><html lang="en"><head><title>Quantity</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{padding:2rem;background:#eef;color:#123;font-family:system-ui}</style></head><body><main><h1>Quantity</h1><a href="https://example.com">Reference</a></main></body></html>';
+  const executor = createQirServerCodingExecutor({
+    loadWorkspace: async () => ({ status: 'loaded', sessionId: 'desk-1', checkpointCount: 1, vfs: { 'index.html': html, 'quantity.mjs': 'export const limit = 100;' } }),
+    modelRunner: async () => ({ status: 'success', provider: 'vercel-gateway', modelId: 'test/model', text: '```javascript filepath="quantity.mjs"\nexport const limit = 99;\n```' }),
+    saveWorkspace: async input => ({ status: 'saved', sessionId: 'desk-1', checkpointId: input.checkpointId }),
+    runtimeVerify: async () => ({ status: 'passed', commands: ['npm test'], results: [{ command: 'npm test', exitCode: 0, output: 'passed', outputTruncated: false }] }),
+  });
+  const run = activeRun();
+  run.goal.statement = 'Change quantity limit to 99';
+  const result: any = await executor.execute(run, continuation, { userSub: 'u1', runId: 'run-1' });
+  assert.equal(result.committedRun.status, 'COMPLETE');
+  assert.equal(result.payload.verificationScore, 100);
+});

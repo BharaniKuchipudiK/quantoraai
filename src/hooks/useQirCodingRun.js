@@ -37,7 +37,7 @@ export function useQirCodingRun(options) {
         client: null,
       };
       next.client = core.createQirCodingRunClient({
-        onRun: (value) => { if (clientRef.current === next) setRun(value); },
+        onRun: (value) => { if (clientRef.current === next) { setRun(value); setError(null); } },
         onError: (value) => { if (clientRef.current === next) setError(value); },
         readOptions: () => optionsRef.current,
       });
@@ -107,9 +107,12 @@ export function useQirCodingRun(options) {
         const restored = await loadDeskCheckpoints(sessionId);
         if (stopped) return;
         if (restored.ok && restored.vfs && Object.keys(restored.vfs).length) {
-          const accepted = await onServerWorkspace(restored.vfs, run);
-          if (accepted !== false) appliedServerCheckpointRef.current = checkpointKey;
-          return;
+          const { deskVfsFromText } = await import('../lib/desk-checkpoints.js');
+          if (stopped) return;
+          // Storage carries text; editor files carry content/language. Installing
+          // raw strings hides the files and the next local snapshot drops them.
+          const accepted = await onServerWorkspace(deskVfsFromText(restored.vfs), run, restored);
+          if (accepted !== false) { appliedServerCheckpointRef.current = checkpointKey; return; }
         }
       } catch (restoreError) {
         if (!stopped) setError(restoreError);

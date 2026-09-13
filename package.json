@@ -26,8 +26,8 @@
     "test:outcome-navigator": "tsx scripts/outcome-navigator-eval.ts",
     "test:ts": "node scripts/run-ts-tests.mjs",
     "test:node": "node scripts/run-node-tests.mjs",
-    "test:all": "npm run test:imports && npm run test:hook-order && npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes && npm run test:journeys && npm run test:qir-worker-crash-resume",
-    "test:ci": "npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes",
+    "test:all": "npm run test:imports && npm run test:hook-order && npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:wiring && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes && npm run test:journeys && npm run test:qir-worker-crash-resume && npm run test:qir-workflow-recovery && npm run test:qir-workflow-bundle",
+    "test:ci": "npm run test:github-writes && npm run test:study-evidence && npm run test:study-assessment && npm run test:ts && npm run test:node && npm run test:studio-synthetic && npm run test:outcome-navigator && npm run test:framed-preview && npm run test:function-region && npm run test:image-parsers && npm run test:served-routes && npm run test:qir-workflow-recovery && npm run test:qir-workflow-bundle",
     "lint:undef": "eslint 'src/**/*.{js,jsx}'",
     "test:wiring": "node scripts/wiring-gate.mjs",
     "test:stress": "node scripts/stress/pipeline-stress.mjs",
@@ -49,7 +49,11 @@
     "test:function-region": "node scripts/function-region-gate.mjs",
     "test:image-parsers": "node scripts/image-parser-dos-gate.mjs",
     "test:advisories": "node scripts/dependency-advisory-gate.mjs",
-    "test:qir-worker-crash-resume": "tsx scripts/qir-worker-crash-resume-proof.mjs"
+    "test:qir-worker-crash-resume": "tsx scripts/qir-worker-crash-resume-proof.mjs",
+    "build:qir-workflow": "cd services/qir-workflow && nitro build",
+    "dev:qir-workflow": "cd services/qir-workflow && nitro dev",
+    "test:qir-workflow-recovery": "cd scripts/fixtures/workflow-recovery && nitro build && cd ../../.. && node scripts/qir-workflow-recovery-proof.mjs",
+    "test:qir-workflow-bundle": "node scripts/build-qir-workflow-vercel.mjs"
   },
   "dependencies": {
     "@duffel/api": "^4.28.0",
@@ -58,10 +62,12 @@
     "@react-oauth/google": "^0.13.5",
     "@tailwindcss/vite": "^4.1.14",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/oidc": "3.2.0",
     "@vercel/sandbox": "^3.2.2",
     "@vercel/speed-insights": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "@webcontainer/api": "^1.6.4",
+    "ai": "7.0.99",
     "archiver": "^8.0.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -97,10 +103,24 @@
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
+    "nitro": "3.0.260903-beta",
     "playwright": "1.55.1",
+    "rollup": "4.63.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "workflow": "4.8.8"
+  },
+  "overrides": {
+    "@workflow/core": {
+      "nanoid": "5.1.16"
+    },
+    "@workflow/world-local": {
+      "undici": "7.29.1"
+    },
+    "@workflow/world-vercel": {
+      "undici": "7.29.1"
+    }
   }
 }

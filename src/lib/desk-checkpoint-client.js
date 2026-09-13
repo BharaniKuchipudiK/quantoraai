@@ -125,6 +125,14 @@ export function createDeskCheckpointSaver(sessionId, { save = persistDeskCheckpo
   let blocked = '';
   let pending = Promise.resolve();
   return {
+    settle() { return pending; },
+    // Only used after the caller preserves local edits and waits for old saves.
+    adopt(result) {
+      if (!result.ok || !Number.isSafeInteger(result.revision)) return;
+      revision = result.revision;
+      anchor = result.entries?.at(-1)?.hash || null;
+      blocked = '';
+    },
     initialize(result) {
       if (!result.ok || !Number.isSafeInteger(result.revision)) return;
       revision = result.revision;

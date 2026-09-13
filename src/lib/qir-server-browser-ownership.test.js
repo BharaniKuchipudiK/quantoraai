@@ -159,6 +159,7 @@ test('server-owned submit binds the desk session before making coding.model runn
     const attemptIndex = calls.findIndex((call) => call.body?.action === 'coding.attempt');
     assert.ok(contextIndex >= 0, 'the worker needs a durable desk-session binding');
     assert.ok(attemptIndex > contextIndex, 'the Run must not become runnable before its desk context is durable');
+    assert.equal(calls[contextIndex].body.projectState.executionOwner, 'server', 'the production worker requires the persisted ownership marker');
     assert.equal(calls.filter((call) => call.body?.action === 'coding.start').length, 0, 'server-owned submit must not attach browser artifact bytes');
     assert.equal(calls.filter((call) => call.body?.action === 'coding.recover').length, 0, 'server-owned submit must not start browser recovery');
   } finally {

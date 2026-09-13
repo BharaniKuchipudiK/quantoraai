@@ -1,3 +1,4 @@
+import { getVercelOidcTokenSync } from '@vercel/oidc';
 import { createRealSandbox } from './sandbox-factory.js';
 import { resolveSandboxCredentials, type SandboxCredentials } from './sandbox-credentials.js';
 import type { SandboxFactory, SandboxHandle } from './sandbox-agent-tools.js';
@@ -164,7 +165,15 @@ export async function verifyQirRepositoryRuntime(
   const credentials = options.credentials === undefined
     ? (options.resolveCredentials || resolveSandboxCredentials)()
     : options.credentials;
-  if (!credentials) {
+  // Deployed workers use the SDK's short-lived OIDC identity. Explicit test or
+  // operator credential overrides still fail closed when null.
+  let automaticOidc = false;
+  if (options.credentials === undefined && !options.resolveCredentials && process.env.VERCEL === '1') {
+    // Workflow steps receive identity in request context, not necessarily env.
+    // Let Sandbox resolve/refresh the credential itself; never pass OIDC as a PAT.
+    try { automaticOidc = Boolean(getVercelOidcTokenSync()); } catch { /* Missing identity fails closed. */ }
+  }
+  if (!credentials && !automaticOidc) {
     return {
       status: 'skipped',
       reason: 'Vercel Sandbox credentials are not configured; no real repository command was executed.',
@@ -186,9 +195,9 @@ export async function verifyQirRepositoryRuntime(
     sandbox = await factory({
       timeout: SANDBOX_WALL_CLOCK_MS,
       resources: { vcpus: 2 },
-      token: credentials.token,
-      teamId: credentials.teamId,
-      projectId: credentials.projectId,
+      token: credentials?.token,
+      teamId: credentials?.teamId,
+      projectId: credentials?.projectId,
     });
     input.signal?.throwIfAborted();
     if (typeof sandbox.writeFiles !== 'function') {

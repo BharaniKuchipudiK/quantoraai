@@ -129,8 +129,8 @@ badge being earned.
 
 Today this is a **trustworthy web-research desk**: scoping a topic, building
 an evidence-checked brief, hunting counter-evidence, watching a live
-question. It is **not yet an academic thesis tool**: sources are web pages
-(no PDF ingestion — most papers live in PDFs), there are no scholarly APIs
+question. It is **not yet an academic thesis tool**: sources are web pages and text-layer PDFs
+(scanned PDFs without text remain unsupported), there are no scholarly APIs
 (arXiv/PubMed/Crossref/Semantic Scholar), no DOI-grade citations or BibTeX
 export, no reference-manager integration, and no corpus-scale document
 memory. Those gaps are the roadmap, and claiming the academic use before

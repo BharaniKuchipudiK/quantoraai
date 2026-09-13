@@ -1,30 +1,39 @@
 # QIR server execution acceptance checklist
 
-This checklist is intentionally release-oriented. A change is not accepted merely because an isolated helper has tests.
+Updated 2026-09-13 against main #716 and pilot #717. This is release-oriented:
+helper tests, a deployed worker and a complete customer journey are different
+claims. See [the current closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for evidence
+and priorities. Unchecked items can contain implemented mechanisms; the complete
+acceptance criterion still needs proof.
 
-## PR 708 acceptance
+## Established implementation and limited live evidence
 
-- [ ] Real Coding executor runs from the standalone worker process.
-- [ ] Worker uses the production Supabase Run store and durable lease/heartbeat.
-- [ ] Provider/model/tool failures are recorded as structured evidence, including the provider's actual HTTP status/code/message.
-- [ ] No 402 response is automatically rewritten as an account-balance diagnosis.
-- [ ] External side effects have an idempotency key tied to Run/action/tool invocation.
-- [ ] CI proves crash after external side effect and before durable completion does not duplicate the mutation.
-- [ ] Production worker start command is documented and suitable for Railway/container deployment.
-- [ ] Browser-driven execution remains available only as a compatibility path pending PR 709.
+- [x] Real Coding executor and production journal operate in the isolated Vercel Workflow pilot.
+- [x] Lease/heartbeat and candidate checkpoint mechanisms exist; the live journal proof completed and reused its durable candidate.
+- [x] Provider failure contracts retain structured status evidence; 402 is not automatically called an account-balance problem. Fixture coverage is not a real provider-outage proof.
+- [x] Atomic checkpoint compare-and-swap rejects concurrent stale saves; the live conflict proof had one winner and one refusal.
+- [x] Synthetic Workflow 503/process-exit recovery has preserved evidence, separate from the real browser journey.
+- [x] Vercel Workflow deployment/configuration is documented in `services/qir-workflow/README.md`. Railway remains an optional alternative.
+- [x] The one-account browser pilot submits and observes, with fixture browser gates proving no browser model fallback after admission or uncertain scheduling.
 
-## PR 709 acceptance
+## Release gates still open
 
-- [ ] Browser starts and observes a durable Run; it does not drive execution steps.
-- [ ] Browser refresh/close/reopen leaves execution alive.
-- [ ] Worker crash/reclaim resumes the same Run.
-- [ ] Pause/resume/cancel operate against server-owned state.
-- [ ] GitHub capability facts prevent false claims such as “I cannot open a PR” when authenticated PR creation is available.
-- [ ] End-to-end gates cover provider 401/402/403/429/5xx and timeout/fallback behavior.
-- [ ] End-to-end gates cover GitHub checkout/edit/push/PR and read-only refusal.
-- [ ] End-to-end gates cover Preview failure, recovery and verified completion.
-- [ ] Repeated stability soak is green before release.
+- [ ] Real authenticated browser admission, close/reopen, completed saved results and no browser-driven execution.
+- [ ] Real customer Run survives a worker crash/reclaim and resumes the same action without duplicate external effects.
+- [ ] Pause/resume/cancel operate against server-owned state through the deployed UI, including remote Sandbox shutdown.
+- [ ] Exhausted initialization retries before journal creation become visible/recoverable to the user; scheduling acceptance alone cannot remain the final status.
+- [ ] General submission identity supports transport retries and deliberate identical follow-up requests; the pinned single-run pilot is not the general solution.
+- [ ] End-to-end provider 401/402/403/429/5xx, timeout and fallback coverage on the deployed submission path.
+- [ ] GitHub capability facts, checkout/edit/push/PR, read-only refusal and mutation crash reconciliation are proved as complete authorized journeys.
+- [ ] Failed verification, bounded repair, Preview behavior and source-revision-bound completion are proved together.
+- [ ] Real deployment verification is driven end to end; a mocked `/api/deploy` response is insufficient.
+- [ ] Repeated stability soak is green with recorded spend, recovery timing and zero lost edits.
+- [ ] General customer activation replaces the compatibility browser path only after those gates pass.
 
-## After 709
+## After the coding release
 
-- [ ] Generalize the proven QIR execution spine from Coding to the other Quantora domains/workspaces.
+- [ ] Generalize the proven QIR execution spine to other domains without replacing working domain capabilities.
+- [ ] Complete the original QIR multi-capability recovery proof and remaining phase acceptance criteria.
+
+Do not close a broad item by substituting the smaller synthetic fixture proof
+listed above. Add the concrete run/deployment/evidence reference when it passes.

@@ -14,13 +14,20 @@ possible here.
 
 ## 1. Runtime topology (read this first)
 
-There are **two** ways the server code runs, and they are not the same:
+The main application has these two runtime entry points. The isolated QIR
+Workflow worker is a third deployment, described immediately below:
 
 | | **Production (Vercel)** | **Dev / self-host (`server.ts`)** |
 |---|---|---|
 | Frontend | Static `dist/` from `vite build` | Vite middleware (HMR) |
 | API | Each `api/*.ts` is a **serverless function** | One Express process serving the same routes |
 | Long-lived connections | **Not possible** (functions are request-scoped) | Possible |
+
+The limited browser worker pilot submits through authenticated `/api/qir-runs`
+to `services/qir-workflow`, deployed as an isolated Vercel Workflow service.
+Workflow owns durable continuation; Supabase stores runs/checkpoints; Sandbox
+executes generated code. This does not activate server ownership for all users.
+See [current release status](docs/architecture/RELIABILITY_CLOSEOUT_2026-09-13.md).
 
 **Implications that bite if forgotten:**
 

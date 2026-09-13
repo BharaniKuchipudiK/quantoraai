@@ -1,5 +1,10 @@
 # QIR Milestone 1 — handover
 
+> **Current status (2026-09-13):** This document includes historical implementation
+> status. Use [Reliability closeout](RELIABILITY_CLOSEOUT_2026-09-13.md) for current
+> evidence, open release gates and the ordered backlog. QIR is not yet complete
+> as a production-wide runtime.
+
 Status: surgical cutover in progress on `codex/qir-production-recovery-cutover` (PR #491).
 Audience: the next engineer or ChatGPT session that continues this work.
 Rule: do not rebuild workspaces. Touch only the ownership seams named below.

@@ -1610,6 +1610,20 @@ export function useChatStream({
     };
 
     try {
+      if (qirTurn.serverOwned) {
+        const submitted = await qirTurn.submitServerExecution(visibleUserText || text, 'workflow');
+        if (!stillCurrent()) return;
+        updateActiveMessages(prev => prev.map(m => m.id === aiMsgId ? {
+          ...m,
+          text: submitted
+            ? (submitted.status === 'FAILED_TERMINAL'
+              ? 'This background run stopped. Review the saved run status before starting another task.'
+              : 'Your background submission was accepted. You can close this tab; reopen this desk to check its saved run and files. Acceptance does not mean the work has passed verification.')
+            : 'Background scheduling was not confirmed. Check the run status and retry the same request. No separate browser build was started.',
+          isError: !submitted || submitted.status === 'FAILED_TERMINAL', executionStatus: null,
+        } : m));
+        return;
+      }
       for (let attempt = 1; ; attempt += 1) {
         if (!stillCurrent()) return;
         /*
