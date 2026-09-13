@@ -18,7 +18,6 @@ const input = {
 
 const enabledEnv = {
   QIR_DELIVERY_PILOT_ENABLED: 'true',
-  QIR_DELIVERY_PILOT_USER_SUB: 'pilot-user',
   QIR_DELIVERY_PILOT_REPO: 'acme/widget',
   QIR_DELIVERY_PILOT_VERCEL_PROJECT: 'widget-web',
 } as NodeJS.ProcessEnv;
@@ -30,18 +29,27 @@ test('delivery input requires durable identity, repository, branch and Vercel pr
   }
 });
 
-test('autonomous delivery is disabled by default', () => {
-  assert.equal(codingDeliveryPilotAllows(input, {} as NodeJS.ProcessEnv), false);
-  assert.equal(codingDeliveryPilotAllows(input, { ...enabledEnv, QIR_DELIVERY_PILOT_ENABLED: 'false' }), false);
+test('autonomous delivery is disabled without explicit user consent', () => {
+  assert.equal(codingDeliveryPilotAllows(input, false, enabledEnv), false);
+  assert.equal(codingDeliveryPilotAllows(input, true, {} as NodeJS.ProcessEnv), false);
+  assert.equal(codingDeliveryPilotAllows(input, true, { ...enabledEnv, QIR_DELIVERY_PILOT_ENABLED: 'false' }), false);
 });
 
-test('pilot requires the exact configured user, repository and deployment project', () => {
-  assert.equal(codingDeliveryPilotAllows(input, enabledEnv), true);
-  assert.equal(codingDeliveryPilotAllows({ ...input, userSub: 'someone-else' }, enabledEnv), false);
-  assert.equal(codingDeliveryPilotAllows({ ...input, repo: 'other' }, enabledEnv), false);
-  assert.equal(codingDeliveryPilotAllows({ ...input, vercelProject: 'other-web' }, enabledEnv), false);
+test('stored Auto Deliver consent plus the exact configured target is required', () => {
+  assert.equal(codingDeliveryPilotAllows(input, true, enabledEnv), true);
+  assert.equal(codingDeliveryPilotAllows({ ...input, userSub: 'someone-else' }, true, enabledEnv), true,
+    'user identity is authorized by stored consent, not an environment pin');
+  assert.equal(codingDeliveryPilotAllows({ ...input, repo: 'other' }, true, enabledEnv), false);
+  assert.equal(codingDeliveryPilotAllows({ ...input, vercelProject: 'other-web' }, true, enabledEnv), false);
 });
 
-test('missing scope variables fail closed even when the enable flag is true', () => {
-  assert.equal(codingDeliveryPilotAllows(input, { QIR_DELIVERY_PILOT_ENABLED: 'true' } as NodeJS.ProcessEnv), false);
+test('Auto PR never implies Auto Deliver', () => {
+  const autoPrEnabled = true;
+  const autoDeliverEnabled = false;
+  assert.equal(autoPrEnabled, true);
+  assert.equal(codingDeliveryPilotAllows(input, autoDeliverEnabled, enabledEnv), false);
+});
+
+test('missing target scope variables fail closed even when user consent is on', () => {
+  assert.equal(codingDeliveryPilotAllows(input, true, { QIR_DELIVERY_PILOT_ENABLED: 'true' } as NodeJS.ProcessEnv), false);
 });
