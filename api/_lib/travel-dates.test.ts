@@ -165,7 +165,9 @@ test('a booking inside the airline schedule window still runs', () => {
 
 test('the far boundary is eleven months, matching when airlines open schedules', () => {
   const now = new Date('2026-09-01T00:00:00.000Z');
-  assert.equal(latestSearchableIso(now), '2027-08-01');
+  const expected = new Date(now);
+  expected.setUTCMonth(expected.getUTCMonth() + 11);
+  assert.equal(latestSearchableIso(now), expected.toISOString().slice(0, 10));
 });
 
 test('a wrong year in the RETURN leg is refused too', () => {
@@ -191,7 +193,6 @@ test('an ordinary round trip still runs', () => {
  * model actually receives, because the incident was the model obeying a promise
  * that named only one forbidden field.
  */
-
 test('the travel directive forbids answering from memory, not just inventing prices', () => {
   const directive = buildDomainDirective('travel');
 
