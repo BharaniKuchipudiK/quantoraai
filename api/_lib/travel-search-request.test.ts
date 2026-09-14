@@ -11,6 +11,8 @@ import { deriveTravelBrief } from '../../src/lib/travel-board-brief.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDaysFromNow = (days: number): string =>
   new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+const DEPARTURE_DATE = isoDaysFromNow(30);
+const RETURN_DATE = isoDaysFromNow(38);
 
 test('the trip board cannot ask the booking tools', () => {
   assert.equal(parseTravelSearchRequest({ kind: 'book' }).ok, false);
@@ -21,7 +23,7 @@ test('flight search needs airport codes and a date', () => {
     kind: 'flights',
     origin: 'sin',
     destination: 'dps',
-    departureDate: isoDaysFromNow(30),
+    departureDate: DEPARTURE_DATE,
   });
   assert.equal(parsed.ok, true);
   if (parsed.ok) {
@@ -39,7 +41,7 @@ test('flight search needs airport codes and a date', () => {
  */
 test('every search the board enables is accepted by this parser', () => {
   const board = deriveTravelBrief({
-    messages: [{ sender: 'user', text: 'SIN to DPS on 2026-09-12, returning 2026-09-20' }],
+    messages: [{ sender: 'user', text: `SIN to DPS on ${DEPARTURE_DATE}, returning ${RETURN_DATE}` }],
   });
   assert.equal(board.canSearchFlights, true);
   assert.equal(board.canSearchHotels, false, 'airport codes alone are not a city');

@@ -4,32 +4,25 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 /*
- * A LITERAL FUTURE DATE IN A VALIDATED FIXTURE IS A SCHEDULED FAILURE.
+ * A LITERAL FUTURE DATE IN A TEST IS A SCHEDULED FAILURE.
  *
- * validateTravelToolArgs rejects a departure in the past, and in agent-tools.ts
- * that check runs BEFORE the provider-configured check. So a fixture written as
- * '2026-09-12' is valid the day it is written and returns INVALID_ARGUMENT the
- * morning after it passes — a red suite that no diff caused, on a date nobody
- * chose.
+ * Travel validation rejects dates once they move into the past. A date literal
+ * can therefore be green when committed and make main red later with no code
+ * change at all. This has happened more than once.
  *
- * This has now happened twice. On 2026-09-03 main went red on '2026-09-01' and
- * one file was fixed, deliberately scoped to the file that was failing. On
- * 2026-09-07 three more were still armed, two of them due to detonate five days
- * later, in the middle of a ten-user pilot running on borrowed money. Fixing the
- * instance and leaving the class is what put them there.
+ * The previous guard only scanned object fields such as `departureDate:`. That
+ * missed dates embedded in user-message strings, which is exactly how the
+ * September fixture escaped. The rule is now deliberately broader:
  *
- * THE RULE, and it cannot itself rot:
- *   - a date already in the PAST is fine forever. It stays past, and it is how
- *     rejection is deliberately tested.
- *   - a sentinel year (2090+) is fine. It is obviously not a real booking date.
- *   - any other literal date is, by definition, a future date that will become
- *     a past one. That is the bomb.
- *
- * There is no horizon constant here to age out: "is this date in the future"
- * is asked of the clock at the moment the gate runs.
+ *   - any non-sentinel ISO date literal anywhere in test code is rejected while
+ *     it is still in the future;
+ *   - a date already in the past is safe forever and can be used to test past-
+ *     date rejection deliberately;
+ *   - a sentinel year (2090+) is allowed when a fixed far-future value is the
+ *     explicit subject of the test;
+ *   - normal future fixtures must be derived from the clock.
  */
 
-const VALIDATED_DATE_FIELDS = ['departureDate', 'returnDate', 'checkInDate', 'checkOutDate'];
 const SENTINEL_YEAR = 2090;
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
 const SEARCH_DIRS = ['api/_lib', 'src/lib', 'shared', 'scripts'];
@@ -58,32 +51,34 @@ function testFilesUnder(dir) {
   return out;
 }
 
-function armedFixturesIn(file) {
+function armedDateLiteralsIn(file) {
   const source = readFileSync(file, 'utf8');
   const found = [];
   const today = new Date();
-  for (const field of VALIDATED_DATE_FIELDS) {
-    const pattern = new RegExp(`${field}\\s*:\\s*'(\\d{4})-(\\d{2})-(\\d{2})'`, 'g');
-    for (const match of source.matchAll(pattern)) {
-      const [literal, year] = [match[0], Number(match[1])];
-      if (year >= SENTINEL_YEAR) continue;
-      const when = new Date(`${match[1]}-${match[2]}-${match[3]}T23:59:59Z`);
-      if (when <= today) continue; // already past: safe forever, and often the point
-      const line = source.slice(0, match.index).split('\n').length;
-      found.push({ file: path.relative(ROOT, file), line, literal, daysAway: Math.round((when - today) / 86_400_000) });
-    }
+  const pattern = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+
+  for (const match of source.matchAll(pattern)) {
+    const year = Number(match[1]);
+    if (year >= SENTINEL_YEAR) continue;
+    const when = new Date(`${match[1]}-${match[2]}-${match[3]}T23:59:59Z`);
+    if (Number.isNaN(when.getTime()) || when <= today) continue;
+    const line = source.slice(0, match.index).split('\n').length;
+    found.push({
+      file: path.relative(ROOT, file),
+      line,
+      literal: match[0],
+      daysAway: Math.round((when - today) / 86_400_000),
+    });
   }
+
   return found;
 }
 
-test('no test fixture carries a future date that will age into a failure', () => {
-  const armed = SEARCH_DIRS.flatMap((dir) => testFilesUnder(path.join(ROOT, dir))).flatMap(armedFixturesIn);
+test('no test carries a hardcoded future date that can age into a failure', () => {
+  const armed = SEARCH_DIRS
+    .flatMap((dir) => testFilesUnder(path.join(ROOT, dir)))
+    .flatMap(armedDateLiteralsIn);
 
-  /*
-   * The message is the point. A gate that says only "failed" is one the next
-   * person mutes under pressure, so this names the file, the line, the literal,
-   * and how long is left before it goes off.
-   */
   const detail = armed
     .map((a) => `  ${a.file}:${a.line}  ${a.literal}  — detonates in ${a.daysAway} day(s)`)
     .join('\n');
@@ -91,42 +86,33 @@ test('no test fixture carries a future date that will age into a failure', () =>
   assert.equal(
     armed.length,
     0,
-    `A validated date fixture is hardcoded to a future date, so the suite will go red on that day with no diff to blame:\n${detail}\n\n`
-      + 'Derive it from the clock instead — `const D = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)` — '
-      + 'as api/_lib/agent-tools.test.ts already does. A date already in the past is fine (it stays past); '
-      + `so is a sentinel year ${SENTINEL_YEAR}+.`,
+    `A test contains a hardcoded future date, so the suite can go red later with no diff to blame:\n${detail}\n\n`
+      + 'Derive future fixtures from the clock instead — '
+      + '`const D = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)` — '
+      + `or use a sentinel year ${SENTINEL_YEAR}+ only when a fixed far-future date is explicitly required.`,
   );
 });
 
-test('the gate can actually see a bomb, and does not fire on the safe shapes', () => {
-  /*
-   * Rule 4, turned on this gate: a check that cannot fail is worse than none.
-   * The scan above passes on a clean tree, which is exactly what a broken scan
-   * looks like — so prove it catches the thing it exists for.
-   */
+test('the gate catches future dates anywhere in test strings and ignores safe shapes', () => {
   const future = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10);
   const past = '2020-01-01';
-
   const sample = [
     `departureDate: '${future}',`,
+    `message: 'SIN to DPS on ${future}',`,
     `checkInDate: '${past}',`,
     "returnDate: '2099-01-01',",
     'departureDate: DEPARTURE_DATE,',
   ].join('\n');
 
-  const armed = [];
-  for (const field of VALIDATED_DATE_FIELDS) {
-    const pattern = new RegExp(`${field}\\s*:\\s*'(\\d{4})-(\\d{2})-(\\d{2})'`, 'g');
-    for (const match of sample.matchAll(pattern)) {
-      if (Number(match[1]) >= SENTINEL_YEAR) continue;
-      if (new Date(`${match[1]}-${match[2]}-${match[3]}T23:59:59Z`) <= new Date()) continue;
-      armed.push(match[0]);
-    }
-  }
+  const today = new Date();
+  const armed = [...sample.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)]
+    .filter((match) => Number(match[1]) < SENTINEL_YEAR)
+    .filter((match) => new Date(`${match[1]}-${match[2]}-${match[3]}T23:59:59Z`) > today)
+    .map((match) => match[0]);
 
-  assert.equal(armed.length, 1, 'exactly the future literal is caught');
-  assert.match(armed[0], new RegExp(future), 'and it is the one that will age out');
-  assert.doesNotMatch(armed.join(), /2020-01-01/, 'a past date stays past — safe, and often deliberate');
-  assert.doesNotMatch(armed.join(), /2099/, 'a sentinel year is not a booking date');
+  assert.equal(armed.length, 2, 'both future literals are caught regardless of surrounding syntax');
+  assert.equal(armed.every((literal) => literal === future), true, 'only the future date is armed');
+  assert.doesNotMatch(armed.join(), /2020-01-01/, 'a past date stays past — safe and often deliberate');
+  assert.doesNotMatch(armed.join(), /2099/, 'a sentinel year is not a real booking fixture');
   assert.doesNotMatch(armed.join(), /DEPARTURE_DATE/, 'a clock-derived constant is the remedy, not a finding');
 });

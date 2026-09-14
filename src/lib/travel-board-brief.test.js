@@ -12,6 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const isoDaysFromNow = (days) =>
   new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
 const DEPARTURE_DATE = isoDaysFromNow(30);
+const RETURN_DATE = isoDaysFromNow(38);
 
 const from = (...texts) => ({ messages: texts.map((text) => ({ sender: 'user', text })) });
 
@@ -78,11 +79,11 @@ test('a full route with a date enables live flights', () => {
 });
 
 test('airports named across separate turns still make a route', () => {
-  const brief = deriveTravelBrief(from('I fly from SIN', 'into DPS', 'dates 2026-09-12 to 2026-09-20'));
+  const brief = deriveTravelBrief(from('I fly from SIN', 'into DPS', `dates ${DEPARTURE_DATE} to ${RETURN_DATE}`));
   assert.equal(brief.origin, 'SIN');
   assert.equal(brief.destination, 'DPS');
-  assert.equal(brief.departureDate, '2026-09-12');
-  assert.equal(brief.returnDate, '2026-09-20');
+  assert.equal(brief.departureDate, DEPARTURE_DATE);
+  assert.equal(brief.returnDate, RETURN_DATE);
   assert.equal(brief.canSearchFlights, true);
 });
 
@@ -114,8 +115,10 @@ test('a route without a date cannot search flights, and says what is missing', (
 });
 
 test('the newest dates replace an earlier answer', () => {
-  const brief = deriveTravelBrief(from('SIN to DPS on 2026-09-12', 'actually 2026-10-01'));
-  assert.equal(brief.departureDate, '2026-10-01');
+  const earlier = isoDaysFromNow(30);
+  const later = isoDaysFromNow(45);
+  const brief = deriveTravelBrief(from(`SIN to DPS on ${earlier}`, `actually ${later}`));
+  assert.equal(brief.departureDate, later);
 });
 
 /*
@@ -125,7 +128,7 @@ test('the newest dates replace an earlier answer', () => {
  * so it should ask for nothing.
  */
 test('a complete trip says nothing, so the board shrinks', () => {
-  const brief = deriveTravelBrief(from('SIN to DPS on 2026-09-12', 'going to Bali'));
+  const brief = deriveTravelBrief(from(`SIN to DPS on ${DEPARTURE_DATE}`, 'going to Bali'));
   assert.equal(brief.canSearchFlights, true);
   assert.equal(brief.canSearchHotels, true);
   assert.deepEqual(brief.missing, []);
@@ -138,7 +141,7 @@ test('the next line stays short enough not to wrap the board', () => {
     from('going to Bali'),
     from('SIN to DPS'),
     from('flying to Uluwatu, Bali'),
-    from('leaving 2026-09-12'),
+    from(`leaving ${DEPARTURE_DATE}`),
   ];
   for (const messages of cases) {
     const { next } = deriveTravelBrief(messages);
