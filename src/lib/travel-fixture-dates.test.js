@@ -20,6 +20,9 @@ import path from 'node:path';
  *     date rejection deliberately;
  *   - a sentinel year (2090+) is allowed when a fixed far-future value is the
  *     explicit subject of the test;
+ *   - deterministic simulated-clock tests that declare a fixed `AS_OF` are
+ *     allowed to carry dates relative to that frozen clock; those dates cannot
+ *     age into a failure because the code under test is not reading wall time;
  *   - normal future fixtures must be derived from the clock.
  */
 
@@ -51,10 +54,16 @@ function testFilesUnder(dir) {
   return out;
 }
 
+function frozenAsOfIn(source) {
+  const match = source.match(/\bconst\s+AS_OF\s*=\s*['"](\d{4}-\d{2}-\d{2})(?:T[^'"]*)?['"]/);
+  return match?.[1] || null;
+}
+
 function armedDateLiteralsIn(file) {
   const source = readFileSync(file, 'utf8');
   const found = [];
   const today = new Date();
+  const frozenAsOf = frozenAsOfIn(source);
   const pattern = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
 
   for (const match of source.matchAll(pattern)) {
@@ -62,6 +71,12 @@ function armedDateLiteralsIn(file) {
     if (year >= SENTINEL_YEAR) continue;
     const when = new Date(`${match[1]}-${match[2]}-${match[3]}T23:59:59Z`);
     if (Number.isNaN(when.getTime()) || when <= today) continue;
+
+    // A test with an explicit frozen AS_OF is a simulation, not a wall-clock
+    // fixture. Its literal dates are interpreted against that frozen clock and
+    // therefore cannot silently become invalid as calendar time advances.
+    if (frozenAsOf) continue;
+
     const line = source.slice(0, match.index).split('\n').length;
     found.push({
       file: path.relative(ROOT, file),
@@ -115,4 +130,9 @@ test('the gate catches future dates anywhere in test strings and ignores safe sh
   assert.doesNotMatch(armed.join(), /2020-01-01/, 'a past date stays past — safe and often deliberate');
   assert.doesNotMatch(armed.join(), /2099/, 'a sentinel year is not a real booking fixture');
   assert.doesNotMatch(armed.join(), /DEPARTURE_DATE/, 'a clock-derived constant is the remedy, not a finding');
+});
+
+test('a frozen AS_OF marks deterministic simulated-clock tests as safe', () => {
+  const source = "const AS_OF = '2026-01-01T00:00:00.000Z';\nconst dueAt = '2026-12-20T00:00:00.000Z';";
+  assert.equal(frozenAsOfIn(source), '2026-01-01');
 });
