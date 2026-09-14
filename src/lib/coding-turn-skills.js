@@ -8,6 +8,7 @@ import { buildStudioJobCard, jobNeedsProductPhotos } from './studio-job-card.js'
 import { pickPreviewEntryPath } from './preview-utils.js';
 import { countRealPreviewPhotos } from './preview-images.js';
 import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
+import { platformSkillAssignment } from '../../shared/platform-skill-registry.js';
 
 /**
  * Run every *available* required skill for this plan against the desk VFS.
@@ -17,6 +18,7 @@ import { previewHtmlHasAddToCartControl } from './shop-preview-ui.js';
  *   vfs: object,
  *   changed: boolean,
  *   ran: string[],
+ *   assignedSkill: object|null,
  *   proof: { photos: number, hasCart: boolean, hasHtml: boolean },
  * }}
  */
@@ -28,6 +30,15 @@ function normalizeSkillIds(skillsRequired = []) {
   }).filter(Boolean);
 }
 
+function assignmentForPlan(plan, message = '') {
+  if (!plan?.intent?.kind || plan.mode === 'pass') return null;
+  return platformSkillAssignment({
+    workspace: 'coding',
+    intentKind: plan.intent.kind,
+    message: message || plan.displayUserText || plan.messageForModel || '',
+  });
+}
+
 /**
  * Build a minimal plan shape from a chat message's codingTurnPlan snapshot.
  */
@@ -35,7 +46,7 @@ export function planFromMessageSnapshot(snapshot, { messageForModel = '', displa
   if (!snapshot?.intent) return null;
   // The local acknowledgement exit must survive message snapshot restoration.
   const acknowledgement = snapshot.intent.kind === 'acknowledgement';
-  return {
+  const restored = {
     mode: acknowledgement ? 'pass' : 'execute',
     isCodingTurn: !acknowledgement,
     intent: snapshot.intent,
@@ -47,6 +58,10 @@ export function planFromMessageSnapshot(snapshot, { messageForModel = '', displa
     displayUserText,
     runSkillsFirst: !acknowledgement && snapshot.runSkillsFirst !== false,
   };
+  return {
+    ...restored,
+    assignedSkill: assignmentForPlan(restored, displayUserText || messageForModel),
+  };
 }
 
 export function runCodingTurnSkills({
@@ -55,11 +70,13 @@ export function runCodingTurnSkills({
   job = null,
   brief = '',
 } = {}) {
+  const assignedSkill = assignmentForPlan(plan, brief);
   if (!plan || plan.mode === 'interrupt' || plan.mode === 'pass') {
     return {
       vfs: vfs || {},
       changed: false,
       ran: [],
+      assignedSkill,
       proof: { photos: 0, hasCart: false, hasHtml: false },
     };
   }
@@ -68,6 +85,7 @@ export function runCodingTurnSkills({
       vfs: vfs || {},
       changed: false,
       ran: [],
+      assignedSkill,
       proof: { photos: 0, hasCart: false, hasHtml: false },
     };
   }
@@ -114,6 +132,7 @@ export function runCodingTurnSkills({
     vfs: next,
     changed,
     ran: [...new Set(ran)],
+    assignedSkill,
     proof: {
       photos: countRealPreviewPhotos(html),
       hasCart: previewHtmlHasAddToCartControl(html),
