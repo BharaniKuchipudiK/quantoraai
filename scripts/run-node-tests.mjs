@@ -67,4 +67,11 @@ if (!files.length) {
 }
 
 console.log(`run-node-tests: ${files.length} test file(s)`);
-process.exitCode = await runTestsWithFailureSummary('node', ['--test', ...files], 'node');
+/*
+ * Run files serially. The full suite had become deterministically red while
+ * every one of 64 disjoint file shards passed on the same exact head. That is
+ * cross-file concurrency interference, not a failing assertion. Serial file
+ * execution keeps each test's own internal concurrency intact while removing
+ * shared-process/resource races between unrelated files.
+ */
+process.exitCode = await runTestsWithFailureSummary('node', ['--test', '--test-concurrency=1', ...files], 'node');
