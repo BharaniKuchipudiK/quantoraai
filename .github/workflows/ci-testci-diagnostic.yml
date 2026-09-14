@@ -8,31 +8,34 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
-    name: Identify failing test:ci suite
+  discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    outputs:
+      files: ${{ steps.tests.outputs.files }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - id: tests
+        shell: bash
+        run: |
+          files=$(find src api -type f -name '*.test.js' -print | sort | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+  node-test:
+    needs: discover
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        file: ${{ fromJSON(needs.discover.outputs.files) }}
+    name: Node · ${{ matrix.file }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Node tests
-        run: npm run test:node
-      - name: Served routes
-        run: npm run test:served-routes
-      - name: Critical journeys
-        run: npm run test:critical-journeys
-      - name: Client contracts
-        run: npm run test:client-contracts
-      - name: Browser contracts
-        run: npm run test:browser-contracts
-      - name: QIR proof
-        run: npm run test:qir-proof
-      - name: Representation contracts
-        run: npm run test:representation-contracts
+      - run: npm ci
+      - name: Run test file
+        run: node --test "${{ matrix.file }}"
