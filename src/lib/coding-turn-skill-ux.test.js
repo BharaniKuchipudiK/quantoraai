@@ -46,7 +46,7 @@ test('ordinary desk refinement stays with the product engineer', () => {
 });
 
 test('work without a governed high-level Skill does not show a fake assignment', () => {
-  const result = plan('Create report.py and run it');
+  const result = plan('Create two files: report.py and test_report.py, then run both');
   assert.equal(result.intent.kind, 'python_build');
   assert.equal(result.assignedSkill, null);
   assert.doesNotMatch(result.statusLabel, /^Assigned:/);
