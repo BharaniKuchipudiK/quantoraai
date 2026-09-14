@@ -19,7 +19,7 @@ import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-inten
 import { isBuildAcknowledgement, isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
 import { requestedDeliverablePaths } from './requested-deliverables.js';
-import { platformSkillAssignment } from '../../shared/platform-skill-registry.js';
+import { messageNeedsDebugSkill, platformSkillAssignment } from '../../shared/platform-skill-registry.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
 
@@ -110,10 +110,13 @@ function summarizeIntent({ message, isCodingTurn, shopAsk, intakeAccept, refineD
   if (requestedDeliverablePaths(message).some((path) => /\.py$/i.test(path))) {
     return { kind: 'python_build', summary: 'Build and verify the explicitly requested Python files.' };
   }
-  if (refineDesk) return { kind: 'refine_desk', summary: 'Refine the running desk / Preview.' };
+  if (refineDesk && messageNeedsDebugSkill(message)) {
+    return { kind: 'refine_desk', summary: 'Refine the running desk / Preview.' };
+  }
   if (messageLooksLikeShopBuild(message) || shopAsk?.imageAskCount) {
     return { kind: 'shop_build', summary: 'Shop / merchandise build for Preview.' };
   }
+  if (refineDesk) return { kind: 'refine_desk', summary: 'Refine the running desk / Preview.' };
   return { kind: 'app_build', summary: 'Build or change a runnable Preview app.' };
 }
 
