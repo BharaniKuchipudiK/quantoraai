@@ -9,7 +9,7 @@ import {
   isVerifiedAutoDeliveryCandidate,
 } from './auto-delivery-invocation.js';
 
-function completedRun(marker?: Record<string, unknown>): QirAgentRun {
+function completedRun(marker?: Record<string, unknown>, platformSkill?: Record<string, unknown>): QirAgentRun {
   const now = '2026-09-13T12:00:00.000Z';
   const run: QirAgentRun = {
     version: QIR_CONTRACT_VERSION,
@@ -40,7 +40,11 @@ function completedRun(marker?: Record<string, unknown>): QirAgentRun {
   };
   return attachQirWorkingContext(run, compactQirWorkingContext({
     run,
-    projectState: { executionOwner: 'server', ...(marker ? { [AUTO_DELIVERY_CONTEXT_KEY]: marker } : {}) },
+    projectState: {
+      executionOwner: 'server',
+      ...(platformSkill ? { platformSkill } : {}),
+      ...(marker ? { [AUTO_DELIVERY_CONTEXT_KEY]: marker } : {}),
+    },
     compactedAt: now,
   }));
 }
@@ -51,9 +55,11 @@ const env = {
   QIR_DELIVERY_PILOT_BASE_BRANCH: 'main',
 } as NodeJS.ProcessEnv;
 
+const webEngineer = { skillId: 'coding.senior-web-product-engineer', version: '1.0.0' };
+
 test('only verified completed runs are eligible for automatic delivery', () => {
   const run = completedRun();
-  assert.equal(isVerifiedAutoDeliveryCandidate(run), true);
+  assert.equal(isVerifiedAutoDeliveryCandidate(run), true, 'legacy verified runs remain compatible');
   assert.equal(isVerifiedAutoDeliveryCandidate({ ...run, status: 'VERIFYING' }), false);
   assert.equal(isVerifiedAutoDeliveryCandidate({ ...run, goal: { ...run.goal, status: 'confirmed' } }), false);
   assert.equal(isVerifiedAutoDeliveryCandidate({ ...run, verifications: [] }), false);
@@ -72,8 +78,33 @@ test('delivery input is derived only from the operator-pinned target', () => {
   assert.equal(deriveAutoDeliveryInput('user-1', completedRun(), {} as NodeJS.ProcessEnv), null);
 });
 
+test('Senior Web Product Engineer keeps governed delivery eligible and carries Skill provenance', () => {
+  const run = completedRun(undefined, webEngineer);
+  assert.equal(isVerifiedAutoDeliveryCandidate(run), true);
+  const input = deriveAutoDeliveryInput('user-1', run, env);
+  assert.ok(input);
+  assert.match(input.body || '', /Senior Web Product Engineer v1\.0\.0/);
+});
+
+test('Skills without governed delivery cannot enter automatic delivery', () => {
+  const reviewRun = completedRun(undefined, { skillId: 'coding.code-reviewer', version: '1.0.0' });
+  assert.equal(isVerifiedAutoDeliveryCandidate(reviewRun), false);
+  assert.equal(deriveAutoDeliveryInput('user-1', reviewRun, env), null);
+});
+
+test('stale or unknown Skill bindings fail closed before delivery', () => {
+  for (const platformSkill of [
+    { skillId: 'coding.senior-web-product-engineer', version: '0.0.0' },
+    { skillId: 'coding.not-real', version: '1.0.0' },
+  ]) {
+    const run = completedRun(undefined, platformSkill);
+    assert.equal(isVerifiedAutoDeliveryCandidate(run), false);
+    assert.equal(deriveAutoDeliveryInput('user-1', run, env), null);
+  }
+});
+
 test('a durable scheduled marker suppresses duplicate invocation', () => {
-  const run = completedRun({ state: 'scheduled', scheduledAt: '2026-09-13T12:01:00.000Z' });
+  const run = completedRun({ state: 'scheduled', scheduledAt: '2026-09-13T12:01:00.000Z' }, webEngineer);
   assert.equal(autoDeliveryAlreadyScheduled(run), true);
   assert.equal(isVerifiedAutoDeliveryCandidate(run), false);
   assert.equal(deriveAutoDeliveryInput('user-1', run, env), null);
