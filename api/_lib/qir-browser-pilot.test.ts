@@ -5,6 +5,7 @@ import { handleBrowserPilotRequest } from './qir-browser-pilot-api.js';
 import { initializeBrowserSubmission } from '../../services/qir-workflow/submission.js';
 import { browserPilotAllows } from '../../services/qir-workflow/transition.js';
 import { isValidQirRunSnapshot } from './qir-run-store.js';
+import { readQirWorkingContext } from './qir-context-state.js';
 import { createQirServerCodingExecutor } from './qir-server-coding-executor.js';
 import { hashVfsContent } from '../../src/lib/desk-checkpoints.js';
 
@@ -49,6 +50,27 @@ test('scope validation requires every identity and an approved model', () => {
     assert.equal(browserPilotAllows(input.userSub, input.sessionId, input.runId, { ...env, [key]: '' }), false, key);
   }
 });
+
+test('a website submission persists the versioned Senior Web Product Engineer and gives the worker its governed contract', () => {
+  const run = browserSubmissionRun({ ...input, goal: 'Build a responsive website for my tutoring business' });
+  const context = readQirWorkingContext(run);
+  assert.deepEqual(context?.projectState?.platformSkill, {
+    skillId: 'coding.senior-web-product-engineer',
+    version: '1.0.0',
+  });
+  assert.match(run.steps[0]?.objective || '', /GOVERNED SKILL: Senior Web Product Engineer/);
+  assert.match(run.steps[0]?.objective || '', /requirements → plan → build → verify → recover → deliver → prove/);
+  assert.match(run.steps[0]?.objective || '', /Generated code alone is not completion/);
+  assert.equal(run.goal.statement, 'Build a responsive website for my tutoring business');
+  assert.equal(isValidQirRunSnapshot(run), true);
+});
+
+test('non-web coding work does not invent a platform Skill', () => {
+  const run = browserSubmissionRun({ ...input, goal: 'Write report.py and run pytest' });
+  assert.equal(readQirWorkingContext(run)?.projectState?.platformSkill, undefined);
+  assert.equal(run.steps[0]?.objective, 'Write report.py and run pytest');
+});
+
 test('authenticated account and desk are checked before reads or scheduling', async (t) => {
   configure(t);
   const ports: any = { read() { throw new Error('Read not allowed'); }, load() { throw new Error('Read not allowed'); }, fetch() { throw new Error('Start not allowed'); } };
