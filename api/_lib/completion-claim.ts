@@ -123,7 +123,7 @@ const READY_IS_NOT_DONE = [
  */
 const CLAIMS_DONE = [
   // "I have completed / I've finished / we built / I implemented all five…"
-  /\b(?:i|we)\s*(?:'ve|'ve|have|had)?\s*(?:just\s+)?(?:completed|finished|built|created|implemented|added|wired(?: up)?|shipped|delivered|set up|put together)\b/i,
+  /\b(?:i|we)\s*(?:'ve|'ve|have|had)?\s*(?:(?:just|now)\s+)?(?:completed|finished|built|created|implemented|added|wired(?: up)?|shipped|delivered|set up|put together)\b/i,
 
   // "your app is ready", "the site has been built", "the CRM is now live"
   /\b(?:your|the|this|it)\s+[\w\s-]{0,40}?(?:is|are|has been|have been)\s+(?:now\s+)?(?:done|complete|completed|finished|ready|live|built|up and running|working|functional|in place)\b/i,
