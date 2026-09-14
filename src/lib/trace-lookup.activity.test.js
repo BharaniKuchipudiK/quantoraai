@@ -12,7 +12,7 @@ test('trace lookup returns user-safe activity progress from durable events', asy
     ],
   };
   const fetchImpl = async () => ({ ok: true, status: 200, json: async () => body });
-  const result = await fetchTraceStory('studio-12345678', { fetchImpl });
+  const result = await fetchTraceStory('studio-719887e2-b5a4-4de5-b84a-f474192befa2', { fetchImpl });
   assert.equal(result.ok, true);
   assert.deepEqual(result.activities.map((item) => item.label), [
     'Request received',
