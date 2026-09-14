@@ -49,6 +49,7 @@ const CLAIMS = [
   'The build succeeded and the preview is running.',
   'Everything you asked for is in place.',
   'I have implemented all five features.',
+  'I have now implemented the UI action button to initiate connection to Google Drive directly into the interface.',
   'Your site is ready to use.',
   'The deck is ready to go.',
   'I added the bench utilisation matrix and wired up the pipeline totals.',
@@ -87,6 +88,7 @@ const NOT_CLAIMS = [
   'The candidate is ready to interview next week.',
   'Once the pipeline is complete I will add the margin engine.',
   'I am going to build the SOW intake next.',
+  'I will now implement the UI action button to initiate connection to Google Drive directly into the interface.',
   'The client is done with the discovery phase.',
 ];
 
