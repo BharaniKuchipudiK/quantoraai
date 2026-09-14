@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { QirAgentRun } from '../../api/_lib/qir-contracts.js';
 import { readQirWorkingContext } from '../../api/_lib/qir-context-state.js';
+import { resolvePlatformSkillBinding } from '../../shared/platform-skill-runtime.js';
 import type { CodingDeliveryWorkflowInput } from './delivery.js';
 
 export const AUTO_DELIVERY_CONTEXT_KEY = 'autoDelivery';
@@ -13,6 +14,16 @@ function safeSlug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'run';
 }
 
+function platformSkillForDelivery(run: QirAgentRun) {
+  const context = readQirWorkingContext(run);
+  const binding = context?.projectState?.platformSkill;
+  if (binding === undefined || binding === null) return { status: 'legacy' as const, skill: null };
+  const skill = resolvePlatformSkillBinding(binding);
+  if (!skill) return { status: 'invalid' as const, skill: null };
+  if (skill.deliveryPolicy?.mode !== 'governed') return { status: 'denied' as const, skill };
+  return { status: 'governed' as const, skill };
+}
+
 export function autoDeliveryAlreadyScheduled(run: QirAgentRun): boolean {
   const context = readQirWorkingContext(run);
   const marker = context?.projectState?.[AUTO_DELIVERY_CONTEXT_KEY];
@@ -22,6 +33,8 @@ export function autoDeliveryAlreadyScheduled(run: QirAgentRun): boolean {
 export function isVerifiedAutoDeliveryCandidate(run: QirAgentRun): boolean {
   if (run.status !== 'COMPLETE' || run.goal.status !== 'achieved') return false;
   if (autoDeliveryAlreadyScheduled(run)) return false;
+  const skill = platformSkillForDelivery(run);
+  if (skill.status === 'invalid' || skill.status === 'denied') return false;
   const verified = run.verifications.some((item) => item.passed && item.proofOfDoneStatus === 'verified');
   const checkpoint = run.checkpoints.length > 0;
   const artifact = run.artifacts.some((item) => item.state === 'verified');
@@ -44,6 +57,10 @@ export function deriveAutoDeliveryInput(
   const title = String(run.goal.statement || 'Quantora verified delivery').trim().slice(0, 120) || 'Quantora verified delivery';
   const baseBranch = value(env, 'QIR_DELIVERY_PILOT_BASE_BRANCH') || 'main';
   const vercelTeamId = value(env, 'QIR_DELIVERY_PILOT_VERCEL_TEAM_ID');
+  const skill = platformSkillForDelivery(run);
+  const provenance = skill.status === 'governed' && skill.skill
+    ? ` under ${skill.skill.name} v${skill.skill.version}`
+    : '';
 
   return {
     userSub,
@@ -53,7 +70,7 @@ export function deriveAutoDeliveryInput(
     branch,
     baseBranch,
     title,
-    body: `Autonomous delivery for verified QIR run ${run.runId}.`,
+    body: `Autonomous delivery for verified QIR run ${run.runId}${provenance}.`,
     vercelProject,
     ...(vercelTeamId ? { vercelTeamId } : {}),
   };
