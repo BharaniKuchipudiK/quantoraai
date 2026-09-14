@@ -66,8 +66,16 @@ await page.route('**/api/**', async (route) => {
   const path = new URL(request.url()).pathname;
 
   if (path === '/api/trace') {
-    traceEvents.push(request.postDataJSON());
-    return route.fulfill({ status: 202, contentType: 'application/json', body: '{"recorded":true}' });
+    if (request.method() === 'POST') {
+      const event = request.postDataJSON?.();
+      if (event) traceEvents.push(event);
+      return route.fulfill({ status: 202, contentType: 'application/json', body: '{"recorded":true}' });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ story: { headline: 'No persisted trace in this browser fixture.' }, events: [] }),
+    });
   }
 
   if (path === '/api/auth/session') {
