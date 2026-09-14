@@ -19,6 +19,7 @@ import { advisorBlocksPreviewBuild, resolveIsCodingRequest } from './build-inten
 import { isBuildAcknowledgement, isBuildSessionActive, turnBelongsToBuild } from './build-session.js';
 import { lessonsToPlannerHints } from './coding-turn-memory.js';
 import { requestedDeliverablePaths } from './requested-deliverables.js';
+import { platformSkillAssignment } from '../../shared/platform-skill-registry.js';
 
 /** @typedef {{ id: string, label: string, available: boolean, why: string }} CodingSkill */
 
@@ -66,6 +67,7 @@ export const CODING_SKILLS = Object.freeze({
  *   mode: 'execute' | 'interrupt' | 'pass',
  *   isCodingTurn: boolean,
  *   intent: { kind: string, summary: string },
+ *   assignedSkill: object|null,
  *   skillsRequired: CodingSkill[],
  *   skillsMissing: CodingSkill[],
  *   feasible: boolean,
@@ -91,16 +93,8 @@ function skill(id) {
   };
 }
 
-function summarizeIntent({
-  message,
-  isCodingTurn,
-  shopAsk,
-  intakeAccept,
-  refineDesk,
-}) {
-  if (!isCodingTurn) {
-    return { kind: 'non_coding', summary: 'Not a Coding Desk build turn.' };
-  }
+function summarizeIntent({ message, isCodingTurn, shopAsk, intakeAccept, refineDesk }) {
+  if (!isCodingTurn) return { kind: 'non_coding', summary: 'Not a Coding Desk build turn.' };
   if (intakeAccept?.expanded) {
     return {
       kind: 'shop_catalog_slice',
@@ -114,20 +108,12 @@ function summarizeIntent({
     };
   }
   if (requestedDeliverablePaths(message).some((path) => /\.py$/i.test(path))) {
-    return {
-      kind: 'python_build',
-      summary: 'Build and verify the explicitly requested Python files.',
-    };
+    return { kind: 'python_build', summary: 'Build and verify the explicitly requested Python files.' };
   }
   if (messageLooksLikeShopBuild(message) || shopAsk?.imageAskCount) {
-    return {
-      kind: 'shop_build',
-      summary: 'Shop / merchandise build for Preview.',
-    };
+    return { kind: 'shop_build', summary: 'Shop / merchandise build for Preview.' };
   }
-  if (refineDesk) {
-    return { kind: 'refine_desk', summary: 'Refine the running desk / Preview.' };
-  }
+  if (refineDesk) return { kind: 'refine_desk', summary: 'Refine the running desk / Preview.' };
   return { kind: 'app_build', summary: 'Build or change a runnable Preview app.' };
 }
 
@@ -178,11 +164,12 @@ function proofForIntent(intent) {
   };
 }
 
-/**
- * Plan one Coding Desk turn before any model burn.
- *
- * @returns {CodingTurnPlan}
- */
+function withAssignmentStatus(assignedSkill, label) {
+  if (!assignedSkill?.name || !label) return label || '';
+  return `Assigned: ${assignedSkill.name} · ${label}`;
+}
+
+/** Plan one Coding Desk turn before any model burn. */
 export function planCodingTurn({
   message = '',
   priorUserMessages = [],
@@ -205,47 +192,23 @@ export function planCodingTurn({
     .some((path) => /\.py$/i.test(path));
   const hints = lessonsToPlannerHints(lessons);
 
-  // Feasibility gate must see oversize / partner interrupts even when the ask
-  // is declarative ("I need a shop with 100 unique images") without a build verb.
   const shopAsk = assessShopBuildAsk(intakeAccept.expanded ? messageForModel : raw);
-  const interrupt = assessPartnerInterrupt({
-    message: raw,
-    priorUserMessages: prior,
-  });
+  const interrupt = assessPartnerInterrupt({ message: raw, priorUserMessages: prior });
 
-  /*
-   * A build session stays a build session.
-   *
-   * This used to be the single line above on its own, re-deciding from scratch
-   * on every message with no memory that a build was under way - and its
-   * fallback to refine-mode needed desk files, so a session whose first turn
-   * produced none could never get back in. "the buttons do not work", "add a
-   * dark mode", "can you give me the file instead" were all classified as
-   * chat, the desk went away, and a general model asked for an app answered the
-   * only way it can: open TextEdit and paste this.
-   *
-   * turnBelongsToBuild is consulted only AFTER the original classifier says no,
-   * so it can add turns to the build and never take one away.
-   */
   const buildSessionActive = isBuildSessionActive({
     priorUserMessages: prior,
     codingDeskOpen: Boolean(codingDeskOpen),
     hasDeskFiles: Number(vfsFileCount) > 0,
-    // The REAL desk state — see the note in useChatStream. A hard-coded true
-    // runs the desk-open widening with no desk, which is how a garden design
-    // became a build.
     isCodingRequest: (candidate) => resolveIsCodingRequest(candidate, { codingDeskOpen: Boolean(codingDeskOpen) }),
   });
 
-  // Use the existing local-reply exit in useChatStream. A plain pass-through
-  // could be reclassified by the later lane planner and punished for emitting
-  // no files. This exit runs before model selection, skills, repair and writes.
   if (buildSessionActive && !advisorBlocksPreviewBuild(studioDomain)
     && !intakeAccept.expanded && isBuildAcknowledgement(raw)) {
     return {
       mode: 'interrupt',
       isCodingTurn: false,
       intent: { kind: 'acknowledgement', summary: 'Acknowledgement only; no changes requested.' },
+      assignedSkill: null,
       skillsRequired: [],
       skillsMissing: [],
       feasible: true,
@@ -278,6 +241,7 @@ export function planCodingTurn({
       mode: 'pass',
       isCodingTurn: false,
       intent: { kind: 'non_coding', summary: 'Pass-through (advisor or ordinary chat).' },
+      assignedSkill: null,
       skillsRequired: [],
       skillsMissing: [],
       feasible: true,
@@ -301,30 +265,21 @@ export function planCodingTurn({
     intakeAccept,
     refineDesk,
   });
+  const assignedSkill = platformSkillAssignment({
+    workspace: 'coding',
+    intentKind: intent.kind,
+    message: messageForModel,
+  });
   const skillsRequired = requiredSkillsForIntent(intent, shopAsk);
   const skillsMissing = skillsRequired.filter((entry) => !entry.available);
-  const feasible = skillsMissing.length === 0 && !interrupt?.blockModel;
   const proof = proofForIntent(intent);
 
-  // Past timeouts / SVG dumps teach us: interrupt earlier, don't burn another turn.
   const forceInterrupt = Boolean(
     hints.reinforceInterrupt
     && shopAsk?.oversize
     && !intakeAccept.expanded
   );
 
-  /*
-   * Capability doors are NOT decided here.
-   *
-   * A door path lived in this function and no production caller ever passed it
-   * anything, so `doorsBlocking` returned empty on every real turn and not one
-   * of the messages could reach a user. It was a mechanism in the wrong layer:
-   * the planner would have had to GUESS which capabilities an ask needs, while
-   * the gateways that serve those asks already KNOW when a capability is
-   * missing — the market-data gateway checks the store before it answers.
-   *
-   * So the doors live at the refusal sites, where the knowledge is.
-   */
   if (interrupt?.blockModel || forceInterrupt || (skillsMissing.length > 0 && intent.kind === 'shop_oversize')) {
     const partner = interrupt || {
       kind: 'shop-catalog-oversize',
@@ -340,18 +295,20 @@ export function planCodingTurn({
       chips: shopAsk?.chips || [],
       assessment: shopAsk,
     };
+    const waitStatus = hints.lastLesson
+      ? `Learned from ${hints.lastLesson.kind} — waiting for your agree before we act.`
+      : 'Waiting for your agree — not burning a model turn on a lie.';
     return {
       mode: 'interrupt',
       isCodingTurn: true,
       intent,
+      assignedSkill,
       skillsRequired,
       skillsMissing: skillsMissing.length ? skillsMissing : [skill('unique_ai_mockups_at_scale')],
       feasible: false,
       messageForModel,
       displayUserText,
-      statusLabel: hints.lastLesson
-        ? `Learned from ${hints.lastLesson.kind} — waiting for your agree before we act.`
-        : 'Waiting for your agree — not burning a model turn on a lie.',
+      statusLabel: withAssignmentStatus(assignedSkill, waitStatus),
       modelPlan: null,
       interrupt: {
         kind: partner.kind,
@@ -402,7 +359,7 @@ export function planCodingTurn({
     || hints.preferDeterministicShopSkills
   );
 
-  const statusLabel = intent.kind === 'shop_catalog_slice' || intakeAccept.expanded
+  const workStatus = intent.kind === 'shop_catalog_slice' || intakeAccept.expanded
     ? `Running shop skills then building ~${catalogTarget} catalog photos — proving Preview`
     : intent.kind === 'shop_build'
       ? `Building the shop for Preview (~${catalogTarget} catalog photos max)`
@@ -414,12 +371,13 @@ export function planCodingTurn({
     mode: 'execute',
     isCodingTurn: true,
     intent,
+    assignedSkill,
     skillsRequired,
     skillsMissing: [],
     feasible: true,
     messageForModel,
     displayUserText,
-    statusLabel,
+    statusLabel: withAssignmentStatus(assignedSkill, workStatus),
     modelPlan,
     interrupt: null,
     proof,
