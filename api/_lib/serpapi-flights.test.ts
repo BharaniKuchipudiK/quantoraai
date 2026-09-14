@@ -13,10 +13,10 @@ import {
  * FIXTURE DATES MOVE WITH THE CLOCK.
  *
  * A literal future date is a scheduled failure. validateTravelToolArgs rejects
- * a departure in the past, so '2026-09-15' was valid the day it was written and
- * becomes INVALID_ARGUMENT the morning after it passes — a red suite that no
- * diff caused. That exact trap took main red on 2026-09-03, was fixed in one
- * file, and was still armed in three others on 2026-09-07.
+ * a departure in the past, so a fixed booking date can be valid the day it is
+ * written and become INVALID_ARGUMENT the morning after it passes — a red suite
+ * that no diff caused. That exact trap took main red on 2026-09-03, was fixed in
+ * one file, and was still armed in three others on 2026-09-07.
  */
 const DAY_MS = 24 * 60 * 60 * 1000;
 function isoDaysFromNow(days: number): string {
@@ -36,15 +36,15 @@ const LIVE_SAMPLE = {
     type: '2',
     departure_id: 'SIN',
     arrival_id: 'DPS',
-    outbound_date: '2026-09-15',
+    outbound_date: DEPARTURE_DATE,
     currency: 'SGD',
   },
   best_flights: [
     {
       flights: [
         {
-          departure_airport: { name: 'Singapore Changi Airport', id: 'SIN', time: '2026-09-15 19:25' },
-          arrival_airport: { name: 'I Gusti Ngurah Rai International Airport', id: 'DPS', time: '2026-09-15 22:20' },
+          departure_airport: { name: 'Singapore Changi Airport', id: 'SIN', time: `${DEPARTURE_DATE} 19:25` },
+          arrival_airport: { name: 'I Gusti Ngurah Rai International Airport', id: 'DPS', time: `${DEPARTURE_DATE} 22:20` },
           duration: 175,
           airline: 'Jetstar',
           travel_class: 'Economy',
@@ -59,8 +59,8 @@ const LIVE_SAMPLE = {
     {
       flights: [
         {
-          departure_airport: { name: 'Singapore Changi Airport', id: 'SIN', time: '2026-09-15 14:15' },
-          arrival_airport: { name: 'I Gusti Ngurah Rai International Airport', id: 'DPS', time: '2026-09-15 17:00' },
+          departure_airport: { name: 'Singapore Changi Airport', id: 'SIN', time: `${DEPARTURE_DATE} 14:15` },
+          arrival_airport: { name: 'I Gusti Ngurah Rai International Airport', id: 'DPS', time: `${DEPARTURE_DATE} 17:00` },
           duration: 165,
           airline: 'TransNusa',
           travel_class: 'Economy',
@@ -122,8 +122,8 @@ test('duration matches the type Duffel established', () => {
 });
 
 test('local airport times parse, without a timezone being invented', () => {
-  assert.equal(normalizeLocalTime('2026-09-15 19:25'), '2026-09-15T19:25');
-  assert.doesNotMatch(normalizeLocalTime('2026-09-15 19:25') || '', /Z|[+-]\d\d:\d\d$/,
+  assert.equal(normalizeLocalTime(`${DEPARTURE_DATE} 19:25`), `${DEPARTURE_DATE}T19:25`);
+  assert.doesNotMatch(normalizeLocalTime(`${DEPARTURE_DATE} 19:25`) || '', /Z|[+-]\d\d:\d\d$/,
     'no offset was sent, so none may be implied');
   assert.equal(normalizeLocalTime(''), null);
   assert.equal(normalizeLocalTime(undefined), null);
@@ -136,14 +136,14 @@ test('a connecting itinerary is not called direct', () => {
       total_duration: 400,
       price: 260,
       flights: [
-        { airline: 'Scoot', flight_number: 'TR 1', departure_airport: { time: '2026-09-15 08:00' }, arrival_airport: { time: '2026-09-15 10:00' } },
-        { airline: 'Scoot', flight_number: 'TR 2', departure_airport: { time: '2026-09-15 12:00' }, arrival_airport: { time: '2026-09-15 14:40' } },
+        { airline: 'Scoot', flight_number: 'TR 1', departure_airport: { time: `${DEPARTURE_DATE} 08:00` }, arrival_airport: { time: `${DEPARTURE_DATE} 10:00` } },
+        { airline: 'Scoot', flight_number: 'TR 2', departure_airport: { time: `${DEPARTURE_DATE} 12:00` }, arrival_airport: { time: `${DEPARTURE_DATE} 14:40` } },
       ],
     }],
   });
   assert.equal(connecting[0].direct, false);
-  assert.equal(connecting[0].departure, '2026-09-15T08:00', 'first leg departs');
-  assert.equal(connecting[0].arrival, '2026-09-15T14:40', 'last leg arrives');
+  assert.equal(connecting[0].departure, `${DEPARTURE_DATE}T08:00`, 'first leg departs');
+  assert.equal(connecting[0].arrival, `${DEPARTURE_DATE}T14:40`, 'last leg arrives');
 });
 
 test('best_flights lead, because that is the ranking the source gave', () => {
