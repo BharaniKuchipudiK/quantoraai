@@ -20,6 +20,14 @@ function isStudioTurnCorrelationId(value) {
   return typeof value === 'string' && value.startsWith('studio-');
 }
 
+function browserSessionStorage() {
+  try {
+    return globalThis.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Remember which durable trace belongs to the turn the desk is actively sending.
  *
@@ -28,7 +36,7 @@ function isStudioTurnCorrelationId(value) {
  * it does not invent progress or make the browser a second execution authority.
  */
 export function publishLiveActivityTrace(correlationId, {
-  storage = globalThis.sessionStorage,
+  storage = undefined,
   eventTarget = globalThis,
   now = Date.now(),
 } = {}) {
@@ -40,7 +48,8 @@ export function publishLiveActivityTrace(correlationId, {
     at: Number.isFinite(Number(now)) ? Number(now) : Date.now(),
   };
   try {
-    storage?.setItem?.(LIVE_ACTIVITY_TRACE_STORAGE_KEY, JSON.stringify(payload));
+    const targetStorage = storage === undefined ? browserSessionStorage() : storage;
+    targetStorage?.setItem?.(LIVE_ACTIVITY_TRACE_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // Progress chrome is best-effort; storage failure must never block a turn.
   }
@@ -55,12 +64,13 @@ export function publishLiveActivityTrace(correlationId, {
 }
 
 export function readLiveActivityTrace({
-  storage = globalThis.sessionStorage,
+  storage = undefined,
   now = Date.now(),
   maxAgeMs = LIVE_ACTIVITY_TRACE_MAX_AGE_MS,
 } = {}) {
   try {
-    const parsed = JSON.parse(storage?.getItem?.(LIVE_ACTIVITY_TRACE_STORAGE_KEY) || 'null');
+    const targetStorage = storage === undefined ? browserSessionStorage() : storage;
+    const parsed = JSON.parse(targetStorage?.getItem?.(LIVE_ACTIVITY_TRACE_STORAGE_KEY) || 'null');
     const correlationId = normalizeClientCorrelationId(parsed?.correlationId);
     const at = Number(parsed?.at);
     const age = Number(now) - at;
