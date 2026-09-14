@@ -1,0 +1,54 @@
+name: Test CI Diagnostic
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-ci-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolate:
+    name: Isolate test:ci failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: GitHub write seam
+        run: npm run test:github-writes
+      - name: Study evidence
+        run: npm run test:study-evidence
+      - name: Study assessment
+        run: npm run test:study-assessment
+      - name: TypeScript tests
+        run: npm run test:ts
+      - name: Node tests
+        run: npm run test:node
+      - name: Studio synthetic
+        run: npm run test:studio-synthetic
+      - name: Outcome navigator
+        run: npm run test:outcome-navigator
+      - name: Framed preview
+        run: npm run test:framed-preview
+      - name: Function region
+        run: npm run test:function-region
+      - name: Image parsers
+        run: npm run test:image-parsers
+      - name: Served routes
+        run: npm run test:served-routes
+      - name: QIR workflow recovery
+        run: npm run test:qir-workflow-recovery
+      - name: QIR workflow bundle
+        run: npm run test:qir-workflow-bundle
