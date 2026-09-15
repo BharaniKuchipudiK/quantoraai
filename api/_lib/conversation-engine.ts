@@ -9,6 +9,7 @@ import { evaluateProofOfDone } from "./outcome-contract.js";
 import { claimsCompletion } from "./completion-claim.js";
 
 export const CONVERSATION_POLICY_VERSION = "outcome-navigator-2026-08-19.3";
+export const PERSONAL_WORKSPACE_PROJECT_ID = "project-personal";
 
 export const CONVERSATION_MOVES = [
   "answer",
@@ -123,6 +124,44 @@ function unique(values: Array<string | undefined>, max = MAX_FACTS): string[] {
   return result;
 }
 
+function textKey(value: unknown, max = MAX_TEXT): string {
+  return (compact(value, max) || "").toLowerCase();
+}
+
+/**
+ * Personal Workspace is a chat container, not a shared mission.
+ *
+ * Historically its project graph was treated exactly like an explicit named
+ * Project. One chat could therefore persist "finish PR #737" as the project
+ * goal and a completely fresh New Chat would receive that goal, facts and next
+ * actions as authoritative state. This strips only the project echo while
+ * preserving session-specific context that differs from the project graph.
+ */
+function stripPersonalProjectEcho(
+  sessionContext: SessionContext | undefined,
+  projectContext: ProjectContextPack | null,
+): SessionContext | undefined {
+  if (!sessionContext) return sessionContext;
+
+  const projectGoal = textKey(projectContext?.goal);
+  const projectUnderstanding = textKey(projectContext?.understanding, 1_000);
+  const projectFacts = new Set((projectContext?.facts || []).map((fact) => textKey(fact)).filter(Boolean));
+
+  const goal = compact(sessionContext.goal);
+  const understanding = compact(sessionContext.understanding, 1_000);
+  const facts = (sessionContext.facts || []).filter((fact) => {
+    const key = textKey(fact);
+    return Boolean(key) && !projectFacts.has(key);
+  });
+
+  return {
+    ...(sessionContext.projectId ? { projectId: sessionContext.projectId } : {}),
+    ...(goal && textKey(goal) !== projectGoal ? { goal } : {}),
+    ...(understanding && textKey(understanding, 1_000) !== projectUnderstanding ? { understanding } : {}),
+    ...(facts.length ? { facts } : {}),
+  };
+}
+
 function mergeActions(
   primary: Array<{ action: string; risk: "low" | "medium" | "high" }>,
   secondary: Array<{ action: string; risk: "low" | "medium" | "high" }>,
@@ -141,7 +180,8 @@ function mergeActions(
  *
  * Authority order is deliberate:
  * 1. consented session Outcome State for session-specific judgment;
- * 2. server-loaded Project Outcome Graph for cross-chat mission continuity;
+ * 2. server-loaded Project Outcome Graph for cross-chat mission continuity in
+ *    explicit Projects — never the generic Personal Workspace;
  * 3. browser SessionContext only as an explicitly ephemeral fallback/hint.
  *
  * Cognitive Ledger history is authoritative-only: the browser cannot invent
@@ -149,7 +189,13 @@ function mergeActions(
  */
 export function buildConversationSnapshot(input: SnapshotInput): ConversationSnapshot {
   const state = input.outcomeRecord?.state;
-  const projectContext = input.projectContext || null;
+  const rawProjectContext = input.projectContext || null;
+  const isPersonalWorkspace = rawProjectContext?.projectId === PERSONAL_WORKSPACE_PROJECT_ID
+    || input.sessionContext?.projectId === PERSONAL_WORKSPACE_PROJECT_ID;
+  const projectContext = isPersonalWorkspace ? null : rawProjectContext;
+  const sessionContext = isPersonalWorkspace
+    ? stripPersonalProjectEcho(input.sessionContext, rawProjectContext)
+    : input.sessionContext;
   const hasSessionAuthority = Boolean(input.outcomeRecord);
   const hasProjectAuthority = Boolean(projectContext);
   const authoritative = hasSessionAuthority || hasProjectAuthority;
@@ -172,12 +218,12 @@ export function buildConversationSnapshot(input: SnapshotInput): ConversationSna
   const inferredFacts = unique([
     ...(state?.constraints || []).filter((item) => item.confidence < 0.8).map((item) => item.value),
     ...(state?.assumptions || []).filter((item) => item.status === "inferred").map((item) => item.value),
-    ...(!hasSessionAuthority ? (input.sessionContext?.facts || []) : []),
+    ...(!hasSessionAuthority ? (sessionContext?.facts || []) : []),
   ]);
 
-  const goalStatement = compact(state?.goal?.statement || projectContext?.goal || input.sessionContext?.goal);
+  const goalStatement = compact(state?.goal?.statement || projectContext?.goal || sessionContext?.goal);
   const understanding = compact(
-    state?.understanding?.statement || projectContext?.understanding || input.sessionContext?.understanding,
+    state?.understanding?.statement || projectContext?.understanding || sessionContext?.understanding,
     1_000,
   );
   if (understanding) inferredFacts.unshift(understanding);

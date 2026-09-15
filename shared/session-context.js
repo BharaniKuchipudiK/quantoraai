@@ -15,6 +15,7 @@
 export const SESSION_CONTEXT_FACT_LIMIT = 16;
 const MAX_FACTS = SESSION_CONTEXT_FACT_LIMIT;
 const MAX_FIELD_LEN = 280;
+const PROJECT_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const CTX_MARKER = /<!--\s*quantora-ctx:\s*(\{[\s\S]*?\})\s*-->/i;
 const CTX_START = /<!--\s*quantora-ctx:/i;
 
@@ -46,6 +47,12 @@ function cleanMemoryText(text, max) {
   return value;
 }
 
+function cleanProjectId(value) {
+  if (typeof value !== 'string') return undefined;
+  const id = value.trim();
+  return PROJECT_ID.test(id) ? id : undefined;
+}
+
 export function emptySessionContext() {
   return {};
 }
@@ -61,8 +68,10 @@ export function normalizeSessionContext(value) {
     : undefined;
   const goal = cleanMemoryText(value.goal, MAX_FIELD_LEN);
   const understanding = cleanMemoryText(value.understanding, MAX_FIELD_LEN * 2);
+  const projectId = cleanProjectId(value.projectId);
 
   return {
+    ...(projectId ? { projectId } : {}),
     ...(goal ? { goal } : {}),
     ...(facts?.length ? { facts } : {}),
     ...(understanding ? { understanding } : {}),
@@ -74,6 +83,7 @@ export function mergeSessionContext(existing, update) {
   const next = normalizeSessionContext(update);
   const factSet = new Set([...(base.facts || []), ...(next.facts || [])]);
   return normalizeSessionContext({
+    projectId: next.projectId || base.projectId,
     goal: next.goal || base.goal,
     understanding: next.understanding || base.understanding,
     facts: [...factSet].slice(-MAX_FACTS),
