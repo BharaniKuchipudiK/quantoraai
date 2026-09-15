@@ -1,6 +1,6 @@
-import { initializeBrowserSubmission } from './submission.js';
+import { initializeBrowserSubmission, recordBrowserInitializationFailure } from './submission.js';
 import type { BrowserPilotSubmission } from '../../api/_lib/qir-browser-pilot.js';
-import { FatalError, RetryableError, sleep } from 'workflow';
+import { FatalError, RetryableError, getStepMetadata, sleep } from 'workflow';
 import { runPilotTransition } from './transition.js';
 import { executeCodingDelivery, type CodingDeliveryWorkflowInput } from './delivery.js';
 import { codingDeliveryPilotAllows } from './delivery-policy.js';
@@ -108,11 +108,25 @@ export async function browserPilotWorkflow(input: BrowserPilotSubmission) {
   await initialize(input);
   return await codingPilotWorkflow(input.userSub, input.runId);
 }
+
+const INITIALIZE_MAX_RETRIES = 3;
 async function initialize(input: BrowserPilotSubmission) {
   'use step';
-  await initializeBrowserSubmission(input);
+  try {
+    await initializeBrowserSubmission(input);
+  } catch (error) {
+    const { attempt } = getStepMetadata();
+    // The first step attempt is 1. With three retries, attempt 4 is the final
+    // chance. Persist that exhausted outcome before returning so a browser that
+    // closed during admission can later reopen the exact same durable result.
+    if (error instanceof RetryableError && attempt >= INITIALIZE_MAX_RETRIES + 1) {
+      await recordBrowserInitializationFailure(input, error.message);
+      return;
+    }
+    throw error;
+  }
 }
-initialize.maxRetries = 3;
+initialize.maxRetries = INITIALIZE_MAX_RETRIES;
 
 /**
  * Durable end-to-end Coding delivery.
