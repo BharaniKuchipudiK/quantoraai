@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Activity, GitBranch, Play, Terminal, Files } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Activity, GitBranch, Play, Terminal, Files, Pause, XCircle } from 'lucide-react';
 import { fetchTraceStory } from '../lib/trace-lookup.js';
 import { LIVE_ACTIVITY_TRACE_EVENT, readLiveActivityTrace } from '../lib/transaction-trace.js';
+import { qirRunControlState, sendQirRunControl } from '../lib/qir-run-controls.js';
 
 const BUTTON_BASE = {
   display: 'inline-flex',
@@ -31,6 +32,10 @@ const LIVE_ACTIVITY_DONE_HOLD_MS = 5000;
  *
  * The live status pill is different: it is a read-only projection of the
  * server-persisted transaction trace. It never guesses what the model is doing.
+ *
+ * Durable Run controls are deliberately colocated here as well. The enclosing
+ * Coding Desk owns the live run id/status attributes; this rail only sends the
+ * already-governed pause/resume/cancel signals for that exact durable run.
  */
 export default function StudioActivityRail({
   activeTab,
@@ -48,7 +53,33 @@ export default function StudioActivityRail({
 }) {
   const vertical = orientation === 'vertical';
   const iconOnly = vertical || compact;
+  const railRef = useRef(null);
   const [liveActivity, setLiveActivity] = useState(null);
+  const [runControl, setRunControl] = useState({ runId: '', status: '', pending: '', error: '' });
+
+  useEffect(() => {
+    const rail = railRef.current;
+    const workspace = rail?.closest?.('[data-quantora-code-workspace="true"]');
+    if (!workspace || typeof MutationObserver === 'undefined') return undefined;
+
+    const read = () => {
+      const runId = String(workspace.getAttribute('data-quantora-qir-run-id') || '').trim();
+      const status = String(workspace.getAttribute('data-quantora-qir-run-status') || '').trim().toUpperCase();
+      setRunControl((current) => ({
+        ...current,
+        runId,
+        status,
+        error: current.runId && current.runId !== runId ? '' : current.error,
+      }));
+    };
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(workspace, {
+      attributes: true,
+      attributeFilter: ['data-quantora-qir-run-id', 'data-quantora-qir-run-status'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -103,6 +134,27 @@ export default function StudioActivityRail({
     };
   }, []);
 
+  const invokeRunControl = useCallback(async (action) => {
+    const runId = runControl.runId;
+    if (!runId || runControl.pending) return;
+    if (action === 'cancel' && globalThis.confirm && !globalThis.confirm('Cancel this background run? Verified work is kept, but this run will stop permanently.')) {
+      return;
+    }
+    setRunControl((current) => ({ ...current, pending: action, error: '' }));
+    const result = await sendQirRunControl(runId, action, {
+      reason: action === 'cancel' ? 'Cancelled from Coding Desk.' : '',
+    });
+    setRunControl((current) => {
+      if (current.runId !== runId) return current;
+      return {
+        ...current,
+        pending: '',
+        status: result?.run?.status || current.status,
+        error: result?.ok ? '' : (result?.error || 'Run control failed.'),
+      };
+    });
+  }, [runControl.pending, runControl.runId]);
+
   const entries = [
     {
       id: 'files',
@@ -145,11 +197,42 @@ export default function StudioActivityRail({
 
   const activityFailed = liveActivity?.state === 'failed' || liveActivity?.state === 'stopped';
   const activityDone = liveActivity?.state === 'done';
+  const controls = qirRunControlState(runControl.status);
+  const hasRunControls = Boolean(runControl.runId && (controls.pause || controls.resume || controls.cancel));
+
+  const controlButton = (action, label, Icon, danger = false) => (
+    <button
+      key={action}
+      type="button"
+      data-quantora-qir-control={action}
+      aria-label={`${label} durable run`}
+      title={`${label} durable run`}
+      disabled={Boolean(runControl.pending)}
+      onClick={() => void invokeRunControl(action)}
+      style={{
+        ...BUTTON_BASE,
+        width: vertical ? '32px' : undefined,
+        minHeight: vertical ? '32px' : '28px',
+        height: vertical ? '32px' : '28px',
+        padding: iconOnly ? '0 7px' : '0 9px',
+        background: runControl.pending === action
+          ? (isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.10)')
+          : 'transparent',
+        color: danger ? '#ef4444' : subtextColor,
+        opacity: runControl.pending && runControl.pending !== action ? 0.45 : 1,
+      }}
+    >
+      <Icon size={14} aria-hidden="true" />
+      {iconOnly ? null : <span>{runControl.pending === action ? `${label}…` : label}</span>}
+    </button>
+  );
 
   return (
     <div
+      ref={railRef}
       data-quantora-desk-activity-rail="true"
       data-quantora-desk-activity-rail-orientation={orientation}
+      data-quantora-qir-control-status={runControl.status || undefined}
       role="group"
       aria-label="Desk panels"
       aria-orientation={vertical ? 'vertical' : 'horizontal'}
@@ -222,6 +305,53 @@ export default function StudioActivityRail({
           ) : null}
         </button>
       ))}
+      {hasRunControls ? (
+        <div
+          data-quantora-qir-controls="true"
+          role="group"
+          aria-label="Background run controls"
+          style={{
+            display: 'flex',
+            flexDirection: vertical ? 'column' : 'row',
+            alignItems: 'center',
+            gap: '2px',
+            marginTop: vertical ? '6px' : 0,
+            marginLeft: vertical ? 0 : '4px',
+            paddingTop: vertical ? '6px' : 0,
+            paddingLeft: vertical ? 0 : '4px',
+            borderTop: vertical ? (isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(255,255,255,0.10)') : 'none',
+            borderLeft: vertical ? 'none' : (isLight ? '1px solid rgba(15,23,42,0.10)' : '1px solid rgba(255,255,255,0.10)'),
+          }}
+        >
+          {controls.pause ? controlButton('pause', 'Pause', Pause) : null}
+          {controls.resume ? controlButton('resume', 'Resume', Play) : null}
+          {controls.cancel ? controlButton('cancel', 'Cancel', XCircle, true) : null}
+        </div>
+      ) : null}
+      {runControl.error ? (
+        <div
+          data-quantora-qir-control-error="true"
+          role="status"
+          aria-live="polite"
+          title={runControl.error}
+          style={{
+            position: vertical ? 'absolute' : 'relative',
+            left: vertical ? '46px' : undefined,
+            bottom: vertical ? '8px' : undefined,
+            zIndex: 26,
+            maxWidth: '300px',
+            padding: '6px 9px',
+            borderRadius: '8px',
+            background: isLight ? '#fff7ed' : 'rgba(127,29,29,0.92)',
+            border: isLight ? '1px solid #fed7aa' : '1px solid rgba(248,113,113,0.35)',
+            color: isLight ? '#9a3412' : '#fecaca',
+            fontSize: '0.68rem',
+            lineHeight: 1.3,
+          }}
+        >
+          {runControl.error}
+        </div>
+      ) : null}
       {liveActivity ? (
         <div
           data-quantora-live-activity="true"
