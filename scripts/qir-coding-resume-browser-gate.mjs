@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Browser-visible QIR Phase 2 acceptance proof:
- * broken Preview -> durable failure -> browser loss -> resume the same Run ->
+ * broken Preview -> durable failure -> real tab close -> resume the same Run ->
  * new recovery generation -> repaired Preview -> independent verifier -> COMPLETE.
  */
 import process from 'node:process';
@@ -43,14 +43,17 @@ function qirReply(route, status = 200, extra = {}) {
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
-const page = await context.newPage();
+let page = await context.newPage();
 
-await page.addInitScript(() => {
+// Context-level setup/routing is intentional: the proof destroys the first page
+// completely, so a replacement page must inherit the same signed-in browser
+// context and API harness without relying on the old page object.
+await context.addInitScript(() => {
   localStorage.setItem('quantora_hide_welcome', 'true');
   localStorage.removeItem('quantora_active_specialist_domain');
 });
 
-await page.route('**/api/**', async (route) => {
+await context.route('**/api/**', async (route) => {
   const request = route.request();
   const url = new URL(request.url());
   const path = url.pathname;
@@ -174,28 +177,33 @@ try {
   if (!originalRunId) throw new Error('Coding Desk did not expose its durable Run id.');
   if (durableRun.cursor.attempt !== 1) throw new Error(`Failure did not consume exactly one attempt; saw ${durableRun.cursor.attempt}.`);
 
-  // Browser/worker loss: reload after the durable failure, before repair.
+  // Destroy the tab after the durable failure, before repair. A reload is not
+  // enough evidence: the old page object can retain accidental execution state.
   await page.waitForTimeout(600);
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 20_000 });
+  await page.close();
+  transitions.push('BROWSER:CLOSED');
+  page = await context.newPage();
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+
   const resumedStudio = await enterSignedInStudio(page);
   await resumedStudio.composer.fill('Repair the broken product images and keep this same boutique');
   await resumedStudio.composer.press('Enter');
   await waitForRunStatus('COMPLETE', 30_000);
 
   const resumedRunId = await page.locator('[data-quantora-code-workspace="true"]').getAttribute('data-quantora-qir-run-id');
-  if (resumedRunId !== originalRunId) throw new Error(`Reload created a new Run (${resumedRunId}) instead of resuming ${originalRunId}.`);
+  if (resumedRunId !== originalRunId) throw new Error(`New tab created a new Run (${resumedRunId}) instead of resuming ${originalRunId}.`);
   if (resumeReads < 1) throw new Error('Replacement browser never resumed from the durable Run snapshot.');
-  if (durableRun.cursor.attempt !== 1) throw new Error('Worker/browser restart reset the retry budget.');
+  if (durableRun.cursor.attempt !== 1) throw new Error('Browser tab loss reset the retry budget.');
   if (durableRun.artifacts[0].generation !== 2 || durableRun.artifacts[0].state !== 'verified') {
     throw new Error('Recovered artifact generation was not independently verified and promoted.');
   }
-  if (!transitions.includes('VERIFYING:2') || transitions.at(-1) !== 'COMPLETE:2') {
-    throw new Error(`Run skipped independent verification: ${transitions.join(' -> ')}`);
+  if (!transitions.includes('BROWSER:CLOSED') || !transitions.includes('VERIFYING:2') || transitions.at(-1) !== 'COMPLETE:2') {
+    throw new Error(`Run skipped tab-close continuity or independent verification: ${transitions.join(' -> ')}`);
   }
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/qir-coding-resume-complete.png', fullPage: true });
-  console.log(`QIR Coding resume browser gate passed on Run ${originalRunId}: ${transitions.join(' -> ')}`);
+  console.log(`QIR Coding real-tab-close resume gate passed on Run ${originalRunId}: ${transitions.join(' -> ')}`);
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/qir-coding-resume-failure.png', fullPage: true }).catch(() => {});
