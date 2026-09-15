@@ -18,10 +18,20 @@ const loadCore = () => import('../lib/qir-coding-run-core.js');
 export function useQirCodingRun(options) {
   const { enabled, sessionId, artifactRef, code } = options;
   const serverOwned = options.executionOwner === 'server';
+  // A server-owned Run is an observer/reconnect contract, not a Preview contract.
+  // After a real tab close the local Preview snapshot may be absent even though
+  // the durable Run and its verified server checkpoint are healthy. Requiring
+  // `enabled` (which AiStudio derives from previewRunCode) here deadlocked that
+  // exact recovery path: no local Preview -> no polling -> no COMPLETE -> no
+  // verified checkpoint restore. Browser-owned execution keeps the historical
+  // UI gate; server-owned observation only needs the bound desk session.
+  const effectiveEnabled = serverOwned ? Boolean(sessionId) : Boolean(enabled);
   const [run, setRun] = useState(null);
   const [error, setError] = useState(null);
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  optionsRef.current = effectiveEnabled === Boolean(options.enabled)
+    ? options
+    : { ...options, enabled: effectiveEnabled };
   const clientRef = useRef(null);
   const sessionRef = useRef(null);
   const appliedServerCheckpointRef = useRef('');
@@ -55,12 +65,12 @@ export function useQirCodingRun(options) {
       setRun(null);
       setError(null);
     }
-    if (!enabled || !sessionId) return;
+    if (!effectiveEnabled || !sessionId) return;
     // Compatibility mode still reconciles browser-produced artifacts. Once the
     // server owns execution the browser only resumes/observes the durable Run;
     // it must never attach its own candidate bytes to that same action.
     void withClient((client) => (serverOwned ? client.refresh() : client.sync()));
-  }, [enabled, sessionId, artifactRef, code, serverOwned, withClient]);
+  }, [effectiveEnabled, sessionId, artifactRef, code, serverOwned, withClient]);
 
   /*
    * Server-owned Runs outlive the tab. Polling is observation, not execution:
@@ -69,7 +79,7 @@ export function useQirCodingRun(options) {
    * the worker committed while the tab was gone.
    */
   useEffect(() => {
-    if (!serverOwned || !enabled || !sessionId) return undefined;
+    if (!serverOwned || !effectiveEnabled || !sessionId) return undefined;
     let stopped = false;
     const refresh = () => {
       if (stopped) return;
@@ -81,7 +91,7 @@ export function useQirCodingRun(options) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [serverOwned, enabled, sessionId, withClient]);
+  }, [serverOwned, effectiveEnabled, sessionId, withClient]);
 
   /*
    * The worker writes verified source into the same durable desk checkpoint
@@ -140,7 +150,7 @@ export function useQirCodingRun(options) {
     if (serverOwned) return Promise.resolve({ allowed: true, reason: 'server-owned' });
     return withClient((client) => client.requestPremiumEscalation())
       ?.then?.((verdict) => verdict || { allowed: true, reason: 'no-verdict' })
-      ?? Promise.resolve({ allowed: true, reason: 'no-client' });
+      ?? Promise.resolve({ allowed: true, reason: 'no-verdict' });
   }, [serverOwned, withClient]);
 
   const beginModelAttempt = useCallback((goal, strategy) => (
