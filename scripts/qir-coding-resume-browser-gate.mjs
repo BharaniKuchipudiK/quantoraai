@@ -8,6 +8,7 @@ import process from 'node:process';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { enterSignedInStudio } from './e2e-enter-studio.mjs';
+import { proveServerOwnedCloseReconnect } from './qir-server-owned-close-reconnect-proof.mjs';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const BROKEN = `<!doctype html><html><body><main><h1>QIR Boutique</h1><img alt="Silk sari" src="https://invalid.quantora.test/missing.jpg"><p>Handloom product catalog</p></main></body></html>`;
@@ -203,7 +204,8 @@ try {
 
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/qir-coding-resume-complete.png', fullPage: true });
-  console.log(`QIR Coding real-tab-close resume gate passed on Run ${originalRunId}: ${transitions.join(' -> ')}`);
+  await proveServerOwnedCloseReconnect();
+  console.log(`QIR Coding + server-owned real-tab-close gates passed on Run ${originalRunId}: ${transitions.join(' -> ')}`);
 } catch (error) {
   mkdirSync('artifacts/e2e', { recursive: true });
   await page.screenshot({ path: 'artifacts/e2e/qir-coding-resume-failure.png', fullPage: true }).catch(() => {});
