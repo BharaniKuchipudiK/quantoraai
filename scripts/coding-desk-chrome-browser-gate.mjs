@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Coding Desk chrome smoke: Publish + Canvas + resizable splits.
+ * Coding Desk chrome smoke: Publish + Canvas + resizable splits + durable Run controls.
  * Boutique→calculator stock-photo bleed is covered by unit tests in
  * studio-preview-helpers.test.js (CI typecheck job).
  */
@@ -16,6 +16,7 @@ mkdirSync('artifacts/e2e', { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 const page = await context.newPage();
+const qirSignals = [];
 
 function sseBody(text) {
   return [
@@ -66,6 +67,26 @@ await page.route('**/api/**', async (route) => {
       }),
     });
   }
+  if (path === '/api/qir-runs' && request.method() === 'POST') {
+    const body = request.postDataJSON?.() || {};
+    if (['coding.pause', 'coding.resume', 'coding.cancel'].includes(body.action)) {
+      qirSignals.push(body);
+      const status = body.action === 'coding.pause'
+        ? 'PAUSED'
+        : body.action === 'coding.resume'
+          ? 'EXECUTING'
+          : 'FAILED_TERMINAL';
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          run: { runId: body.runId, status },
+          durability: 'persisted',
+          continuation: body.action === 'coding.resume' ? { action: 'continue' } : null,
+        }),
+      });
+    }
+  }
   if (path === '/api/preview-compile') {
     const body = request.postDataJSON?.() || {};
     try {
@@ -98,10 +119,52 @@ try {
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
   await enterSignedInStudio(page);
   await page.locator('[data-quantora-coding-desk-nav="true"]').click();
-  await visible(page.locator('[data-quantora-code-workspace="true"]').first(), 'Coding desk did not open.');
+  const desk = page.locator('[data-quantora-code-workspace="true"]').first();
+  await visible(desk, 'Coding desk did not open.');
 
   await visible(page.locator('[data-quantora-chat-desk-split="true"]').first(), 'Chat | desk resize handle missing.');
   await visible(page.locator('[data-quantora-files-preview-split="true"]').first(), 'Files | Preview resize handle missing.');
+
+  // The enclosing Desk is the existing authoritative browser projection of the
+  // durable run. Inject one active snapshot and prove the rail sends the three
+  // real workflow signals for that exact identity.
+  const controlRunId = 'browser-pilot-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  await page.waitForTimeout(100);
+  await desk.evaluate((node, runId) => {
+    node.setAttribute('data-quantora-qir-run-id', runId);
+    node.setAttribute('data-quantora-qir-run-status', 'EXECUTING');
+  }, controlRunId);
+
+  const pauseRun = page.locator('[data-quantora-qir-control="pause"]').first();
+  const cancelRun = page.locator('[data-quantora-qir-control="cancel"]').first();
+  await visible(pauseRun, 'Pause control missing for an executing durable run.');
+  await visible(cancelRun, 'Cancel control missing for an executing durable run.');
+  await pauseRun.click();
+  const resumeRun = page.locator('[data-quantora-qir-control="resume"]').first();
+  await visible(resumeRun, 'Resume control did not replace Pause after durable pause acknowledgement.');
+  if ((await page.locator('[data-quantora-qir-control-status]').first().getAttribute('data-quantora-qir-control-status')) !== 'PAUSED') {
+    throw new Error('Durable pause acknowledgement was not reflected in the rail.');
+  }
+  await resumeRun.click();
+  await visible(pauseRun, 'Pause control did not return after durable resume acknowledgement.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await cancelRun.click();
+  await page.locator('[data-quantora-qir-controls="true"]').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+  if (await page.locator('[data-quantora-qir-controls="true"]').count()) {
+    throw new Error('Terminal cancelled Run still exposes live run controls.');
+  }
+  const signalNames = qirSignals.map((entry) => entry.action).join(',');
+  if (signalNames !== 'coding.pause,coding.resume,coding.cancel') {
+    throw new Error(`Durable run controls sent the wrong signal sequence: ${signalNames || 'none'}.`);
+  }
+  if (qirSignals.some((entry) => entry.runId !== controlRunId)) {
+    throw new Error('A durable run control changed the active run identity.');
+  }
+
+  await desk.evaluate((node) => {
+    node.removeAttribute('data-quantora-qir-run-id');
+    node.removeAttribute('data-quantora-qir-run-status');
+  });
 
   const prompt = page.locator('textarea').first();
   await visible(prompt, 'Studio prompt is missing.');
