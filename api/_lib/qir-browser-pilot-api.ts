@@ -15,7 +15,6 @@ const PILOT_SLOT_COOKIE = 'quantora_qir_browser_slot';
 const PILOT_SLOT = /^[a-f0-9-]{36}$/;
 
 function workerConfig(env = process.env) {
-  // The operator key must never follow redirects or leave the designated worker.
   return env.QIR_BROWSER_PILOT_WORKER_URL === 'https://quantora-coding-worker-pilot.vercel.app'
     && (env.QIR_BROWSER_PILOT_WORKER_TOKEN || '').trim().length >= 16
     ? { url: env.QIR_BROWSER_PILOT_WORKER_URL, token: env.QIR_BROWSER_PILOT_WORKER_TOKEN! } : null;
@@ -39,22 +38,17 @@ function terminalRun(run: any): boolean {
   return run?.status === 'COMPLETE' || run?.status === 'FAILED_TERMINAL';
 }
 
-async function dynamicRunIdForCapability(req: any, res: any, userSub: string, sessionId: string, read: typeof readQirRun) {
+function dynamicRunIdForCapability(req: any, res: any, userSub: string, sessionId: string) {
   let slot = cookieValue(req, PILOT_SLOT_COOKIE);
   if (!PILOT_SLOT.test(slot)) slot = randomUUID();
-  let runId = browserPilotRunIdForSlot(userSub, sessionId, slot);
-  try {
-    const existing = await read(userSub, runId);
-    if (existing && terminalRun(existing.run)) {
-      slot = randomUUID();
-      runId = browserPilotRunIdForSlot(userSub, sessionId, slot);
-    }
-  } catch {
-    // Capability discovery is fail-soft. The actual submission still validates
-    // persistence and worker admission before any execution can begin.
-  }
   writePilotSlot(res, slot);
-  return runId;
+  return browserPilotRunIdForSlot(userSub, sessionId, slot);
+}
+
+function sameSubmission(existing: any, goal: string, workspaceHash: string, sessionId: string) {
+  const context = readQirWorkingContext(existing?.run)?.projectState;
+  return existing?.run?.goal?.statement === goal && context?.submissionHash === workspaceHash
+    && context?.sessionId === sessionId && context?.executionOwner === 'server';
 }
 
 export async function handleBrowserPilotRequest(req: any, res: any, userSub: string,
@@ -74,7 +68,11 @@ export async function handleBrowserPilotRequest(req: any, res: any, userSub: str
   let scopedRunId = scope.runId;
   if (scope.dynamicRuns) {
     if (capability) {
-      scopedRunId = await dynamicRunIdForCapability(req, res, userSub, sessionId, ports.read);
+      // Reconnect must keep pointing at the same terminal run until the user
+      // explicitly submits a different next job. Rotating during capability
+      // polling made completed/exhausted runs disappear before a reopened tab
+      // could read their durable outcome.
+      scopedRunId = dynamicRunIdForCapability(req, res, userSub, sessionId);
     } else {
       const slot = cookieValue(req, PILOT_SLOT_COOKIE);
       if (!PILOT_SLOT.test(slot)) {
@@ -92,20 +90,31 @@ export async function handleBrowserPilotRequest(req: any, res: any, userSub: str
 
   const goal = typeof req.body?.goal === 'string' ? req.body.goal.trim() : '';
   const workspaceHash = String(req.body?.workspaceHash || '');
-  const input = { userSub: scope.userSub, sessionId: scope.sessionId, runId: scopedRunId, goal, workspaceHash };
+  let input = { userSub: scope.userSub, sessionId: scope.sessionId, runId: scopedRunId, goal, workspaceHash };
   if (!validBrowserSubmission(input)) {
     res.status(400).json({ error: 'A bounded goal and saved workspace revision are required.' });
     return true;
   }
-  const existing = await ports.read(userSub, scopedRunId);
+
+  let existing = await ports.read(userSub, scopedRunId);
+  if (existing && scope.dynamicRuns && terminalRun(existing.run) && !sameSubmission(existing, goal, workspaceHash, sessionId)) {
+    // The terminal row stays addressable for reconnect/replay. A genuinely new
+    // user submission is the explicit boundary that rotates to another opaque
+    // run identity. Transport retries for the same submission remain idempotent.
+    const slot = randomUUID();
+    writePilotSlot(res, slot);
+    scopedRunId = browserPilotRunIdForSlot(userSub, sessionId, slot);
+    input = { ...input, runId: scopedRunId };
+    existing = await ports.read(userSub, scopedRunId);
+  }
+
   if (existing) {
-    const context = readQirWorkingContext(existing.run)?.projectState;
-    if (existing.run.goal.statement !== goal || context?.submissionHash !== workspaceHash
-      || context?.sessionId !== sessionId || context?.executionOwner !== 'server') {
+    if (!sameSubmission(existing, goal, workspaceHash, sessionId)) {
       res.status(409).json({ error: 'This pilot already has a different submission. Its saved work was not changed.' });
     } else res.status(200).json({ run: existing.run, runId: scopedRunId, durability: 'persisted' });
     return true;
   }
+
   const workspace = await ports.load(userSub, browserSubmissionRun(input));
   if (workspace.status !== 'loaded' || !Object.keys(workspace.vfs).length) {
     res.status(503).json({ error: 'Save the existing workspace before submitting background work.' });
