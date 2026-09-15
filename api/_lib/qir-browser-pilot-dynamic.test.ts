@@ -4,6 +4,7 @@ import {
   browserPilotRunAllowed,
   browserPilotRunIdForSlot,
   browserPilotScope,
+  browserSubmissionRun,
   validBrowserSubmission,
 } from './qir-browser-pilot.js';
 import { handleBrowserPilotRequest } from './qir-browser-pilot-api.js';
@@ -74,42 +75,63 @@ test('dynamic browser rollout stays pinned to the approved account and desk', ()
   assert.equal(browserPilotAllows('pilot-user', 'pilot-desk', first, env), true);
 });
 
-test('capability keeps one active identity and rotates only after terminal completion', async (t) => {
+test('capability reconnect preserves the same identity even after the run becomes terminal', async (t) => {
   configure(t);
-  let state: 'missing' | 'active' | 'complete' = 'missing';
-  const read = async (_userSub: string, runId: string) => {
-    if (state === 'missing') return null;
-    return { run: { runId, status: state === 'complete' ? 'COMPLETE' : 'EXECUTING' } } as any;
-  };
+  const ports = {
+    read: async () => { throw new Error('capability discovery must not rotate from journal state'); },
+    load: async () => { throw new Error('unused'); },
+    fetch: async () => { throw new Error('unused'); },
+  } as any;
 
   const first = capture();
   await handleBrowserPilotRequest(
     { method: 'GET', query: { workerPilot: '1', sessionId: 'pilot-desk' }, headers: {} },
-    first, 'pilot-user', { read, load: async () => { throw new Error('unused'); }, fetch: async () => { throw new Error('unused'); } } as any,
+    first, 'pilot-user', ports,
   );
   assert.equal(first.code, 200);
-  assert.equal(first.data.enabled, true);
-  assert.equal(first.data.dynamicRuns, true);
   const cookie = slotCookie(first.headers['set-cookie']);
-  assert.match(cookie, /^quantora_qir_browser_slot=/);
   const firstRunId = first.data.runId;
 
-  state = 'active';
-  const active = capture();
+  const reopened = capture();
   await handleBrowserPilotRequest(
     { method: 'GET', query: { workerPilot: '1', sessionId: 'pilot-desk' }, headers: { cookie } },
-    active, 'pilot-user', { read, load: async () => { throw new Error('unused'); }, fetch: async () => { throw new Error('unused'); } } as any,
+    reopened, 'pilot-user', ports,
   );
-  assert.equal(active.data.runId, firstRunId);
+  assert.equal(reopened.data.runId, firstRunId);
+  assert.equal(slotCookie(reopened.headers['set-cookie']), cookie);
+});
 
-  state = 'complete';
-  const complete = capture();
-  await handleBrowserPilotRequest(
-    { method: 'GET', query: { workerPilot: '1', sessionId: 'pilot-desk' }, headers: { cookie } },
-    complete, 'pilot-user', { read, load: async () => { throw new Error('unused'); }, fetch: async () => { throw new Error('unused'); } } as any,
-  );
-  assert.notEqual(complete.data.runId, firstRunId);
-  assert.notEqual(slotCookie(complete.headers['set-cookie']), cookie);
+test('a different submission after a terminal run rotates only at the explicit submit boundary', async (t) => {
+  configure(t);
+  const slot = '22222222-2222-4222-8222-222222222222';
+  const cookie = `quantora_qir_browser_slot=${slot}`;
+  const oldRunId = browserPilotRunIdForSlot('pilot-user', 'pilot-desk', slot);
+  const oldInput = {
+    userSub: 'pilot-user', sessionId: 'pilot-desk', runId: oldRunId,
+    goal: 'Build the first website', workspaceHash,
+  };
+  const oldRun = { ...browserSubmissionRun(oldInput), status: 'FAILED_TERMINAL' as const };
+  let workerInput: any = null;
+
+  const res = capture();
+  await handleBrowserPilotRequest({
+    method: 'POST', headers: { cookie }, body: {
+      action: 'coding.workflow_submit', sessionId: 'pilot-desk',
+      goal: 'Build the second website', workspaceHash,
+    },
+  }, res, 'pilot-user', {
+    read: async (_userSub: string, runId: string) => runId === oldRunId ? { run: oldRun } : null,
+    load: async () => ({ status: 'loaded', sessionId: 'pilot-desk', vfs, checkpointCount: 1 }),
+    fetch: async (_url: string, options: any) => {
+      workerInput = JSON.parse(options.body);
+      return new Response(JSON.stringify({ runId: workerInput.runId, workflowRunId: 'wrun_next' }), { status: 202 });
+    },
+  } as any);
+
+  assert.equal(res.code, 202);
+  assert.notEqual(res.data.runId, oldRunId);
+  assert.equal(workerInput.runId, res.data.runId);
+  assert.notEqual(slotCookie(res.headers['set-cookie']), cookie);
 });
 
 test('dynamic submission fails closed without the server-issued slot', async (t) => {
