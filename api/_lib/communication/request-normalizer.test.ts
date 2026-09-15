@@ -52,7 +52,7 @@ test("omitted Studio mode remains distinguishable from an explicit Ask override"
   assert.equal(explicitAsk.studioModeExplicit, true);
 });
 
-test("existing project context supplies projectId without polluting SessionContext", () => {
+test("existing project context supplies and preserves projectId as SessionContext metadata", () => {
   const request = normalizeCommunicationRequest({
     message: "Continue",
     sessionContext: {
@@ -64,6 +64,7 @@ test("existing project context supplies projectId without polluting SessionConte
 
   assert.equal(request.projectId, "project-quantora");
   assert.deepEqual(request.sessionContext, {
+    projectId: "project-quantora",
     goal: "Build Quantora",
     facts: ["PCL owns mission continuity"],
   });
