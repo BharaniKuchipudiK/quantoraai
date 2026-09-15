@@ -6,6 +6,14 @@ import type { CodingDeliveryWorkflowInput } from './delivery.js';
 
 export const AUTO_DELIVERY_CONTEXT_KEY = 'autoDelivery';
 
+export type AutoDeliveryMarker = Record<string, unknown> & {
+  state?: string;
+  scheduledAt?: string;
+  target?: string;
+  vercelProject?: string;
+  branch?: string;
+};
+
 function value(env: NodeJS.ProcessEnv, key: string): string {
   return String(env[key] || '').trim();
 }
@@ -24,15 +32,25 @@ function platformSkillForDelivery(run: QirAgentRun) {
   return { status: 'governed' as const, skill };
 }
 
-export function autoDeliveryAlreadyScheduled(run: QirAgentRun): boolean {
+export function readAutoDeliveryMarker(run: QirAgentRun): AutoDeliveryMarker | null {
   const context = readQirWorkingContext(run);
   const marker = context?.projectState?.[AUTO_DELIVERY_CONTEXT_KEY];
-  return Boolean(marker && typeof marker === 'object' && (marker as Record<string, unknown>).state === 'scheduled');
+  return marker && typeof marker === 'object' && !Array.isArray(marker)
+    ? marker as AutoDeliveryMarker
+    : null;
 }
 
-export function isVerifiedAutoDeliveryCandidate(run: QirAgentRun): boolean {
+/**
+ * Historical name retained for callers/tests. Once any delivery claim exists,
+ * the run must not enter a fresh delivery invocation. Scheduled,
+ * reconciliation-required and reconciled are all claimed external work.
+ */
+export function autoDeliveryAlreadyScheduled(run: QirAgentRun): boolean {
+  return Boolean(readAutoDeliveryMarker(run));
+}
+
+function verifiedCompletionEligible(run: QirAgentRun): boolean {
   if (run.status !== 'COMPLETE' || run.goal.status !== 'achieved') return false;
-  if (autoDeliveryAlreadyScheduled(run)) return false;
   const skill = platformSkillForDelivery(run);
   if (skill.status === 'invalid' || skill.status === 'denied') return false;
   const verified = run.verifications.some((item) => item.passed && item.proofOfDoneStatus === 'verified');
@@ -41,12 +59,16 @@ export function isVerifiedAutoDeliveryCandidate(run: QirAgentRun): boolean {
   return verified && checkpoint && artifact;
 }
 
-export function deriveAutoDeliveryInput(
+export function isVerifiedAutoDeliveryCandidate(run: QirAgentRun): boolean {
+  return verifiedCompletionEligible(run) && !autoDeliveryAlreadyScheduled(run);
+}
+
+function deriveDeliveryInput(
   userSub: string,
   run: QirAgentRun,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv,
 ): CodingDeliveryWorkflowInput | null {
-  if (!userSub || !isVerifiedAutoDeliveryCandidate(run)) return null;
+  if (!userSub || !verifiedCompletionEligible(run)) return null;
   const target = value(env, 'QIR_DELIVERY_PILOT_REPO');
   const vercelProject = value(env, 'QIR_DELIVERY_PILOT_VERCEL_PROJECT');
   const [owner, repo, extra] = target.split('/');
@@ -74,4 +96,27 @@ export function deriveAutoDeliveryInput(
     vercelProject,
     ...(vercelTeamId ? { vercelTeamId } : {}),
   };
+}
+
+export function deriveAutoDeliveryInput(
+  userSub: string,
+  run: QirAgentRun,
+  env: NodeJS.ProcessEnv = process.env,
+): CodingDeliveryWorkflowInput | null {
+  if (autoDeliveryAlreadyScheduled(run)) return null;
+  return deriveDeliveryInput(userSub, run, env);
+}
+
+/**
+ * Resume-only derivation. It deliberately requires an existing durable marker,
+ * and therefore can be used only to OBSERVE/reconcile an already-claimed
+ * delivery. It must never be passed to a fresh side-effect invocation.
+ */
+export function deriveClaimedAutoDeliveryInput(
+  userSub: string,
+  run: QirAgentRun,
+  env: NodeJS.ProcessEnv = process.env,
+): CodingDeliveryWorkflowInput | null {
+  if (!readAutoDeliveryMarker(run)) return null;
+  return deriveDeliveryInput(userSub, run, env);
 }
