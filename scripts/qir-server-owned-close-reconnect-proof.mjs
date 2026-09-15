@@ -6,7 +6,7 @@ import { planDeskCheckpointChain } from '../src/lib/desk-checkpoint-delta.js';
 
 const BASE_URL = process.env.QUANTORA_E2E_BASE_URL || 'http://127.0.0.1:4173';
 const RUN_ID = 'browser-pilot-run';
-const GOAL = 'Add the independently verified worker result file.';
+const GOAL = 'Build a production scheduling board for my factory floor';
 
 function ok(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
