@@ -28,6 +28,19 @@ function projectContext(): ProjectContextPack {
   };
 }
 
+function personalProjectContext(): ProjectContextPack {
+  return {
+    ...projectContext(),
+    projectId: "project-personal",
+    projectName: "Personal Workspace",
+    goal: "Finish QuantoraAI PR #737",
+    understanding: "CI is running on the Skill assignment PR",
+    facts: ["PR #737 is the active work item"],
+    decisions: ["Keep working on PR #737"],
+    nextActions: [{ action: "Merge PR #737", risk: "low" }],
+  };
+}
+
 test("trusted Project Outcome Graph makes a new chat authoritative", () => {
   const snapshot = buildConversationSnapshot({
     projectContext: projectContext(),
@@ -78,4 +91,46 @@ test("Project PCL is visible to the governance kernel and provider prompt", () =
   assert.match(directive, /scope project/);
   assert.match(directive, /PCL COGNITIVE LEDGER/);
   assert.match(directive, /Do not create another synthetic intelligence memory layer/);
+});
+
+test("Personal Workspace does not carry a previous chat mission into a fresh chat", () => {
+  const personal = personalProjectContext();
+  const snapshot = buildConversationSnapshot({
+    projectContext: personal,
+    sessionContext: {
+      projectId: "project-personal",
+      goal: personal.goal,
+      understanding: personal.understanding,
+      facts: [...personal.facts],
+    },
+    message: "Explain photosynthesis.",
+  });
+
+  assert.equal(snapshot.stateSource, "ephemeral");
+  assert.equal(snapshot.authorityScope, "ephemeral");
+  assert.equal(snapshot.projectContext, null);
+  assert.equal(snapshot.goal, undefined);
+  assert.equal(snapshot.confirmedFacts.length, 0);
+  assert.equal(snapshot.inferredFacts.length, 0);
+  assert.doesNotMatch(JSON.stringify(snapshot), /PR #737|Skill assignment/i);
+});
+
+test("Personal Workspace keeps current-chat context while stripping project echo", () => {
+  const personal = personalProjectContext();
+  const snapshot = buildConversationSnapshot({
+    projectContext: personal,
+    sessionContext: {
+      projectId: "project-personal",
+      goal: "Plan a Kyoto weekend",
+      understanding: personal.understanding,
+      facts: [...personal.facts, "User prefers quiet temples"],
+    },
+    message: "Make day two less rushed.",
+  });
+
+  assert.equal(snapshot.stateSource, "ephemeral");
+  assert.equal(snapshot.authorityScope, "ephemeral");
+  assert.equal(snapshot.goal?.statement, "Plan a Kyoto weekend");
+  assert.ok(snapshot.inferredFacts.includes("User prefers quiet temples"));
+  assert.doesNotMatch(JSON.stringify(snapshot.inferredFacts), /PR #737|Skill assignment/i);
 });
