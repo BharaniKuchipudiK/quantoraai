@@ -1,4 +1,4 @@
-import { browserPilotScope } from '../../api/_lib/qir-browser-pilot.js';
+import { browserPilotRunAllowed, browserPilotScope } from '../../api/_lib/qir-browser-pilot.js';
 import { randomUUID } from 'node:crypto';
 import { createSupabaseQirWorkerStore } from '../../api/_lib/qir-supabase-worker-store.js';
 import { createSupabaseQirWorkerLeaseStore } from '../../api/_lib/qir-worker-lease.js';
@@ -18,7 +18,7 @@ export function pilotAllows(userSub: string, runId: string, env = process.env): 
 
 export function browserPilotAllows(userSub: string, sessionId: string, runId: string, env = process.env): boolean {
   const scope = browserPilotScope(userSub, sessionId, env);
-  return Boolean(scope && scope.runId === runId && env.QIR_WORKFLOW_PILOT_ENABLED === 'true'
+  return Boolean(scope && browserPilotRunAllowed(scope, runId) && env.QIR_WORKFLOW_PILOT_ENABLED === 'true'
     && env.QIR_AI_GATEWAY_API_KEY?.trim()
     && env.QIR_WORKER_MODEL?.includes('/') && String(env.QIR_GATEWAY_MODELS || '').split(',').map(v => v.trim()).includes(env.QIR_WORKER_MODEL));
 }
