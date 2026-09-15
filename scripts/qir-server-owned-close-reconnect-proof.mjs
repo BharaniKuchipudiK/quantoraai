@@ -22,6 +22,8 @@ export async function proveServerOwnedCloseReconnect() {
   const context = await browser.newContext({ viewport: { width: 1500, height: 960 } });
   let page = await context.newPage();
   let capabilityChecks = 0;
+  const capabilitySessions = [];
+  const checkpointReads = [];
   let submissions = 0;
   let browserRunCreates = 0;
   let chatCalls = 0;
@@ -50,7 +52,10 @@ export async function proveServerOwnedCloseReconnect() {
       return ok(route, { models: [{ id: 'synthetic-a', name: 'Synthetic A', provider: 'Synthetic', available: true }] });
     }
     if (path === '/api/desk-checkpoints') {
-      if (request.method() === 'GET') return ok(route, { steps: savedSteps, revision: savedRevision });
+      if (request.method() === 'GET') {
+        checkpointReads.push(url.searchParams.get('sessionId') || '');
+        return ok(route, { steps: savedSteps, revision: savedRevision });
+      }
       const body = request.postDataJSON?.() || {};
       if (body.expectedRevision !== savedRevision) return ok(route, { error: 'Newer checkpoint' }, 409);
       savedSteps = planDeskCheckpointChain(body.history || []).steps;
@@ -60,6 +65,7 @@ export async function proveServerOwnedCloseReconnect() {
     if (path === '/api/qir-runs') {
       if (request.method() === 'GET' && url.searchParams.get('workerPilot') === '1') {
         capabilityChecks += 1;
+        capabilitySessions.push(url.searchParams.get('sessionId') || '');
         return ok(route, { enabled: true, runId: RUN_ID });
       }
       if (request.method() === 'GET') {
@@ -108,8 +114,6 @@ export async function proveServerOwnedCloseReconnect() {
     const pointer = await page.evaluate((sessionId) => localStorage.getItem(`quantora_qir_coding_run:${sessionId}`), submitted.sessionId);
     if (pointer !== RUN_ID) throw new Error(`Browser stored ${pointer || 'no run'} instead of ${RUN_ID}.`);
 
-    // Destroy the only page. The simulated server then completes and publishes
-    // a verified workspace while there is no observer capable of running work.
     await page.close();
     if (context.pages().length !== 0) throw new Error('The browser context still has an observer page after close.');
 
@@ -131,8 +135,32 @@ export async function proveServerOwnedCloseReconnect() {
     page = await context.newPage();
     await page.goto(`${BASE_URL}/desk?workerPilot=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     await enterSignedInStudio(page);
-    await visible(page.getByRole('button', { name: 'worker-result.mjs', exact: true }), 'New tab did not restore the server-published verified file.');
-    await visible(page.locator(`[data-quantora-qir-run-id="${RUN_ID}"][data-quantora-qir-run-status="COMPLETE"]`).first(), 'New tab did not reconnect to the exact completed durable run.');
+
+    const completeLocator = page.locator(`[data-quantora-qir-run-id="${RUN_ID}"][data-quantora-qir-run-status="COMPLETE"]`).first();
+    await completeLocator.waitFor({ state: 'attached', timeout: 10_000 }).catch(() => {});
+    const reconnectState = await page.evaluate((expectedSessionId) => {
+      const workspace = document.querySelector('[data-quantora-code-workspace="true"]');
+      const sessionKeys = Object.keys(localStorage).filter((key) => key.includes('quantora_chat_sessions'));
+      const sessionStorage = Object.fromEntries(sessionKeys.map((key) => [key, localStorage.getItem(key)]));
+      return {
+        expectedSessionId,
+        qirRunId: workspace?.getAttribute('data-quantora-qir-run-id') || '',
+        qirRunStatus: workspace?.getAttribute('data-quantora-qir-run-status') || '',
+        codeWorkspacePresent: Boolean(workspace),
+        fileButtons: [...document.querySelectorAll('button')].map((button) => button.textContent?.trim()).filter(Boolean).filter((text) => /worker-result|index\.html/i.test(text || '')),
+        sessionStorage,
+      };
+    }, submitted.sessionId);
+
+    if (reconnectState.qirRunId !== RUN_ID || reconnectState.qirRunStatus !== 'COMPLETE') {
+      throw new Error(`New tab did not observe the exact completed durable run: ${JSON.stringify({ reconnectState, runReads, capabilitySessions, checkpointReads })}`);
+    }
+
+    const workerFile = page.getByRole('button', { name: 'worker-result.mjs', exact: true });
+    await workerFile.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+    if (!(await workerFile.isVisible().catch(() => false))) {
+      throw new Error(`New tab observed COMPLETE but did not surface the verified file: ${JSON.stringify({ reconnectState, runReads, capabilitySessions, checkpointReads, submissions, chatCalls, browserRunCreates })}`);
+    }
 
     const reopenedPointer = await page.evaluate((sessionId) => localStorage.getItem(`quantora_qir_coding_run:${sessionId}`), submitted.sessionId);
     if (reopenedPointer !== RUN_ID) throw new Error(`Reconnect changed the durable run pointer to ${reopenedPointer || 'nothing'}.`);
